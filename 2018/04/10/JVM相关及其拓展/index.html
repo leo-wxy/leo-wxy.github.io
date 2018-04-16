@@ -110,7 +110,7 @@
 <meta property="og:image" content="http://yoursite.com/images/jvm/jvm_data.png">
 <meta property="og:image" content="http://yoursite.com/images/jvm/get_object_by_handle.png">
 <meta property="og:image" content="http://yoursite.com/images/jvm/get_object_direct.png">
-<meta property="og:updated_time" content="2018-04-11T11:33:37.894Z">
+<meta property="og:updated_time" content="2018-04-16T05:28:32.744Z">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="JVM相关及其拓展（一）">
 <meta name="twitter:description" content="1. JVM内存区域 JVM在执行Java程序的过程中会把管理的内存分为若干个数据局域。  程序计数器(Program Counter Register)：一块较小的内存空间，可看作为当前线程所执行的字节码的行号指示器。每条线程都需要一个独立的程序计数器，所以为线程私有区域。没有规定任何OutOfMemoryError情况的区域。线程执行Java方法，则记录正在执行的虚拟机字节码指令地址，若为Na">
@@ -375,15 +375,16 @@
 </blockquote>
 <h1 id="2-HotSpot虚拟机对象创建，布局以及访问"><a href="#2-HotSpot虚拟机对象创建，布局以及访问" class="headerlink" title="2.HotSpot虚拟机对象创建，布局以及访问"></a>2.HotSpot虚拟机对象创建，布局以及访问</h1><h2 id="对象的创建"><a href="#对象的创建" class="headerlink" title="对象的创建"></a>对象的创建</h2><p>   在语言层面上，创建对象只需要一个<code>new</code>关键字。<br>   在虚拟机中，分为以下几步：</p>
 <ul>
-<li>遇到一条new指令时，先去检查指令对应参数是否在常量池中可以定位到一个符号的引用，并且检查指令的参数是否已被加载、解析和初始化过。若无则需要执行相应的类加载过程。</li>
-<li>类加载检查通过后，将为新生对象分配内存。对象所需的内存大小在类加载完成后便可确定，这块内存由Java堆中划分出来。内存的分配方式由Java堆中内存是否规整决定（<code>已使用的内存和空闲内存是否相互交错</code>）。规整则使用 <strong>指针碰撞</strong>（<code>把指针向空闲空间挪动对象大小的距离</code>），不规整则使用<strong>空闲列表</strong>（<code>虚拟机内维护一个列表用来记录内存块中的可用区域，然后找到一块足够大的空间划分给对象实例</code>）。<br>  除了如何分配内存，还需要考虑虚拟机中对象创建是非常频繁的行为，就会涉及到线程安全。解决这个问题有两种方案：<ul>
+<li><strong>遇到一条new指令时，先去检查指令对应参数是否在常量池中可以定位到一个符号的引用，并且检查指令的参数是否已被加载、解析和初始化过。若无则需要执行相应的类加载过程。</strong></li>
+<li><strong>类加载检查通过后，将为新生对象分配内存。</strong>对象所需的内存大小在类加载完成后便可确定，这块内存由Java堆中划分出来。内存的分配方式由Java堆中内存是否规整决定（<code>已使用的内存和空闲内存是否相互交错</code>）。规整则使用 <strong>指针碰撞</strong>（<code>把指针向空闲空间挪动对象大小的距离</code>），不规整则使用<strong>空闲列表</strong>（<code>虚拟机内维护一个列表用来记录内存块中的可用区域，然后找到一块足够大的空间划分给对象实例</code>）。</li>
+<li><strong>处理并发安全问题。</strong>除了如何分配内存，还需要考虑虚拟机中对象创建是非常频繁的行为，就会涉及到线程安全。解决这个问题有两种方案：<ul>
 <li>对分配内存空间的行为进行同步处理</li>
 <li>把内存分配的动作按照线程划分在不同的空间之中进行，即每个线程在Java堆中预先分配一小块内存，称为<code>本地线程分配缓存(TLAB)</code>。哪个线程需要分配内存就在哪个TLAB上分配，只有TLAB用完了，才同步申请另一块内存。</li>
 </ul>
 </li>
-<li>内存分配完成后，虚拟机将需要分配到的内存空间都初始化为零值（不包括对象头）。这一步操作保证了对象的实例字段在Java代码中可以不赋值就直接使用，程序能访问到这些字段的数据类型所对应的零值。</li>
-<li>虚拟机对对象进行设置，将<code>类的元数据信息、对象的哈希码、对象的GC分代年龄信息</code>存入对象头中。</li>
-<li>从虚拟机角度来说，对象已经产生完成，从Java方面来说才刚刚开始，要等到new指令执行并\&lt;init>方法执行后，把对象按照意愿初始化后，真正可用的对象生成完毕。</li>
+<li><strong>内存分配完成后，虚拟机将需要分配到的内存空间都初始化为零值（不包括对象头）。</strong>这一步操作保证了对象的实例字段在Java代码中可以不赋值就直接使用，程序能访问到这些字段的数据类型所对应的零值。</li>
+<li><strong>虚拟机对对象进行设置，将<code>类的元数据信息、对象的哈希码、对象的GC分代年龄信息</code>存入对象头中。</strong></li>
+<li><strong>执行init方法初始化。</strong>从虚拟机角度来说，对象已经产生完成，从Java方面来说才刚刚开始，要等到new指令执行并\&lt;init>方法执行后，把对象按照意愿初始化后，真正可用的对象生成完毕。</li>
 </ul>
 <h2 id="对象的内存布局"><a href="#对象的内存布局" class="headerlink" title="对象的内存布局"></a>对象的内存布局</h2><p>在HotSpot虚拟机中，对象在内存中存储的布局可以分为3块区域：<code>对象头(Header)</code>、<code>实例数据(Instance Data)</code>和<code>对齐填充(Padding)</code></p>
 <h3 id="对象头"><a href="#对象头" class="headerlink" title="对象头"></a>对象头</h3><p><strong>存储自身的运行时数据</strong></p>
@@ -423,14 +424,13 @@
 </tr>
 </tbody>
 </table>
-<p><strong> 类型指针</strong><br>对象指向它的类元数据的指针，虚拟机通过这个指针来确定这个对象是哪个类的实例。如果对象为一个Java数组，则对象头中还必须有一块用于记录数组长度的数据，因为虚拟机可以通过普通Java对象的元数据信息确定Java对象的大小，但是从数组的元数据中无法确定数组的大小。</p>
+<p>** 类型指针**<br>对象指向它的类元数据的指针，虚拟机通过这个指针来确定这个对象是哪个类的实例。如果对象为一个Java数组，则对象头中还必须有一块用于记录数组长度的数据，因为虚拟机可以通过普通Java对象的元数据信息确定Java对象的大小，但是从数组的元数据中无法确定数组的大小。</p>
 <h3 id="实例数据"><a href="#实例数据" class="headerlink" title="实例数据"></a>实例数据</h3><p>里面是对象真正存储的有效信息，也是在程序代码中所定义的各种类型的字段内容。存储顺序会受到虚拟机分配策略参数和字段在Java源码中定义顺序的影响。在分配策略中，相同宽度的字段总是会被分配在一起。</p>
 <h3 id="对齐填充"><a href="#对齐填充" class="headerlink" title="对齐填充"></a>对齐填充</h3><p>并非必然存在的，也没有特别的含义。仅仅起着占位符的作用。当实例数据部分没有对齐时，需要对齐填充来补全。</p>
 <h2 id="对象的访问"><a href="#对象的访问" class="headerlink" title="对象的访问"></a>对象的访问</h2><p>Java程序需要通过栈上的reference数据来操作堆上的具体对象。目前主流的访问方式是<code>句柄访问</code>和<code>直接指针访问</code>。</p>
 <ul>
 <li>使用句柄访问：Java堆中会划分出一块内存来作为句柄池，<code>refrence中存储的对象就是对象的句柄地址</code>，而句柄中包含了对象实例数据与类型数据各自的具体地址信息。<br>  <strong>句柄访问的最大好处是refrence中存储的是稳定的句柄地址，在对象被移动时只会改变句柄中的实例数据指针，refrence本身不会有修改。</strong><span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/get_object_by_handle.png" class="full-image" alt="alt" title="流程图"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span></li>
-<li>使用直接指针访问：Java堆对象需要考虑如何放置访问类型数据的相关信息，而<code>refrence中存储的直接就是对象地址</code>。<br>  <strong>直接访问的最大好处是速度快，节省了一次指针定位的时间开销，在Java HotSpot虚拟机中很常用。</strong><span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/get_object_direct.png" class="full-image" alt="alt" title="流程图"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
-</li>
+<li>使用直接指针访问：Java堆对象需要考虑如何放置访问类型数据的相关信息，而<code>refrence中存储的直接就是对象地址</code>。<br>  <strong>直接访问的最大好处是速度快，节省了一次指针定位的时间开销，在Java HotSpot虚拟机中很常用。</strong><span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/get_object_direct.png" class="full-image" alt="alt" title="流程图"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span></li>
 </ul>
 
       
@@ -564,7 +564,7 @@
                 
                   <a href="/archives/">
                 
-                    <span class="site-state-item-count">25</span>
+                    <span class="site-state-item-count">28</span>
                     <span class="site-state-item-name">日志</span>
                   </a>
                 </div>
