@@ -112,7 +112,8 @@
 <meta property="og:image" content="http://yoursite.com/images/jvm/gc_copying.png">
 <meta property="og:image" content="http://yoursite.com/images/jvm/gc_mark_compact.png">
 <meta property="og:image" content="http://yoursite.com/images/jvm/gc_java_heap_memory.png">
-<meta property="og:updated_time" content="2018-05-09T11:38:43.772Z">
+<meta property="og:image" content="http://yoursite.com/images/jvm/gc_collectors.png">
+<meta property="og:updated_time" content="2018-05-10T11:39:07.389Z">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="JVM相关及其拓展(四)">
 <meta name="twitter:description" content="垃圾收集器与内存分配策略垃圾收集器1.概述垃圾收集(Garbage Collection,GC)：自动管理回收不再引用的内存数据需要完成的三件事情：  哪些内存需要回收 什么时候回收 如何回收    Java语言会自动管理和回收不再引用的内存数据，由垃圾回收机制来完成。Java自身提供了内存管理机制，应用程序不需要去关注内存如何释放，内存用完后，GC会去自动进行处理，不需要人为干预出现错误。  在">
@@ -453,8 +454,8 @@
 <p>现在的商业虚拟机都采用这种收集算法来回收新生代。</p>
 <p>提供了改良算法（基于<strong>弱代理论①</strong>）：不是按照1:1的比例去划分内存空间，而是分为较大的Eden空间和两块较小的Survivor空间，在回收时将Eden和Survivor存活的对象移至到另一块Survivor空间上。<strong>HotSpot中Eden和Survivor的大小比例为8:1。</strong><code>在一般场景下足够使用，当Survivor空间不够使用时，需要依赖其他内存(代指老年代)进行分配担保②</code>。</p>
 <blockquote>
-<p>①弱代理论：1. 大多数分配了内存的对象存活不会太久，在年轻代就会死掉；2. 很少有对象从年老代变成年轻代。</p>
-<p>②分配担保：如果另外一块Survivor空间没有足够的空间存放上一次新生代收集下来的存活对象时，这些对象将直接通过分配担保机制进入老年代。若老年代也满了就会触发一次full GC，也就是新生代和老年代都会进行回收。</p>
+<p>①<strong>弱代理论</strong>：1. 大多数分配了内存的对象存活不会太久，在年轻代就会死掉；2. 很少有对象从年老代变成年轻代。</p>
+<p>②<strong>分配担保</strong>：如果另外一块Survivor空间没有足够的空间存放上一次新生代收集下来的存活对象时，这些对象将直接通过分配担保机制进入老年代。若老年代也满了就会触发一次full GC，也就是新生代和老年代都会进行回收。</p>
 </blockquote>
 </li>
 <li><p><strong>标记-整理算法(Mark-Compact)</strong></p>
@@ -479,9 +480,39 @@
 <li><strong>新生代(Young Generation)</strong>：所有新生对象都会放在新生代，新生代的目标是尽快收集生命周期短的对象，每次GC过后只有少量存活。新生代发生的GC叫做<strong><code>Minor GC（频率较高，新生代Eden区满才触发）</code></strong>。新生代细分为<code>Eden、From Survivor、To Survivor</code>三块空间（三块空间大小并非均分，默认比例为8:1:1）。</li>
 <li><strong>老年代(Tenured Generation)</strong>：新生代发生几次GC后依然存活的对象会放到老年代中，所以老年代中的对象生命周期较长。内存也比新生代大很多（大概2:1）,当老年代内存满时会触发<strong><code>Full GC/Major GC(针对新生代和老年代触发，经常会伴随至少一次的Minor GC，收集频率较低且耗时长，一般慢10倍以上)</code></strong>。</li>
 <li><del><strong>持久代(Permanent Generation)</strong></del>：用于存放静态文件，如Java类，方法等，对GC没有影响。</li>
+<li><strong>拓展</strong>：别处也有介绍   Full GC针对整个堆空间（包含新生代，老年代，永久代（如果包含））的回收。而Major GC是针对老年代的内存回收。</li>
 </ul>
 <span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/gc_java_heap_memory.png" class="full-image" alt="Java堆内存" title="Java堆内存"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
-<h3 id="6-垃圾收集器"><a href="#6-垃圾收集器" class="headerlink" title="6.垃圾收集器"></a>6.垃圾收集器</h3>
+<h3 id="6-垃圾收集器"><a href="#6-垃圾收集器" class="headerlink" title="6.垃圾收集器"></a>6.垃圾收集器</h3><blockquote>
+<p>收集算法是内存回收的方法论，垃圾收集器就为内存回收的具体实现。</p>
+</blockquote>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/gc_collectors.png" class="full-image" alt="垃圾收集器" title="垃圾收集器"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<p>在两个收集器之间存在连线，则意味着他们之间可以搭配使用。</p>
+<ul>
+<li><p><code>Serial收集器</code></p>
+<p>该收集器是最基本、发展历史最悠久的收集器。这个收集器是一个<strong>单线程</strong>收集器（<code>不仅是他只会使用一个CPU或者一条收集线程去完成垃圾收集工作，更重要的是他在进行垃圾收集时必须停止其他的工作线程，直到收集结束</code>）。</p>
+<blockquote>
+<p>是虚拟机运行在Client端的默认新生代收集器</p>
+</blockquote>
+</li>
+<li><p><code>ParNew收集器</code></p>
+</li>
+<li><p><code>Parallel Scavenge收集器</code></p>
+</li>
+<li><p><code>Serial Old收集器</code></p>
+</li>
+<li><p><code>Parallel Old收集器</code></p>
+</li>
+<li><p><strong><code>CMS收集器</code></strong></p>
+</li>
+<li><p><strong><code>G1收集器</code></strong></p>
+</li>
+</ul>
+<h3 id="7-拓展"><a href="#7-拓展" class="headerlink" title="7.拓展"></a>7.拓展</h3><ol>
+<li>Minor GC过程</li>
+<li>Full GC过程</li>
+</ol>
+
       
     </div>
     
@@ -694,7 +725,7 @@
             
 
             
-              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#垃圾收集器与内存分配策略"><span class="nav-text">垃圾收集器与内存分配策略</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#垃圾收集器"><span class="nav-text">垃圾收集器</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-概述"><span class="nav-text">1.概述</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-判断对象是否可以回收"><span class="nav-text">2.判断对象是否可以回收</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-对象是生存还是死亡"><span class="nav-text">3.对象是生存还是死亡</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-回收方法区"><span class="nav-text">4.回收方法区</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-垃圾收集算法"><span class="nav-text">5.垃圾收集算法</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-垃圾收集器"><span class="nav-text">6.垃圾收集器</span></a></li></ol></li></ol></li></ol></div>
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#垃圾收集器与内存分配策略"><span class="nav-text">垃圾收集器与内存分配策略</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#垃圾收集器"><span class="nav-text">垃圾收集器</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-概述"><span class="nav-text">1.概述</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-判断对象是否可以回收"><span class="nav-text">2.判断对象是否可以回收</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-对象是生存还是死亡"><span class="nav-text">3.对象是生存还是死亡</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-回收方法区"><span class="nav-text">4.回收方法区</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-垃圾收集算法"><span class="nav-text">5.垃圾收集算法</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-垃圾收集器"><span class="nav-text">6.垃圾收集器</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-拓展"><span class="nav-text">7.拓展</span></a></li></ol></li></ol></li></ol></div>
             
 
           </div>
