@@ -113,7 +113,8 @@
 <meta property="og:image" content="http://yoursite.com/images/jvm/gc_mark_compact.png">
 <meta property="og:image" content="http://yoursite.com/images/jvm/gc_java_heap_memory.png">
 <meta property="og:image" content="http://yoursite.com/images/jvm/gc_collectors.png">
-<meta property="og:updated_time" content="2018-05-10T11:39:07.389Z">
+<meta property="og:image" content="http://yoursite.com/images/jvm/gc_collectors_CMS.png">
+<meta property="og:updated_time" content="2018-05-13T11:09:08.329Z">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="JVM相关及其拓展(四)">
 <meta name="twitter:description" content="垃圾收集器与内存分配策略垃圾收集器1.概述垃圾收集(Garbage Collection,GC)：自动管理回收不再引用的内存数据需要完成的三件事情：  哪些内存需要回收 什么时候回收 如何回收    Java语言会自动管理和回收不再引用的内存数据，由垃圾回收机制来完成。Java自身提供了内存管理机制，应用程序不需要去关注内存如何释放，内存用完后，GC会去自动进行处理，不需要人为干预出现错误。  在">
@@ -470,8 +471,7 @@
 </li>
 <li><p><strong>分代收集算法(Generational Collection)</strong></p>
 <blockquote>
-<p>根据对象存活周期的不同将内存划分为几块，一般是把Java堆分成新生代和老年代<del>和持久代(JDK8中移除)</del>，这样就可以根据各个年代的特点采用最适当的收集算法。</p>
-<p><strong>新生代</strong>中每次垃圾收集都会有大量的对象被回收，只有少量存活，就可以使用复制算法。</p>
+<p>根据对象存活周期的不同将内存划分为几块，一般是把Java堆分成新生代和老年代<del>和持久代(JDK8中移除)</del>，这样就可以根据各个年代的特点采用最适当的收集算法。<br><strong>新生代</strong>中每次垃圾收集都会有大量的对象被回收，只有少量存活，就可以使用复制算法。</p>
 <p><strong>老年代</strong>中因为对象存活率较高，没有额外空间进行分配担保，所以必须使用“标记-清理”或者“标记-整理”算法。</p>
 </blockquote>
 </li>
@@ -481,6 +481,8 @@
 <li><strong>老年代(Tenured Generation)</strong>：新生代发生几次GC后依然存活的对象会放到老年代中，所以老年代中的对象生命周期较长。内存也比新生代大很多（大概2:1）,当老年代内存满时会触发<strong><code>Full GC/Major GC(针对新生代和老年代触发，经常会伴随至少一次的Minor GC，收集频率较低且耗时长，一般慢10倍以上)</code></strong>。</li>
 <li><del><strong>持久代(Permanent Generation)</strong></del>：用于存放静态文件，如Java类，方法等，对GC没有影响。</li>
 <li><strong>拓展</strong>：别处也有介绍   Full GC针对整个堆空间（包含新生代，老年代，永久代（如果包含））的回收。而Major GC是针对老年代的内存回收。</li>
+<li><strong>Minor GC</strong>：新生代是堆的一部分，对象首先在新生代中分配。新生代填满时，垃圾收集器会暂停所有的应用程序，回收新生代空间。不再使用的对象会被回收，仍然使用的对象移动至其他地方。</li>
+<li><strong>Full GC</strong>：对象不断的移至老年代，最终老年代也被填满，JVM需要找到老年代不再使用的对象，并进行回收。会导致应用长时间的停顿。</li>
 </ul>
 <span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/gc_java_heap_memory.png" class="full-image" alt="Java堆内存" title="Java堆内存"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
 <h3 id="6-垃圾收集器"><a href="#6-垃圾收集器" class="headerlink" title="6.垃圾收集器"></a>6.垃圾收集器</h3><blockquote>
@@ -490,27 +492,129 @@
 <p>在两个收集器之间存在连线，则意味着他们之间可以搭配使用。</p>
 <ul>
 <li><p><code>Serial收集器</code></p>
-<p>该收集器是最基本、发展历史最悠久的收集器。这个收集器是一个<strong>单线程</strong>收集器（<code>不仅是他只会使用一个CPU或者一条收集线程去完成垃圾收集工作，更重要的是他在进行垃圾收集时必须停止其他的工作线程，直到收集结束</code>）。</p>
 <blockquote>
-<p>是虚拟机运行在Client端的默认新生代收集器</p>
+<p>该收集器是最基本、发展历史最悠久的收集器。这个收集器是一个<strong>单线程</strong>收集器（<code>不仅是他只会使用一个CPU或者一条收集线程去完成垃圾收集工作，更重要的是他在进行垃圾收集时必须停止其他的工作线程(Stop The World)，直到收集结束。进行Full GC时，还会对老年代空间对象进行压缩整理。</code>）。</p>
 </blockquote>
+<p>是虚拟机运行在Client端的默认新生代收集器</p>
+<p>有着优于其他收集器的地方：</p>
+<ul>
+<li><strong>简单而高效</strong></li>
+<li><strong>没有线程交互的开销，专心做垃圾收集可以获得最高的单线程收集效率</strong></li>
+</ul>
+<p>关键控制参数：</p>
+<ul>
+<li>-XX:SurvivorRatio：设置两个Survivor区和Eden区的比值(<strong>8表示 1:1:8</strong>)</li>
+<li>-XX:PretenureSizeThreshold：设定对象超过多少岁时进入老年代</li>
+<li>-XX:HandlePromotionFailure：设置是否允许担保失败</li>
+</ul>
 </li>
+</ul>
+<ul>
 <li><p><code>ParNew收集器</code></p>
+<blockquote>
+<p>ParNew收集器其实是Serial收集器的多线程版本。除了使用多线程进行垃圾收集之外，其他科Serial收集器完全一样。</p>
+</blockquote>
+<p>该收集器是运行在Server模式下的虚拟机中的首选的新生代收集器，其中有一个重要的原因就是：<strong>除了Serial收集器外，目前只有它能和CMS收集器配合工作。</strong>随着可以使用的CPU数量增加，GC时系统资源的有效利用还是有好处的。<strong>默认开启的收集线程数与CPU的数量相同</strong></p>
+<blockquote>
+<p><strong>并行（Parallel）</strong>：指多条垃圾收集器线程并行工作，但此时用户线程仍处于等待状态</p>
+<p><strong>并发（Concurrent）</strong>：指用户线程与垃圾收集器同时执行，用户程序仍继续运行，而垃圾收集器执行于另一个CPU上。</p>
+</blockquote>
+<p>关键控制参数：</p>
+<ul>
+<li>-XX:UserParNewGC：是否开启ParNew收集器</li>
+</ul>
 </li>
 <li><p><code>Parallel Scavenge收集器</code></p>
+<blockquote>
+<p>Parallel Scavenge收集器是一个新生代收集器，使用了复制算法以及并行的多线程收集器。</p>
+</blockquote>
+<p>该收集器的目标是：<strong>达到一个可控制的吞吐量（ThroughPut）</strong>①。</p>
+<p>停顿时间越短越适合需要与用户交互的程序，良好的响应速度可以提升用户体验，高吞吐量就可以高效率的利用CPU时间，主要适合在后台运算而不需要太多交互的任务。</p>
+<blockquote>
+<p><code>吞吐量</code>：CPU用于运行用户代码时间与CPU总消耗时间的比值。</p>
+</blockquote>
+<p>关键控制参数：</p>
+<ul>
+<li>-XX:UseAdaptiveSizePolicy：开关参数，当打开时就不需要去指定新生代大小以及Eden与Survivor比例，晋升老年代对象岁数大小等参数，触发<strong>GC自适应调节策略</strong>(<code>虚拟机会根据当前系统运行情况收集性能监控信息，动态调整这些参数已提供最适合的停顿时间或者最大的吞吐量</code>)</li>
+</ul>
 </li>
 <li><p><code>Serial Old收集器</code></p>
+<blockquote>
+<p>是Serial收集器的老年代版本，同样是一个单线程收集器。使用“标记-整理算法”</p>
+</blockquote>
+<p>该收集器主要为了给Client模式下的虚拟机使用。如果在Server模式下，还有以下用途：</p>
+<ul>
+<li>在JDK1.5及之前的版本搭配Paraller Scavenge收集器</li>
+<li>作为CMS收集器的后备预案，在并发收集发生Concurrent Mode Failure时使用</li>
+</ul>
 </li>
 <li><p><code>Parallel Old收集器</code></p>
+<blockquote>
+<p>是Parallel Scavenge收集器的老年代版本，使用多线程和“标记-整理算法”。</p>
+</blockquote>
+<p>在注重吞吐量以及CPU资源敏感的场合，都可以优先考虑<code>Parallel Scavenge +  Parallel Old</code>组合。</p>
 </li>
-<li><p><strong><code>CMS收集器</code></strong></p>
+<li><p><strong><code>CMS收集器（Concurrent Mark Sweep）</code></strong></p>
+<blockquote>
+<p>以获取最短回收停顿时间为目标的收集器。基于“标记-清除算法”实现。整体上来说内存回收过程是与用户线程一起并发执行的。</p>
+</blockquote>
+<p>运作过程比较复杂，分为4个步骤：</p>
+<ul>
+<li><strong>初始标记</strong>：仅仅标记一下GC Roots能关联到的对象，速度很快  <code>触发Stop The World</code></li>
+<li><strong>并发标记</strong>：进行GC Roots Tracing的过程</li>
+<li><strong>重新标记</strong>：修正并发标记期间因用户程序继续运做而导致标记产生变动的那一部分对象的标记记录，停顿时间比初始标记长一些，但短于并发标记时间  <code>触发Stop The World</code></li>
+<li><strong>并发清除</strong>：可以和用户线程一起工作</li>
+</ul>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/gc_collectors_CMS.png" class="full-image" alt="CMS" title="CMS"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<p>CMS收集器有3个明显的缺点：</p>
+<ol>
+<li><p><strong>对CPU资源非常敏感</strong></p>
+<p><strong>面向并发设计的程序都对CPU资源比较敏感</strong>。在并发阶段，虽然不会导致用户线程停顿，但是会因为占了一部分CPU资源而导致线程变慢，吞吐量会降低。<code>CMS默认启动的回收线程数量为(CPU数量+3)/4</code></p>
+</li>
+<li><p><strong>无法处理浮动垃圾（Floating Garabge）</strong></p>
+<p>由于CMS并发清理阶段用户线程还在运行着，伴随程序运行自然就有新的垃圾产生，即<code>浮动垃圾(这一部分垃圾出现在标记过程之后，CMS无法在当次收集中处理掉他们，只能留到下一次GC进行清理)</code>。</p>
+<p>因此CMS收集器不能像其他收集器一样等到老年代几乎完全满了在进行收集，需要预留一部分空间提供并发收集时使用。</p>
+<p>JDK1.5默认设置下，CMS收集器到老年代到了68%即会激活，到1.6时提高到了92%。</p>
+<p>要是CMS运行期间预留的内存无法满足程序需要，就会出现一次<code>Concurrent Mode Failure</code>失败，虚拟机将会启动后备预案：<strong>临时启用Serial Old收集器来重新进行老年代的垃圾收集，停顿时间就会变得很长了。</strong></p>
+</li>
+<li><p><strong>产生的空间碎片</strong></p>
+<p>由于CMS是基于“标记-清除”算法实现的收集器。这种方式会产生大量的空间碎片，碎片过多时将会给对象分配来很大麻烦，往往会出现老年代还有很大空间剩余，当无法找到足够大的连续空间来分配当前对象，不得不提前触发一次Full GC。</p>
+</li>
+</ol>
+<p>关键控制参数：</p>
+<ul>
+<li>-XX:CMSInitiatingOccupancyFraction：设置CMS触发阈值即老年代对象占用空间</li>
+</ul>
 </li>
 <li><p><strong><code>G1收集器</code></strong></p>
+<blockquote>
+<p>全称Garbage-First收集器，通过-XX:+UseG1GC参数来启用，在JDK9中，被提议为默认收集器</p>
+</blockquote>
+<p>G1收集器是一款面向服务端的垃圾收集器，设计目标是为了取代CMS收集器。具备如下特点：</p>
+<ul>
+<li><strong>并行与并发</strong>：使用多个CPU来缩短停顿时间，也会通过并发的方式让Java程序继续运行</li>
+<li><strong>分代收集</strong>：分代概念在G1中得以保留，可以不需要其他的收集器配合管理整个堆，可以采用不同的方式去处理新创建的对象和旧对象。</li>
+<li><strong>空间整合</strong>：整体基于“标记-整理”算法，局部（两个Region之间）采用“复制”算法实现</li>
+<li><strong>可预测的停顿</strong>：除了追求低停顿外，还可建立可预测的时间停顿模型，用户可以指定期望停顿的时间</li>
+</ul>
+<h4 id="Region"><a href="#Region" class="headerlink" title="Region"></a>Region</h4><p>在G1收集器之前其他收集器进行收集的范围都是整个新生代或者老年代，而G1可以通用。使用G1收集器，Java堆的内存布局就与其他收集器不同，将整个Java堆划分为多个大小相等的独立区域（Region），虽然保留了新生代老年代的概念，但他们都变成了一部分Region的集合。</p>
+<h4 id="可停顿的时间模型"><a href="#可停顿的时间模型" class="headerlink" title="可停顿的时间模型"></a>可停顿的时间模型</h4><p>可以实现有计划的避免在整个Java堆中进行全区域的垃圾收集。跟踪各个Region里面的垃圾堆积的价值大小，在后台维护一个优先列表，每次根据允许的收集时间，优先回收价值最大的Region空间。可以保证G1收集器在有限时间内获得尽可能高的收集效率。</p>
+<h4 id="Remembered-Set"><a href="#Remembered-Set" class="headerlink" title="Remembered Set"></a>Remembered Set</h4><p>Region不可能是独立的，由于可能会被其他对象引用。在G1中，Region之间的对象引用以及其他收集器中的新生代老年代之间的对象引用，虚拟机都是使用Remembered Set来避免全堆扫描的。每一个Region都会对应一个Remembered Set，虚拟机发现在对Reference进行读写操作时，产生一个<code>Write Barrier</code>暂时中断写操作，检查对象引用是否位于不同的Region中，若是则通过<code>CardTable</code>记录相关引用信息到Remembered Set中。<strong>在进行内存回收时，在GC Roots中加入Remembered Set即可保证不对全堆扫描也不会有遗漏。</strong></p>
+<h4 id="G1运作步骤"><a href="#G1运作步骤" class="headerlink" title="G1运作步骤"></a>G1运作步骤</h4><ul>
+<li><strong>初始标记</strong>：标记一下GC Roots能直接关联的对象，需要停顿线程</li>
+<li><strong>并发标记</strong>：从GC Roots开始进行可达性分析，找出存活的对象耗时较长</li>
+<li><strong>最终标记</strong>：修正在并发标记期间因用户程序继续运作而导致标记产生变动的那一部分标记记录，需要停顿线程，可并行执行</li>
+<li><strong>筛选回收</strong>：对各个Region的回收价值和成本进行排序，根据用户期望的GC停顿时间来指定回收计划。</li>
+</ul>
+<p><strong>如果应用追求吞吐量，那并不会带来特别的好处</strong></p>
 </li>
 </ul>
 <h3 id="7-拓展"><a href="#7-拓展" class="headerlink" title="7.拓展"></a>7.拓展</h3><ol>
-<li>Minor GC过程</li>
-<li>Full GC过程</li>
+<li>垃圾回收过程<ol>
+<li>对象在Eden进行内存分配</li>
+<li>当Eden区满了，在创建对象会触发Minor GC(<strong>执行Minor GC时，Eden空间存活的对象会被复制到To Survivor·空间，并且之前经过一次Minor GC在From Survivor存活并年轻的对象也会被复制到To Survivor空间。如果存活对象的分代年龄超过阈值，则会晋升到老年代。</strong>)</li>
+</ol>
+</li>
 </ol>
 
       
@@ -644,7 +748,7 @@
                 
                   <a href="/archives/">
                 
-                    <span class="site-state-item-count">33</span>
+                    <span class="site-state-item-count">35</span>
                     <span class="site-state-item-name">日志</span>
                   </a>
                 </div>
@@ -675,7 +779,9 @@
                     
                       
                     
-                    <span class="site-state-item-count">8</span>
+                      
+                    
+                    <span class="site-state-item-count">9</span>
                     <span class="site-state-item-name">标签</span>
                   </a>
                 </div>
@@ -725,7 +831,7 @@
             
 
             
-              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#垃圾收集器与内存分配策略"><span class="nav-text">垃圾收集器与内存分配策略</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#垃圾收集器"><span class="nav-text">垃圾收集器</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-概述"><span class="nav-text">1.概述</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-判断对象是否可以回收"><span class="nav-text">2.判断对象是否可以回收</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-对象是生存还是死亡"><span class="nav-text">3.对象是生存还是死亡</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-回收方法区"><span class="nav-text">4.回收方法区</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-垃圾收集算法"><span class="nav-text">5.垃圾收集算法</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-垃圾收集器"><span class="nav-text">6.垃圾收集器</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-拓展"><span class="nav-text">7.拓展</span></a></li></ol></li></ol></li></ol></div>
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#垃圾收集器与内存分配策略"><span class="nav-text">垃圾收集器与内存分配策略</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#垃圾收集器"><span class="nav-text">垃圾收集器</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-概述"><span class="nav-text">1.概述</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-判断对象是否可以回收"><span class="nav-text">2.判断对象是否可以回收</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-对象是生存还是死亡"><span class="nav-text">3.对象是生存还是死亡</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-回收方法区"><span class="nav-text">4.回收方法区</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-垃圾收集算法"><span class="nav-text">5.垃圾收集算法</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-垃圾收集器"><span class="nav-text">6.垃圾收集器</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#Region"><span class="nav-text">Region</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#可停顿的时间模型"><span class="nav-text">可停顿的时间模型</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#Remembered-Set"><span class="nav-text">Remembered Set</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#G1运作步骤"><span class="nav-text">G1运作步骤</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-拓展"><span class="nav-text">7.拓展</span></a></li></ol></li></ol></li></ol></div>
             
 
           </div>
