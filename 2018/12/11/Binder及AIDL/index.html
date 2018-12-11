@@ -99,25 +99,25 @@
 
 
 
-  <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
+  <meta name="description" content="主要分析IPC机制，Binder框架以及AIDL原理1.IPC机制 IPC是Inter-Process Communication的缩写。含义为进程间通信或者跨进程通信，指代两个进程间进行数据交换的过程、  还需要理解进程以及线程的区别和联系  进程：一般指一个执行单元，在设备上一般代指应用程序。 线程：CPU调度的最小单元且线程是有限资源。 一个进程可以包含多个线程，即一个应用内部可以执行多个任">
 <meta name="keywords" content="Android">
 <meta property="og:type" content="article">
-<meta property="og:title" content="Android消息机制">
-<meta property="og:url" content="http://yoursite.com/2018/05/09/Android消息机制/index.html">
+<meta property="og:title" content="Binder及AIDL">
+<meta property="og:url" content="http://yoursite.com/2018/12/11/Binder及AIDL/index.html">
 <meta property="og:site_name" content="Wxy的个人博客">
-<meta property="og:description" content="如果我没有见过光明，那我本可以忍受黑暗">
+<meta property="og:description" content="主要分析IPC机制，Binder框架以及AIDL原理1.IPC机制 IPC是Inter-Process Communication的缩写。含义为进程间通信或者跨进程通信，指代两个进程间进行数据交换的过程、  还需要理解进程以及线程的区别和联系  进程：一般指一个执行单元，在设备上一般代指应用程序。 线程：CPU调度的最小单元且线程是有限资源。 一个进程可以包含多个线程，即一个应用内部可以执行多个任">
 <meta property="og:locale" content="zh-CN">
-<meta property="og:updated_time" content="2018-05-13T01:52:32.000Z">
+<meta property="og:updated_time" content="2018-12-11T08:59:03.212Z">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="Android消息机制">
-<meta name="twitter:description" content="如果我没有见过光明，那我本可以忍受黑暗">
+<meta name="twitter:title" content="Binder及AIDL">
+<meta name="twitter:description" content="主要分析IPC机制，Binder框架以及AIDL原理1.IPC机制 IPC是Inter-Process Communication的缩写。含义为进程间通信或者跨进程通信，指代两个进程间进行数据交换的过程、  还需要理解进程以及线程的区别和联系  进程：一般指一个执行单元，在设备上一般代指应用程序。 线程：CPU调度的最小单元且线程是有限资源。 一个进程可以包含多个线程，即一个应用内部可以执行多个任">
 
 
 
 
 
 
-  <link rel="canonical" href="http://yoursite.com/2018/05/09/Android消息机制/"/>
+  <link rel="canonical" href="http://yoursite.com/2018/12/11/Binder及AIDL/"/>
 
 
 
@@ -127,7 +127,7 @@
   };
 </script>
 
-  <title>Android消息机制 | Wxy的个人博客</title>
+  <title>Binder及AIDL | Wxy的个人博客</title>
   
 
 
@@ -314,7 +314,7 @@
   
   
   <div class="post-block">
-    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2018/05/09/Android消息机制/">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2018/12/11/Binder及AIDL/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="name" content="Leo-Wxy">
@@ -331,7 +331,7 @@
 
         
         
-          <h1 class="post-title" itemprop="name headline">Android消息机制</h1>
+          <h1 class="post-title" itemprop="name headline">Binder及AIDL</h1>
         
 
         <div class="post-meta">
@@ -343,8 +343,8 @@
               
                 <span class="post-meta-item-text">发表于</span>
               
-              <time title="创建于" itemprop="dateCreated datePublished" datetime="2018-05-09T13:02:06+08:00">
-                2018-05-09
+              <time title="创建于" itemprop="dateCreated datePublished" datetime="2018-12-11T14:24:06+08:00">
+                2018-12-11
               </time>
             
 
@@ -382,7 +382,95 @@
       
 
       
-        
+        <h1 id="主要分析IPC机制，Binder框架以及AIDL原理"><a href="#主要分析IPC机制，Binder框架以及AIDL原理" class="headerlink" title="主要分析IPC机制，Binder框架以及AIDL原理"></a>主要分析IPC机制，Binder框架以及AIDL原理</h1><h2 id="1-IPC机制"><a href="#1-IPC机制" class="headerlink" title="1.IPC机制"></a>1.IPC机制</h2><blockquote>
+<p>IPC是Inter-Process Communication的缩写。含义为进程间通信或者跨进程通信，指代两个进程间进行数据交换的过程、</p>
+</blockquote>
+<p>还需要理解进程以及线程的区别和联系</p>
+<blockquote>
+<p>进程：一般指一个执行单元，在设备上一般代指应用程序。</p>
+<p>线程：CPU调度的最小单元且线程是有限资源。</p>
+<p>一个进程可以包含多个线程，即一个应用内部可以执行多个任务。在Android中就会区分为<code>主线程(UI线程)</code>和<code>子线程</code>，一般会在子线程上做耗时操作，主线程不可。</p>
+</blockquote>
+<p>由于IPC的使用场景是在多进程模式下。多进程的使用情况主要分为两种：<code>一个应用因为某些原因需要采用多进程模式来实现，比如获取更大内存空间</code>,<code>当前应用需要向其他应用来获取数据</code>。</p>
+<ol>
+<li><p>多进程模式</p>
+<ol>
+<li><p>开启多进程模式</p>
+<ul>
+<li>通过JNI在native层fork一个新的进程</li>
+<li>在<code>AndroidManifest.xml</code>中给四大组件指定属性<code>android:process</code>。</li>
+</ul>
+</li>
+<li><p>进程名的命名</p>
+<figure class="highlight xml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="tag">&lt;<span class="name">activity</span> </span></span><br><span class="line"><span class="tag">          <span class="attr">android:name</span>=<span class="string">"com.wxy.test.AActivity"</span></span></span><br><span class="line"><span class="tag">          <span class="attr">android:process</span>=<span class="string">":remote"</span>/&gt;</span></span><br><span class="line"><span class="tag">&lt;<span class="name">activity</span></span></span><br><span class="line"><span class="tag">          <span class="attr">android:name</span>=<span class="string">"com.wxy.text.BActivity"</span></span></span><br><span class="line"><span class="tag">          <span class="attr">android:process</span>=<span class="string">"com.wxy.test.remote"</span>/&gt;</span></span><br></pre></td></tr></table></figure>
+<p>上述代码为两种命名方案</p>
+<ul>
+<li>省略包名以:开头：代指进程名为<code>com.wxy.test:remote</code>为<strong>私有进程</strong>，其他进程的组件不可以和他跑到同一个进程中</li>
+<li>完整命名：如上述<code>com.wxy.test.remote</code>为<strong>全局进程</strong>，其他应用可以通过<code>ShareUID方式与他在同一进程中运行。</code></li>
+</ul>
+<p>Android系统会为每一个应用分配一个唯一的UID，具有相同UID的应用才能共享数据。</p>
+<p>上述通过ShareUID将两个应用跑在同一个进程间是有要求的，<strong>必须是两个应用具有相同的ShareUID且签名相同才可以</strong>。达成上述要求时就可以 <strong>共享两者间的data目录、组件信息以及内存数据</strong>。</p>
+<p>拓展知识：当两者签名不同时，会触发安装错误[INSTALL_FAILED_SHARED_USER_INCOMPATIBLE]</p>
+</li>
+<li><p>查看进程信息</p>
+<p><code>adb shell ps|greb $packageName</code></p>
+</li>
+<li><p>运行机制</p>
+<p>Android为每一个应用分配了一个独立的虚拟机，或者说为了每一个进程分配一个独立的虚拟机，不同的虚拟机在内存分配上就会有不同的地址空间，就会导致不同的虚拟机访问同一个类的对象会产生多分副本。</p>
+<p><strong>所有运行在不同进程的四大组件，只要他们通过内存共享数据，就会共享失败。</strong></p>
+</li>
+<li><p>多进程造成的问题</p>
+<ul>
+<li>静态成员变量和单例模式完全失效</li>
+<li>线程同步机制失败</li>
+<li>SharedPreferences的可靠性下降 <code>不支持多进程读写</code></li>
+<li>Application会多次创建<code>分配了独立的虚拟机</code></li>
+</ul>
+</li>
+</ol>
+<p>一个应用内的多进程：<strong>相当于两个不同的应用采用了ShareUId模式</strong>。虽说不能直接共享内存数据，但是可以通过跨进程通信来实现数据交互。</p>
+</li>
+<li><p>序列化</p>
+<blockquote>
+<p>当我们需要跨进程通信时，传递的数据就需要进行序列化传递，然后接受方在反序列化得到传递数据</p>
+<p>什么是序列化？<br>将对象转化为可以传输的二进制流的过程，就可以通过序列化，转化为可以在网络传输或者保存到本地的流，从而进行传输数据。反序列化即为从二进制流转化为对象的过程。<br>也为了解决对象的持久化问题。当你在程序中声明一个类后，程序关闭则释放对象，持久化就是为了应用关闭后类的内容依然存在。</p>
+</blockquote>
+<ol>
+<li><p><code>Serializable</code></p>
+<blockquote>
+<p>由Java提供的一个序列化接口，为对象提供标准的序列化以及反序列化操作。</p>
+</blockquote>
+<p>使用方式相当简单</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">User</span> <span class="keyword">implements</span> <span class="title">Serializable</span></span>&#123;</span><br><span class="line">    <span class="comment">//该参数是用来辅助序列化以及反序列化的过程，原则上该值相同才可以进行序列化以及反序列化的操作.</span></span><br><span class="line">    <span class="comment">//不指定时 系统也会自动生成 但是容易因为变量的数量和类型发生改变而导致序列化失败。</span></span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">final</span> <span class="keyword">long</span> serialVersionUID = <span class="number">123123L</span>;</span><br><span class="line">    </span><br><span class="line">    <span class="keyword">public</span> String name;</span><br><span class="line">    ...</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>优缺点：使用简单但是效率较低，在序列化(ObjectOutputStream)以及反序列化(ObjectInputStream)类调用中会有大量的I/O操作。</p>
+<p>适用场景：将对象类序列化存储到设备或者需要网络传输。</p>
+</li>
+<li><p><code>Parcelable</code></p>
+<blockquote>
+<p>Android提供的序列化接口，使用起来较为繁琐</p>
+</blockquote>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> android.os.Parcel;</span><br><span class="line"><span class="keyword">import</span> android.os.Parcelable;</span><br><span class="line"></span><br><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">User</span> <span class="keyword">implements</span> <span class="title">Parcelable</span> </span>&#123;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">public</span> String name;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">protected</span> <span class="title">User</span><span class="params">(Parcel in)</span> </span>&#123;</span><br><span class="line">        name = in.readString();</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">final</span> Creator&lt;User&gt; CREATOR = <span class="keyword">new</span> Creator&lt;User&gt;() &#123;</span><br><span class="line">        <span class="meta">@Override</span></span><br><span class="line">        <span class="function"><span class="keyword">public</span> User <span class="title">createFromParcel</span><span class="params">(Parcel in)</span> </span>&#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="keyword">new</span> User(in);</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="meta">@Override</span></span><br><span class="line">        <span class="keyword">public</span> User[] newArray(<span class="keyword">int</span> size) &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="keyword">new</span> User[size];</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">int</span> <span class="title">describeContents</span><span class="params">()</span> </span>&#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">writeToParcel</span><span class="params">(Parcel dest, <span class="keyword">int</span> flags)</span> </span>&#123;</span><br><span class="line">        dest.writeString(name);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>序列化功能由<code>writeToParcel</code>实现，反序列化由<code>Parcel的read</code>实现。</p>
+<p>优缺点：传递效率高效使用较为繁琐，主要序列化都在内存上进行。由于Parcelabel是Android提供的方法，可能会由于版本更新而会有些许改动。</p>
+<p>适用场景：在内存的序列化中使用。</p>
+</li>
+</ol>
+</li>
+<li><p>Binder机制</p>
+<blockquote>
+<p>在Linux中，为了避免一个进程对其他进程的干扰，进程之间是相互独立的。</p>
+</blockquote>
+<p>概念：</p>
+<ul>
+<li>直观来说，Binder是Android中的一个类，实现了IBinder接口。</li>
+<li>IPC角度来说，Binder是Android中的一种跨进程通信方式。</li>
+<li>Android Framework角度来说，Binder是ServiceManager连接各种Manager和相应ManagerService的桥梁。</li>
+<li>应用层来说，Binder是客户端和服务端进行通信的媒介。</li>
+</ul>
+</li>
+<li></li>
+</ol>
+
       
     </div>
     
@@ -424,8 +512,8 @@
         <div class="post-nav">
           <div class="post-nav-next post-nav-item">
             
-              <a href="/2018/05/04/JVM相关及其拓展-四/" rel="next" title="JVM相关及其拓展(四)">
-                <i class="fa fa-chevron-left"></i> JVM相关及其拓展(四)
+              <a href="/2018/12/09/Android需要的必备知识/" rel="next" title="Android需要的必备知识">
+                <i class="fa fa-chevron-left"></i> Android需要的必备知识
               </a>
             
           </div>
@@ -433,10 +521,6 @@
           <span class="post-nav-divider"></span>
 
           <div class="post-nav-prev post-nav-item">
-            
-              <a href="/2018/05/09/HashMap实现原理及解析/" rel="prev" title="HashMap实现原理及解析">
-                HashMap实现原理及解析 <i class="fa fa-chevron-right"></i>
-              </a>
             
           </div>
         </div>
@@ -485,8 +569,17 @@
       
 
       
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            文章目录
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            站点概览
+          </li>
+        </ul>
+      
 
-      <section class="site-overview-wrap sidebar-panel sidebar-panel-active">
+      <section class="site-overview-wrap sidebar-panel">
         <div class="site-overview">
           <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
             
@@ -505,7 +598,7 @@
                 
                   <a href="/archives/">
                 
-                    <span class="site-state-item-count">53</span>
+                    <span class="site-state-item-count">52</span>
                     <span class="site-state-item-name">日志</span>
                   </a>
                 </div>
@@ -582,6 +675,22 @@
         </div>
       </section>
 
+      
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#主要分析IPC机制，Binder框架以及AIDL原理"><span class="nav-text">主要分析IPC机制，Binder框架以及AIDL原理</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-IPC机制"><span class="nav-text">1.IPC机制</span></a></li></ol></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
       
 
       
