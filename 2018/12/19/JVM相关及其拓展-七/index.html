@@ -5,7 +5,7 @@
   
 
 
-<html class="theme-next gemini use-motion" lang="zh-CN">
+<html class="theme-next mist use-motion" lang="zh-CN">
 <head>
   <meta charset="UTF-8"/>
 <meta http-equiv="X-UA-Compatible" content="IE=edge" />
@@ -75,7 +75,7 @@
   var NexT = window.NexT || {};
   var CONFIG = {
     root: '/',
-    scheme: 'Gemini',
+    scheme: 'Mist',
     version: '6.0.6',
     sidebar: {"position":"right","display":"post","offset":12,"b2t":false,"scrollpercent":false,"onmobile":false},
     fancybox: false,
@@ -99,18 +99,18 @@
 
 
 
-  <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
+  <meta name="description" content="线程安全与锁优化 首先需要并发的正确性，然后在此基础上实现高效。  线程安全 当多个线程访问一个对象时，如果不用考虑这些线程在运行时环境下的调度和交替执行，也不需要进行额外的同步，或者调用方法进行任何其他的协调操作，调用这个对象的行为都可以获得正确的结果，那这个对象就是线程安全的。  线程安全的代码必须具备一个特征：代码本身封装了所有必要的正确保障性手段，令调用者无需关心多线程的问题，更无须自己采">
 <meta name="keywords" content="JVM">
 <meta property="og:type" content="article">
 <meta property="og:title" content="JVM相关及其拓展(七) — 线程安全与锁优化">
 <meta property="og:url" content="http://yoursite.com/2018/12/19/JVM相关及其拓展-七/index.html">
 <meta property="og:site_name" content="Wxy的个人博客">
-<meta property="og:description" content="如果我没有见过光明，那我本可以忍受黑暗">
+<meta property="og:description" content="线程安全与锁优化 首先需要并发的正确性，然后在此基础上实现高效。  线程安全 当多个线程访问一个对象时，如果不用考虑这些线程在运行时环境下的调度和交替执行，也不需要进行额外的同步，或者调用方法进行任何其他的协调操作，调用这个对象的行为都可以获得正确的结果，那这个对象就是线程安全的。  线程安全的代码必须具备一个特征：代码本身封装了所有必要的正确保障性手段，令调用者无需关心多线程的问题，更无须自己采">
 <meta property="og:locale" content="zh-CN">
-<meta property="og:updated_time" content="2018-12-19T04:15:52.157Z">
+<meta property="og:updated_time" content="2018-12-19T11:16:23.376Z">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="JVM相关及其拓展(七) — 线程安全与锁优化">
-<meta name="twitter:description" content="如果我没有见过光明，那我本可以忍受黑暗">
+<meta name="twitter:description" content="线程安全与锁优化 首先需要并发的正确性，然后在此基础上实现高效。  线程安全 当多个线程访问一个对象时，如果不用考虑这些线程在运行时环境下的调度和交替执行，也不需要进行额外的同步，或者调用方法进行任何其他的协调操作，调用这个对象的行为都可以获得正确的结果，那这个对象就是线程安全的。  线程安全的代码必须具备一个特征：代码本身封装了所有必要的正确保障性手段，令调用者无需关心多线程的问题，更无须自己采">
 
 
 
@@ -252,6 +252,25 @@
   
 
   
+    
+
+    
+    
+      
+      
+    
+      
+      
+    
+      
+      
+    
+    
+
+  
+
+
+  
 
   
     <div class="site-search">
@@ -293,9 +312,6 @@
     <main id="main" class="main">
       <div class="main-inner">
         <div class="content-wrap">
-          
-            
-
           
           <div id="content" class="content">
             
@@ -382,7 +398,117 @@
       
 
       
-        
+        <h1 id="线程安全与锁优化"><a href="#线程安全与锁优化" class="headerlink" title="线程安全与锁优化"></a>线程安全与锁优化</h1><blockquote>
+<p>首先需要并发的正确性，然后在此基础上实现高效。</p>
+</blockquote>
+<h2 id="线程安全"><a href="#线程安全" class="headerlink" title="线程安全"></a>线程安全</h2><blockquote>
+<p>当多个线程访问一个对象时，如果不用考虑这些线程在运行时环境下的调度和交替执行，也不需要进行额外的同步，或者调用方法进行任何其他的协调操作，调用这个对象的行为都可以获得正确的结果，那这个对象就是线程安全的。</p>
+</blockquote>
+<p>线程安全的代码必须具备一个特征：<strong>代码本身封装了所有必要的正确保障性手段，令调用者无需关心多线程的问题，更无须自己采取任何措施来保证多线程的正确调用。</strong></p>
+<p>线程安全的“安全程度”由强至弱分为以下5类：</p>
+<ul>
+<li><h3 id="不可变"><a href="#不可变" class="headerlink" title="不可变"></a>不可变</h3><blockquote>
+<p>只要一个不可变的对象被正确的构建出来，那其外部的可见状态永远不会改变</p>
+<p><code>不发生 this引用逃逸 情况下成立 -- 在构造函数返回之前，其他线程已经取得了该对象的引用。</code></p>
+</blockquote>
+<p>实现方案：</p>
+<ul>
+<li>如果共享数据是一个<code>基本数据类型</code>，只要在定义时用<code>final</code>修饰</li>
+<li>如果共享数据是一个<code>对象</code>，最简单的就是 吧对象中带有状态的变量都声明为final</li>
+</ul>
+<p>符合不可变要求的类型：<code>String、枚举类(Enum)、Long，Double以及BigInteger等大数据类型</code></p>
+</li>
+<li><h3 id="绝对线程安全"><a href="#绝对线程安全" class="headerlink" title="绝对线程安全"></a>绝对线程安全</h3><blockquote>
+<p>完全满足线程安全的定义，即达到”不管运行环境如何，调用者都不需要任何额外的同步措施。”</p>
+</blockquote>
+</li>
+<li><h3 id="相对线程安全"><a href="#相对线程安全" class="headerlink" title="相对线程安全"></a>相对线程安全</h3><blockquote>
+<p>保证对这个对象单独的操作是线程安全的，调用时不需做额外的保障措施，但是对于一些特定顺序的连续调用，就需要在调用端使用额外的同步手段保证调用的正确性。</p>
+</blockquote>
+<p>大部分的线程安全类都属于这种类型，例如<code>Vector,HashTable,synchronizedCollection()</code></p>
+</li>
+<li><h3 id="线程兼容"><a href="#线程兼容" class="headerlink" title="线程兼容"></a>线程兼容</h3><blockquote>
+<p>对象本身并非线程安全，但是可以通过在调用端正确地使用同步手段来保证对象在并发环境中可以安全的使用。</p>
+</blockquote>
+<p>例如<code>ArrayList,HashMap</code></p>
+</li>
+<li><h3 id="线程对立"><a href="#线程对立" class="headerlink" title="线程对立"></a>线程对立</h3><blockquote>
+<p>无论调用端是否采取了同步措施，都无法在多线程环境中并发使用。<strong>应当尽量避免</strong></p>
+</blockquote>
+<p>例如<code>Thread中的suspend()和resume()</code>。</p>
+</li>
+</ul>
+<h2 id="线程安全的实现方法"><a href="#线程安全的实现方法" class="headerlink" title="线程安全的实现方法"></a>线程安全的实现方法</h2><blockquote>
+<p>①通过代码实现线程安全 ②通过虚拟机本身实现同步与锁</p>
+</blockquote>
+<h3 id="互斥同步-阻塞同步"><a href="#互斥同步-阻塞同步" class="headerlink" title="互斥同步 (阻塞同步)"></a>互斥同步 (阻塞同步)</h3><blockquote>
+<p><strong>同步</strong>：在多个线程并发访问共享数据时，保证共享数据在同一个时刻只能被一个线程使用。</p>
+<p><strong>互斥</strong>：实现同步的一种手段，<code>临界区、互斥量和信号量都是主要的互斥实现方法</code></p>
+</blockquote>
+<p><strong>互斥是因，同步是果；互斥是方法，同步是目的</strong></p>
+<p><strong>互斥同步属于一种悲观的并发策略，总是认为只要不去做正确的同步措施（例如加锁），就会出现问题，无论共享数据是否真的会出现数据竞争，都要进行加锁。</strong></p>
+<p>实现手段：</p>
+<ul>
+<li><p><strong>synchronized</strong></p>
+<a href="/2018/12/18/synchorized关键字分析/" title="synchronized关键字分析">synchronized关键字分析</a>
+</li>
+<li><p>ReentrantLock</p>
+<a href="/2018/12/19/ReenTrantLock关键字分析/" title="ReenTrantLock关键字分析">ReenTrantLock关键字分析</a>
+</li>
+</ul>
+<p><code>synchronized</code>和<code>ReentrantLock</code>的异同：</p>
+<ul>
+<li><p>两者都是<strong>可重入锁</strong>  <!--自己实现一个可重入锁--></p>
+<blockquote>
+<p><strong>可重入锁</strong>：当一个线程得到一个对象锁后，再次请求该对象锁时是可以再次得到该对象锁的。<strong>自己可以再次获得自己的内部锁。</strong></p>
+</blockquote>
+</li>
+<li><p><code>synchronized</code>依赖于JVM而<code>ReentrantLock</code>依赖于API</p>
+<p><code>synchronized</code>底层用<strong>Mutex(互斥量)</strong>实现，<code>ReentrantLock</code>继承自<code>Lock接口</code>,Lock接口又依赖于AQS实现</p>
+</li>
+<li><p><code>synchronized</code>的锁状态无法在代码中判断，<code>ReentrantLock</code>通过<code>isLocked()</code>判断</p>
+</li>
+<li><p><code>synchronized</code>非公平锁，另一个可以是公平也可以是非公平的</p>
+</li>
+<li><p><code>synchronized</code>不可被中断，另一个调用<code>lockInterrupbity()</code>即可中断</p>
+</li>
+<li><p><code>ReentrantLock</code>可以提高多个线程的读操作的效率</p>
+</li>
+</ul>
+<h3 id="非阻塞同步"><a href="#非阻塞同步" class="headerlink" title="非阻塞同步"></a>非阻塞同步</h3><blockquote>
+<p>基于冲突检测的乐观并发策略，即先进性操作，若无其他线程争用共享数据，操作成功；反之，产生了冲突再去采用其他的补偿措施（<strong>最常见自旋——不停重试，直到成功为止</strong>）。</p>
+</blockquote>
+<p>为了保证<strong>操作和冲突检测</strong>具备原子性，需要用到硬件指令集，比如：</p>
+<ul>
+<li>测试并设置</li>
+<li>获取并增加</li>
+<li>交换</li>
+<li><strong><em>比较并交换(CAS)</em></strong></li>
+<li>加载链接/条件存储</li>
+</ul>
+<a href="/2018/12/18/Atomic原子操作类分析/" title="CAS操作&Atomic原子操作类分析">CAS操作&Atomic原子操作类分析</a>
+<h3 id="无同步方案"><a href="#无同步方案" class="headerlink" title="无同步方案"></a>无同步方案</h3><blockquote>
+<p>不用同步的方式保证线程安全，因为有些天生就是安全的。</p>
+</blockquote>
+<p>有以下两类：</p>
+<ul>
+<li><h4 id="可重入代码-纯代码-Reentrant-Code-Pure-Code"><a href="#可重入代码-纯代码-Reentrant-Code-Pure-Code" class="headerlink" title="可重入代码/纯代码(Reentrant Code/Pure Code)"></a>可重入代码/纯代码(Reentrant Code/Pure Code)</h4><blockquote>
+<p>在代码执行的时候在任何时刻去中断，再去执行另外的代码，在控制权返回后，原来的程序不会出现任何的错误。</p>
+</blockquote>
+<p><strong>可重入性是它的基本特征，满足可重入性的代码一定是线程安全的，反之，满足线程安全的代码不一定是可重入的。</strong></p>
+<p>共同特征：不依赖存储在堆上的数据和公用的系统资源、用到的状态栏都由参数中传入、不调用非可重入的方法等</p>
+<p>判定依据：<strong>返回结果是可预测的，只要是输入了相同的数据就能返回相同的结果，就满足可重入性的要求。</strong></p>
+</li>
+<li><h4 id="线程本地存储-Thread-Local-Storage"><a href="#线程本地存储-Thread-Local-Storage" class="headerlink" title="线程本地存储(Thread Local Storage)"></a>线程本地存储(Thread Local Storage)</h4><blockquote>
+<p>把共享数据的可见范围限制在同一个进程之内，无须同步也可以保证线程之间不出现数据争用的情况。</p>
+</blockquote>
+<p>使用<code>ThreadLocal</code>类可实现本地存储的功能。</p>
+</li>
+</ul>
+<h2 id="锁优化"><a href="#锁优化" class="headerlink" title="锁优化"></a>锁优化</h2><blockquote>
+<p>锁优化是为了在线程之间更高效的共享数据，以及解决竞争性问题。</p>
+</blockquote>
+<h3 id="自旋锁与适应性自旋"><a href="#自旋锁与适应性自旋" class="headerlink" title="自旋锁与适应性自旋"></a>自旋锁与适应性自旋</h3>
       
     </div>
     
@@ -434,6 +560,10 @@
 
           <div class="post-nav-prev post-nav-item">
             
+              <a href="/2018/12/19/ReenTrantLock关键字分析/" rel="prev" title="ReenTrantLock关键字分析">
+                ReenTrantLock关键字分析 <i class="fa fa-chevron-right"></i>
+              </a>
+            
           </div>
         </div>
       
@@ -481,8 +611,17 @@
       
 
       
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            文章目录
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            站点概览
+          </li>
+        </ul>
+      
 
-      <section class="site-overview-wrap sidebar-panel sidebar-panel-active">
+      <section class="site-overview-wrap sidebar-panel">
         <div class="site-overview">
           <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
             
@@ -501,7 +640,7 @@
                 
                   <a href="/archives/">
                 
-                    <span class="site-state-item-count">66</span>
+                    <span class="site-state-item-count">67</span>
                     <span class="site-state-item-name">日志</span>
                   </a>
                 </div>
@@ -579,6 +718,22 @@
       </section>
 
       
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#线程安全与锁优化"><span class="nav-text">线程安全与锁优化</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#线程安全"><span class="nav-text">线程安全</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#不可变"><span class="nav-text">不可变</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#绝对线程安全"><span class="nav-text">绝对线程安全</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#相对线程安全"><span class="nav-text">相对线程安全</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#线程兼容"><span class="nav-text">线程兼容</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#线程对立"><span class="nav-text">线程对立</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#线程安全的实现方法"><span class="nav-text">线程安全的实现方法</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#互斥同步-阻塞同步"><span class="nav-text">互斥同步 (阻塞同步)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#非阻塞同步"><span class="nav-text">非阻塞同步</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#无同步方案"><span class="nav-text">无同步方案</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#可重入代码-纯代码-Reentrant-Code-Pure-Code"><span class="nav-text">可重入代码/纯代码(Reentrant Code/Pure Code)</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#线程本地存储-Thread-Local-Storage"><span class="nav-text">线程本地存储(Thread Local Storage)</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#锁优化"><span class="nav-text">锁优化</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#自旋锁与适应性自旋"><span class="nav-text">自旋锁与适应性自旋</span></a></li></ol></li></ol></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
+      
 
       
 
@@ -614,7 +769,7 @@
 
 
 
-  <div class="theme-info">主题 &mdash; <a class="theme-link" target="_blank" href="https://github.com/theme-next/hexo-theme-next">NexT.Gemini</a> v6.0.6</div>
+  <div class="theme-info">主题 &mdash; <a class="theme-link" target="_blank" href="https://github.com/theme-next/hexo-theme-next">NexT.Mist</a> v6.0.6</div>
 
 
 
@@ -716,13 +871,6 @@
 
   
   
-
-
-  <script type="text/javascript" src="/js/src/affix.js?v=6.0.6"></script>
-
-  <script type="text/javascript" src="/js/src/schemes/pisces.js?v=6.0.6"></script>
-
-
 
   
   <script type="text/javascript" src="/js/src/scrollspy.js?v=6.0.6"></script>
