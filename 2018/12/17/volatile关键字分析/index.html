@@ -99,17 +99,20 @@
 
 
 
-  <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
+  <meta name="description" content="volatilevolatile的主要作用是保证可见性以及有序性，不一定保证原子性。   JVM提供的最轻量级的同步机制。  当一个变量被volatile关键字修饰后，就会具备两层语义：  保证此变量对所有线程的可见性，这里指  当一条线程修改了这个变量的值，新值对于其他线程来说是立即可得知的。 禁止进行指令重排序   volatile 保证可见性  在使用volatile关键字修饰一个变量后，该">
+<meta name="keywords" content="Java">
 <meta property="og:type" content="article">
 <meta property="og:title" content="volatile关键字分析">
 <meta property="og:url" content="http://yoursite.com/2018/12/17/volatile关键字分析/index.html">
 <meta property="og:site_name" content="Wxy的个人博客">
-<meta property="og:description" content="如果我没有见过光明，那我本可以忍受黑暗">
+<meta property="og:description" content="volatilevolatile的主要作用是保证可见性以及有序性，不一定保证原子性。   JVM提供的最轻量级的同步机制。  当一个变量被volatile关键字修饰后，就会具备两层语义：  保证此变量对所有线程的可见性，这里指  当一条线程修改了这个变量的值，新值对于其他线程来说是立即可得知的。 禁止进行指令重排序   volatile 保证可见性  在使用volatile关键字修饰一个变量后，该">
 <meta property="og:locale" content="zh-CN">
-<meta property="og:updated_time" content="2018-12-17T07:53:52.922Z">
+<meta property="og:image" content="http://yoursite.com/images/volatile-process.png">
+<meta property="og:updated_time" content="2018-12-18T07:28:45.055Z">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="volatile关键字分析">
-<meta name="twitter:description" content="如果我没有见过光明，那我本可以忍受黑暗">
+<meta name="twitter:description" content="volatilevolatile的主要作用是保证可见性以及有序性，不一定保证原子性。   JVM提供的最轻量级的同步机制。  当一个变量被volatile关键字修饰后，就会具备两层语义：  保证此变量对所有线程的可见性，这里指  当一条线程修改了这个变量的值，新值对于其他线程来说是立即可得知的。 禁止进行指令重排序   volatile 保证可见性  在使用volatile关键字修饰一个变量后，该">
+<meta name="twitter:image" content="http://yoursite.com/images/volatile-process.png">
 
 
 
@@ -381,7 +384,76 @@
       
 
       
-        
+        <h1 id="volatile"><a href="#volatile" class="headerlink" title="volatile"></a>volatile</h1><p><strong><em>volatile的主要作用是保证可见性以及有序性，不一定保证原子性。</em></strong></p>
+<!--缓存一致性 指令重排序概念-->
+<blockquote>
+<p>JVM提供的最轻量级的同步机制。</p>
+</blockquote>
+<p>当一个变量被<code>volatile</code>关键字修饰后，就会具备两层语义：</p>
+<ul>
+<li><strong>保证此变量对所有线程的可见性，这里指  当一条线程修改了这个变量的值，新值对于其他线程来说是立即可得知的。</strong></li>
+<li><strong>禁止进行指令重排序</strong></li>
+</ul>
+<blockquote>
+<p>volatile 保证可见性</p>
+</blockquote>
+<p>在使用<code>volatile</code>关键字修饰一个变量后，该变量在一个线程中被修改后，会发生如下事情：</p>
+<ol>
+<li>修改后，修改的变量值会强制立即写入主内存中</li>
+<li>然后强制过期其他线程中工作内存中的缓存，使缓存无效</li>
+<li>由于缓存无效，其他线程需要读取该变量值时，会强制重新从主内存中读取</li>
+</ol>
+<blockquote>
+<p>当访问共享变量时，多个线程也会在自己的工作内存中有一份共享变量的副本。当某个线程更改了自己工作内存中的数据时，由于某些原因（线程阻塞）没有及时的刷新数据至主内存，然后其他线程的工作内存中的数据还是老数据。就会导致<code>缓存一致性</code>问题。</p>
+<p><strong>缓存一致性</strong>：当其他线程读取该变量时，发现该缓存是无效的，就会从主内存中重新读取。</p>
+</blockquote>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/volatile-process.png" class="full-image" alt="volatile可见性" title="volatile可见性"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<blockquote>
+<p>volatile 保证有序性</p>
+</blockquote>
+<p><code>volatile</code>禁止指令重排序，可以在一定程度上保证有序性。</p>
+<p><strong>指令重排序</strong>：JVM为了优化指令，提高程序运行效率，在不影响<strong>单线程</strong>执行结果的前提下，尽可能的提高并行度。</p>
+<p>volatile关键字通过提供“<strong>内存屏障(重排序时不能把后面的指令重排序到内存屏障之前的位置)</strong>”的方式来防止指令被重排序，为了实现volatile的内存语义，编译器在生成字节码时，会在指令序列中插入内存屏障来禁止特定类型的处理器重排序。<code>加入volatile关键字的代码会多出一个lock前缀指令</code>。</p>
+<p>内存屏障提供如下功能：</p>
+<ul>
+<li>重排序时不会把后面的指令重排序到内存屏障之前的位置—<code>有序性</code></li>
+<li>本CPU的Cache立即写入内存，并且会引起别的CPU或者别的内核无效化其Cache，可以是对volatile变量的修改对其他CPU可见—<code>可见性</code></li>
+</ul>
+<blockquote>
+<p>volatile不保证原子性</p>
+</blockquote>
+<p><code>volatile</code>只能保证对单个volatile变量的读/写具有原子性，但是对于<code>volatile++</code>这样的复合操作没办法。</p>
+<p>自增操作 <code>volatile++</code>实际执行了三步：</p>
+<ol>
+<li>读取变量的初始值</li>
+<li>在CPU中加1</li>
+<li>重新写入工作内存，在写入主内存</li>
+</ol>
+<p>要想保证原子性，只能借助于<code>synchronized、Lock和java.util.concurrent.atomic包下的原子操作类</code>保证这些操作时原子性操作。</p>
+<blockquote>
+<p>volatile应用场景</p>
+</blockquote>
+<p><code>volatile</code>由于无法保证原子性，所以要使用必须具备以下两个条件：</p>
+<ul>
+<li><p>对变量的写操作不依赖于当前值 </p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">volatile</span> <span class="keyword">int</span> a = <span class="number">0</span> ;</span><br><span class="line">a = a * <span class="number">2</span>;</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>该变量没有包含在具有其他变量的不变式中</p>
+</li>
+</ul>
+<p>  <strong><em>在多线程场景下，这两种情况即时使用<code>volatile</code>修饰，也有可能会有同步问题。</em></strong></p>
+<blockquote>
+<p>volatile 使用实例</p>
+</blockquote>
+<ol>
+<li><p>状态量标记</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">volatile</span> bool flag = <span class="keyword">true</span>;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">write</span><span class="params">()</span></span>&#123;</span><br><span class="line">    flag = <span class="keyword">false</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">modify</span><span class="params">()</span></span>&#123;</span><br><span class="line">    <span class="keyword">if</span>(flag)&#123;</span><br><span class="line">        doSth();</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>单例模式的实现(DCL)</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">class</span> <span class="title">Singleton</span></span>&#123;</span><br><span class="line">    <span class="function"><span class="keyword">private</span> <span class="title">Singleton</span><span class="params">()</span></span>&#123;</span><br><span class="line">        </span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">volatile</span> <span class="keyword">static</span> Singleton sInstance;</span><br><span class="line">    </span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">static</span> Singleton <span class="title">getInstence</span><span class="params">()</span></span>&#123;</span><br><span class="line">        <span class="keyword">if</span>(sInstance == <span class="keyword">null</span>)&#123;</span><br><span class="line">            <span class="keyword">synchronized</span>(Sineleton.class)&#123;</span><br><span class="line">                <span class="keyword">if</span>(sInstance == <span class="keyword">null</span>)&#123;</span><br><span class="line">                    sInstance = <span class="keyword">new</span> Singleton();</span><br><span class="line">                &#125;</span><br><span class="line">            &#125; </span><br><span class="line">        &#125;</span><br><span class="line">         <span class="keyword">return</span> sInstance;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+</li>
+</ol>
+
       
     </div>
     
@@ -408,6 +480,12 @@
 
     <footer class="post-footer">
       
+        <div class="post-tags">
+          
+            <a href="/tags/Java/" rel="tag"><i class="fa fa-tag"></i> Java</a>
+          
+        </div>
+      
 
       
       
@@ -426,6 +504,10 @@
           <span class="post-nav-divider"></span>
 
           <div class="post-nav-prev post-nav-item">
+            
+              <a href="/2018/12/18/Atomic原子操作类分析/" rel="prev" title="Atomic原子操作类分析">
+                Atomic原子操作类分析 <i class="fa fa-chevron-right"></i>
+              </a>
             
           </div>
         </div>
@@ -474,8 +556,17 @@
       
 
       
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            文章目录
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            站点概览
+          </li>
+        </ul>
+      
 
-      <section class="site-overview-wrap sidebar-panel sidebar-panel-active">
+      <section class="site-overview-wrap sidebar-panel">
         <div class="site-overview">
           <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
             
@@ -494,7 +585,7 @@
                 
                   <a href="/archives/">
                 
-                    <span class="site-state-item-count">62</span>
+                    <span class="site-state-item-count">64</span>
                     <span class="site-state-item-name">日志</span>
                   </a>
                 </div>
@@ -571,6 +662,22 @@
         </div>
       </section>
 
+      
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#volatile"><span class="nav-text">volatile</span></a></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
       
 
       
