@@ -41,6 +41,10 @@
 
 
 
+  
+  
+  <link href="/lib/fancybox/source/jquery.fancybox.css?v=2.1.5" rel="stylesheet" type="text/css" />
+
 
 
 
@@ -78,7 +82,7 @@
     scheme: 'Mist',
     version: '6.0.6',
     sidebar: {"position":"right","display":"post","offset":12,"b2t":false,"scrollpercent":false,"onmobile":false},
-    fancybox: false,
+    fancybox: true,
     fastclick: false,
     lazyload: false,
     tabs: true,
@@ -107,10 +111,13 @@
 <meta property="og:site_name" content="Wxy的个人博客">
 <meta property="og:description" content="线程安全与锁优化 首先需要并发的正确性，然后在此基础上实现高效。  线程安全 当多个线程访问一个对象时，如果不用考虑这些线程在运行时环境下的调度和交替执行，也不需要进行额外的同步，或者调用方法进行任何其他的协调操作，调用这个对象的行为都可以获得正确的结果，那这个对象就是线程安全的。  线程安全的代码必须具备一个特征：代码本身封装了所有必要的正确保障性手段，令调用者无需关心多线程的问题，更无须自己采">
 <meta property="og:locale" content="zh-CN">
-<meta property="og:updated_time" content="2018-12-19T11:16:23.376Z">
+<meta property="og:image" content="http://yoursite.com/images/MarkWord.png">
+<meta property="og:image" content="http://yoursite.com/images/lock-upgrade.png">
+<meta property="og:updated_time" content="2018-12-20T07:38:17.874Z">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="JVM相关及其拓展(七) — 线程安全与锁优化">
 <meta name="twitter:description" content="线程安全与锁优化 首先需要并发的正确性，然后在此基础上实现高效。  线程安全 当多个线程访问一个对象时，如果不用考虑这些线程在运行时环境下的调度和交替执行，也不需要进行额外的同步，或者调用方法进行任何其他的协调操作，调用这个对象的行为都可以获得正确的结果，那这个对象就是线程安全的。  线程安全的代码必须具备一个特征：代码本身封装了所有必要的正确保障性手段，令调用者无需关心多线程的问题，更无须自己采">
+<meta name="twitter:image" content="http://yoursite.com/images/MarkWord.png">
 
 
 
@@ -452,7 +459,7 @@
 <li><p><strong>synchronized</strong></p>
 <a href="/2018/12/18/synchorized关键字分析/" title="synchronized关键字分析">synchronized关键字分析</a>
 </li>
-<li><p>ReentrantLock</p>
+<li><p><strong>ReentrantLock</strong></p>
 <a href="/2018/12/19/ReenTrantLock关键字分析/" title="ReenTrantLock关键字分析">ReenTrantLock关键字分析</a>
 </li>
 </ul>
@@ -507,8 +514,172 @@
 </ul>
 <h2 id="锁优化"><a href="#锁优化" class="headerlink" title="锁优化"></a>锁优化</h2><blockquote>
 <p>锁优化是为了在线程之间更高效的共享数据，以及解决竞争性问题。</p>
+<p>锁的状态共分为4种：<strong>无锁状态、偏向锁、轻量级锁和重量级锁</strong>。锁随着竞争情况可以升级，<strong>但升级后不能降级</strong>。</p>
+<p><code>无锁状态-&gt;偏向锁-&gt;轻量级锁-&gt;重量级锁</code></p>
 </blockquote>
-<h3 id="自旋锁与适应性自旋"><a href="#自旋锁与适应性自旋" class="headerlink" title="自旋锁与适应性自旋"></a>自旋锁与适应性自旋</h3>
+<h3 id="1-自旋锁与适应性自旋"><a href="#1-自旋锁与适应性自旋" class="headerlink" title="1. 自旋锁与适应性自旋"></a>1. 自旋锁与适应性自旋</h3><p>互斥同步对性能最大的影响就是阻塞的实现，挂起线程和恢复线程的操作都需要转入内核态中完成，影响系统的并发性能。同时，共享数据的锁定状态只会持续很短的一段时间，不值得去挂起和恢复线程。</p>
+<p><strong>自旋锁</strong>：若物理机器有一个以上的处理器，能使多个线程同时并行执行，让后面的请求锁线程(通过自旋——<strong>CPU忙循环执行空指令</strong>)等待，但不放弃处理器的执行时间，看看持有锁的线程是否很快释放锁。</p>
+<p><code>自旋等待不能代替阻塞，虽然避开了线程切换的开销，但要占用处理器时间，因此自旋等待必须有一定的上限，若超过了次数没有成功，就需要去挂起线程。</code></p>
+<p><strong>自适应自旋锁</strong>：自旋时间不固定，由该锁上次的自旋时间及锁的拥有者状态决定。</p>
+<ul>
+<li>对于某个锁，自旋等待刚刚成功获得锁，并且持有锁的线程正在运行中，JVM就会认为这次自旋也会再次成功获得锁，进而允许等待持续相对更长的时间</li>
+<li>对于某个所，自选很少成功获得锁，以后再获取这个锁时可能忽略自旋过程，以避免浪费处理器资源。</li>
+</ul>
+<h3 id="2-锁消除"><a href="#2-锁消除" class="headerlink" title="2. 锁消除"></a>2. 锁消除</h3><blockquote>
+<p>JVM即时编译器在运行时，对一些代码上要求同步，但是被检测到不可能存在共享数据竞争的锁进行消除。</p>
+</blockquote>
+<p>判断在一段代码中，堆上的所有数据都不会逃逸出去从而被其他线程访问到，那就可以把它们当做栈上数据对待，认为他们是线程私有的，同步加锁操作自然就无须进行。</p>
+<p>例如<code>StringBuffer</code>对象的连续<code>append()</code></p>
+<h3 id="3-锁粗化"><a href="#3-锁粗化" class="headerlink" title="3. 锁粗化"></a>3. 锁粗化</h3><blockquote>
+<p>JVM探测到一串零碎的操作都对同一对象进行加锁，将会把加锁同步的范围扩展（<strong>粗化</strong>）到整个操作序列的外代码</p>
+</blockquote>
+<h3 id="4-轻量级锁"><a href="#4-轻量级锁" class="headerlink" title="4. 轻量级锁"></a>4. 轻量级锁</h3><blockquote>
+<p>在没有多线程竞争的前提下，减少传统的重量级锁使用操作系统互斥量产生的性能消耗。<strong>轻量级锁并不是用来代替重量级锁的</strong></p>
+</blockquote>
+<p>必须先了解 HotSpot虚拟机的对象(<strong>对象头部分</strong>)的内存布局：分为两部分</p>
+<ul>
+<li><strong><em>Mark Word</em></strong>：存储自身的运行时数据，如：<code>HashCode、GC分代年龄和锁信息</code>，这部分数据的长度在32和64位中的JVM中分别为32bit和64bit。<strong>它是实现轻量级锁和偏向锁的关键。</strong></li>
+<li>存储指向方法区对象类型数据的指针，如果是数组对象的话，额外会存储数据的长度。</li>
+</ul>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/MarkWord.png" class="full-image" alt="Mark Word" title="Mark Word"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<blockquote>
+<p>加锁过程</p>
+</blockquote>
+<p>代码进入同步块时，如果同步对象未锁定(标记位为<code>01</code>)，虚拟机会在当前线程的栈帧中建立一个<code>锁记录(Lock Record)</code>的空间，用于存储对象目前的<code>Mark Word</code>拷贝（<strong>Displaced Mark Word</strong>）。</p>
+<p>然后虚拟机将使用CAS操作尝试将对象的Mark Word更新为指向Lock Record的指针。</p>
+<ul>
+<li>更新成功，那么当前线程拥有了该对象的锁，且对象Mark Word的锁标志位为<code>00</code> ，处于轻量级锁定状态。</li>
+<li>更新失败，JVM首先会检查对象的Mark Word是否指向当前线程的栈帧<ul>
+<li>已指向表明当前线程已经拥有了这个对象的锁，可以直接进入同步块继续执行</li>
+<li>没指向表明该对象已被其他线程抢占。</li>
+</ul>
+</li>
+</ul>
+<p><strong>如果有两条以上的线程竞争同一个锁，轻量级锁就无法使用，需要膨胀为重量级锁，Mark Word的锁标志位变为<code>10</code>,存储的是指向重量级的指针，后面等待锁的也会进入阻塞状态。</strong></p>
+<blockquote>
+<p>解锁过程</p>
+</blockquote>
+<p>若对象的Mark Word仍然指向线程的Lock Record，那就用CAS操作把对象当前的Mark Word和Displaced Mark Word替换回来</p>
+<ul>
+<li>替换成功，就完成了整个同步过程</li>
+<li>替换失败，说明有其他线程尝试获取锁，就要在释放锁的同时，唤醒被挂起的线程</li>
+</ul>
+<blockquote>
+<p><code>栈帧</code>：用于支持虚拟西进行方法调用和方法执行的数据结构。栈帧存储了方法的局部变量表，操作数栈，动态链接和方法返回地址信息。第一个方法从调用开始到执行完成，就是一个栈帧从入栈到出栈的过程。</p>
+</blockquote>
+<h3 id="5-偏向锁"><a href="#5-偏向锁" class="headerlink" title="5. 偏向锁"></a>5. 偏向锁</h3><blockquote>
+<p>消除数据在无竞争情况下的同步原语，进一步提高程序的运行性能。<strong>提高一个对象在很长一段时间内都只被一个线程用做锁对象场景下的性能。</strong></p>
+<p><em>偏向锁可以提高带有同步但无竞争的程序性能。</em></p>
+</blockquote>
+<p>这个锁会偏向于第一个获得它的线程，如果后续该锁没有被其他线程获取，则持有偏向锁的线程将永远不会进行同步。</p>
+<blockquote>
+<p>加锁过程</p>
+</blockquote>
+<p>JVM启用了<code>偏向锁</code>模式，当锁对象第一次被线程获取的时候，JVM会把锁标记位置为<code>01</code>,即偏向模式。使用CAS操作记录锁的线程ID到Mark Word中。</p>
+<ul>
+<li>CAS操作成功。持有偏向锁的线程在每次进入和退出同步块是，只要比较一下Mark Word存储的线程ID是否相同。<ul>
+<li>相同代表线程已经获得了锁，不需要再用CAS操作加锁和解锁</li>
+<li>不同，就需要CAS操作竞争锁，竞争成功，替换Mark Word中的ThreadID为当前竞争线程的ID</li>
+</ul>
+</li>
+</ul>
+<blockquote>
+<p>解锁过程</p>
+</blockquote>
+<p>当有另一个线程去尝试获取偏向锁时，CAS替换ThreadID失败，就要撤销偏向锁。(撤销偏向锁，需要等待原持有偏向锁的线程到达全局安全点<code>所有线程都是暂停的，没有字节码正在执行</code>，暂停线程，并检查状态)。判断原持有偏向锁的线程是否处于活动状态</p>
+<ul>
+<li>无活动则置为无锁状态(锁标志为<code>01</code>，是否偏向锁状态<code>0</code>)</li>
+<li>还处于活动状态，则升级为轻量锁(标志位为<code>00</code>)</li>
+</ul>
+<blockquote>
+<p>关闭偏向锁模式</p>
+</blockquote>
+<p>使用JVM参数 <code>-XX:BlasedLockingStartupDelay=0</code>可以关闭延迟，因为偏向锁需要应用启动后过几秒激活</p>
+<p><code>-XX:UseBlasedLocking=false</code>关闭偏向锁</p>
+<p>三种锁的升级</p>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/lock-upgrade.png" class="full-image" alt="锁的升级，锁的升级"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<p>三种锁的比较</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:center">锁</th>
+<th>优点</th>
+<th>缺点</th>
+<th style="text-align:center">适用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center">偏向锁</td>
+<td>加锁和解锁不需要额外的消耗，与执行非同步方法相比仅存在纳秒级的差距</td>
+<td>线程间存在锁竞争，需要带来额外锁撤销的消耗</td>
+<td style="text-align:center">只有一个线程访问同步块场景</td>
+</tr>
+<tr>
+<td style="text-align:center">轻量级锁</td>
+<td>竞争的线程不会阻塞，提高程序的相应速度</td>
+<td>始终得不到锁竞争的线程，会使用自旋消耗CPU资源</td>
+<td style="text-align:center">追求相应时间，同步块执行速度非常快</td>
+</tr>
+<tr>
+<td style="text-align:center">重量级锁</td>
+<td>线程竞争不使用自旋，不会消耗CPU</td>
+<td>线程阻塞，响应时间缓慢</td>
+<td style="text-align:center">追求吞吐量，同步块执行时间较长</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>重量级锁</strong>：本质上是依赖操作系统的<code>Mutex Lock</code>互斥量来实现同步操作。由于线程间的切换需要从用户态转向核心态，转换成本较高，耗时相对较长。</p>
+</blockquote>
+<h2 id="其他锁类型及其概念"><a href="#其他锁类型及其概念" class="headerlink" title="其他锁类型及其概念"></a>其他锁类型及其概念</h2><h3 id="1-乐观锁"><a href="#1-乐观锁" class="headerlink" title="1.乐观锁"></a>1.乐观锁</h3><blockquote>
+<p>由于在进程挂起和恢复执行过程中需要很大的开销进行切换。所以有了乐观锁概念。</p>
+<p>每次去拿数据的时候都认为别人不会修改，但在更新的时候会去判断在此期间是否数据发生修改，没有被修改则进行数据更新。如果因为修改过产生冲突就失败就重试到成功为止(<strong>自旋</strong>)。</p>
+</blockquote>
+<p>实例：例如<code>Atomic原子类</code></p>
+<p>使用场景：适合读取操作比较频繁的场景</p>
+<h3 id="2-悲观锁"><a href="#2-悲观锁" class="headerlink" title="2.悲观锁"></a>2.悲观锁</h3><blockquote>
+<p>每次获取数据的时候，担心数据被修改，所以每次都要加锁，确保操作过程中数据不会发生改变，操作完成后再解锁让其他线程操作。</p>
+<p>在某个资源不可用的时候，就将CPU让出，把当前等待的线程切换为阻塞状态。等到资源可用，将阻塞线程唤醒，进入Runnable状态等待CPU调度。</p>
+</blockquote>
+<p>实例：例如<code>synchronized</code> </p>
+<p>使用场景：比较适合写入操作频繁的场景</p>
+<h3 id="3-互斥锁"><a href="#3-互斥锁" class="headerlink" title="3.互斥锁"></a>3.互斥锁</h3><blockquote>
+<p>通过<code>排他性</code>，同时只允许一个访问者对其进行访问来保证资源的有效同步，但无法限制线程对该资源的访问顺序</p>
+</blockquote>
+<h3 id="4-死锁"><a href="#4-死锁" class="headerlink" title="4.死锁"></a>4.<strong>死锁</strong></h3><blockquote>
+<p>两个或两个以上的进程在执行过程中，由于竞争资源或者由于彼此通信而造成的一种阻塞现象，若无外力作用，他们都将无法推进下去。</p>
+</blockquote>
+<p>死锁形成必须要求四个条件：</p>
+<ul>
+<li><p><strong>互斥条件</strong>：一个资源每次只能被一个线程使用</p>
+</li>
+<li><p><strong>请求与保持条件</strong>：一个线程引请求资源而阻塞时，对已获得的资源保持不放</p>
+</li>
+<li><strong>不剥夺条件</strong>：线程已获得的资源，在未使用完之前，不能强行剥夺</li>
+<li><strong>循环等待条件</strong>：若干进程之间形成一种头尾相接的循环等待资源关系</li>
+</ul>
+<p>常见死锁类型：</p>
+<ul>
+<li><strong>静态的锁顺序死锁</strong> <code>所有需要多个锁的线程，都要以相同的顺序获得锁</code></li>
+<li><strong>动态的锁顺序死锁</strong> <code>自定义锁的顺序，确保所有线程以相同的顺序获得锁</code></li>
+<li><strong>协作对象之间发生的死锁</strong> <code>避免在持有锁的情况下调用外部的方法</code></li>
+</ul>
+<p>死锁预防：</p>
+<ul>
+<li><p>以确定的顺序获得锁</p>
+<p>将所有的锁都按照特定顺序进行获取，防止死锁发生。</p>
+<blockquote>
+<p><strong>银行家算法</strong>：允许进程动态的申请资源，但在系统进行资源分配之前，先计算此次资源分配的安全性，若分配不会导致进入不安全状态，则分配；否则等待。</p>
+</blockquote>
+</li>
+<li><p>超时放弃</p>
+<blockquote>
+<p>例如<code>synchronized</code>只要线程没有获得锁，就会永远等待下去，<code>Lock</code>提供了<code>tryLock()</code>可以实现超时放弃</p>
+</blockquote>
+</li>
+</ul>
+
       
     </div>
     
@@ -640,7 +811,7 @@
                 
                   <a href="/archives/">
                 
-                    <span class="site-state-item-count">67</span>
+                    <span class="site-state-item-count">69</span>
                     <span class="site-state-item-name">日志</span>
                   </a>
                 </div>
@@ -727,7 +898,7 @@
             
 
             
-              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#线程安全与锁优化"><span class="nav-text">线程安全与锁优化</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#线程安全"><span class="nav-text">线程安全</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#不可变"><span class="nav-text">不可变</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#绝对线程安全"><span class="nav-text">绝对线程安全</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#相对线程安全"><span class="nav-text">相对线程安全</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#线程兼容"><span class="nav-text">线程兼容</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#线程对立"><span class="nav-text">线程对立</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#线程安全的实现方法"><span class="nav-text">线程安全的实现方法</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#互斥同步-阻塞同步"><span class="nav-text">互斥同步 (阻塞同步)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#非阻塞同步"><span class="nav-text">非阻塞同步</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#无同步方案"><span class="nav-text">无同步方案</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#可重入代码-纯代码-Reentrant-Code-Pure-Code"><span class="nav-text">可重入代码/纯代码(Reentrant Code/Pure Code)</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#线程本地存储-Thread-Local-Storage"><span class="nav-text">线程本地存储(Thread Local Storage)</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#锁优化"><span class="nav-text">锁优化</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#自旋锁与适应性自旋"><span class="nav-text">自旋锁与适应性自旋</span></a></li></ol></li></ol></li></ol></div>
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#线程安全与锁优化"><span class="nav-text">线程安全与锁优化</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#线程安全"><span class="nav-text">线程安全</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#不可变"><span class="nav-text">不可变</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#绝对线程安全"><span class="nav-text">绝对线程安全</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#相对线程安全"><span class="nav-text">相对线程安全</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#线程兼容"><span class="nav-text">线程兼容</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#线程对立"><span class="nav-text">线程对立</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#线程安全的实现方法"><span class="nav-text">线程安全的实现方法</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#互斥同步-阻塞同步"><span class="nav-text">互斥同步 (阻塞同步)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#非阻塞同步"><span class="nav-text">非阻塞同步</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#无同步方案"><span class="nav-text">无同步方案</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#可重入代码-纯代码-Reentrant-Code-Pure-Code"><span class="nav-text">可重入代码/纯代码(Reentrant Code/Pure Code)</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#线程本地存储-Thread-Local-Storage"><span class="nav-text">线程本地存储(Thread Local Storage)</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#锁优化"><span class="nav-text">锁优化</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-自旋锁与适应性自旋"><span class="nav-text">1. 自旋锁与适应性自旋</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-锁消除"><span class="nav-text">2. 锁消除</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-锁粗化"><span class="nav-text">3. 锁粗化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-轻量级锁"><span class="nav-text">4. 轻量级锁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-偏向锁"><span class="nav-text">5. 偏向锁</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#其他锁类型及其概念"><span class="nav-text">其他锁类型及其概念</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-乐观锁"><span class="nav-text">1.乐观锁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-悲观锁"><span class="nav-text">2.悲观锁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-互斥锁"><span class="nav-text">3.互斥锁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-死锁"><span class="nav-text">4.死锁</span></a></li></ol></li></ol></li></ol></div>
             
 
           </div>
@@ -817,6 +988,8 @@
 
 
 
+  
+
 
 
 
@@ -847,6 +1020,11 @@
   
   
     <script type="text/javascript" src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
   
 
   
