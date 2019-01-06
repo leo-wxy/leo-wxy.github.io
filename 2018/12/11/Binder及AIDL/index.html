@@ -110,11 +110,8 @@
 <meta property="og:locale" content="zh-CN">
 <meta property="og:image" content="http://yoursite.com/images/IPC-mode.png">
 <meta property="og:image" content="http://yoursite.com/images/Messenger-principle.png">
-<meta property="og:image" content="http://yoursite.com/images/IPC-Binder.jpg">
-<meta property="og:image" content="http://yoursite.com/images/Binder-workflow.png">
-<meta property="og:image" content="http://yoursite.com/images/BinderPool.png">
 <meta property="og:image" content="http://yoursite.com/images/AIDL-IPC.png">
-<meta property="og:updated_time" content="2018-12-25T02:15:51.112Z">
+<meta property="og:updated_time" content="2019-01-06T07:17:27.169Z">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="Binder及AIDL">
 <meta name="twitter:description" content="主要分析IPC机制，Binder框架以及AIDL原理1.IPC机制 IPC是Inter-Process Communication的缩写。含义为进程间通信或者跨进程通信，指代两个进程间进行数据交换的过程、  还需要理解进程以及线程的区别和联系  进程：一般指一个执行单元，在设备上一般代指应用程序。 线程：CPU调度的最小单元且线程是有限资源。 一个进程可以包含多个线程，即一个应用内部可以执行多个任">
@@ -626,66 +623,7 @@
 </tr>
 </tbody>
 </table>
-<h2 id="2-Binder机制"><a href="#2-Binder机制" class="headerlink" title="2.Binder机制"></a>2.Binder机制</h2><blockquote>
-<p>在Linux中，为了避免一个进程对其他进程的干扰，进程之间是相互独立的。</p>
-<p>Android的进程间通信采用了Binder出于两个方面的考虑：性能和安全。</p>
-<p>性能：在移动设备上对性能的要求是比较严苛的，在Linux上通信方式例如管道，Socket都需要复制两次数据，Binder只需一次。</p>
-<p><code>对于消息队列、Socket和管道而言，数据先从发送方的缓存区拷贝到内核开辟的缓存区中，再从内核缓存区拷贝至接收方缓存区，需要两次拷贝过程；Binder是从发送方缓存区到内核的缓存区，而接受方的缓存区与内核缓存区映射在同一块物理地址上，节省了一次数据拷贝的过程。</code></p>
-<p>安全：传统的Linux通信是不包含通信双方的身份验证的，Binder自带身份验证，提高了安全性。</p>
-<p><code>Android提供了UID机制，可以有效的鉴别用户身份。</code></p>
-</blockquote>
-<p>概念：</p>
-<ul>
-<li>直观来说，Binder是Android中的一个类，实现了IBinder接口。</li>
-<li>IPC角度来说，Binder是Android中的一种跨进程通信方式。</li>
-<li>Android Framework角度来说，Binder是ServiceManager连接各种Manager和相应ManagerService的桥梁。</li>
-<li>应用层来说，Binder是客户端和服务端进行通信的媒介。</li>
-</ul>
-<h3 id="1-Binder框架"><a href="#1-Binder框架" class="headerlink" title="1.Binder框架"></a><strong>1.Binder框架</strong></h3><p>Binder通信采用了<strong>C/S架构</strong>。在Android系统的Binder机制中，由一系列系统组件组成，分别是</p>
-<ul>
-<li><code>Client</code> 客户端进程</li>
-<li><code>Server</code> 服务端进程</li>
-<li><code>Service Manager</code> 管理系统中的各种服务 提供注册、查询和返回代理服务对象的功能</li>
-<li><code>Binder 驱动</code> 负责建立进程见得Binder连接，进程间的数据交互等底层操作</li>
-</ul>
-<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/IPC-Binder.jpg" class="full-image" alt="Binder架构图" title="Binder架构图"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
-<p>Client,Server,Service Manager处于用户空间，Binder驱动位于内核空间。</p>
-<p>下面介绍四个组成部分的作用：</p>
-<ul>
-<li><p><strong>Service Manager：</strong>服务的管理者，指代的是Native层的ServiceManager(C++)，是整个Binder通信机智的大管家，是Android进程间通信机制的守护进程。将Binder的名字转换为Client中对该Binder的引用，使得Client可以通过Binder名字来获取Service中的引用。<a href="/2018/12/12/Binder系列-ServiceManager相关/" title="Binder系列-ServiceManager相关">Binder系列-ServiceManager相关</a></p>
-</li>
-<li><p><strong>Binder驱动：</strong>主要是驱动设备的<strong>初始化(binder_init)，打开 (binder_open)，映射(binder_mmap)，数据操作(binder_ioctl)</strong>。</p>
-<p>和硬件设备没有任何关系。它工作于内核态，以misc设备注册在设备目录/dev下，用户可以通过/dev/binder访问它。负责进程之间binder通信的建立、传递、计数管理和数据的传递交互等底层支持。主要功能由<code>ioctl()/*主要负责在两个进程间收发IPC和IPC reply数据，常用命令为BINDER_WRITE_READ*/</code>实现。</p>
-</li>
-<li><p><strong>Client&amp;Service：</strong>在Binder驱动和Service Manager提供的基础设施上进行C-S之间的通信。<code>Server进程启动时，将在本进程内运行的Service注册到Service Manager中，并且启动一个Binder线程池，用来接收Clien请求。然后Client进程向Service Manager查询所需要的Service，并获得一个Binder代理对象，通过该代理对象向Service发出请求。</code></p>
-</li>
-</ul>
-<p>四大组件彼此之间不是直接交互的，都是通过Binder驱动进行交互，从而实现IPC通信方式。<strong>系统需要启动了Service Manager之后，Client端和Server端需要现获取了Service Manager接口后，才可以开始通信服务。</strong></p>
-<h3 id="2-Binder工作机制"><a href="#2-Binder工作机制" class="headerlink" title="2.Binder工作机制"></a>2.<strong>Binder工作机制</strong><!--需要结合对应的客户端代码分析--></h3><span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/Binder-workflow.png" class="full-image" alt="Binder工作机制" title="Binder工作机制"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
-<ul>
-<li>在Server端创建好一个Binder对象后，内部就会开启一个线程用于接收Binder驱动发送的消息，收到消息后就会执行<code>onTransact()</code>,然后按照参数执行不同的服务端代码。</li>
-<li>在服务端成功Binder对象后，Binder驱动会创建一个<code>mRemote</code>对象，客户端可以借助它调用<code>transcat()</code>向服务端发送消息</li>
-<li>客户端要访问Binder的远程服务，就要获取远程服务的Binder对象在Binder驱动中的<code>mRemote</code>引用，获取到引用后既可以调用相关方法。</li>
-</ul>
-<p><a href="http://gityuan.com/2015/10/31/binder-prepare/" target="_blank" rel="noopener">Binder相关</a></p>
-<h3 id="3-Binder连接池"><a href="#3-Binder连接池" class="headerlink" title="3.Binder连接池"></a>3.Binder连接池</h3><blockquote>
-<p>首先回顾一下AIDL的使用方式：①创建一个Service和AIDL接口②创建一个类继承自AIDL接口中的Stub类并实现Stub中的抽象方法③在Service的onBind中返回这个类的对象④客户端绑定Service后就可以直接访问服务端的方法。</p>
-<p>当业务需求越来越多时，上述的创建方式就会产生很多Service类，导致系统资源耗费颜值、应用过度重量级的问题。所以产生了<code>Binder连接池</code>的概念。</p>
-</blockquote>
-<blockquote>
-<p>主要作用为 <strong>将每个业务模块的Binder请求统一转发到远程Service上去执行，从而避免重复创建Service</strong>。   </p>
-</blockquote>
-<p>工作原理：</p>
-<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/BinderPool.png" class="full-image" alt="BinderPool工作原理" title="BinderPool工作原理"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
-<p>每个业务模块创建自己的AIDL接口并实现，然后向服务端传递自己的<strong>唯一标识(BinderCode)及对应的Binder对象</strong>。服务端只要一个Service，然后实现<code>queryBinder()</code>接口，根据唯一标识返回对应的Binder对象。</p>
-<p>实现方式：</p>
-<ul>
-<li>创建对应的AIDL文件并有具体实现</li>
-<li>创建BinderPool.java以及IBinderPool.aidl文件</li>
-<li>实现远程服务BinderPoolService，并在onBind()中返回实例化的BinderPool对象</li>
-<li>实现BinderPool方法，并在<code>queryBinder()</code>中做好对应处理</li>
-<li>客户端调用BinderPoolService</li>
-</ul>
+<h2 id="2-Binder机制"><a href="#2-Binder机制" class="headerlink" title="2.Binder机制"></a>2.Binder机制</h2><a href="/2019/01/06/Binder系列-Binder/" title="Binder系列-Binder">Binder系列-Binder</a>
 <h2 id="3-AIDL相关"><a href="#3-AIDL相关" class="headerlink" title="3.AIDL相关"></a>3.AIDL相关</h2><blockquote>
 <p>在Messenger中讲到它是基于AIDL的，但是只能处理串行的消息，如果有大量的消息同时发送进来，也只能一个个处理，而且不支持跨进程调用服务端的方法，就需要用到AIDL来处理上述情况。</p>
 <p><strong>AIDL默认是同步调用的，若需要异步调用–可以添加一个异步回调接口执行结果异步回调给调用方，需要使用RemoteCallbackList</strong></p>
@@ -903,7 +841,7 @@
                 
                   <a href="/archives/">
                 
-                    <span class="site-state-item-count">75</span>
+                    <span class="site-state-item-count">76</span>
                     <span class="site-state-item-name">日志</span>
                   </a>
                 </div>
@@ -1004,7 +942,7 @@
             
 
             
-              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#主要分析IPC机制，Binder框架以及AIDL原理"><span class="nav-text">主要分析IPC机制，Binder框架以及AIDL原理</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-IPC机制"><span class="nav-text">1.IPC机制</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-多进程模式"><span class="nav-text">1.  多进程模式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-序列化"><span class="nav-text">2. 序列化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-IPC方式"><span class="nav-text">3. IPC方式</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#1-Bundle"><span class="nav-text">1.Bundle</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#2-文件共享"><span class="nav-text">2.文件共享</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#3-Messenger"><span class="nav-text">3.Messenger</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#4-AIDL"><span class="nav-text">4.AIDL</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#5-ContentProvider"><span class="nav-text">5.ContentProvider</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#6-Socket"><span class="nav-text">6.Socket</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-Binder机制"><span class="nav-text">2.Binder机制</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Binder框架"><span class="nav-text">1.Binder框架</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Binder工作机制"><span class="nav-text">2.Binder工作机制</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Binder连接池"><span class="nav-text">3.Binder连接池</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-AIDL相关"><span class="nav-text">3.AIDL相关</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-AIDL支持的数据类型"><span class="nav-text">1.AIDL支持的数据类型</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-定向tag"><span class="nav-text">2.定向tag</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-关键类和方法"><span class="nav-text">3.关键类和方法</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-权限验证"><span class="nav-text">4.权限验证</span></a></li></ol></li></ol></li></ol></div>
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#主要分析IPC机制，Binder框架以及AIDL原理"><span class="nav-text">主要分析IPC机制，Binder框架以及AIDL原理</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-IPC机制"><span class="nav-text">1.IPC机制</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-多进程模式"><span class="nav-text">1.  多进程模式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-序列化"><span class="nav-text">2. 序列化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-IPC方式"><span class="nav-text">3. IPC方式</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#1-Bundle"><span class="nav-text">1.Bundle</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#2-文件共享"><span class="nav-text">2.文件共享</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#3-Messenger"><span class="nav-text">3.Messenger</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#4-AIDL"><span class="nav-text">4.AIDL</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#5-ContentProvider"><span class="nav-text">5.ContentProvider</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#6-Socket"><span class="nav-text">6.Socket</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-Binder机制"><span class="nav-text">2.Binder机制</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-AIDL相关"><span class="nav-text">3.AIDL相关</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-AIDL支持的数据类型"><span class="nav-text">1.AIDL支持的数据类型</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-定向tag"><span class="nav-text">2.定向tag</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-关键类和方法"><span class="nav-text">3.关键类和方法</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-权限验证"><span class="nav-text">4.权限验证</span></a></li></ol></li></ol></li></ol></div>
             
 
           </div>
