@@ -114,7 +114,7 @@
 <meta property="og:image" content="http://yoursite.com/images/AMS启动进程并绑定Application.png">
 <meta property="og:image" content="http://yoursite.com/images/ActivityThread启动Activity过程.png">
 <meta property="og:image" content="http://yoursite.com/images/根启动Activity过程中的进程切换.png">
-<meta property="og:updated_time" content="2019-01-09T14:17:13.744Z">
+<meta property="og:updated_time" content="2019-01-10T02:53:27.574Z">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="Activity启动过程">
 <meta name="twitter:description" content="下列源码分析是基于 Android 8.0源码  Activity的启动过程分为两种：  根Activity的启动过程  -  指代根Actiivty的启动过程也可以认为是应用程序的启动过程 普通Activity的启动过程  -  除启动应用程序启动的第一个Activity之外Activity的启动过程  根Activity启动过程 点击桌面的应用程序图标就是启动根Activity的入口，当我们">
@@ -594,9 +594,35 @@
 <blockquote>
 <p>当我们按下桌面上的应用程序快捷启动方式时，<code>Launcher</code>会调用<code>Activity.startActivity()</code>并设置启动FLAG为<code>FLAG_ACTIVITY_NEW_TASK</code>给根Activity设置任务栈，实质上是调用<code>Instrumentation.execStartActivity()</code>尝试启动Activity，这是一个跨进程的过程，利用<code>IActivityManager</code>与<code>AMS</code>进行通信。</p>
 <p><code>AMS</code>就会记录下要启动的Activity信息，并且跨进程通知Launcher进入<code>pause</code>状态，<code>Launcher</code>进入<code>pause</code>状态后，跨进程通知<code>AMS</code>自己已被<code>pause</code>。<code>AMS</code>会回调用自身的<code>startActivty()</code>去继续启动根Activity，这一步需要校验(调用者是否有权限调用)，检验通过后，发现此时应用进程尚未启动，<code>AMS</code>就会启动新的进程，并且在新进程中创建<code>ActivityThread</code>对象并执行<code>main()</code>进程初始化。</p>
-<p>主进程启动完毕后，会通过<code>ApplicationThread</code>回调到我们的进程，这一步也是一个跨进程的过程，利用<code>ApplicationThread</code>这个Binder对象。</p>
+<p>应用进程启动完毕后，<code>AMS</code>通知主线程绑定<code>Application</code>并启动根Activity。这时<code>AMS</code>会通过<code>ApplicationThread</code>回调到我们的进程，这一步也是一个跨进程的过程，利用<code>ApplicationThread</code>这个Binder对象。由于回调逻辑是在<code>Binder线程池</code>中进行的，所以需要通过<code>Handler H</code>将其切回主线程，发出的消息是<code>LAUNCH_ACTIVITY</code>，对应调用<code>handleLaunchActivity</code>，在这个方法中完成了根Activity的创建以及启动。接着在<code>handleResumeActivity()</code>中开始Activity的内容绘制，直到绘制完成被我们看见。</p>
 </blockquote>
-<h2 id="普通Activity启动过程"><a href="#普通Activity启动过程" class="headerlink" title="普通Activity启动过程"></a>普通Activity启动过程</h2>
+<h2 id="普通Activity启动过程"><a href="#普通Activity启动过程" class="headerlink" title="普通Activity启动过程"></a>普通Activity启动过程</h2><blockquote>
+<p>普通Activity启动过程相比于根Activity启动过程，只保留了两步：<code>AMS到Application的调用过程</code>,<code>ActivityThread启动Activity过程</code>。</p>
+<p>涉及的进程也只剩：<code>AMS所在进程(System Server进程)，应用程序进程</code>。</p>
+</blockquote>
+<h3 id="相同进程的启动过程"><a href="#相同进程的启动过程" class="headerlink" title="相同进程的启动过程"></a>相同进程的启动过程</h3><blockquote>
+<p>例如LoadingActivity -&gt; MainActivity</p>
+</blockquote>
+<ol>
+<li>LoadingActivity组件会向<code>AMS</code>发送一个启动MainActivity的请求，其实就是内部通过<code>Instrumentation</code>尝试启动Activity(<code>execStartActivity</code>)，这是一个跨进程过程，会调用<code>AMS</code>的<code>startActivity()</code></li>
+<li><code>AMS</code>会保存下来<code>MainActivity</code>的组件信息，然后向<code>LoadingActivity</code>发送一个进入中止状态的进程间通信请求。<em>这也就是为什么老Activity的<code>onPause()</code>会执行在新Activity的启动之前的原因。</em></li>
+<li><code>LoadingActivity</code>进入中止状态后会通知到<code>AMS</code>继续向下执行<code>MainActivity</code>的启动，由于发现应用进程已经存在，所以<code>AMS</code>直接通过<code>ApplicationThread</code>回调到应用进程，这也是一个跨进程过程。</li>
+<li>由于<code>ApplicationThread</code>是一个Binder对象，回调逻辑在<code>Binder线程池</code>中完成，需要通过<code>Handler H</code>切回到主线程，并发出<code>LAUNCH_ACTIVITY</code>消息，对应调用<code>handleLaunchActivity</code>。</li>
+<li>继续向下完成<code>MainActivity</code>的创建和启动，然后在<code>handleResumeActivity()</code>中完成View的绘制，直到绘制完成展示在用户面前结束。</li>
+</ol>
+<h3 id="新进程的启动过程"><a href="#新进程的启动过程" class="headerlink" title="新进程的启动过程"></a>新进程的启动过程</h3><blockquote>
+<p>例如LoadingActivity -&gt; MainActivity设置了<code>android:process=&quot;:remote&quot;</code></p>
+<p>类似根Activity的启动过程，不过起始点是从<code>LoadingActivity</code>开始</p>
+</blockquote>
+<ol>
+<li>LoadingActivity组件会向<code>AMS</code>发送一个启动MainActivity的请求，其实就是内部通过<code>Instrumentation</code>尝试启动Activity(<code>execStartActivity</code>)，这是一个跨进程过程，会调用<code>AMS</code>的<code>startActivity()</code></li>
+<li><code>AMS</code>会保存下来<code>MainActivity</code>的组件信息，然后向<code>LoadingActivity</code>发送一个进入中止状态的进程间通信请求。<em>这也就是为什么老Activity的<code>onPause()</code>会执行在新Activity的启动之前的原因。</em></li>
+<li><code>LoadingActivity</code>进入中止状态后会通知到<code>AMS</code>继续向下执行<code>MainActivity</code>的启动，此时发现用来运行的<code>:remote</code>进程不存在，就会调用<code>AMS</code>去启动新的应用进程，并且在新进程中创建<code>ActrivityThread(*主进程*)</code>并执行<code>main()</code>进行初始化。</li>
+<li>应用进程启动完毕之后，向<code>AMS</code>发送一个启动完成的请求，<code>AMS</code>就会通知主线程<code>ActivityThread</code>去创建并绑定<code>Application</code>，绑定完成后，通知<code>AMS</code>绑定完成。AMS<code>直接通过</code>ApplicationThread`回调到应用进程，这也是一个跨进程过程。</li>
+<li>由于<code>ApplicationThread</code>是一个Binder对象，回调逻辑在<code>Binder线程池</code>中完成，需要通过<code>Handler H</code>切回到主线程，并发出<code>LAUNCH_ACTIVITY</code>消息，对应调用<code>handleLaunchActivity</code>。</li>
+<li>继续向下完成<code>MainActivity</code>的创建和启动，然后在<code>handleResumeActivity()</code>中完成View的绘制，直到绘制完成展示在用户面前结束。</li>
+</ol>
+
       
     </div>
 
@@ -819,7 +845,7 @@
             
 
             
-              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#根Activity启动过程"><span class="nav-text">根Activity启动过程</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Launcher请求AMS过程"><span class="nav-text">Launcher请求AMS过程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#AMS到ApplicationThread的调用过程"><span class="nav-text">AMS到ApplicationThread的调用过程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#AMS启动应用进程"><span class="nav-text">AMS启动应用进程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#创建并绑定Application"><span class="nav-text">创建并绑定Application</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#ActivityThread启动Activity过程"><span class="nav-text">ActivityThread启动Activity过程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#根Activity启动过程中涉及的进程"><span class="nav-text">根Activity启动过程中涉及的进程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#总结"><span class="nav-text">总结</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#普通Activity启动过程"><span class="nav-text">普通Activity启动过程</span></a></li></ol></div>
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#根Activity启动过程"><span class="nav-text">根Activity启动过程</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Launcher请求AMS过程"><span class="nav-text">Launcher请求AMS过程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#AMS到ApplicationThread的调用过程"><span class="nav-text">AMS到ApplicationThread的调用过程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#AMS启动应用进程"><span class="nav-text">AMS启动应用进程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#创建并绑定Application"><span class="nav-text">创建并绑定Application</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#ActivityThread启动Activity过程"><span class="nav-text">ActivityThread启动Activity过程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#根Activity启动过程中涉及的进程"><span class="nav-text">根Activity启动过程中涉及的进程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#总结"><span class="nav-text">总结</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#普通Activity启动过程"><span class="nav-text">普通Activity启动过程</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#相同进程的启动过程"><span class="nav-text">相同进程的启动过程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#新进程的启动过程"><span class="nav-text">新进程的启动过程</span></a></li></ol></li></ol></div>
             
 
           </div>
