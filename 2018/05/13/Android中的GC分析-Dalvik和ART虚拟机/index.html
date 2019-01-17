@@ -112,7 +112,8 @@
 <meta property="og:image" content="http://yoursite.com/images/执行的字节码区别.png">
 <meta property="og:image" content="http://yoursite.com/images/DVM架构.png">
 <meta property="og:image" content="http://yoursite.com/images/ART运行时堆.png">
-<meta property="og:updated_time" content="2019-01-17T04:44:27.735Z">
+<meta property="og:image" content="http://yoursite.com/images/android_apk_build.png">
+<meta property="og:updated_time" content="2019-01-17T13:37:22.105Z">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="Android中的GC分析-Dalvik和ART虚拟机">
 <meta name="twitter:description" content="Dalvik虚拟机 Dalvik Virtual Machine，简称Dalvik VM或者 DVM。DVM是Google专门为Android平台开发的虚拟机，是Android的重要组成部分，支持dex格式的Java应用程序运行。 dex格式是专门为DVM设计的一种压缩格式，适合内存和处理器速度有限的系统。   从架构图中可知，DVM运行在Android的运行时库层。 DVM与JVM的区别基于的">
@@ -505,6 +506,35 @@
 <p>DVM内存管理特点：<strong>内存碎片化严重，这也是由于标记-清除算法导致的。</strong></p>
 <p>ART的解决方案：在ART中，它将Java分了一块空间<code>Large Object Space</code>，专门用来存放大对象。同时ART引入了<code>moving collector</code>技术，将不连续的物理内存块进行对其，对齐后碎片问题得到了很好的解决。</p>
 <p>使用<code>Large Object Space</code>是因为<code>moving collector</code>对大块内存的位移时间过长，需要降低时间并提高内存利用率。</p>
+<h3 id="Apk打包流程"><a href="#Apk打包流程" class="headerlink" title="Apk打包流程"></a>Apk打包流程</h3><span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/android_apk_build.png" class="full-image" alt="android_apk_build" title="android_apk_build"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<p>根据流程图可知，apk打包流程分为7步：</p>
+<ol>
+<li>通过aapt打包res资源文件，生成<code>R.java、resource.asrc,res文件</code></li>
+<li>处理.aidl文件，生成对应的Java接口文件</li>
+<li>通过Java Compiler编译R.java、Java源文件，生成.class文件</li>
+<li>通过 dx工具，将.class文件以及三方库中的.class文件合并生成 classes.dex</li>
+<li>通过apkbuilder工具，将aapt生成的resource.arsc和res文件、assets文件以及classes.dex一起打包生成apk</li>
+<li>通过Jarsigner工具，对上面的apk进行debug或release签名</li>
+<li>通过Zipalign工具，将签名后的apk进行对齐处理。(<em>帮助操作系统更高效率的根据请求索引资源，按着有利于系统处理的方式对apk征用的资源文件进行排列</em>)</li>
+</ol>
+<h3 id="Apk安装流程"><a href="#Apk安装流程" class="headerlink" title="Apk安装流程"></a>Apk安装流程</h3><p>Apk开始安装时会执行以下几步：<em>(例如安装包名为 com.example.wxy 应用名为Demo的apk)</em></p>
+<ul>
+<li><p>解析APK中的<code>AndroidManifest.xml</code>，解析的内容会被存储到<code>/data/system/packages.xml</code>和<code>/data/system/package.list</code>中。</p>
+</li>
+<li><p><code>packages.list</code>中会指名了该apk包应用的默认存储的位置<code>/data/data/com.example.wxy</code>,<code>package.xml</code>会包含该应用申请的全新，签名和代码所在位置等信息</p>
+<figure class="highlight xml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">/data/system/packages.list</span><br><span class="line">com.example.wxy.ipc 10021 1 /data/user/0/com.example.wxy.ipc default:targetSdkVersion=28 3003</span><br></pre></td></tr></table></figure>
+<figure class="highlight xml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"> /data/system/packages.xml   </span><br><span class="line"><span class="tag">&lt;<span class="name">package</span> <span class="attr">name</span>=<span class="string">"com.example.wxy.ipc"</span> <span class="attr">codePath</span>=<span class="string">"/data/app/com.example.wxy.ipc-OTMEWujgopdNrmJevxTbaA=="</span> <span class="attr">nativeLibraryPath</span>=<span class="string">"/data/app/com.example.wxy.ipc-OTMEWujgopdNrmJevxTbaA==/lib"</span> <span class="attr">publicFlags</span>=<span class="string">"810073926"</span> <span class="attr">privateFlags</span>=<span class="string">"0"</span> <span class="attr">ft</span>=<span class="string">"1673c5a86e8"</span> <span class="attr">it</span>=<span class="string">"1673ae27837"</span> <span class="attr">ut</span>=<span class="string">"1673c5a8ab8"</span> <span class="attr">version</span>=<span class="string">"1"</span> <span class="attr">userId</span>=<span class="string">"10021"</span>&gt;</span></span><br><span class="line">        <span class="tag">&lt;<span class="name">sigs</span> <span class="attr">count</span>=<span class="string">"1"</span> <span class="attr">schemeVersion</span>=<span class="string">"2"</span>&gt;</span></span><br><span class="line">            <span class="tag">&lt;<span class="name">cert</span> <span class="attr">index</span>=<span class="string">"15"</span> /&gt;</span></span><br><span class="line">        <span class="tag">&lt;/<span class="name">sigs</span>&gt;</span></span><br><span class="line">        <span class="tag">&lt;<span class="name">perms</span>&gt;</span></span><br><span class="line">            <span class="tag">&lt;<span class="name">item</span> <span class="attr">name</span>=<span class="string">"android.permission.INTERNET"</span> <span class="attr">granted</span>=<span class="string">"true"</span> <span class="attr">flags</span>=<span class="string">"0"</span> /&gt;</span></span><br><span class="line">            <span class="tag">&lt;<span class="name">item</span> <span class="attr">name</span>=<span class="string">"android.permission.ACCESS_NETWORK_STATE"</span> <span class="attr">granted</span>=<span class="string">"true"</span> <span class="attr">flags</span>=<span class="string">"0"</span> /&gt;</span></span><br><span class="line">            <span class="tag">&lt;<span class="name">item</span> <span class="attr">name</span>=<span class="string">"com.example.wxy.permission.checkBook"</span> <span class="attr">granted</span>=<span class="string">"true"</span> <span class="attr">flags</span>=<span class="string">"0"</span> /&gt;</span></span><br><span class="line">        <span class="tag">&lt;/<span class="name">perms</span>&gt;</span></span><br><span class="line">        <span class="tag">&lt;<span class="name">proper-signing-keyset</span> <span class="attr">identifier</span>=<span class="string">"16"</span> /&gt;</span></span><br><span class="line">    <span class="tag">&lt;/<span class="name">package</span>&gt;</span></span><br></pre></td></tr></table></figure>
+<p>标记了一个<code>userId</code>，Android系统可以利用该值来管理应用</p>
+</li>
+<li><p>根据<code>packages.xml</code>指定的<code>codePath</code>，创建一个目录，apk被命名为<code>base.apk</code>并拷贝到此，其中lib目录用在存放native库。</p>
+</li>
+<li><p>此时应用就可以运行了。为了提升效率，Android系统在应用安装时还会做些优化操作，把所有可运行的dex文件单独提取放在一块并做些优化。</p>
+<ul>
+<li>在DVM时，会使用dexopt把base.apk中的dex文件优化为odex，存储在<code>/data/dalvik-cache</code>中.</li>
+<li>在ART时，则会使用dex2oat优化成oat文件也存储在该目录下，并且文件名一样，但是文件会大很多，因为ART会把dex优化成机器码，所以运行更快。</li>
+</ul>
+</li>
+</ul>
 
       
     </div>
@@ -627,7 +657,7 @@
                 
                   <a href="/archives/">
                 
-                    <span class="site-state-item-count">88</span>
+                    <span class="site-state-item-count">89</span>
                     <span class="site-state-item-name">日志</span>
                   </a>
                 </div>
@@ -732,7 +762,7 @@
             
 
             
-              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#Dalvik虚拟机"><span class="nav-text">Dalvik虚拟机</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#DVM与JVM的区别"><span class="nav-text">DVM与JVM的区别</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#基于的架构不同"><span class="nav-text">基于的架构不同</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#执行的字节码不同"><span class="nav-text">执行的字节码不同</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#DVM允许在有限的内存中同时允许多个进程"><span class="nav-text">DVM允许在有限的内存中同时允许多个进程</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#DVM由Zygote创建和初始化"><span class="nav-text">DVM由Zygote创建和初始化</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#DVM拥有共享机制"><span class="nav-text">DVM拥有共享机制</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#JIT编译"><span class="nav-text">JIT编译</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#DVM架构"><span class="nav-text">DVM架构</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#DVM运行时堆"><span class="nav-text">DVM运行时堆</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#DVM-GC过程"><span class="nav-text">DVM-GC过程</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#ART虚拟机"><span class="nav-text">ART虚拟机</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#ART和DVM的区别"><span class="nav-text">ART和DVM的区别</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#ART的运行时堆"><span class="nav-text">ART的运行时堆</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#ART-GC过程-提高内存使用，减少碎片化"><span class="nav-text">ART-GC过程 - 提高内存使用，减少碎片化</span></a></li></ol></li></ol></div>
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#Dalvik虚拟机"><span class="nav-text">Dalvik虚拟机</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#DVM与JVM的区别"><span class="nav-text">DVM与JVM的区别</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#基于的架构不同"><span class="nav-text">基于的架构不同</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#执行的字节码不同"><span class="nav-text">执行的字节码不同</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#DVM允许在有限的内存中同时允许多个进程"><span class="nav-text">DVM允许在有限的内存中同时允许多个进程</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#DVM由Zygote创建和初始化"><span class="nav-text">DVM由Zygote创建和初始化</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#DVM拥有共享机制"><span class="nav-text">DVM拥有共享机制</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#JIT编译"><span class="nav-text">JIT编译</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#DVM架构"><span class="nav-text">DVM架构</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#DVM运行时堆"><span class="nav-text">DVM运行时堆</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#DVM-GC过程"><span class="nav-text">DVM-GC过程</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#ART虚拟机"><span class="nav-text">ART虚拟机</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#ART和DVM的区别"><span class="nav-text">ART和DVM的区别</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#ART的运行时堆"><span class="nav-text">ART的运行时堆</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#ART-GC过程-提高内存使用，减少碎片化"><span class="nav-text">ART-GC过程 - 提高内存使用，减少碎片化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Apk打包流程"><span class="nav-text">Apk打包流程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Apk安装流程"><span class="nav-text">Apk安装流程</span></a></li></ol></li></ol></div>
             
 
           </div>
