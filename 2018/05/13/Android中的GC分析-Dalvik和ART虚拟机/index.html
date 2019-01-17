@@ -100,15 +100,23 @@
 
 
 
-  <meta name="keywords" content="Android">
+  <meta name="description" content="Dalvik虚拟机 Dalvik Virtual Machine，简称Dalvik VM或者 DVM。DVM是Google专门为Android平台开发的虚拟机，是Android的重要组成部分，支持dex格式的Java应用程序运行。 dex格式是专门为DVM设计的一种压缩格式，适合内存和处理器速度有限的系统。   从架构图中可知，DVM运行在Android的运行时库层。 DVM与JVM的区别基于的">
+<meta name="keywords" content="Android">
 <meta property="og:type" content="article">
 <meta property="og:title" content="Android中的GC分析-Dalvik和ART虚拟机">
 <meta property="og:url" content="http://yoursite.com/2018/05/13/Android中的GC分析-Dalvik和ART虚拟机/index.html">
 <meta property="og:site_name" content="Wxy的个人博客">
+<meta property="og:description" content="Dalvik虚拟机 Dalvik Virtual Machine，简称Dalvik VM或者 DVM。DVM是Google专门为Android平台开发的虚拟机，是Android的重要组成部分，支持dex格式的Java应用程序运行。 dex格式是专门为DVM设计的一种压缩格式，适合内存和处理器速度有限的系统。   从架构图中可知，DVM运行在Android的运行时库层。 DVM与JVM的区别基于的">
 <meta property="og:locale" content="zh-CN">
-<meta property="og:updated_time" content="2019-01-14T03:47:00.127Z">
+<meta property="og:image" content="http://yoursite.com/images/Android系统架构图.jpg">
+<meta property="og:image" content="http://yoursite.com/images/执行的字节码区别.png">
+<meta property="og:image" content="http://yoursite.com/images/DVM架构.png">
+<meta property="og:image" content="http://yoursite.com/images/ART运行时堆.png">
+<meta property="og:updated_time" content="2019-01-17T04:44:27.735Z">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="Android中的GC分析-Dalvik和ART虚拟机">
+<meta name="twitter:description" content="Dalvik虚拟机 Dalvik Virtual Machine，简称Dalvik VM或者 DVM。DVM是Google专门为Android平台开发的虚拟机，是Android的重要组成部分，支持dex格式的Java应用程序运行。 dex格式是专门为DVM设计的一种压缩格式，适合内存和处理器速度有限的系统。   从架构图中可知，DVM运行在Android的运行时库层。 DVM与JVM的区别基于的">
+<meta name="twitter:image" content="http://yoursite.com/images/Android系统架构图.jpg">
 
 
 
@@ -420,6 +428,84 @@
 
       
         <!--如何对JVM进行优化 class文件如何转成dex文件-->
+<h2 id="Dalvik虚拟机"><a href="#Dalvik虚拟机" class="headerlink" title="Dalvik虚拟机"></a>Dalvik虚拟机</h2><blockquote>
+<p><code>Dalvik Virtual Machine</code>，简称Dalvik VM或者 DVM。DVM是Google专门为Android平台开发的虚拟机，是Android的重要组成部分，支持<code>dex格式</code>的Java应用程序运行。</p>
+<p><code>dex格式</code>是专门为DVM设计的一种压缩格式，适合内存和处理器速度有限的系统。</p>
+</blockquote>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/Android系统架构图.jpg" class="full-image" alt="Android系统架构图" title="Android系统架构图"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<p>从架构图中可知，DVM运行在Android的运行时库层。</p>
+<h3 id="DVM与JVM的区别"><a href="#DVM与JVM的区别" class="headerlink" title="DVM与JVM的区别"></a>DVM与JVM的区别</h3><h4 id="基于的架构不同"><a href="#基于的架构不同" class="headerlink" title="基于的架构不同"></a>基于的架构不同</h4><p>JVM是基于栈的，意味着需要去栈中读写数据，所需的指令会更多，会导致速度变慢，不适用于性能有限的移动设备。</p>
+<p>DVM是基于寄存器的，不会有基于栈的虚拟机在复制数据时，使用大量的出入栈指令，同时指令更紧凑，简洁。</p>
+<h4 id="执行的字节码不同"><a href="#执行的字节码不同" class="headerlink" title="执行的字节码不同"></a>执行的字节码不同</h4><p>Java类被编译成一个或多个.class文件，并打包成jar文件，JVM通过对应的.class和jar文件获取相应的字节码。</p>
+<p><strong>执行顺序为： .java文件 -&gt; .class文件 -&gt; .jar文件</strong></p>
+<p>DVM运行的是Dalvik字节码，所有的Dalvik字节码由Java字节码转换而来，并被打包到一个dex文件中。DVM通过dex文件执行字节码。</p>
+<p><strong>执行顺序为： .java文件 -&gt; .class文件 -&gt; .dex文件</strong></p>
+<p><strong>dex文件体积小。Android SDK中有一个<code>dx</code>工具将Java字节码转换为Dalvik字节码。</strong></p>
+<p>dx工具对Java类文件重新排序，消除在类文件中出现的所有冗余信息，避免虚拟机在初始化时反复进行文件加载与解析。<strong>消除其中的冗余信息，重新组合成一个常量池，所有类文件共享同一个常量池。由于dx工具对常量池的压缩，使得相同的字符串，常量在dex文件中只出现一次，从而减小文件体积。并把所有的.class文件整合到.dex文件中，减少了I/O操作，加快类查找速度。</strong></p>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/执行的字节码区别.png" class="full-image" alt="执行的字节码区别" title="执行的字节码区别"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<p>简单来讲，dex格式文件就是将多个class文件中共有的部分统一存放，取出冗余信息。</p>
+<h4 id="DVM允许在有限的内存中同时允许多个进程"><a href="#DVM允许在有限的内存中同时允许多个进程" class="headerlink" title="DVM允许在有限的内存中同时允许多个进程"></a>DVM允许在有限的内存中同时允许多个进程</h4><p>在Android中的每一个应用都运行在一个DVM实例中，每一个DVM实例都运行在一个独立的进程空间中，独立的进程可以防止在虚拟机崩溃时导致所有程序关闭。</p>
+<h4 id="DVM由Zygote创建和初始化"><a href="#DVM由Zygote创建和初始化" class="headerlink" title="DVM由Zygote创建和初始化"></a>DVM由Zygote创建和初始化</h4><p>每当系统需要创建一个应用程序时，Zygote就会fork自身，快速的创建和初始化一个DVM实例，用于应用程序的运行。</p>
+<h4 id="DVM拥有共享机制"><a href="#DVM拥有共享机制" class="headerlink" title="DVM拥有共享机制"></a>DVM拥有共享机制</h4><p>不同应用之间可以在运行时共享相同的类，拥有更高的效率。JVM不支持这种共享机制，不同的程序都是彼此独立的。</p>
+<h4 id="JIT编译"><a href="#JIT编译" class="headerlink" title="JIT编译"></a>JIT编译</h4><p><code>Just In Time Compiler</code>即时编译器，从Android2.2开始支持了<code>JIT</code>。</p>
+<p><em>JIT会对多次运行的代码进行编译，生成相当精简的本地机器码，这样在下次执行相同的逻辑时，直接使用编译之后的本地机器码，而不是每次都需要编译。</em></p>
+<p><strong>每次重新打开应用程序，都需要JIT编译。</strong></p>
+<h3 id="DVM架构"><a href="#DVM架构" class="headerlink" title="DVM架构"></a>DVM架构</h3><p>DVM源码位于dalvik/目录下。</p>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/DVM架构.png" class="full-image" alt="DVM架构" title="DVM架构"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<p>首先Java编译器的.class文件经过<code>DX工具</code>转换为.dex文件，.dex文件由类加载器进行处理，接着解释器根据指令集对Dalvik字节码进行解释、执行，最后交于Linux处理。</p>
+<h3 id="DVM运行时堆"><a href="#DVM运行时堆" class="headerlink" title="DVM运行时堆"></a>DVM运行时堆</h3><p>DVM运行时堆使用<strong>标记-清除</strong>算法进行GC，它由两个Space以及多个辅助数据结构组成，两个Space分别是<code>Zygote Space(Zygote Heap)</code>和<code>Allocation Space(Active Heap)</code>。</p>
+<p><code>Zygote Space</code>用来管理Zygote进程在启动过程中预加载和创建的各种对象，<code>Zygote Space</code>不会触发GC。所有进程都共享该区域，比如系统资源。</p>
+<p><code>Allocation Space</code>是在Zygote进程fork第一个子进程之前创建的，它是一种私有进程，Zygote进程及fork的子进程在<code>Allocation Space</code>进行对象分配和释放。</p>
+<p>还有以下数据结构：</p>
+<p><code>Card Table</code>：记录垃圾信息</p>
+<p><code>Heap Bitmap</code>：用来记录上次GC存活的对象，另一个用来记录这次GC存活的对象</p>
+<p><code>Mark Stack</code>：遍历存活的对象。</p>
+<h3 id="DVM-GC过程"><a href="#DVM-GC过程" class="headerlink" title="DVM-GC过程"></a>DVM-GC过程</h3><ol>
+<li>当GC被触发的时候，会去查找所有活动的对象，这个时候整个程序与虚拟机内部的所有线程就会挂起，可以在较少的堆栈里找到所引用的对象。<strong>回收动作和应用程序是同时执行的(非并发执行)。</strong></li>
+<li>GC对符合条件的对象进行标记</li>
+<li>GC对标记的对象进行回收</li>
+<li>恢复所有线程的执行现场继续执行</li>
+</ol>
+<p>GC的执行会相当快速，但如果出现频繁GC并且内存资源少，就会导致UI卡顿，掉帧。因为是和应用程序同时执行的。</p>
+<h2 id="ART虚拟机"><a href="#ART虚拟机" class="headerlink" title="ART虚拟机"></a>ART虚拟机</h2><blockquote>
+<p>ART虚拟机是在Android4.4发布的，用来替换Dalvik虚拟机。5.0之后默认采用ART虚拟机。</p>
+</blockquote>
+<h3 id="ART和DVM的区别"><a href="#ART和DVM的区别" class="headerlink" title="ART和DVM的区别"></a>ART和DVM的区别</h3><ol>
+<li><p>DVM每次运行应用时，字节码都需要JIT编译器译为机器码，会使得应用程序运行效率降低。在ART中采用<strong>AOT(ahead of time Compilation，预编译)</strong>，将字节码预先编译成机器码并存储在本地，这样应用程序每次运行就不需要执行编译了，大大提升运行效率。</p>
+<p><code>AOT</code>优点：</p>
+<ul>
+<li>系统性能提升明显</li>
+<li>应用启动更快，体验更流畅</li>
+<li>设备的耗电量降低</li>
+</ul>
+<p><code>AOT</code>缺点：</p>
+<ul>
+<li>使得应用程序安装时间变长，尤其是复杂的应用</li>
+<li>由于字节码预先编译成机器码，机器码需要的存储空间会多一些，会占用较多的存储空间</li>
+</ul>
+<p>在Android 7.0中加入了<code>JIT</code>，不会把字节码全部编译成机器码，而是在运行中将热点代码编译成机器码。从而缩短安装时间及减少安装空间。</p>
+</li>
+<li><p>DVM是为32位CPU设计的，而ART支持64位并兼容32位</p>
+</li>
+<li><p>ART对GC进行了改进，比如更频繁的执行并行垃圾收集，减少GC暂停次数</p>
+</li>
+<li><p>ART的运行时堆空间划分和DVM不同。</p>
+</li>
+</ol>
+<h3 id="ART的运行时堆"><a href="#ART的运行时堆" class="headerlink" title="ART的运行时堆"></a>ART的运行时堆</h3><p>ART的GC类型有多种，主要分为<code>Mark-Sweep GC(标记-整理)</code>和<code>Compacting GC()</code>。ART运行时堆得空间根据不同的GC类型也有不同的划分，默认采用CMS方案。</p>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/ART运行时堆.png" class="full-image" alt="ART运行时堆" title="ART运行时堆"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<h3 id="ART-GC过程-提高内存使用，减少碎片化"><a href="#ART-GC过程-提高内存使用，减少碎片化" class="headerlink" title="ART-GC过程 - 提高内存使用，减少碎片化"></a>ART-GC过程 - 提高内存使用，减少碎片化</h3><ol>
+<li>GC将会锁住Java堆，扫描并进行标记</li>
+<li>标记完毕释放Java堆的锁，并且挂起所有线程</li>
+<li>GC对标记的对象进行回收</li>
+<li>恢复所有线程的执行线程继续运行</li>
+<li>重复步骤2-4直到结束</li>
+</ol>
+<p>Art改善了GC过程：<strong>将其非并发过程改成了部分并发，还有就是堆内存的重新分配管理。</strong></p>
+<p>DVM内存管理特点：<strong>内存碎片化严重，这也是由于标记-清除算法导致的。</strong></p>
+<p>ART的解决方案：在ART中，它将Java分了一块空间<code>Large Object Space</code>，专门用来存放大对象。同时ART引入了<code>moving collector</code>技术，将不连续的物理内存块进行对其，对齐后碎片问题得到了很好的解决。</p>
+<p>使用<code>Large Object Space</code>是因为<code>moving collector</code>对大块内存的位移时间过长，需要降低时间并提高内存利用率。</p>
+
       
     </div>
 
@@ -512,8 +598,17 @@
       
 
       
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            文章目录
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            站点概览
+          </li>
+        </ul>
+      
 
-      <div class="site-overview-wrap sidebar-panel sidebar-panel-active">
+      <div class="site-overview-wrap sidebar-panel">
         <div class="site-overview">
           <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
             
@@ -573,7 +668,9 @@
                     
                       
                     
-                    <span class="site-state-item-count">13</span>
+                      
+                    
+                    <span class="site-state-item-count">14</span>
                     <span class="site-state-item-name">标签</span>
                   </a>
                 </div>
@@ -624,6 +721,23 @@
         </div>
       </div>
 
+      
+      <!--noindex-->
+        <div class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+            
+            
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#Dalvik虚拟机"><span class="nav-text">Dalvik虚拟机</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#DVM与JVM的区别"><span class="nav-text">DVM与JVM的区别</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#基于的架构不同"><span class="nav-text">基于的架构不同</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#执行的字节码不同"><span class="nav-text">执行的字节码不同</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#DVM允许在有限的内存中同时允许多个进程"><span class="nav-text">DVM允许在有限的内存中同时允许多个进程</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#DVM由Zygote创建和初始化"><span class="nav-text">DVM由Zygote创建和初始化</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#DVM拥有共享机制"><span class="nav-text">DVM拥有共享机制</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#JIT编译"><span class="nav-text">JIT编译</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#DVM架构"><span class="nav-text">DVM架构</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#DVM运行时堆"><span class="nav-text">DVM运行时堆</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#DVM-GC过程"><span class="nav-text">DVM-GC过程</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#ART虚拟机"><span class="nav-text">ART虚拟机</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#ART和DVM的区别"><span class="nav-text">ART和DVM的区别</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#ART的运行时堆"><span class="nav-text">ART的运行时堆</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#ART-GC过程-提高内存使用，减少碎片化"><span class="nav-text">ART-GC过程 - 提高内存使用，减少碎片化</span></a></li></ol></li></ol></div>
+            
+
+          </div>
+        </div>
+      <!--/noindex-->
       
 
       
