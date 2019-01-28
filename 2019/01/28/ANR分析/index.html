@@ -1,0 +1,1248 @@
+<!DOCTYPE html>
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+<html class="theme-next gemini use-motion" lang="zh-CN">
+<head>
+  <meta charset="UTF-8"/>
+<meta http-equiv="X-UA-Compatible" content="IE=edge"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2"/>
+<meta name="theme-color" content="#222"/>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  <link rel="stylesheet" href="/lib/fancybox/source/jquery.fancybox.css?v=2.1.5"/>
+
+
+
+
+
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/font-awesome.min.css?v=4.6.2"/>
+
+<link rel="stylesheet" href="/css/main.css?v=6.7.0"/>
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png?v=6.7.0">
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png?v=6.7.0">
+
+
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png?v=6.7.0">
+
+
+  <link rel="mask-icon" href="/images/logo.svg?v=6.7.0" color="#222">
+
+
+
+
+
+
+
+<script id="hexo.configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '/',
+    scheme: 'Gemini',
+    version: '6.7.0',
+    sidebar: {"position":"left","display":"always","offset":12,"b2t":true,"scrollpercent":true,"onmobile":false},
+    fancybox: true,
+    fastclick: false,
+    lazyload: false,
+    tabs: true,
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    algolia: {
+      applicationID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    }
+  };
+</script>
+
+
+  
+
+
+
+
+  <meta name="description" content="ANR概述 ANR：Application Not Responding应用程序未响应，Android会要求一些事件需要在规定时间内处理完成，如果超过预定事件内未能得到有效响应或者响应时间过长，就会造成ANR。  ANR由消息处理机制保证，Android在系统层实现了发现ANR的机制，核心原理是消息调度和超时处理。 ANR本质是性能问题。实际上是对应用程序主线程的限制，要求主线程在限定时间内处理">
+<meta name="keywords" content="Android">
+<meta property="og:type" content="article">
+<meta property="og:title" content="ANR分析">
+<meta property="og:url" content="http://yoursite.com/2019/01/28/ANR分析/index.html">
+<meta property="og:site_name" content="Wxy的个人博客">
+<meta property="og:description" content="ANR概述 ANR：Application Not Responding应用程序未响应，Android会要求一些事件需要在规定时间内处理完成，如果超过预定事件内未能得到有效响应或者响应时间过长，就会造成ANR。  ANR由消息处理机制保证，Android在系统层实现了发现ANR的机制，核心原理是消息调度和超时处理。 ANR本质是性能问题。实际上是对应用程序主线程的限制，要求主线程在限定时间内处理">
+<meta property="og:locale" content="zh-CN">
+<meta property="og:image" content="http://yoursite.com/images/输入事件超时监测.webp">
+<meta property="og:updated_time" content="2019-01-28T07:01:45.332Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="ANR分析">
+<meta name="twitter:description" content="ANR概述 ANR：Application Not Responding应用程序未响应，Android会要求一些事件需要在规定时间内处理完成，如果超过预定事件内未能得到有效响应或者响应时间过长，就会造成ANR。  ANR由消息处理机制保证，Android在系统层实现了发现ANR的机制，核心原理是消息调度和超时处理。 ANR本质是性能问题。实际上是对应用程序主线程的限制，要求主线程在限定时间内处理">
+<meta name="twitter:image" content="http://yoursite.com/images/输入事件超时监测.webp">
+
+
+
+
+
+
+  <link rel="canonical" href="http://yoursite.com/2019/01/28/ANR分析/"/>
+
+
+
+<script id="page.configurations">
+  CONFIG.page = {
+    sidebar: "",
+  };
+</script>
+
+  <title>ANR分析 | Wxy的个人博客</title>
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .motion-element,
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-title { opacity: initial; }
+
+  .use-motion .logo,
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" lang="zh-CN">
+
+  
+  
+    
+  
+
+  <div class="container sidebar-position-left page-post-detail">
+    <div class="headband"></div>
+
+    <header id="header" class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-wrapper">
+  <div class="site-meta">
+    
+
+    <div class="custom-logo-site-title">
+      <a href="/" class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">Wxy的个人博客</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+    
+      
+        <p class="site-subtitle">技术路上点滴</p>
+      
+    
+    
+  </div>
+
+  <div class="site-nav-toggle">
+    <button aria-label="切换导航栏">
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+    </button>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  
+    <ul id="menu" class="menu">
+      
+        
+        
+        
+          
+          <li class="menu-item menu-item-home">
+
+    
+    
+    
+      
+    
+
+    
+
+    <a href="/" rel="section"><i class="menu-item-icon fa fa-fw fa-home"></i> <br/>首页</a>
+
+  </li>
+        
+        
+        
+          
+          <li class="menu-item menu-item-tags">
+
+    
+    
+    
+      
+    
+
+    
+
+    <a href="/tags/" rel="section"><i class="menu-item-icon fa fa-fw fa-tags"></i> <br/>标签</a>
+
+  </li>
+        
+        
+        
+          
+          <li class="menu-item menu-item-archives">
+
+    
+    
+    
+      
+    
+
+    
+
+    <a href="/archives/" rel="section"><i class="menu-item-icon fa fa-fw fa-archive"></i> <br/>归档</a>
+
+  </li>
+
+      
+      
+        <li class="menu-item menu-item-search">
+          
+            <a href="javascript:;" class="popup-trigger">
+          
+            
+              <i class="menu-item-icon fa fa-search fa-fw"></i> <br/>搜索</a>
+        </li>
+      
+    </ul>
+  
+
+  
+
+  
+    <div class="site-search">
+      
+  <div class="popup search-popup local-search-popup">
+  <div class="local-search-header clearfix">
+    <span class="search-icon">
+      <i class="fa fa-search"></i>
+    </span>
+    <span class="popup-btn-close">
+      <i class="fa fa-times-circle"></i>
+    </span>
+    <div class="local-search-input-wrapper">
+      <input autocomplete="off"
+             placeholder="搜索..." spellcheck="false"
+             type="text" id="local-search-input">
+    </div>
+  </div>
+  <div id="local-search-result"></div>
+</div>
+
+
+
+    </div>
+  
+</nav>
+
+
+
+  
+
+
+
+</div>
+    </header>
+
+    
+
+
+    <main id="main" class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+            
+
+          
+          <div id="content" class="content">
+            
+
+  <div id="posts" class="posts-expand">
+    
+
+  
+
+  
+  
+  
+
+  
+
+  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2019/01/28/ANR分析/"/>
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="Leo-Wxy"/>
+      <meta itemprop="description" content="如果我没有见过光明，那我本可以忍受黑暗"/>
+      <meta itemprop="image" content="/images/avatar.png"/>
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Wxy的个人博客"/>
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">ANR分析
+
+              
+            
+          </h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+
+            
+            
+            
+
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">发表于</span>
+              
+
+              
+                
+              
+
+              <time title="创建时间：2019-01-28 09:56:42" itemprop="dateCreated datePublished" datetime="2019-01-28T09:56:42+08:00">2019-01-28</time>
+            
+
+            
+          </span>
+
+          
+
+          
+            
+          
+
+          
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        <!--简要解释一下 ANR？为什么会发生 ANR？如何避免发生 ANR？如何定位 ANR？ANR发生条件？如何分析ANR-->
+<h2 id="ANR概述"><a href="#ANR概述" class="headerlink" title="ANR概述"></a>ANR概述</h2><blockquote>
+<p>ANR：<code>Application Not Responding</code>应用程序未响应，Android会要求一些事件需要在规定时间内处理完成，如果超过预定事件内未能得到有效响应或者响应时间过长，就会造成ANR。</p>
+</blockquote>
+<p>ANR由<strong>消息处理机制</strong>保证，Android在系统层实现了发现ANR的机制，核心原理是<strong>消息调度和超时处理</strong>。</p>
+<p>ANR本质是<strong>性能问题</strong>。实际上是对应用程序主线程的限制，要求主线程在限定时间内处理完一些最常见的操作(<em>启动服务，处理广播，处理输入</em>)，如果处理超时，则认为主线程已经失去了响应其他操作的能力。</p>
+<h2 id="ANR发生场景"><a href="#ANR发生场景" class="headerlink" title="ANR发生场景"></a>ANR发生场景</h2><ul>
+<li><strong>输入事件(按键和触摸事件)5s内未处理</strong>：Input event dispatching timed out</li>
+<li><strong>BroadcastReceiver的<code>onReceive()</code>在规定时间内没处理完(<em>前台广播为10s，后台广播为60s</em>)</strong>：Timeout of broadcast BoradcastRecord</li>
+<li><strong>Service在<em>前台20s后台200s</em>时间内为启动完成</strong>：Timeout executing service</li>
+<li><strong>ContentProvider的<code>publish()</code>在10s内没有执行完成</strong>：Timeout publishing content providers</li>
+</ul>
+<h2 id="ANR机制"><a href="#ANR机制" class="headerlink" title="ANR机制"></a>ANR机制</h2><blockquote>
+<p>ANR机制主要分为两部分：<strong>ANR监测机制</strong>，<strong>ANR报告机制</strong>。</p>
+<ul>
+<li>ANR监测机制：Android对于不同的ANR类型(<em>Broadcast,Service,InputEvent</em>)都有一套监测机制。<blockquote>
+<ul>
+<li>ANR报告机制：在监测到ANR后，需要显示ANR对话框，输出日志等</li>
+</ul>
+</blockquote>
+</li>
+</ul>
+</blockquote>
+<h3 id="输入事件超时监测"><a href="#输入事件超时监测" class="headerlink" title="输入事件超时监测"></a>输入事件超时监测</h3><h4 id="输入系统简介"><a href="#输入系统简介" class="headerlink" title="输入系统简介"></a>输入系统简介</h4><p>内核将原始事件写入到设备节点中，<code>InputReader</code>在期限错循环不断的从<code>EventHub</code>中抽取原始输入事件，进行加工处理后将加工所得的事件放入<code>InputDispatcher</code>的派发队列中。<code>InputDispatcher</code>在其线程循环中将派发队列中的事件取出，查找合适的窗口，将事件写入到窗口的事件接收管道中。</p>
+<h4 id="超时监测"><a href="#超时监测" class="headerlink" title="超时监测"></a>超时监测</h4><span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/输入事件超时监测.webp" class="full-image" alt="输入事件超时监测" title="输入事件超时监测"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<p><code>InputDispaycher::dispatchOnceInnerLocked()</code>：根据事件类型选择不同事件的处理方法</p>
+<p><code>InputDispaycher::findFocusedWindowTargetsLocked()</code>：内部调用<code>checkWindowReadyForMoreInputLocked()</code>检查窗口是否有新能力在接受新的输入事件。</p>
+<p><code>InputDispatcher::handleTargetsNotReadyLocked()</code>：进行判断事件5s之内是否分发完毕</p>
+<p>当应用主线程被卡住时，再点击其他组件也是无响应，因为事件派发是串行的，上一事件未处理完毕，下一事件不会向下执行。</p>
+<p>在<code>Activity.onCreate()</code>执行耗时操作，不管用户如何操作都不会发生ANR，因为输入事件相关监听机制尚未建立起来。</p>
+<p>输入事件由<code>InputDispatcher</code>调度，待处理的输入输出事件都会进入队列中等待，设计了一个等待超时的判断。</p>
+<h3 id="Service超时监测"><a href="#Service超时监测" class="headerlink" title="Service超时监测"></a>Service超时监测</h3><p>本身有分析过<code>Service的启动流程</code>，在其中了解到<code>ActiveServices.realStartServiceLocked()</code>是真正的Service启动流程。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// ../core/java/com/android/server/am/ActiveServices.java  </span></span><br><span class="line"><span class="comment">// How long we wait for a service to finish executing.</span></span><br><span class="line">    <span class="keyword">static</span> <span class="keyword">final</span> <span class="keyword">int</span> SERVICE_TIMEOUT = <span class="number">20</span>*<span class="number">1000</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// How long we wait for a service to finish executing.</span></span><br><span class="line">    <span class="keyword">static</span> <span class="keyword">final</span> <span class="keyword">int</span> SERVICE_BACKGROUND_TIMEOUT = SERVICE_TIMEOUT * <span class="number">10</span>;</span><br><span class="line"></span><br><span class="line"><span class="comment">//真正启动Service</span></span><br><span class="line"><span class="function"><span class="keyword">private</span> <span class="keyword">final</span> <span class="keyword">void</span> <span class="title">realStartServiceLocked</span><span class="params">(ServiceRecord r,</span></span></span><br><span class="line"><span class="function"><span class="params">            ProcessRecord app, <span class="keyword">boolean</span> execInFg)</span> <span class="keyword">throws</span> RemoteException </span>&#123;</span><br><span class="line">        ...</span><br><span class="line">        <span class="comment">// 主要是为了设置ANR超时，可以看出在正式启动Service之前开始ANR监测；</span></span><br><span class="line">        bumpServiceExecutingLocked(r, execInFg, <span class="string">"create"</span>);</span><br><span class="line">       <span class="comment">// 启动过程调用scheduleCreateService方法,最终会调用Service.onCreate方法；</span></span><br><span class="line">        app.thread.scheduleCreateService(r, r.serviceInfo,</span><br><span class="line">        <span class="comment">// 绑定过程中，这个方法中会调用app.thread.scheduleBindService方法</span></span><br><span class="line">        requestServiceBindingsLocked(r, execInFg);</span><br><span class="line">        <span class="comment">// 调动Service的其他方法，如onStartCommand，也是IPC通讯</span></span><br><span class="line">        sendServiceArgsLocked(r, execInFg, <span class="keyword">true</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">//设置超时监测                                         </span></span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">scheduleServiceTimeoutLocked</span><span class="params">(ProcessRecord proc)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">if</span> (proc.executingServices.size() == <span class="number">0</span> || proc.thread == <span class="keyword">null</span>) &#123;</span><br><span class="line">            <span class="keyword">return</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        Message msg = mAm.mHandler.obtainMessage(</span><br><span class="line">                ActivityManagerService.SERVICE_TIMEOUT_MSG);</span><br><span class="line">        msg.obj = proc;</span><br><span class="line">        <span class="comment">// 在serviceDoneExecutingLocked中会remove该SERVICE_TIMEOUT_MSG消息，</span></span><br><span class="line">        <span class="comment">// 当超时后仍没有remove SERVICE_TIMEOUT_MSG消息，则执行ActiveServices. serviceTimeout()方法；</span></span><br><span class="line">        mAm.mHandler.sendMessageDelayed(msg,</span><br><span class="line">                proc.execServicesFg ? SERVICE_TIMEOUT : SERVICE_BACKGROUND_TIMEOUT);</span><br><span class="line">        <span class="comment">// 前台进程中执行Service，SERVICE_TIMEOUT=20s；后台进程中执行Service，SERVICE_BACKGROUND_TIMEOUT=200s</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">//在AMS中收到了  SERVICE_TIMEOUT_MSG Message就会触发该方法                                       </span></span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">serviceTimeout</span><span class="params">(ProcessRecord proc)</span> </span>&#123;</span><br><span class="line">    ...</span><br><span class="line">    <span class="keyword">final</span> <span class="keyword">long</span> maxTime =  now -</span><br><span class="line">              (proc.execServicesFg ? SERVICE_TIMEOUT : SERVICE_BACKGROUND_TIMEOUT);</span><br><span class="line">    ...</span><br><span class="line">    <span class="comment">// 寻找运行超时的Service</span></span><br><span class="line">    <span class="keyword">for</span> (<span class="keyword">int</span> i=proc.executingServices.size()-<span class="number">1</span>; i&gt;=<span class="number">0</span>; i--) &#123;</span><br><span class="line">        ServiceRecord sr = proc.executingServices.valueAt(i);</span><br><span class="line">        <span class="keyword">if</span> (sr.executingStart &lt; maxTime) &#123;</span><br><span class="line">            timeout = sr;</span><br><span class="line">            <span class="keyword">break</span>;</span><br><span class="line">        &#125;</span><br><span class="line">       ...</span><br><span class="line">    &#125;</span><br><span class="line">    ...</span><br><span class="line">    <span class="comment">// 判断执行Service超时的进程是否在最近运行进程列表，如果不在，则忽略这个ANR</span></span><br><span class="line">    <span class="keyword">if</span> (timeout != <span class="keyword">null</span> &amp;&amp; mAm.mLruProcesses.contains(proc)) &#123;</span><br><span class="line">        anrMessage = <span class="string">"executing service "</span> + timeout.shortName;</span><br><span class="line">    &#125;</span><br><span class="line">    ...</span><br><span class="line">    <span class="keyword">if</span> (anrMessage != <span class="keyword">null</span>) &#123;</span><br><span class="line">        <span class="comment">// 当存在timeout的service，则执行appNotResponding，报告ANR</span></span><br><span class="line">        mAm.appNotResponding(proc, <span class="keyword">null</span>, <span class="keyword">null</span>, <span class="keyword">false</span>, anrMessage);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>Service启动前会先启动超时监测，如果在指定时间内(<em>前台20s后台200s</em>)没有启动完毕，就会调用到<code>ActiveServices.serviceTimeout()</code>报告ANR；如果执行完毕，会调用到<code>ActiveServices.serviceDoneExecutingLocked()</code>在其中<code>removeMessages(SERVICE_TIMEOUT_MSG)</code>移除超时消息。</p>
+<h3 id="ANR报告机制"><a href="#ANR报告机制" class="headerlink" title="ANR报告机制"></a>ANR报告机制</h3><p>无论哪种类型的ANR发生后，最终都会调用到<code>AppErrors.appNotResponding()</code>。这个方法主要的功能就是<strong>向用户或开发者报告ANR发生了。</strong>最终的表现就是弹出一个对话框，告诉用户当前程序无法响应；并且会输出ANR日志，以供开发者分析。</p>
+<ul>
+<li><strong>event log</strong>：通过检索”am_anr”关键字，可以找到发生ANR的应用</li>
+<li><strong>main log</strong>：通过检索”ANR in”关键字，可以找到ANR的信息，日志的上下文会包含CPU的使用情况</li>
+<li><strong>dropbox</strong>：通过检索”anr”类型，可以找到ANR的信息</li>
+<li><strong>traces</strong>：发生ANR时，各进程的函数调用栈信息 (<em>可以通过<code>adb pull data.anr/traces.txt</code>导出trace文件</em>)</li>
+</ul>
+<p>ANR报告相关内容主要为以上四种，后续如果需要分析ANR问题，分析ANR往往是从<code>main log中的CPU使用情况和导出的traces.txt文件</code>进行分析。</p>
+<h2 id="ANR分析"><a href="#ANR分析" class="headerlink" title="ANR分析"></a>ANR分析</h2><p>ANR问题的产生是由于主线程的任务无法在规定事件内无法完成。造成这种情况的原因大致会有以下几点：</p>
+<ul>
+<li>主线程在做一些耗时的工作</li>
+<li>主线程被其他线程锁</li>
+<li>cpu被其他线程占用，导致该进程没有被分配到足够的CPU资源</li>
+</ul>
+<p>分析思路主要是:</p>
+<ol>
+<li><code>从log中找到ANR发生的信息</code>：在log中搜索<code>am_anr或ANR in</code>找到ANR发生的log，包含了ANR发生的时间，进程，ANRtype。</li>
+<li><code>继续分析CPU usage的信息</code>：表明了CPU在ANR前后的用量，从各种CPU usage信息中可以分析几点：<ul>
+<li>如果其他进程占用CPU较多，而发生ANR的进程占用较低，可以认为是 因为CPU资源未分配足够，导致的ANR</li>
+<li>如果ANR进程占用CPU较多，可以怀疑是内部一些不合理的代码导致CPU资源大量消耗，如出现了死循环或者后台有大量线程在执行任务，或者存在频繁的文件读写(<em>iowait</em>)</li>
+<li>CPU总用量都不高，该进程和其他线程的占用过高，可能是由于主线程的操作耗时过长，或者主线程被锁导致。</li>
+</ul>
+</li>
+<li><code>向下继续分析 trace文件</code>：trace文件记录了发生ANR前后该进程中各个线程的stack。对我们分析ANR问题最有价值的就是主线程的stack(<code>main</code>)。一般主线程trace中可能有如下几种情况：<ul>
+<li>主线程是<code>running或native</code>而对应的栈对应了我们应用中的函数，则很有可能是执行该函数发生了超时</li>
+<li>主线程是<code>block</code>，主线程被锁，可以考虑进行优化代码，解除掉锁的状态。如果是死锁问题，需要及时处理</li>
+</ul>
+</li>
+</ol>
+<h2 id="ANR避免和检测"><a href="#ANR避免和检测" class="headerlink" title="ANR避免和检测"></a>ANR避免和检测</h2><p>默认情况下，Android应用程序通常在单线程上运行——<strong>主线程</strong>。ANR的发生场景主要是在主线程中进行了耗时操作。</p>
+<blockquote>
+<p>哪些算作UI主线程？</p>
+<ul>
+<li>Activity的所有生命周期回调都是执行在主线程的</li>
+<li>Service默认执行在主线程</li>
+<li>BoradcastReceiver的<code>onReceive()</code>回调在主线程</li>
+<li>没有使用子线程的Looper的Handler实现的<code>handleMessage()</code></li>
+<li>AsyncTask除了<code>doInBackground()</code>执行在主线程</li>
+<li>View的<code>post(runnable)</code>执行在主线程</li>
+</ul>
+</blockquote>
+<p><strong>主要原则是不要在主线程中做耗时操作。</strong></p>
+<p>检测可以利用BlockCanary – 基本原理是利用主线程的消息队列处理机制，通过对比消息分发开始和结束的时间点来判断是否超过设定的时间，超过则判断为线程卡顿。</p>
+
+      
+    </div>
+
+    
+
+    
+    
+    
+
+    
+
+    
+      
+    
+    
+
+    
+
+    <footer class="post-footer">
+      
+        <div class="post-tags">
+          
+            <a href="/tags/Android/" rel="tag"># Android</a>
+          
+        </div>
+      
+
+      
+      
+      
+
+      
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+              <a href="/2019/01/18/CopyOnWriteArrayList实现原理及简析/" rel="next" title="数据结构--CopyOnWriteArrayList实现原理及简析">
+                <i class="fa fa-chevron-left"></i> 数据结构--CopyOnWriteArrayList实现原理及简析
+              </a>
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+              <a href="/2019/01/28/Bitmap分析/" rel="prev" title="Bitmap分析">
+                Bitmap分析 <i class="fa fa-chevron-right"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+
+      
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+  </div>
+
+
+          </div>
+          
+
+  
+
+
+
+        </div>
+        
+          
+  
+  <div class="sidebar-toggle">
+    <div class="sidebar-toggle-line-wrap">
+      <span class="sidebar-toggle-line sidebar-toggle-line-first"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-middle"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-last"></span>
+    </div>
+  </div>
+
+  <aside id="sidebar" class="sidebar">
+    
+    <div class="sidebar-inner">
+
+      
+
+      
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            文章目录
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            站点概览
+          </li>
+        </ul>
+      
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-overview">
+          <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+            
+              <img class="site-author-image" itemprop="image"
+                src="/images/avatar.png"
+                alt="Leo-Wxy"/>
+            
+              <p class="site-author-name" itemprop="name">Leo-Wxy</p>
+              <p class="site-description motion-element" itemprop="description">如果我没有见过光明，那我本可以忍受黑暗</p>
+          </div>
+
+          
+            <nav class="site-state motion-element">
+              
+                <div class="site-state-item site-state-posts">
+                
+                  <a href="/archives/">
+                
+                    <span class="site-state-item-count">93</span>
+                    <span class="site-state-item-name">日志</span>
+                  </a>
+                </div>
+              
+
+              
+
+              
+                
+                
+                <div class="site-state-item site-state-tags">
+                  <a href="/tags/index.html">
+                    
+                    
+                      
+                    
+                      
+                    
+                      
+                    
+                      
+                    
+                      
+                    
+                      
+                    
+                      
+                    
+                      
+                    
+                      
+                    
+                      
+                    
+                      
+                    
+                      
+                    
+                      
+                    
+                      
+                    
+                    <span class="site-state-item-count">14</span>
+                    <span class="site-state-item-name">标签</span>
+                  </a>
+                </div>
+              
+            </nav>
+          
+
+          
+
+          
+            <div class="links-of-author motion-element">
+              
+                <span class="links-of-author-item">
+                  
+                  
+                    
+                  
+                  
+                    
+                  
+                  <a href="https://github.com/leo-wxy" title="GitHub &rarr; https://github.com/leo-wxy" rel="noopener" target="_blank"><i class="fa fa-fw fa-globe"></i>GitHub</a>
+                </span>
+              
+                <span class="links-of-author-item">
+                  
+                  
+                    
+                  
+                  
+                    
+                  
+                  <a href="/xy.wang.android@gmail.com" title="G-Mail &rarr; xy.wang.android@gmail.com"><i class="fa fa-fw fa-globe"></i>G-Mail</a>
+                </span>
+              
+            </div>
+          
+
+          
+
+          
+          
+
+          
+            
+          
+          
+
+        </div>
+      </div>
+
+      
+      <!--noindex-->
+        <div class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+            
+            
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#ANR概述"><span class="nav-text">ANR概述</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#ANR发生场景"><span class="nav-text">ANR发生场景</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#ANR机制"><span class="nav-text">ANR机制</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#输入事件超时监测"><span class="nav-text">输入事件超时监测</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#输入系统简介"><span class="nav-text">输入系统简介</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#超时监测"><span class="nav-text">超时监测</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Service超时监测"><span class="nav-text">Service超时监测</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#ANR报告机制"><span class="nav-text">ANR报告机制</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#ANR分析"><span class="nav-text">ANR分析</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#ANR避免和检测"><span class="nav-text">ANR避免和检测</span></a></li></ol></div>
+            
+
+          </div>
+        </div>
+      <!--/noindex-->
+      
+
+      
+        <div class="back-to-top">
+          <i class="fa fa-arrow-up"></i>
+          
+            <span id="scrollpercent"><span>0</span>%</span>
+          
+        </div>
+      
+
+    </div>
+  </aside>
+
+
+        
+      </div>
+    </main>
+
+    <footer id="footer" class="footer">
+      <div class="footer-inner">
+        <div class="copyright">&copy; <span itemprop="copyrightYear">2019</span>
+  <span class="with-love" id="animate">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Leo-Wxy</span>
+
+  
+
+  
+</div>
+
+
+  <div class="powered-by">由 <a href="https://hexo.io" class="theme-link" rel="noopener" target="_blank">Hexo</a> 强力驱动 v3.6.0</div>
+
+
+
+  <span class="post-meta-divider">|</span>
+
+
+
+  <div class="theme-info">主题 – <a href="https://theme-next.org" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a> v6.7.0</div>
+
+
+
+
+        
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+
+    
+
+    
+
+    
+
+    
+  </div>
+
+  
+
+<script>
+  if (Object.prototype.toString.call(window.Promise) !== '[object Function]') {
+    window.Promise = null;
+  }
+</script>
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  <script src="/lib/jquery/index.js?v=2.1.3"></script>
+
+  
+  <script src="/lib/velocity/velocity.min.js?v=1.2.1"></script>
+
+  
+  <script src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+
+  
+  <script src="/lib/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
+
+
+  
+
+
+  <script src="/js/src/utils.js?v=6.7.0"></script>
+
+  <script src="/js/src/motion.js?v=6.7.0"></script>
+
+
+
+  
+  
+
+
+  <script src="/js/src/affix.js?v=6.7.0"></script>
+
+  <script src="/js/src/schemes/pisces.js?v=6.7.0"></script>
+
+
+
+  
+  <script src="/js/src/scrollspy.js?v=6.7.0"></script>
+<script src="/js/src/post-details.js?v=6.7.0"></script>
+
+
+
+  
+
+
+  <script src="/js/src/bootstrap.js?v=6.7.0"></script>
+
+
+
+  
+  
+
+
+  
+
+  <script>
+    // Popup Window;
+    var isfetched = false;
+    var isXml = true;
+    // Search DB path;
+    var search_path = "search.xml";
+    if (search_path.length === 0) {
+      search_path = "search.xml";
+    } else if (/json$/i.test(search_path)) {
+      isXml = false;
+    }
+    var path = "/" + search_path;
+    // monitor main search box;
+
+    var onPopupClose = function (e) {
+      $('.popup').hide();
+      $('#local-search-input').val('');
+      $('.search-result-list').remove();
+      $('#no-result').remove();
+      $(".local-search-pop-overlay").remove();
+      $('body').css('overflow', '');
+    }
+
+    function proceedsearch() {
+      $("body")
+        .append('<div class="search-popup-overlay local-search-pop-overlay"></div>')
+        .css('overflow', 'hidden');
+      $('.search-popup-overlay').click(onPopupClose);
+      $('.popup').toggle();
+      var $localSearchInput = $('#local-search-input');
+      $localSearchInput.attr("autocapitalize", "none");
+      $localSearchInput.attr("autocorrect", "off");
+      $localSearchInput.focus();
+    }
+
+    // search function;
+    var searchFunc = function(path, search_id, content_id) {
+      'use strict';
+
+      // start loading animation
+      $("body")
+        .append('<div class="search-popup-overlay local-search-pop-overlay">' +
+          '<div id="search-loading-icon">' +
+          '<i class="fa fa-spinner fa-pulse fa-5x fa-fw"></i>' +
+          '</div>' +
+          '</div>')
+        .css('overflow', 'hidden');
+      $("#search-loading-icon").css('margin', '20% auto 0 auto').css('text-align', 'center');
+
+      
+
+      $.ajax({
+        url: path,
+        dataType: isXml ? "xml" : "json",
+        async: true,
+        success: function(res) {
+          // get the contents from search data
+          isfetched = true;
+          $('.popup').detach().appendTo('.header-inner');
+          var datas = isXml ? $("entry", res).map(function() {
+            return {
+              title: $("title", this).text(),
+              content: $("content",this).text(),
+              url: $("url" , this).text()
+            };
+          }).get() : res;
+          var input = document.getElementById(search_id);
+          var resultContent = document.getElementById(content_id);
+          var inputEventFunction = function() {
+            var searchText = input.value.trim().toLowerCase();
+            var keywords = searchText.split(/[\s\-]+/);
+            if (keywords.length > 1) {
+              keywords.push(searchText);
+            }
+            var resultItems = [];
+            if (searchText.length > 0) {
+              // perform local searching
+              datas.forEach(function(data) {
+                var isMatch = false;
+                var hitCount = 0;
+                var searchTextCount = 0;
+                var title = data.title.trim();
+                var titleInLowerCase = title.toLowerCase();
+                var content = data.content.trim().replace(/<[^>]+>/g,"");
+                
+                var contentInLowerCase = content.toLowerCase();
+                var articleUrl = decodeURIComponent(data.url).replace(/\/{2,}/g, '/');
+                var indexOfTitle = [];
+                var indexOfContent = [];
+                // only match articles with not empty titles
+                if(title != '') {
+                  keywords.forEach(function(keyword) {
+                    function getIndexByWord(word, text, caseSensitive) {
+                      var wordLen = word.length;
+                      if (wordLen === 0) {
+                        return [];
+                      }
+                      var startPosition = 0, position = [], index = [];
+                      if (!caseSensitive) {
+                        text = text.toLowerCase();
+                        word = word.toLowerCase();
+                      }
+                      while ((position = text.indexOf(word, startPosition)) > -1) {
+                        index.push({position: position, word: word});
+                        startPosition = position + wordLen;
+                      }
+                      return index;
+                    }
+
+                    indexOfTitle = indexOfTitle.concat(getIndexByWord(keyword, titleInLowerCase, false));
+                    indexOfContent = indexOfContent.concat(getIndexByWord(keyword, contentInLowerCase, false));
+                  });
+                  if (indexOfTitle.length > 0 || indexOfContent.length > 0) {
+                    isMatch = true;
+                    hitCount = indexOfTitle.length + indexOfContent.length;
+                  }
+                }
+
+                // show search results
+
+                if (isMatch) {
+                  // sort index by position of keyword
+
+                  [indexOfTitle, indexOfContent].forEach(function (index) {
+                    index.sort(function (itemLeft, itemRight) {
+                      if (itemRight.position !== itemLeft.position) {
+                        return itemRight.position - itemLeft.position;
+                      } else {
+                        return itemLeft.word.length - itemRight.word.length;
+                      }
+                    });
+                  });
+
+                  // merge hits into slices
+
+                  function mergeIntoSlice(text, start, end, index) {
+                    var item = index[index.length - 1];
+                    var position = item.position;
+                    var word = item.word;
+                    var hits = [];
+                    var searchTextCountInSlice = 0;
+                    while (position + word.length <= end && index.length != 0) {
+                      if (word === searchText) {
+                        searchTextCountInSlice++;
+                      }
+                      hits.push({position: position, length: word.length});
+                      var wordEnd = position + word.length;
+
+                      // move to next position of hit
+
+                      index.pop();
+                      while (index.length != 0) {
+                        item = index[index.length - 1];
+                        position = item.position;
+                        word = item.word;
+                        if (wordEnd > position) {
+                          index.pop();
+                        } else {
+                          break;
+                        }
+                      }
+                    }
+                    searchTextCount += searchTextCountInSlice;
+                    return {
+                      hits: hits,
+                      start: start,
+                      end: end,
+                      searchTextCount: searchTextCountInSlice
+                    };
+                  }
+
+                  var slicesOfTitle = [];
+                  if (indexOfTitle.length != 0) {
+                    slicesOfTitle.push(mergeIntoSlice(title, 0, title.length, indexOfTitle));
+                  }
+
+                  var slicesOfContent = [];
+                  while (indexOfContent.length != 0) {
+                    var item = indexOfContent[indexOfContent.length - 1];
+                    var position = item.position;
+                    var word = item.word;
+                    // cut out 100 characters
+                    var start = position - 20;
+                    var end = position + 80;
+                    if(start < 0){
+                      start = 0;
+                    }
+                    if (end < position + word.length) {
+                      end = position + word.length;
+                    }
+                    if(end > content.length){
+                      end = content.length;
+                    }
+                    slicesOfContent.push(mergeIntoSlice(content, start, end, indexOfContent));
+                  }
+
+                  // sort slices in content by search text's count and hits' count
+
+                  slicesOfContent.sort(function (sliceLeft, sliceRight) {
+                    if (sliceLeft.searchTextCount !== sliceRight.searchTextCount) {
+                      return sliceRight.searchTextCount - sliceLeft.searchTextCount;
+                    } else if (sliceLeft.hits.length !== sliceRight.hits.length) {
+                      return sliceRight.hits.length - sliceLeft.hits.length;
+                    } else {
+                      return sliceLeft.start - sliceRight.start;
+                    }
+                  });
+
+                  // select top N slices in content
+
+                  var upperBound = parseInt('1');
+                  if (upperBound >= 0) {
+                    slicesOfContent = slicesOfContent.slice(0, upperBound);
+                  }
+
+                  // highlight title and content
+
+                  function highlightKeyword(text, slice) {
+                    var result = '';
+                    var prevEnd = slice.start;
+                    slice.hits.forEach(function (hit) {
+                      result += text.substring(prevEnd, hit.position);
+                      var end = hit.position + hit.length;
+                      result += '<b class="search-keyword">' + text.substring(hit.position, end) + '</b>';
+                      prevEnd = end;
+                    });
+                    result += text.substring(prevEnd, slice.end);
+                    return result;
+                  }
+
+                  var resultItem = '';
+
+                  if (slicesOfTitle.length != 0) {
+                    resultItem += "<li><a href='" + articleUrl + "' class='search-result-title'>" + highlightKeyword(title, slicesOfTitle[0]) + "</a>";
+                  } else {
+                    resultItem += "<li><a href='" + articleUrl + "' class='search-result-title'>" + title + "</a>";
+                  }
+
+                  slicesOfContent.forEach(function (slice) {
+                    resultItem += "<a href='" + articleUrl + "'>" +
+                      "<p class=\"search-result\">" + highlightKeyword(content, slice) +
+                      "...</p>" + "</a>";
+                  });
+
+                  resultItem += "</li>";
+                  resultItems.push({
+                    item: resultItem,
+                    searchTextCount: searchTextCount,
+                    hitCount: hitCount,
+                    id: resultItems.length
+                  });
+                }
+              })
+            };
+            if (keywords.length === 1 && keywords[0] === "") {
+              resultContent.innerHTML = '<div id="no-result"><i class="fa fa-search fa-5x"></i></div>'
+            } else if (resultItems.length === 0) {
+              resultContent.innerHTML = '<div id="no-result"><i class="fa fa-frown-o fa-5x"></i></div>'
+            } else {
+              resultItems.sort(function (resultLeft, resultRight) {
+                if (resultLeft.searchTextCount !== resultRight.searchTextCount) {
+                  return resultRight.searchTextCount - resultLeft.searchTextCount;
+                } else if (resultLeft.hitCount !== resultRight.hitCount) {
+                  return resultRight.hitCount - resultLeft.hitCount;
+                } else {
+                  return resultRight.id - resultLeft.id;
+                }
+              });
+              var searchResultList = '<ul class=\"search-result-list\">';
+              resultItems.forEach(function (result) {
+                searchResultList += result.item;
+              })
+              searchResultList += "</ul>";
+              resultContent.innerHTML = searchResultList;
+            }
+          }
+
+          if ('auto' === 'auto') {
+            input.addEventListener('input', inputEventFunction);
+          } else {
+            $('.search-icon').click(inputEventFunction);
+            input.addEventListener('keypress', function (event) {
+              if (event.keyCode === 13) {
+                inputEventFunction();
+              }
+            });
+          }
+
+          // remove loading animation
+          $(".local-search-pop-overlay").remove();
+          $('body').css('overflow', '');
+
+          proceedsearch();
+        }
+      });
+    }
+
+    // handle and trigger popup window;
+    $('.popup-trigger').click(function(e) {
+      e.stopPropagation();
+      if (isfetched === false) {
+        searchFunc(path, 'local-search-input', 'local-search-result');
+      } else {
+        proceedsearch();
+      };
+    });
+
+    $('.popup-btn-close').click(onPopupClose);
+    $('.popup').click(function(e){
+      e.stopPropagation();
+    });
+    $(document).on('keyup', function (event) {
+      var shouldDismissSearchPopup = event.which === 27 &&
+        $('.search-popup').is(':visible');
+      if (shouldDismissSearchPopup) {
+        onPopupClose();
+      }
+    });
+  </script>
+
+
+
+
+
+  
+
+  
+
+  
+
+  
+
+  
+  
+
+  
+  
+
+  
+
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+</body>
+</html>
