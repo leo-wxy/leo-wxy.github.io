@@ -109,7 +109,7 @@
 <meta property="og:description" content="Activity,Window,View相关1. 什么是Activity,Window,View以及职能简介 Activity：不负责视图控制，只是控制生命周期和处理事件，真正控制视图的是Window，一个Activity包含一个Window，Window真正代表一个窗口。Activity是一个控制器，控制视图的添加与显示以及通过回调方法来进行Window与View的交互。 Window：Wind">
 <meta property="og:locale" content="zh-CN">
 <meta property="og:image" content="http://yoursite.com/images/study_plan/activity_window_view.png">
-<meta property="og:updated_time" content="2018-04-10T06:43:39.000Z">
+<meta property="og:updated_time" content="2019-01-29T08:34:42.263Z">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="Activity,Window,View的关联与理解">
 <meta name="twitter:description" content="Activity,Window,View相关1. 什么是Activity,Window,View以及职能简介 Activity：不负责视图控制，只是控制生命周期和处理事件，真正控制视图的是Window，一个Activity包含一个Window，Window真正代表一个窗口。Activity是一个控制器，控制视图的添加与显示以及通过回调方法来进行Window与View的交互。 Window：Wind">
@@ -434,12 +434,21 @@
 <h2 id="2-Activity，Window，View的关系"><a href="#2-Activity，Window，View的关系" class="headerlink" title="2. Activity，Window，View的关系"></a>2. Activity，Window，View的关系</h2><blockquote>
 <p>基本关系是：Activity中展示元素通过Window实现，Window可以理解为一个容器，里面装载着一个个的View，来执行显示工作。</p>
 </blockquote>
-<h2 id="3-Activity如何和Window，View关联（附源码）"><a href="#3-Activity如何和Window，View关联（附源码）" class="headerlink" title="3. Activity如何和Window，View关联（附源码）"></a>3. Activity如何和Window，View关联（附源码）</h2><blockquote>
-<p>Activity和Window关联</p>
-</blockquote>
-<blockquote>
-</blockquote>
-<h2 id="4-View和Window有什么联系"><a href="#4-View和Window有什么联系" class="headerlink" title="4. View和Window有什么联系"></a>4. View和Window有什么联系</h2>
+<p>Activity包含了一个PhoneWindow，而PhoneWindow就是继承于Window的，Activity通过<code>setContentView</code>将View设置到了PhoneWindow上，而View通过WindowManager的<code>addView()、removeView()、updateViewLayout()</code>对View进行管理。Window的添加过程以及Activity的启动流程都是一次IPC的过程。Activity的启动需要通过AMS完成；Window的添加过程需要通过WindowSession完成。</p>
+<h2 id="3-Activity如何和Window，View关联（附源码）"><a href="#3-Activity如何和Window，View关联（附源码）" class="headerlink" title="3. Activity如何和Window，View关联（附源码）"></a>3. Activity如何和Window，View关联（附源码）</h2><h3 id="Activity和Window关联"><a href="#Activity和Window关联" class="headerlink" title="Activity和Window关联"></a>Activity和Window关联</h3><a href="/2019/01/02/Activity启动过程/" title="Activity启动过程">Activity启动过程</a>
+<p>在此简述下Activity的启动过程：</p>
+<ul>
+<li>调用<code>ContextImpl.startActivity()</code>实质调用<code>ContextImpl.startActivityForResult()</code></li>
+<li>执行到<code>performLaunchActivity()</code>在其中完成启动流程</li>
+<li>通过<code>Instrumentation.newActivity</code>使用类加载器创建Activity对象</li>
+<li>通过<code>LoadedApk.makeApplication()</code>尝试创建Application对象(<em>Application已被创建则跳过</em>)</li>
+<li>创建<code>ContextImpl</code>对象，并执行<code>Activity.attach()</code>完成一些重要数据的初始化</li>
+<li>最终调用<code>Activity.onCreate()</code>完成启动流程。</li>
+</ul>
+<p>其中<code>Activity和Window的关联</code>发生在<code>Activity.attach()</code>中</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">final</span> <span class="keyword">void</span> <span class="title">attach</span><span class="params">(Context context, ActivityThread aThread,</span></span></span><br><span class="line"><span class="function"><span class="params">           Instrumentation instr, IBinder token, <span class="keyword">int</span> ident,</span></span></span><br><span class="line"><span class="function"><span class="params">           Application application, Intent intent, ActivityInfo info,</span></span></span><br><span class="line"><span class="function"><span class="params">           CharSequence title, Activity parent, String id,</span></span></span><br><span class="line"><span class="function"><span class="params">           NonConfigurationInstances lastNonConfigurationInstances,</span></span></span><br><span class="line"><span class="function"><span class="params">           Configuration config, String referrer, IVoiceInteractor voiceInteractor,</span></span></span><br><span class="line"><span class="function"><span class="params">           Window window, ActivityConfigCallback activityConfigCallback)</span> </span>&#123;</span><br><span class="line">       attachBaseContext(context);</span><br><span class="line"></span><br><span class="line">       mFragments.attachHost(<span class="keyword">null</span> <span class="comment">/*parent*/</span>);</span><br><span class="line">       <span class="comment">//进行了PhoneWindow的初始化并进行关联</span></span><br><span class="line">       mWindow = <span class="keyword">new</span> PhoneWindow(<span class="keyword">this</span>, window, activityConfigCallback);</span><br><span class="line">       mWindow.setWindowControllerCallback(<span class="keyword">this</span>);</span><br><span class="line">       mWindow.setCallback(<span class="keyword">this</span>);</span><br><span class="line">       mWindow.setOnWindowDismissedCallback(<span class="keyword">this</span>);</span><br><span class="line">       mWindow.getLayoutInflater().setPrivateFactory(<span class="keyword">this</span>);</span><br><span class="line">       ...</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>其中<code>PhoneWindow</code>就是Activity的根Window，可以在其上添加其他的Window(<em>例如Dialog</em>)，<code>PhoneWindow</code>就是<code>Activity</code>与<code>View</code>之间的桥梁，Activity无法直接操作View。</p>
+<h3 id="Window和View关联"><a href="#Window和View关联" class="headerlink" title="Window和View关联"></a>Window和View关联</h3><h2 id="4-View和Window有什么联系"><a href="#4-View和Window有什么联系" class="headerlink" title="4. View和Window有什么联系"></a>4. View和Window有什么联系</h2>
       
     </div>
 
@@ -561,7 +570,7 @@
                 
                   <a href="/archives/">
                 
-                    <span class="site-state-item-count">93</span>
+                    <span class="site-state-item-count">92</span>
                     <span class="site-state-item-name">日志</span>
                   </a>
                 </div>
@@ -666,7 +675,7 @@
             
 
             
-              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#Activity-Window-View相关"><span class="nav-text">Activity,Window,View相关</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-什么是Activity-Window-View以及职能简介"><span class="nav-text">1. 什么是Activity,Window,View以及职能简介</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-Activity，Window，View的关系"><span class="nav-text">2. Activity，Window，View的关系</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-Activity如何和Window，View关联（附源码）"><span class="nav-text">3. Activity如何和Window，View关联（附源码）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-View和Window有什么联系"><span class="nav-text">4. View和Window有什么联系</span></a></li></ol></li></ol></div>
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#Activity-Window-View相关"><span class="nav-text">Activity,Window,View相关</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-什么是Activity-Window-View以及职能简介"><span class="nav-text">1. 什么是Activity,Window,View以及职能简介</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-Activity，Window，View的关系"><span class="nav-text">2. Activity，Window，View的关系</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-Activity如何和Window，View关联（附源码）"><span class="nav-text">3. Activity如何和Window，View关联（附源码）</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Activity和Window关联"><span class="nav-text">Activity和Window关联</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Window和View关联"><span class="nav-text">Window和View关联</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-View和Window有什么联系"><span class="nav-text">4. View和Window有什么联系</span></a></li></ol></li></ol></div>
             
 
           </div>
