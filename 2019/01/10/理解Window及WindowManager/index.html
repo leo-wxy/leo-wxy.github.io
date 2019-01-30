@@ -100,18 +100,21 @@
 
 
 
-  <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
+  <meta name="description" content="1.基本概念Window：他是一个抽象类，具体的实现类为PhoneWindow，它对View进行管理。每个Window都会对应一个View和一个ViewRootImpl，Window通过ViewRootImpl与View建立联系。 WindowManager：是一个接口类，继承ViewManager，主要用于管理Window，具体实现类为WindowManagerImpl。实际使用中无法直接访问W">
 <meta name="keywords" content="Android">
 <meta property="og:type" content="article">
 <meta property="og:title" content="理解Window及WindowManager">
 <meta property="og:url" content="http://yoursite.com/2019/01/10/理解Window及WindowManager/index.html">
 <meta property="og:site_name" content="Wxy的个人博客">
-<meta property="og:description" content="如果我没有见过光明，那我本可以忍受黑暗">
+<meta property="og:description" content="1.基本概念Window：他是一个抽象类，具体的实现类为PhoneWindow，它对View进行管理。每个Window都会对应一个View和一个ViewRootImpl，Window通过ViewRootImpl与View建立联系。 WindowManager：是一个接口类，继承ViewManager，主要用于管理Window，具体实现类为WindowManagerImpl。实际使用中无法直接访问W">
 <meta property="og:locale" content="zh-CN">
-<meta property="og:updated_time" content="2019-01-29T07:26:42.077Z">
+<meta property="og:image" content="http://yoursite.com/images/Window&WindowManager&WMS.png">
+<meta property="og:image" content="http://yoursite.com/images/WindowManager关系.png">
+<meta property="og:updated_time" content="2019-01-30T14:59:29.381Z">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="理解Window及WindowManager">
-<meta name="twitter:description" content="如果我没有见过光明，那我本可以忍受黑暗">
+<meta name="twitter:description" content="1.基本概念Window：他是一个抽象类，具体的实现类为PhoneWindow，它对View进行管理。每个Window都会对应一个View和一个ViewRootImpl，Window通过ViewRootImpl与View建立联系。 WindowManager：是一个接口类，继承ViewManager，主要用于管理Window，具体实现类为WindowManagerImpl。实际使用中无法直接访问W">
+<meta name="twitter:image" content="http://yoursite.com/images/Window&WindowManager&WMS.png">
 
 
 
@@ -422,7 +425,154 @@
       
 
       
-        
+        <h2 id="1-基本概念"><a href="#1-基本概念" class="headerlink" title="1.基本概念"></a>1.基本概念</h2><p><code>Window</code>：他是一个抽象类，具体的实现类为<code>PhoneWindow</code>，它对View进行管理。每个Window都会对应一个<code>View</code>和一个<code>ViewRootImpl</code>，Window通过<code>ViewRootImpl</code>与View建立联系。</p>
+<p><code>WindowManager</code>：是一个接口类，继承<code>ViewManager</code>，主要用于管理Window，具体实现类为<code>WindowManagerImpl</code>。实际使用中无法直接访问Window，需要通过<code>WindowManager</code>进行操作。</p>
+<p><code>WindowManagerService</code>：<code>WindowManager</code>的具体工作都会通过<code>WindowManagerService</code>进行处理，他们之间通过<code>Binder</code>进行跨进程通信，<code>WindowManager</code>无法直接调用WMS中的API。</p>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/Window&WindowManager&WMS.png" class="full-image" alt="Window&WindowManager&WMS" title="Window&WindowManager&WMS"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<h2 id="2-Window的属性"><a href="#2-Window的属性" class="headerlink" title="2.Window的属性"></a>2.Window的属性</h2><h3 id="Window的类型-Type"><a href="#Window的类型-Type" class="headerlink" title="Window的类型(Type)"></a>Window的类型(<em>Type</em>)</h3><p>Window有三种类型：</p>
+<ul>
+<li><p><strong>Application Window(应用窗口)</strong>：对应一个Activity  <code>层级范围为1~99</code></p>
+</li>
+<li><p><strong>Sub Window(子窗口)</strong>：不能独立存在，需要附着在其他窗口上才行，例如<em>Dialog,PopupWindow</em>   <code>层级范围为1000~1999</code></p>
+</li>
+<li><strong>System Window(系统窗口)</strong>：需要声明权限才能创建的Window，例如<em>Toast</em>   <code>层级范围为2000~2999</code></li>
+</ul>
+<p>Window是分层的，层级大的Window会覆盖在层级小的Window上面，上面描述的层级范围对应的是<code>WindowManager.LayoutParams的type参数</code>。</p>
+<p>通过<code>layoutParams.type = LayoutParams.TYPE_XXX</code>可以设置层级。<strong>同时需要声明<code>&lt;user-permission android:name=&quot;android:permission.SYSTEM_ALERT_WINDOW&quot;&gt;</code></strong>就可以设置系统窗口的type。</p>
+<h3 id="Window的标志-Flag"><a href="#Window的标志-Flag" class="headerlink" title="Window的标志(Flag)"></a>Window的标志(<em>Flag</em>)</h3><p>Window的标志用于控制Window的显示，同时被定义在<code>WindowManager.LayoutParams</code>中，以下列举比较常用的：</p>
+<table>
+<thead>
+<tr>
+<th>FLAG</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FLAG_NOT_FOCUSABLE</td>
+<td>表示Window不需要获取焦点，也不需要接收各种输入事件，同时会设置<code>FLAG_NOT_TOUCH_MODAL</code>标记，最终事件会传递到下层具有焦点的Window</td>
+</tr>
+<tr>
+<td>FLAG_NOT_TOUCH_MODAL</td>
+<td>系统会将当前区域以外的触摸事件向下传递，Window以内的事件自己处理。<em>一般需要开启，否则其他Window无法接受时间。</em></td>
+</tr>
+<tr>
+<td>FLAG_SHOW_WHEN_LOCKED</td>
+<td>表示Window可显示在锁屏界面。(<em>例如XX助手</em>)</td>
+</tr>
+<tr>
+<td>FLAG_KEEP_SCREEN_ON</td>
+<td>只要窗口可见，屏幕就会一直亮着</td>
+</tr>
+<tr>
+<td>FLAG_FULLSCREEN</td>
+<td>隐藏所有的屏幕装饰窗口，进入全屏显示</td>
+</tr>
+</tbody>
+</table>
+<p>设置Windwo的Flag有三种方法：</p>
+<ol>
+<li><p>通过Window的<code>addFlags()</code></p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">Window mWindow = getWindow();</span><br><span class="line">window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>通过Window的<code>setFlags()</code></p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">Window mWindow = getWindow();</span><br><span class="line">window.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,WindowManager.LayoutParams.FLAG_FULLSCREEN);</span><br></pre></td></tr></table></figure>
+<blockquote>
+<p><code>addFlags()</code>内部实现调用的还是<code>setFlags()</code>，两者区别不大。</p>
+</blockquote>
+</li>
+<li><p>设置<code>LayoutParams.flags=XX</code>，并通过<code>addView()</code>添加进Window</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">WindowManager.LayoutParams mLayoutParams = <span class="keyword">new</span> WindowManager.LayoutParams();</span><br><span class="line">mLayoutParams.flags = WindowManager.LayoutParams.FLAG_FULLSCREEN;</span><br><span class="line">WindowManager mWindowManager = (WindowManager)getSystemService(Context.WINDOW_SERVICE);</span><br><span class="line">TextView tv = <span class="keyword">new</span> TextView(<span class="keyword">this</span>);</span><br><span class="line">mWindowManager.addView(tv,mLayoutParams);</span><br></pre></td></tr></table></figure>
+</li>
+</ol>
+<h3 id="Window的位置-Gravity"><a href="#Window的位置-Gravity" class="headerlink" title="Window的位置(Gravity)"></a>Window的位置(<em>Gravity</em>)</h3><p>默认位于屏幕中间</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">mLayoutParams.gravity = Gravity.LEFT | Gravity.TOP;<span class="comment">//配置gravity 居于左上位置</span></span><br><span class="line">mLayoutParams.x = <span class="number">100</span>;<span class="comment">//相对于gravity 居左100</span></span><br><span class="line">mLayoutParams.y = <span class="number">300</span>;<span class="comment">//相对于gravity 居上300</span></span><br></pre></td></tr></table></figure>
+<p>设置的<code>x、y</code>是相对于gravity的位置</p>
+<h3 id="Window软键盘相关模式"><a href="#Window软键盘相关模式" class="headerlink" title="Window软键盘相关模式"></a>Window软键盘相关模式</h3><p>窗口之间的叠加是常见的场景，如果弹出窗口为软键盘的话，可能会有显示问题，默认弹出软键盘会覆盖用户的输入框。<code>WindowManager.LayoutParams</code>中定义了相关的软键盘弹出模式，下面列举常用的几个：</p>
+<table>
+<thead>
+<tr>
+<th>SoftInputMode</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SOFT_INPUT_STATE_UNSPECIFIED</td>
+<td>没有指定状态，系统会自动选择一个</td>
+</tr>
+<tr>
+<td>SOFT_INPUT_STATE_UNCHANGED</td>
+<td>不会改变软键盘状态</td>
+</tr>
+<tr>
+<td>SOFT_INPUT_STATE_HIDDEN</td>
+<td>用户进入窗口，软键盘默认隐藏</td>
+</tr>
+<tr>
+<td>SOFT_INPUT_STATE_ALWAYS_HIDDEN</td>
+<td>窗口获取焦点时，软键盘总是隐藏</td>
+</tr>
+<tr>
+<td>SOFT_INPUT_ADJUST_RESIZE</td>
+<td>软键盘弹出时，窗口会调整大小</td>
+</tr>
+<tr>
+<td>SOFT_INPUT_ADJUST_PAN</td>
+<td>软键盘弹出时，窗口不需要调整大小，确保输入焦点是可见</td>
+</tr>
+</tbody>
+</table>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN)</span><br></pre></td></tr></table></figure>
+<p>或者设置在<code>AndroidManifest.xml</code>中</p>
+<figure class="highlight xml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="tag">&lt;<span class="name">activity</span></span></span><br><span class="line"><span class="tag">          <span class="attr">android:windowSoftInputMode</span>=<span class="string">"SOFT_INPUT_ADJUST_PAN"</span></span></span><br><span class="line"><span class="tag">          /&gt;</span></span><br></pre></td></tr></table></figure>
+<h2 id="3-Window的操作"><a href="#3-Window的操作" class="headerlink" title="3.Window的操作"></a>3.Window的操作</h2><p>对Window的访问必须通过<code>WindowManager</code>，主要有三大操作：<strong>添加、更新、删除</strong>。这三个方法主要定义在<code>ViewManger</code>中</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">interface</span> <span class="title">ViewManager</span></span></span><br><span class="line"><span class="class"></span>&#123;</span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">addView</span><span class="params">(View view, ViewGroup.LayoutParams params)</span></span>;</span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">updateViewLayout</span><span class="params">(View view, ViewGroup.LayoutParams params)</span></span>;</span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">removeView</span><span class="params">(View view)</span></span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>WindowManager</code>也是一个接口继承自<code>ViewManager</code></p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">interface</span> <span class="title">WindowManager</span> <span class="keyword">extends</span> <span class="title">ViewManager</span></span></span><br></pre></td></tr></table></figure>
+<p><code>WindowManagerImpl</code>就是<code>WindowManager</code>的具体实现类</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">final</span> <span class="class"><span class="keyword">class</span> <span class="title">WindowManagerImpl</span> <span class="keyword">implements</span> <span class="title">WindowManager</span> </span>&#123;</span><br><span class="line"> ...</span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">addView</span><span class="params">(@NonNull View view, @NonNull ViewGroup.LayoutParams params)</span> </span>&#123;</span><br><span class="line">        applyDefaultToken(params);</span><br><span class="line">        mGlobal.addView(view, params, mContext.getDisplay(), mParentWindow);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">updateViewLayout</span><span class="params">(@NonNull View view, @NonNull ViewGroup.LayoutParams params)</span> </span>&#123;</span><br><span class="line">        applyDefaultToken(params);</span><br><span class="line">        mGlobal.updateViewLayout(view, params);</span><br><span class="line">    &#125;</span><br><span class="line">  </span><br><span class="line">      <span class="meta">@Override</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">removeView</span><span class="params">(View view)</span> </span>&#123;</span><br><span class="line">        mGlobal.removeView(view, <span class="keyword">false</span>);</span><br><span class="line">    &#125;</span><br><span class="line">  ...</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>最终<code>WindowManagerImpl</code>对View的操作交由<code>WindowManagerGlobal</code>去实现。</p>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/WindowManager关系.png" class="full-image" alt="WindowManager关系" title="WindowManager关系"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<p><code>WindowManagerGlobal</code>通过<code>ViewRootImpl</code>操作Window，<code>ViewRootImpl</code>通过<code>IWindowSession</code>这个Binder对象与<code>WindowManagerService</code>进程间通信去操作Window。</p>
+<a href="/2019/01/30/WindowManagerService简析/" title="WindowManagerService简析">WindowManagerService简析</a>
+<h3 id="Window添加"><a href="#Window添加" class="headerlink" title="Window添加"></a>Window添加</h3><blockquote>
+<p>添加过程需要通过<code>WindowManager.addView()</code>来实现，它的真正实现需要通过<code>WindowManagerGlobal</code></p>
+</blockquote>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br></pre></td><td class="code"><pre><span class="line">    <span class="comment">//存储所有Window对应的View</span></span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">final</span> ArrayList&lt;View&gt; mViews = <span class="keyword">new</span> ArrayList&lt;View&gt;();</span><br><span class="line">    <span class="comment">//所有Window对应的ViewRootImpl</span></span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">final</span> ArrayList&lt;ViewRootImpl&gt; mRoots = <span class="keyword">new</span> ArrayList&lt;ViewRootImpl&gt;();</span><br><span class="line">    <span class="comment">//所有Window对应的布局参数 LayoutParams</span></span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">final</span> ArrayList&lt;WindowManager.LayoutParams&gt; mParams =</span><br><span class="line">            <span class="keyword">new</span> ArrayList&lt;WindowManager.LayoutParams&gt;();</span><br><span class="line">    <span class="comment">//存储那些正在被删除的对象</span></span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">final</span> ArraySet&lt;View&gt; mDyingViews = <span class="keyword">new</span> ArraySet&lt;View&gt;();    </span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">addView</span><span class="params">(View view, ViewGroup.LayoutParams params,</span></span></span><br><span class="line"><span class="function"><span class="params">            Display display, Window parentWindow)</span> </span>&#123;</span><br><span class="line">        <span class="comment">//检测参数是否合法</span></span><br><span class="line">        <span class="keyword">if</span> (view == <span class="keyword">null</span>) &#123;</span><br><span class="line">            <span class="keyword">throw</span> <span class="keyword">new</span> IllegalArgumentException(<span class="string">"view must not be null"</span>);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> (display == <span class="keyword">null</span>) &#123;</span><br><span class="line">            <span class="keyword">throw</span> <span class="keyword">new</span> IllegalArgumentException(<span class="string">"display must not be null"</span>);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> (!(params <span class="keyword">instanceof</span> WindowManager.LayoutParams)) &#123;</span><br><span class="line">            <span class="keyword">throw</span> <span class="keyword">new</span> IllegalArgumentException(<span class="string">"Params must be WindowManager.LayoutParams"</span>);</span><br><span class="line">        &#125; </span><br><span class="line">      </span><br><span class="line">        <span class="keyword">final</span> WindowManager.LayoutParams wparams = (WindowManager.LayoutParams) params;</span><br><span class="line">        <span class="comment">//如果是子Window还需要调整参数</span></span><br><span class="line">        <span class="keyword">if</span> (parentWindow != <span class="keyword">null</span>) &#123;</span><br><span class="line">            parentWindow.adjustLayoutParamsForSubWindow(wparams);</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            </span><br><span class="line">            <span class="keyword">final</span> Context context = view.getContext();</span><br><span class="line">            <span class="keyword">if</span> (context != <span class="keyword">null</span></span><br><span class="line">                    &amp;&amp; (context.getApplicationInfo().flags</span><br><span class="line">                            &amp; ApplicationInfo.FLAG_HARDWARE_ACCELERATED) != <span class="number">0</span>) &#123;</span><br><span class="line">                wparams.flags |= WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">      </span><br><span class="line">      ...</span><br><span class="line">        <span class="comment">//创建ViewRootImpl</span></span><br><span class="line">        root = <span class="keyword">new</span> ViewRootImpl(view.getContext(), display);</span><br><span class="line">        view.setLayoutParams(wparams);</span><br><span class="line">        <span class="comment">//保存当前界面的参数</span></span><br><span class="line">        mViews.add(view);</span><br><span class="line">        mRoots.add(root);</span><br><span class="line">        mParams.add(wparams);</span><br><span class="line">      ...</span><br><span class="line">        <span class="keyword">try</span> &#123;</span><br><span class="line">            <span class="comment">//调用 ViewRootImpl.setView() 更新界面并完成Window的添加过程</span></span><br><span class="line">                root.setView(view, wparams, panelParentView);</span><br><span class="line">            &#125; <span class="keyword">catch</span> (RuntimeException e) &#123;</span><br><span class="line">                <span class="comment">// BadTokenException or InvalidDisplayException, clean up.</span></span><br><span class="line">                <span class="keyword">if</span> (index &gt;= <span class="number">0</span>) &#123;</span><br><span class="line">                    removeViewLocked(index, <span class="keyword">true</span>);</span><br><span class="line">                &#125;</span><br><span class="line">                <span class="keyword">throw</span> e;</span><br><span class="line">            &#125;</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+<p>在<code>WindowManagerGlobal.addView()</code>主要完成了以下三步：</p>
+<ul>
+<li>检查参数是否合法，如果是子Window，还需要调整参数</li>
+<li>创建ViewRootImpl，然后保存当前界面参数</li>
+<li>调用<code>ViewRootImpl.setView()</code>继续完成Window的添加过程</li>
+</ul>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// ../android/view/ViewRootImpl.java</span></span><br><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">setView</span><span class="params">(View view, WindowManager.LayoutParams attrs, View panelParentView)</span> </span>&#123;</span><br><span class="line">  <span class="keyword">synchronized</span> (<span class="keyword">this</span>) &#123;</span><br><span class="line">    ...</span><br><span class="line">      <span class="comment">//刷新当前界面</span></span><br><span class="line">      requestLayout();</span><br><span class="line">    ...</span><br><span class="line">       <span class="keyword">try</span> &#123;</span><br><span class="line">                    mOrigWindowType = mWindowAttributes.type;</span><br><span class="line">                    mAttachInfo.mRecomputeGlobalAttributes = <span class="keyword">true</span>;</span><br><span class="line">                    collectViewAttributes();</span><br><span class="line">                    <span class="comment">//最终添加Window实现过程</span></span><br><span class="line">                    res = mWindowSession.addToDisplay(mWindow, mSeq, mWindowAttributes,</span><br><span class="line">                            getHostVisibility(), mDisplay.getDisplayId(),</span><br><span class="line">                            mAttachInfo.mContentInsets, mAttachInfo.mStableInsets,</span><br><span class="line">                            mAttachInfo.mOutsets, mInputChannel);</span><br><span class="line">                &#125; <span class="keyword">catch</span> (RemoteException e) &#123;</span><br><span class="line">                    mAdded = <span class="keyword">false</span>;</span><br><span class="line">                    mView = <span class="keyword">null</span>;</span><br><span class="line">                    mAttachInfo.mRootView = <span class="keyword">null</span>;</span><br><span class="line">                    mInputChannel = <span class="keyword">null</span>;</span><br><span class="line">                    mFallbackEventHandler.setView(<span class="keyword">null</span>);</span><br><span class="line">                    unscheduleTraversals();</span><br><span class="line">                    setAccessibilityFocus(<span class="keyword">null</span>, <span class="keyword">null</span>);</span><br><span class="line">                    <span class="keyword">throw</span> <span class="keyword">new</span> RuntimeException(<span class="string">"Adding window failed"</span>, e);</span><br><span class="line">                &#125; <span class="keyword">finally</span> &#123;</span><br><span class="line">                    <span class="keyword">if</span> (restore) &#123;</span><br><span class="line">                        attrs.restore();</span><br><span class="line">                    &#125;</span><br><span class="line">                &#125;</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>mWindowSession</code>的类型是<code>IWindowSession</code>是一个Binder对象，用于进行进程间通信，它是<code>Session</code>代理对象。</p>
+<p>添加完成后，需要通过返回值<code>res</code>来判断是否添加成功。若是<code>WindowManagerGlobal.ADD_PKAY</code>说明添加成功。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// ../core/java/com/android/server/wm/Session.java</span></span><br><span class="line">    <span class="keyword">final</span> WindowManagerService mService;</span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">int</span> <span class="title">addToDisplay</span><span class="params">(IWindow window, <span class="keyword">int</span> seq, WindowManager.LayoutParams attrs,</span></span></span><br><span class="line"><span class="function"><span class="params">            <span class="keyword">int</span> viewVisibility, <span class="keyword">int</span> displayId, Rect outContentInsets, Rect outStableInsets,</span></span></span><br><span class="line"><span class="function"><span class="params">            Rect outOutsets, InputChannel outInputChannel)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">return</span> mService.addWindow(<span class="keyword">this</span>, window, seq, attrs, viewVisibility, displayId,</span><br><span class="line">                outContentInsets, outStableInsets, outOutsets, outInputChannel);</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+<p><code>addToDisplay()</code>最终调用到<code>WindowManagerService.addWindow()</code>实现Window添加过程。</p>
+<ul>
+<li style="list-style: none"><input type="checkbox"> TODO 流程图</li>
+</ul>
+<h3 id="Window更新"><a href="#Window更新" class="headerlink" title="Window更新"></a>Window更新</h3><blockquote>
+<p>更新过程需要通过<code>WindowManager.updateViewLayout()</code>，它的真正实现需要通过<code>WindowManagerGlobal</code></p>
+</blockquote>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// ../android/view/WindowManagerGlobal.java   </span></span><br><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">updateViewLayout</span><span class="params">(View view, ViewGroup.LayoutParams params)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">if</span> (view == <span class="keyword">null</span>) &#123;</span><br><span class="line">            <span class="keyword">throw</span> <span class="keyword">new</span> IllegalArgumentException(<span class="string">"view must not be null"</span>);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> (!(params <span class="keyword">instanceof</span> WindowManager.LayoutParams)) &#123;</span><br><span class="line">            <span class="keyword">throw</span> <span class="keyword">new</span> IllegalArgumentException(<span class="string">"Params must be WindowManager.LayoutParams"</span>);</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">final</span> WindowManager.LayoutParams wparams = (WindowManager.LayoutParams)params;</span><br><span class="line">        <span class="comment">//更新View的LayoutParams</span></span><br><span class="line">        view.setLayoutParams(wparams);</span><br><span class="line"></span><br><span class="line">        <span class="keyword">synchronized</span> (mLock) &#123;</span><br><span class="line">            <span class="keyword">int</span> index = findViewLocked(view, <span class="keyword">true</span>);</span><br><span class="line">            ViewRootImpl root = mRoots.get(index);</span><br><span class="line">            mParams.remove(index);</span><br><span class="line">            mParams.add(index, wparams);</span><br><span class="line">            root.setLayoutParams(wparams, <span class="keyword">false</span>);</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+<p>更新View的LayoutParams之后，还需要更新<code>ViewRootImpl.setLayoutParams()</code></p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// ../android/view/ViewRootImpl.java</span></span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">setLayoutParams</span><span class="params">(WindowManager.LayoutParams attrs, <span class="keyword">boolean</span> newView)</span> </span>&#123;</span><br><span class="line">  <span class="keyword">synchronized</span>(<span class="keyword">this</span>)&#123;</span><br><span class="line">    ...</span><br><span class="line">            <span class="keyword">if</span> (newView) &#123;</span><br><span class="line">                mSoftInputMode = attrs.softInputMode;</span><br><span class="line">                requestLayout();</span><br><span class="line">            &#125;</span><br><span class="line"></span><br><span class="line">            <span class="keyword">if</span> ((attrs.softInputMode &amp; WindowManager.LayoutParams.SOFT_INPUT_MASK_ADJUST)</span><br><span class="line">                    == WindowManager.LayoutParams.SOFT_INPUT_ADJUST_UNSPECIFIED) &#123;</span><br><span class="line">                mWindowAttributes.softInputMode = (mWindowAttributes.softInputMode</span><br><span class="line">                        &amp; ~WindowManager.LayoutParams.SOFT_INPUT_MASK_ADJUST)</span><br><span class="line">                        | (oldSoftInputMode &amp; WindowManager.LayoutParams.SOFT_INPUT_MASK_ADJUST);</span><br><span class="line">            &#125;</span><br><span class="line"></span><br><span class="line">            mWindowAttributesChanged = <span class="keyword">true</span>;</span><br><span class="line">            <span class="comment">//开始View的测量，布局，绘制流程</span></span><br><span class="line">            scheduleTraversals();</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>在<code>scheduleTraversals()</code>调用到<code>performTraversals()</code>继续执行更新过程</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">private</span> <span class="keyword">void</span> <span class="title">performTraversals</span><span class="params">()</span> </span>&#123;</span><br><span class="line">  ...</span><br><span class="line">    relayoutResult = relayoutWindow(params, viewVisibility, insetsPending);</span><br><span class="line">  ...</span><br><span class="line">    <span class="keyword">if</span>(!mStopped)&#123;</span><br><span class="line">      <span class="keyword">int</span> childWidthMeasureSpec = getRootMeasureSpec(mWidth, lp.width);</span><br><span class="line">      <span class="keyword">int</span> childHeightMeasureSpec = getRootMeasureSpec(mHeight, lp.height); </span><br><span class="line">      <span class="comment">//开始测量过程</span></span><br><span class="line">      performMeasure(childWidthMeasureSpec, childHeightMeasureSpec);</span><br><span class="line">    &#125;</span><br><span class="line">    ...</span><br><span class="line">    <span class="comment">//layoutRequested 是否需要重新执行布局过程</span></span><br><span class="line">    <span class="keyword">final</span> <span class="keyword">boolean</span> didLayout = layoutRequested &amp;&amp; (!mStopped || mReportNextDraw);</span><br><span class="line">    <span class="keyword">if</span>(didLayout)&#123;</span><br><span class="line">      <span class="comment">//开始布局过程</span></span><br><span class="line">      performLayout(lp, mWidth, mHeight);</span><br><span class="line">    &#125;</span><br><span class="line">    ...</span><br><span class="line">    <span class="keyword">if</span> (!cancelDraw &amp;&amp; !newSurface) &#123;</span><br><span class="line">            <span class="keyword">if</span> (mPendingTransitions != <span class="keyword">null</span> &amp;&amp; mPendingTransitions.size() &gt; <span class="number">0</span>) &#123;</span><br><span class="line">                <span class="keyword">for</span> (<span class="keyword">int</span> i = <span class="number">0</span>; i &lt; mPendingTransitions.size(); ++i) &#123;</span><br><span class="line">                    mPendingTransitions.get(i).startChangingAnimations();</span><br><span class="line">                &#125;</span><br><span class="line">                mPendingTransitions.clear();</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="comment">//开始绘制过程</span></span><br><span class="line">            performDraw();</span><br><span class="line">        &#125; </span><br><span class="line">  ...</span><br><span class="line">  </span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>performTraversals()</code>内部实现了Window更新以及View的整个工作过程(<em>测量-布局-绘制</em>)。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">private</span> <span class="keyword">int</span> <span class="title">relayoutWindow</span><span class="params">(WindowManager.LayoutParams params, <span class="keyword">int</span> viewVisibility,</span></span></span><br><span class="line"><span class="function"><span class="params">        <span class="keyword">boolean</span> insetsPending)</span> <span class="keyword">throws</span> RemoteException </span>&#123;</span><br><span class="line">  ...</span><br><span class="line">     <span class="keyword">int</span> relayoutResult = mWindowSession.relayout(</span><br><span class="line">            mWindow, mSeq, params,</span><br><span class="line">            (<span class="keyword">int</span>) (mView.getMeasuredWidth() * appScale + <span class="number">0.5f</span>),</span><br><span class="line">            (<span class="keyword">int</span>) (mView.getMeasuredHeight() * appScale + <span class="number">0.5f</span>),</span><br><span class="line">            viewVisibility, insetsPending ? WindowManagerGlobal.RELAYOUT_INSETS_PENDING : <span class="number">0</span>,</span><br><span class="line">            mWinFrame, mPendingOverscanInsets, mPendingContentInsets, mPendingVisibleInsets,</span><br><span class="line">            mPendingStableInsets, mPendingOutsets, mPendingBackDropFrame,</span><br><span class="line">            mPendingMergedConfiguration, mSurface);</span><br><span class="line">  ...</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>mWindowSession<code>的类型是</code>IWindowSession<code>是一个Binder对象，用于进行进程间通信，它是</code>Session`代理对象。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// ../core/java/com/android/server/wm/Session.java</span></span><br><span class="line">    <span class="keyword">final</span> WindowManagerService mService;</span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">int</span> <span class="title">relayout</span><span class="params">(IWindow window, <span class="keyword">int</span> seq, WindowManager.LayoutParams attrs,</span></span></span><br><span class="line"><span class="function"><span class="params">            <span class="keyword">int</span> requestedWidth, <span class="keyword">int</span> requestedHeight, <span class="keyword">int</span> viewFlags,</span></span></span><br><span class="line"><span class="function"><span class="params">            <span class="keyword">int</span> flags, Rect outFrame, Rect outOverscanInsets, Rect outContentInsets,</span></span></span><br><span class="line"><span class="function"><span class="params">            Rect outVisibleInsets, Rect outStableInsets, Rect outsets, Rect outBackdropFrame,</span></span></span><br><span class="line"><span class="function"><span class="params">            MergedConfiguration mergedConfiguration, Surface outSurface)</span> </span>&#123;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">int</span> res = mService.relayoutWindow(<span class="keyword">this</span>, window, seq, attrs,</span><br><span class="line">                requestedWidth, requestedHeight, viewFlags, flags,</span><br><span class="line">                outFrame, outOverscanInsets, outContentInsets, outVisibleInsets,</span><br><span class="line">                outStableInsets, outsets, outBackdropFrame, mergedConfiguration, outSurface);</span><br><span class="line"></span><br><span class="line">        <span class="keyword">return</span> res;</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+<p><code>relayout()</code>最终调用到<code>WindowManagerService.reaayoutWindow()</code>实现Window更新过程。</p>
+<ul>
+<li style="list-style: none"><input type="checkbox"> TODO 流程图</li>
+</ul>
+<h3 id="Window删除"><a href="#Window删除" class="headerlink" title="Window删除"></a>Window删除</h3><blockquote>
+</blockquote>
+
       
     </div>
 
@@ -515,8 +665,17 @@
       
 
       
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            文章目录
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            站点概览
+          </li>
+        </ul>
+      
 
-      <div class="site-overview-wrap sidebar-panel sidebar-panel-active">
+      <div class="site-overview-wrap sidebar-panel">
         <div class="site-overview">
           <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
             
@@ -535,7 +694,7 @@
                 
                   <a href="/archives/">
                 
-                    <span class="site-state-item-count">92</span>
+                    <span class="site-state-item-count">93</span>
                     <span class="site-state-item-name">日志</span>
                   </a>
                 </div>
@@ -629,6 +788,23 @@
         </div>
       </div>
 
+      
+      <!--noindex-->
+        <div class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+            
+            
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-基本概念"><span class="nav-text">1.基本概念</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-Window的属性"><span class="nav-text">2.Window的属性</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Window的类型-Type"><span class="nav-text">Window的类型(Type)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Window的标志-Flag"><span class="nav-text">Window的标志(Flag)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Window的位置-Gravity"><span class="nav-text">Window的位置(Gravity)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Window软键盘相关模式"><span class="nav-text">Window软键盘相关模式</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-Window的操作"><span class="nav-text">3.Window的操作</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Window添加"><span class="nav-text">Window添加</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Window更新"><span class="nav-text">Window更新</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Window删除"><span class="nav-text">Window删除</span></a></li></ol></li></ol></div>
+            
+
+          </div>
+        </div>
+      <!--/noindex-->
       
 
       
