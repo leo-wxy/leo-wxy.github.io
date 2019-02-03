@@ -100,18 +100,18 @@
 
 
 
-  <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
+  <meta name="description" content="目前流行的热修复方案主要有以下三种：  代码修复 资源修复 动态链接库修复   本章主要讲述 第一种方案：代码修复。 代码修复 原理：对出现Bug的类进行修改或替换  类加载方案 核心思想：使用Android的类加载器，通过类加载器去加载已修复好Bug的Class并对有问题的Class进行覆盖。 加载完成后需要重启应用才可生效，因为当前在使用的类是无法卸载的即不可替换，只有重启后重新加载才可成">
 <meta name="keywords" content="Android">
 <meta property="og:type" content="article">
 <meta property="og:title" content="热修复基本原理">
 <meta property="og:url" content="http://yoursite.com/2018/04/07/热修复基本原理及其实现/index.html">
 <meta property="og:site_name" content="Wxy的个人博客">
-<meta property="og:description" content="如果我没有见过光明，那我本可以忍受黑暗">
+<meta property="og:description" content="目前流行的热修复方案主要有以下三种：  代码修复 资源修复 动态链接库修复   本章主要讲述 第一种方案：代码修复。 代码修复 原理：对出现Bug的类进行修改或替换  类加载方案 核心思想：使用Android的类加载器，通过类加载器去加载已修复好Bug的Class并对有问题的Class进行覆盖。 加载完成后需要重启应用才可生效，因为当前在使用的类是无法卸载的即不可替换，只有重启后重新加载才可成">
 <meta property="og:locale" content="zh-CN">
-<meta property="og:updated_time" content="2018-04-23T11:48:35.000Z">
+<meta property="og:updated_time" content="2019-02-03T13:20:24.135Z">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="热修复基本原理">
-<meta name="twitter:description" content="如果我没有见过光明，那我本可以忍受黑暗">
+<meta name="twitter:description" content="目前流行的热修复方案主要有以下三种：  代码修复 资源修复 动态链接库修复   本章主要讲述 第一种方案：代码修复。 代码修复 原理：对出现Bug的类进行修改或替换  类加载方案 核心思想：使用Android的类加载器，通过类加载器去加载已修复好Bug的Class并对有问题的Class进行覆盖。 加载完成后需要重启应用才可生效，因为当前在使用的类是无法卸载的即不可替换，只有重启后重新加载才可成">
 
 
 
@@ -422,7 +422,66 @@
       
 
       
-        
+        <!-- <blockquote class="blockquote-center">热修复主要用来解决线上出现大问题的一个补救方案。</blockquote> -->
+<blockquote>
+<p>目前流行的热修复方案主要有以下三种：</p>
+<ul>
+<li>代码修复</li>
+<li>资源修复</li>
+<li>动态链接库修复</li>
+</ul>
+</blockquote>
+<p>本章主要讲述 第一种方案：<strong>代码修复</strong>。</p>
+<h2 id="代码修复"><a href="#代码修复" class="headerlink" title="代码修复"></a>代码修复</h2><blockquote>
+<p>原理：对出现Bug的类进行修改或替换</p>
+</blockquote>
+<h3 id="类加载方案"><a href="#类加载方案" class="headerlink" title="类加载方案"></a>类加载方案</h3><blockquote>
+<p>核心思想：使用Android的类加载器，通过类加载器去加载已修复好Bug的Class并对有问题的Class进行覆盖。</p>
+<p><strong>加载完成后需要重启应用才可生效，因为当前在使用的类是无法卸载的即不可替换，只有重启后重新加载才可成功。</strong></p>
+</blockquote>
+<h4 id="相关概念"><a href="#相关概念" class="headerlink" title="相关概念"></a>相关概念</h4><ul>
+<li><p><code>65536限制</code></p>
+<p>随着应用功能越来越复杂，代码量不断地增大，引入的库也会越来越多，可能导致出现异常</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">com.android.dex.DexIndexOverflowException:method ID not in [0,0xffff]：65536</span><br></pre></td></tr></table></figure>
+<p>应用中是限制了引用方法超过最大数65536个。限制是由于<code>DVM bytecode</code>的限制导致的，因为DVM指令集的方法调用指令<code>invoke-kind</code>索引最大值为16bits，故为65536个方法。</p>
+</li>
+<li><p><code>LinearAlloc限制</code></p>
+<p>在安装应用时可能会提示<code>INSTALL_FAILED_DEXOPT</code>，产生的原因就是<code>LinearAlloc</code>限制，LinearAlloc是一个固定的缓存区，超出即会报错。</p>
+</li>
+</ul>
+<p>为了解决上述的两个问题，产生了<strong>DEX分包方案</strong>。主要在打包时将应用代码分成多个Dex，将应用启动时必须的类以及直接引用类放入主Dex中，其他代码放到次Dex中。<em>应用启动时就先去加载主Dex，然后动态加载次Dex，从而缓解上述限制</em>。</p>
+<h4 id="原理分析"><a href="#原理分析" class="headerlink" title="原理分析"></a>原理分析</h4><p>类加载方案需要通过<code>ClassLoader</code>的实现类完成。在Android中主要有两种类加载器：</p>
+<ul>
+<li><p>DexClassLoader</p>
+<blockquote>
+<p>继承自BaseDexClassLoader，支持加载包含classes.dex的jar、apk，zip文件，可以是SD卡的路径。是实现热修复的关键。<strong>注意不要把优化后的文件放在外部存储，可能导致注入攻击。</strong></p>
+</blockquote>
+<figure class="highlight java"><figcaption><span>/libcore/dalvik/src/main/java/dalvik/system/DexClassLoader.java</span></figcaption><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">DexClassLoader</span> <span class="keyword">extends</span> <span class="title">BaseDexClassLoader</span></span>&#123; </span><br><span class="line"><span class="function"><span class="keyword">public</span> <span class="title">DexClassLoader</span><span class="params">(String dexPath, String optimizedDirectory,</span></span></span><br><span class="line"><span class="function"><span class="params">            String librarySearchPath, ClassLoader parent)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">super</span>(dexPath, <span class="keyword">null</span>, librarySearchPath, parent);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>PathClassLoader</p>
+<blockquote>
+<p>用来加载Android系统类和应用程序的类，<strong>在dalvik上只能加载已安装apk的dex(/data/app目录)，在ART虚拟机上则没有这个限制</strong>。</p>
+</blockquote>
+<figure class="highlight java"><figcaption><span>/libcore/dalvik/src/main/java/dalvik/system/PathClassLoader.java</span></figcaption><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">PathClassLoader</span> <span class="keyword">extends</span> <span class="title">BaseDexClassLoader</span> </span>&#123;</span><br><span class="line">  <span class="function"><span class="keyword">public</span> <span class="title">PathClassLoader</span><span class="params">(String dexPath, ClassLoader parent)</span> </span>&#123;</span><br><span class="line">      <span class="keyword">super</span>(dexPath,<span class="keyword">null</span>, <span class="keyword">null</span>, parent);</span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  <span class="function"><span class="keyword">public</span> <span class="title">PathClassLoader</span><span class="params">(String dexPath, String librarySearchPath, ClassLoader parent)</span> </span>&#123;</span><br><span class="line">      <span class="keyword">super</span>(dexPath,<span class="keyword">null</span>, librarySearchPath, parent);</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+</li>
+</ul>
+<h5 id="上述类加载器都继承自BaseDexClassLoader。"><a href="#上述类加载器都继承自BaseDexClassLoader。" class="headerlink" title="上述类加载器都继承自BaseDexClassLoader。"></a>上述类加载器都继承自<code>BaseDexClassLoader</code>。</h5>  <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">BaseDexClassLoader</span> <span class="keyword">extends</span> <span class="title">ClassLoader</span></span>&#123;</span><br><span class="line">   <span class="keyword">private</span> <span class="keyword">final</span> DexPathList pathList;</span><br><span class="line">   <span class="function"><span class="keyword">public</span> <span class="title">BaseDexClassLoader</span><span class="params">(String dexPath, File optimizedDirectory,</span></span></span><br><span class="line"><span class="function"><span class="params">            String librarySearchPath, ClassLoader parent)</span> </span>&#123;</span><br><span class="line">      <span class="keyword">super</span>(parent);</span><br><span class="line">      <span class="keyword">this</span>.pathList = <span class="keyword">new</span> DexPathList(<span class="keyword">this</span>, dexPath, librarySearchPath, <span class="keyword">null</span>);</span><br><span class="line">     ...</span><br><span class="line">   &#125;</span><br><span class="line">  </span><br><span class="line">  ...</span><br><span class="line">  <span class="meta">@Override</span></span><br><span class="line">  <span class="keyword">protected</span> Class&lt;?&gt; findClass(String name) <span class="keyword">throws</span> ClassNotFoundException &#123;</span><br><span class="line">      List&lt;Throwable&gt; suppressedExceptions = <span class="keyword">new</span> ArrayList&lt;Throwable&gt;();</span><br><span class="line">      <span class="comment">//根据类名去找出对应的类文件</span></span><br><span class="line">      Class c = pathList.findClass(name, suppressedExceptions);</span><br><span class="line">      <span class="keyword">if</span> (c == <span class="keyword">null</span>) &#123;</span><br><span class="line">          ClassNotFoundException cnfe = <span class="keyword">new</span> ClassNotFoundException(</span><br><span class="line">                 <span class="string">"Didn't find class \""</span> + name + <span class="string">"\" on path: "</span> + pathList);</span><br><span class="line">          <span class="keyword">for</span> (Throwable t : suppressedExceptions) &#123;</span><br><span class="line">              cnfe.addSuppressed(t);</span><br><span class="line">          &#125;</span><br><span class="line">          <span class="keyword">throw</span> cnfe;</span><br><span class="line">      &#125;</span><br><span class="line">      <span class="keyword">return</span> c;</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>  主要构造函数介绍：</p>
+<ul>
+<li><code>dexPath</code>：指<code>目标类所在的apk、dex或jar文件的路径，也可以是SD卡的路径</code>，类加载器从该路径加载目标类。如果包含多个路径，路径之间必须用特定的分隔符去分隔，特定的分隔符从<code>System.getProperty(&quot;path.separtor&quot;)</code>获取（默认分割符为”:”）。最终将路径上的文件ODEX优化到optimizedDirectory，然后进行加载。</li>
+<li><code>optimizedDirectory</code>：解压出的dex文件路径，这个路径必须为内部路径，一般情况下的路径为<code>/data/data/&lt;Package_Name&gt;/</code></li>
+<li><code>librarySearchPath</code>：存放目标类中使用的native文件库，也以”:”分割</li>
+<li><code>parent</code>：父加载器，在Android中以<code>context.getClassLoader</code>作为父加载器。</li>
+</ul>
+<blockquote>
+<p>在Android8.0之后，<code>optimizedDirectory</code>参数失效。由子类去控制解压文件路径。</p>
+</blockquote>
+<p><code>findClass()</code>用来加载dex中的Class文件。内部调用到<code>DexPathList.findClass()</code>实现</p>
+<h5 id="DexPathList"><a href="#DexPathList" class="headerlink" title="DexPathList"></a>DexPathList</h5><blockquote>
+<p>内部存储的是一个个的Dex文件地址，方便后续进行寻找调用</p>
+</blockquote>
+<h6 id="构造函数"><a href="#构造函数" class="headerlink" title="构造函数"></a>构造函数</h6><figure class="highlight java"><figcaption><span>/libcore/dalvik/src/main/java/dalvik/system/DexPathList.java</span></figcaption><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">final</span> <span class="class"><span class="keyword">class</span> <span class="title">DexPathList</span></span>&#123;</span><br><span class="line">  </span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h4 id="修复实战"><a href="#修复实战" class="headerlink" title="修复实战"></a>修复实战</h4>
       
     </div>
 
@@ -545,8 +604,17 @@
       
 
       
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            文章目录
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            站点概览
+          </li>
+        </ul>
+      
 
-      <div class="site-overview-wrap sidebar-panel sidebar-panel-active">
+      <div class="site-overview-wrap sidebar-panel">
         <div class="site-overview">
           <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
             
@@ -659,6 +727,23 @@
         </div>
       </div>
 
+      
+      <!--noindex-->
+        <div class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+            
+            
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#代码修复"><span class="nav-text">代码修复</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#类加载方案"><span class="nav-text">类加载方案</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#相关概念"><span class="nav-text">相关概念</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#原理分析"><span class="nav-text">原理分析</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#上述类加载器都继承自BaseDexClassLoader。"><span class="nav-text">上述类加载器都继承自BaseDexClassLoader。</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#DexPathList"><span class="nav-text">DexPathList</span></a><ol class="nav-child"><li class="nav-item nav-level-6"><a class="nav-link" href="#构造函数"><span class="nav-text">构造函数</span></a></li></ol></li></ol></li><li class="nav-item nav-level-4"><a class="nav-link" href="#修复实战"><span class="nav-text">修复实战</span></a></li></ol></li></ol></li></ol></div>
+            
+
+          </div>
+        </div>
+      <!--/noindex-->
       
 
       
