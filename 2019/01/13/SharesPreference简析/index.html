@@ -100,18 +100,18 @@
 
 
 
-  <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
+  <meta name="description" content="SharedPreferences基本概念Android系统提供的一种简易数据持久化的手段，适合单进程、小批量的数据存储与访问。最终会在手机的/data/data/package_name/shared_prefs/目录(私有目录外部无法直接访问)下生成一个xml文件。 SharedPreferences是基于单个xml文件实现的，并且所有持久化的数据都是一次性加载到内存中，如果数据过大，容易导致">
 <meta name="keywords" content="源码解析">
 <meta property="og:type" content="article">
 <meta property="og:title" content="SharedPreference简析">
 <meta property="og:url" content="http://yoursite.com/2019/01/13/SharesPreference简析/index.html">
 <meta property="og:site_name" content="Wxy的个人博客">
-<meta property="og:description" content="如果我没有见过光明，那我本可以忍受黑暗">
+<meta property="og:description" content="SharedPreferences基本概念Android系统提供的一种简易数据持久化的手段，适合单进程、小批量的数据存储与访问。最终会在手机的/data/data/package_name/shared_prefs/目录(私有目录外部无法直接访问)下生成一个xml文件。 SharedPreferences是基于单个xml文件实现的，并且所有持久化的数据都是一次性加载到内存中，如果数据过大，容易导致">
 <meta property="og:locale" content="zh-CN">
-<meta property="og:updated_time" content="2019-01-29T07:27:04.000Z">
+<meta property="og:updated_time" content="2019-03-04T14:55:41.429Z">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="SharedPreference简析">
-<meta name="twitter:description" content="如果我没有见过光明，那我本可以忍受黑暗">
+<meta name="twitter:description" content="SharedPreferences基本概念Android系统提供的一种简易数据持久化的手段，适合单进程、小批量的数据存储与访问。最终会在手机的/data/data/package_name/shared_prefs/目录(私有目录外部无法直接访问)下生成一个xml文件。 SharedPreferences是基于单个xml文件实现的，并且所有持久化的数据都是一次性加载到内存中，如果数据过大，容易导致">
 
 
 
@@ -420,7 +420,44 @@
       
 
       
-        
+        <h2 id="SharedPreferences基本概念"><a href="#SharedPreferences基本概念" class="headerlink" title="SharedPreferences基本概念"></a>SharedPreferences基本概念</h2><p>Android系统提供的一种简易数据持久化的手段，适合<strong>单进程、小批量</strong>的数据存储与访问。最终会在手机的<code>/data/data/package_name/shared_prefs/</code>目录(<em>私有目录外部无法直接访问</em>)下生成一个xml文件。</p>
+<p>SharedPreferences是基于单个xml文件实现的，并且所有持久化的数据都是一次性加载到内存中，如果数据过大，容易导致内存问题。</p>
+<h2 id="SharedPreferences源码解析"><a href="#SharedPreferences源码解析" class="headerlink" title="SharedPreferences源码解析"></a>SharedPreferences源码解析</h2><h3 id="获取SharedPreferences对象"><a href="#获取SharedPreferences对象" class="headerlink" title="获取SharedPreferences对象"></a>获取SharedPreferences对象</h3><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">SharedPreferences sharedPreferences= getSharedPreferences(<span class="string">"test"</span>,Activity.MODE_PRIVATE);</span><br></pre></td></tr></table></figure>
+<p><code>test</code>：表明了生成xml文件名为 test.xml</p>
+<p><code>Activity.MODE_PRIVATE</code>：该参数表明了文件的访问权限以及数据的写入方式。</p>
+<table>
+<thead>
+<tr>
+<th>权限控制格式</th>
+<th>作用</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Activity.MODE_PRIVATE</td>
+<td><strong>代表该文件是私有数据，只能被当前应用访问。</strong><br>写入的内容会覆盖源文件的内容。</td>
+<td>默认操作模式</td>
+</tr>
+<tr>
+<td>Activity.MODE_WORLD_READABLE</td>
+<td>表示当前文件可以被其他应用读取</td>
+<td></td>
+</tr>
+<tr>
+<td>Activity.MODE_WORLE_WRITEABLE</td>
+<td>表示当前文件可以被其他应用写入</td>
+<td></td>
+</tr>
+<tr>
+<td>Activity.MODE_APPEND</td>
+<td>会检查当前是否有文件存在？<br>在在后面追加内容<br>不存在则去创建新文件</td>
+</tr>
+</tbody>
+</table>
+<h4 id="源码解析"><a href="#源码解析" class="headerlink" title="源码解析"></a>源码解析</h4><p>在使用<code>SharedPreferences</code>时，需要获取到SharedPreferences对象。</p>
+<figure class="highlight java"><figcaption><span>ContextImpl.java</span></figcaption><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> SharedPreferences <span class="title">getSharedPreferences</span><span class="params">(String name, <span class="keyword">int</span> mode)</span> </span>&#123;</span><br><span class="line">       <span class="keyword">if</span> (mPackageInfo.getApplicationInfo().targetSdkVersion &lt;</span><br><span class="line">               Build.VERSION_CODES.KITKAT) &#123;</span><br><span class="line">           <span class="keyword">if</span> (name == <span class="keyword">null</span>) &#123;</span><br><span class="line">               name = <span class="string">"null"</span>;</span><br><span class="line">           &#125;</span><br><span class="line">       &#125;</span><br><span class="line"></span><br><span class="line">       File file;</span><br><span class="line">      </span><br><span class="line">       <span class="keyword">synchronized</span> (ContextImpl.class) &#123;</span><br><span class="line">           <span class="keyword">if</span> (mSharedPrefsPaths == <span class="keyword">null</span>) &#123;</span><br><span class="line">               mSharedPrefsPaths = <span class="keyword">new</span> ArrayMap&lt;&gt;();</span><br><span class="line">           &#125;</span><br><span class="line">           file = mSharedPrefsPaths.get(name);</span><br><span class="line">           <span class="keyword">if</span> (file == <span class="keyword">null</span>) &#123;</span><br><span class="line">               file = getSharedPreferencesPath(name);</span><br><span class="line">               mSharedPrefsPaths.put(name, file);</span><br><span class="line">           &#125;</span><br><span class="line">       &#125;</span><br><span class="line">       <span class="keyword">return</span> getSharedPreferences(file, mode);</span><br><span class="line">   &#125;</span><br></pre></td></tr></table></figure>
+<h3 id="插入数据"><a href="#插入数据" class="headerlink" title="插入数据"></a>插入数据</h3><h3 id="获取数据"><a href="#获取数据" class="headerlink" title="获取数据"></a>获取数据</h3><h2 id="SharedPreferences注意事项"><a href="#SharedPreferences注意事项" class="headerlink" title="SharedPreferences注意事项"></a>SharedPreferences注意事项</h2><h2 id="SharedPreferences多进程实现"><a href="#SharedPreferences多进程实现" class="headerlink" title="SharedPreferences多进程实现"></a>SharedPreferences多进程实现</h2>
       
     </div>
 
@@ -543,8 +580,17 @@
       
 
       
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            文章目录
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            站点概览
+          </li>
+        </ul>
+      
 
-      <div class="site-overview-wrap sidebar-panel sidebar-panel-active">
+      <div class="site-overview-wrap sidebar-panel">
         <div class="site-overview">
           <div class="site-author motion-element" itemprop="author" itemscope="" itemtype="http://schema.org/Person">
             
@@ -657,6 +703,23 @@
         </div>
       </div>
 
+      
+      <!--noindex-->
+        <div class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+            
+            
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#SharedPreferences基本概念"><span class="nav-text">SharedPreferences基本概念</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#SharedPreferences源码解析"><span class="nav-text">SharedPreferences源码解析</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#获取SharedPreferences对象"><span class="nav-text">获取SharedPreferences对象</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#源码解析"><span class="nav-text">源码解析</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#插入数据"><span class="nav-text">插入数据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#获取数据"><span class="nav-text">获取数据</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#SharedPreferences注意事项"><span class="nav-text">SharedPreferences注意事项</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#SharedPreferences多进程实现"><span class="nav-text">SharedPreferences多进程实现</span></a></li></ol></div>
+            
+
+          </div>
+        </div>
+      <!--/noindex-->
       
 
       
