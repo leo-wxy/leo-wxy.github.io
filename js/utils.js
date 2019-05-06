@@ -8,28 +8,35 @@ NexT.utils = NexT.$u = {
   wrapImageWithFancyBox: function() {
     $('.content img')
       .not(':hidden')
-      .not('.group-picture img, .post-gallery img')
       .each(function() {
         var $image = $(this);
-        var imageTitle = $image.attr('title');
+        var imageTitle = $image.attr('title') || $image.attr('alt');
         var $imageWrapLink = $image.parent('a');
 
         if ($imageWrapLink.length < 1) {
-          var imageLink = $image.attr('data-original') ? this.getAttribute('data-original') : this.getAttribute('src');
-          $imageWrapLink = $image.wrap(`<a data-fancybox="group" href="${imageLink}"></a>`).parent('a');
-          $imageWrapLink.addClass('fancybox fancybox.image');
-          $imageWrapLink.attr('rel', 'group');
+          var imageLink = $image.attr('data-original') || $image.attr('src');
+          $imageWrapLink = $image.wrap('<a class="fancybox fancybox.image" href="' + imageLink + '" itemscope itemtype="http://schema.org/ImageObject" itemprop="url"></a>').parent('a');
+          if ($image.is('.post-gallery img')) {
+            $imageWrapLink.addClass('post-gallery-img');
+            $imageWrapLink.attr('data-fancybox', 'gallery').attr('rel', 'gallery');
+          }
+          else if ($image.is('.group-picture img')) {
+            $imageWrapLink.attr('data-fancybox', 'group').attr('rel', 'group');
+          }
+          else {
+            $imageWrapLink.attr('data-fancybox', 'default').attr('rel', 'default');
+          }
         }
 
         if (imageTitle) {
-          $imageWrapLink.append(`<p class="image-caption">${imageTitle}</p>`);
-
-          //make sure img title tag will show correctly in fancybox
-          $imageWrapLink.attr('title', imageTitle);
+          $imageWrapLink.append('<p class="image-caption">' + imageTitle + '</p>');
+          // Make sure img title tag will show correctly in fancybox
+          $imageWrapLink.attr('title', imageTitle).attr('data-caption', imageTitle);
         }
       });
 
     $('.fancybox').fancybox({
+      loop: true,
       helpers: {
         overlay: {
           locked: false
@@ -57,7 +64,7 @@ NexT.utils = NexT.$u = {
       $(window).bind('hashchange', function() {
         var tHash = location.hash;
         if (tHash !== '' && !tHash.match(/%\S{2}/)) {
-          $(`${tNav}li:has(a[href="${tHash}"])`).addClass('active').siblings().removeClass('active');
+          $(tNav + 'li:has(a[href="' + tHash + '"])').addClass('active').siblings().removeClass('active');
           $(tHash).addClass('active').siblings().removeClass('active');
         }
       }).trigger('hashchange');
@@ -256,7 +263,7 @@ NexT.utils = NexT.$u = {
   },
 
   getScrollbarWidth: function() {
-    var $div = $('<div/>').addClass('scrollbar-measure').prependTo('body');
+    var $div = $('<div />').addClass('scrollbar-measure').prependTo('body');
     var div = $div[0];
     var scrollbarWidth = div.offsetWidth - div.clientWidth;
     $div.remove();
@@ -265,15 +272,14 @@ NexT.utils = NexT.$u = {
   },
 
   getContentVisibilityHeight: function() {
-    var docHeight = $('#content').height();
+    var docHeight = $('.container').height();
     var winHeight = $(window).height();
     var contentVisibilityHeight = docHeight > winHeight ? docHeight - winHeight : $(document).height() - winHeight;
     return contentVisibilityHeight;
   },
 
   getSidebarb2tHeight: function() {
-    //var sidebarb2tHeight = (CONFIG.sidebar.b2t) ? document.getElementsByClassName('back-to-top')[0].clientHeight : 0;
-    var sidebarb2tHeight = CONFIG.sidebar.b2t ? $('.back-to-top').height() : 0;
+    var sidebarb2tHeight = (CONFIG.back2top && CONFIG.back2top_sidebar) ? $('.back-to-top').height() : 0;
     return sidebarb2tHeight;
   },
 
@@ -291,11 +297,14 @@ NexT.utils = NexT.$u = {
 
 $(document).ready(function() {
 
+  function wrapTable() {
+    $('table').not('.gist table').wrap('<div class="table-container"></div>');
+  }
+
   /**
    * Init Sidebar & TOC inner dimensions on all pages and for all schemes.
    * Need for Sidebar/TOC inner scrolling if content taller then viewport.
    */
-
   function updateSidebarHeight(height) {
     height = height || 'auto';
     $('.site-overview, .post-toc').css('max-height', height);
@@ -317,14 +326,15 @@ $(document).ready(function() {
     // Initialize Sidebar & TOC Width.
     var scrollbarWidth = NexT.utils.getScrollbarWidth();
     if ($('.site-overview-wrap').height() > (document.body.clientHeight - NexT.utils.getSidebarSchemePadding())) {
-      $('.site-overview').css('width', `calc(100% + ${scrollbarWidth}px)`);
+      $('.site-overview').css('width', 'calc(100% + ' + scrollbarWidth + 'px)');
     }
     if ($('.post-toc-wrap').height() > (document.body.clientHeight - NexT.utils.getSidebarSchemePadding())) {
-      $('.post-toc').css('width', `calc(100% + ${scrollbarWidth}px)`);
+      $('.post-toc').css('width', 'calc(100% + ' + scrollbarWidth + 'px)');
     }
 
     // Initialize Sidebar & TOC Height.
     updateSidebarHeight(document.body.clientHeight - NexT.utils.getSidebarSchemePadding());
   }
   initSidebarDimension();
+  wrapTable();
 });
