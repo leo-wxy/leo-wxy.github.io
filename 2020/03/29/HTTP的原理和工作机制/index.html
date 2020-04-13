@@ -114,7 +114,8 @@
 <meta property="og:image" content="https://leo-wxy.github.io/images/http/Cookie交互流程.jpg">
 <meta property="og:image" content="https://leo-wxy.github.io/images/对称密钥加解密过程.png">
 <meta property="og:image" content="https://leo-wxy.github.io/images/非对称密钥加解密过程.png">
-<meta property="og:updated_time" content="2020-04-12T06:32:55.000Z">
+<meta property="og:image" content="https://leo-wxy.github.io/images/http/中间人攻击.jpg">
+<meta property="og:updated_time" content="2020-04-13T15:32:19.830Z">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="HTTP的原理和工作机制">
 <meta name="twitter:description" content="HTTP的原理和工作机制什么是HTTP? HyperText(可以指向其他文本的链接文本) Transfer Protocol——超文本传输协议。位于TCP/IP协议的最顶层——应用层。  从日常角度来说，在App中调用网络请求，直接就会使用到HTTP。发送数据(Request)到服务端，等待服务端数据处理完毕再返回(Response)到App，App在进行后续处理，例如页面展示等。 HTTP工作">
@@ -428,7 +429,7 @@
                 
                   <span class="post-meta-item-text">更新于</span>
                 
-                <time title="修改时间：2020-04-12 14:32:55" itemprop="dateModified" datetime="2020-04-12T14:32:55+08:00">2020-04-12</time>
+                <time title="修改时间：2020-04-13 23:32:19" itemprop="dateModified" datetime="2020-04-13T23:32:19+08:00">2020-04-13</time>
               
             
           </span>
@@ -954,13 +955,121 @@
 <p>例如：返回消息为</p>
 <ul>
 <li><code>Random</code>：server_random</li>
-<li><code>Cipher Suite</code>：TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256（<code>返回一个来确定后续都用这种加密方式</code>）</li>
+<li><code>Cipher Suite</code>：TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256（<code>返回一个来确定后续都用这种加密方式</code>）<ul>
+<li>ECDHE：密钥协商算法</li>
+<li>RSA：证书公钥加密算法</li>
+<li>AES_128：对称加密算法以及密法长度</li>
+<li>GCM：AES加密模式</li>
+<li>SHA256：消息摘要算法</li>
+</ul>
+</li>
 <li><code>Certificate</code>：返回的服务端证书信息，以及<code>非对称加密使用的公钥</code></li>
 </ul>
 <h4 id="Certificate"><a href="#Certificate" class="headerlink" title="Certificate"></a>Certificate</h4><blockquote>
 <p>客户端验证数字证书以及验证通过后发送消息到服务端</p>
 </blockquote>
-<h3 id="与HTTP区别"><a href="#与HTTP区别" class="headerlink" title="与HTTP区别"></a>与HTTP区别</h3>
+<p>客户端验证服务端传来<code>证书</code>和<code>签名</code>是否通过，如果通过，按照协议不同有以下两种处理方式</p>
+<ul>
+<li><p>传统RSA版本</p>
+<p>客户端再生成一个随机数<code>pre_random</code>，并且使用证书携带的RSA公钥加密，传给服务端</p>
+</li>
+<li><p>TLS 1.2版本</p>
+<p>客户端生产<code>client_params</code>参数给服务端</p>
+</li>
+</ul>
+<h4 id="Server-Key-Exchange"><a href="#Server-Key-Exchange" class="headerlink" title="Server Key Exchange"></a>Server Key Exchange</h4><blockquote>
+<p>服务端根据传递的参数生成对称加密使用的密钥</p>
+</blockquote>
+<ul>
+<li><p>传统RSA版本</p>
+<p>服务端接收到客户端传来的<code>pre_random</code>，使用私钥进行解密，然后拿着<code>client_random</code>、<code>server_random</code>以及<code>pre_random</code>按照约定算法生成最终的<code>secret(对称加密密钥)</code></p>
+</li>
+<li><p>TLS 1.2版本</p>
+<p>服务端接收到客户端传来的<code>client_params</code>，使用<code>ECDHE(椭圆曲线加密)</code>，根据已有的<code>client_params</code>和<code>server_params</code>生成最后的<code>pre_random</code>，最后使用<code>client_random</code>、<code>server_random</code>以及<code>pre_random</code>按照约定算法生成最终的<code>secret(对称加密密钥)</code></p>
+</li>
+</ul>
+<p>服务端生成<code>secret</code>后，给客户端发送一个收尾消息，该收尾消息包含两部分：</p>
+<ul>
+<li><code>Change Cipher Spec</code>：提示客户端后续消息会采用<code>secret</code>的对称加密进行传递</li>
+<li><code>Finished</code>：对之前报文的所有数据进行摘要，加密后交由客户端进行解密，解密通过则表示协商成功</li>
+</ul>
+<h4 id="Client-Key-Exchange"><a href="#Client-Key-Exchange" class="headerlink" title="Client Key Exchange"></a>Client Key Exchange</h4><blockquote>
+<p>客户端根据已有的参数生成对称加密使用的密钥</p>
+</blockquote>
+<ul>
+<li><p>传统RSA版本</p>
+<p>客户端根据已有的<code>client_random</code>、<code>server_random</code>以及<code>pre_random</code>按照约定算法生成最终的<code>secret(对称加密密钥)</code></p>
+</li>
+<li><p>TLS 1.2版本</p>
+<p>客户端通过<code>ECDHE</code>算法计算出<code>pre_random</code>，其中传入两个参数:<strong>server_params</strong>和<strong>client_params</strong>。现在你应该清楚这个两个参数的作用了吧，由于<code>ECDHE</code>基于<code>椭圆曲线离散对数</code>，这两个参数也称作<code>椭圆曲线的公钥</code>。</p>
+<p>客户端根据<code>client_random</code>、<code>server_random</code>以及<code>pre_random</code>按照约定算法生成最终的<code>secret(对称加密密钥)</code>。</p>
+</li>
+</ul>
+<p>客户端生成<code>secret</code>后，会给服务端发送一个收尾消息，该收尾消息包含两部分：</p>
+<ul>
+<li><code>Change Cipher Spec</code>：提示服务器后续消息会采用<code>secret</code>的对称加密进行传递</li>
+<li><code>Finished</code>：对之前报文的所有数据进行摘要，加密后交由服务端进行解密，解密通过则表示协商成功</li>
+</ul>
+<p>当客户端与服务端都收到<code>finished</code>消息后，客户端和服务端都会持有<code>secret</code>，后续的请求都会使用<code>secret</code>进行对称加密传递消息。</p>
+<h3 id="HTTPS缺点"><a href="#HTTPS缺点" class="headerlink" title="HTTPS缺点"></a>HTTPS缺点</h3><ol>
+<li>HTTPS协议握手阶段比较费时，因为需要加密/解密过程</li>
+<li>SSL证书是需要收费</li>
+<li>HTTPS加密范围有限，而且证书不一定是可以信任的</li>
+</ol>
+<h3 id="与HTTP区别"><a href="#与HTTP区别" class="headerlink" title="与HTTP区别"></a>与HTTP区别</h3><ul>
+<li>https协议需要向<code>CA</code>申请证书，需要一定费用</li>
+<li>http信息是明文传输，HTTPS具有安全性的ssl加密传输协议</li>
+<li>http和https使用的是完全不同的连接方式，端口不同，http使用了<code>80</code>端口，https使用<code>443</code>端口</li>
+<li>http连接是简单的，无状态的；HTTPS由<code>http+ssl</code>构成的可进行加密传输，身份认证的网络协议，更加安全。</li>
+</ul>
+<h3 id="中间人攻击"><a href="#中间人攻击" class="headerlink" title="中间人攻击"></a>中间人攻击</h3><blockquote>
+<p>攻击者与通信两端(服务端与客户端)分别创建独立的联系，并交换所受到的数据，使通信的两端认为他们正在通过一个私密的连接与对方直接通信，事实上整个会话都被攻击者完全控制、</p>
+<p>中间人攻击者可以拦截通讯双方的通话并插入新的内容。</p>
+</blockquote>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/http/中间人攻击.jpg" class="full-image" alt="中间人攻击" title="中间人攻击"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<h4 id="如何防御中间人攻击？"><a href="#如何防御中间人攻击？" class="headerlink" title="如何防御中间人攻击？"></a>如何防御中间人攻击？</h4><ul>
+<li><p>公钥基础建设PKI</p>
+<p>PKI相互认证机制，服务端验证客户端，客户端验证服务端</p>
+</li>
+<li><p>使用复杂加密哈希函数运行计算以造成数十秒的延迟</p>
+<p>如果双方通信时间过长，可以基本判断存在中间人</p>
+</li>
+</ul>
+<h2 id="HTTP协议版本区别"><a href="#HTTP协议版本区别" class="headerlink" title="HTTP协议版本区别"></a>HTTP协议版本区别</h2><h3 id="HTTP1-0"><a href="#HTTP1-0" class="headerlink" title="HTTP1.0"></a>HTTP1.0</h3><ul>
+<li>默认短连接</li>
+<li>增加了POST、HEAD命令</li>
+</ul>
+<h3 id="HTTP1-1"><a href="#HTTP1-1" class="headerlink" title="HTTP1.1"></a>HTTP1.1</h3><ul>
+<li>默认长连接(默认添加Header<code>Connection:Keep-Alive</code>)</li>
+<li>增加了请求方法(<code>OPTIONS、PUT、DELETE、TRACE、CONNECT</code>)</li>
+<li>请求消息和响应消息都支持Host头域</li>
+<li>支持chunked编码传输</li>
+</ul>
+<h3 id="HTTP2-0"><a href="#HTTP2-0" class="headerlink" title="HTTP2.0"></a>HTTP2.0</h3><ul>
+<li><p>头部压缩</p>
+<p>针对请求头字段进行压缩，采用了<code>HPACK</code>算法</p>
+<p>HPACK算法：</p>
+<ul>
+<li>在服务端与客户端建立哈希表，存放使用的字段，只要在传输过程传输索引值，然后按照索引表查询即可</li>
+<li>对于整数和字符串进行<strong>哈夫曼编码</strong></li>
+</ul>
+</li>
+<li><p>多路复用</p>
+<p>允许同时通过单一的HTTP2连接发起多重请求，由于把HTTP通信的基本单位缩小为一个个的二进制帧，各自对应着信息。</p>
+</li>
+<li><p>二进制分帧</p>
+</li>
+</ul>
+<ul>
+<li><p>服务端推送</p>
+<p>在客户端请求之前发送数据，客户端请求一个资源后，服务端判断可能还需要其他资源，就会主动发送消息到客户端，减少客户端的等待</p>
+</li>
+</ul>
+<h2 id="HTTP相关协议"><a href="#HTTP相关协议" class="headerlink" title="HTTP相关协议"></a>HTTP相关协议</h2><h3 id="DNS协议"><a href="#DNS协议" class="headerlink" title="DNS协议"></a>DNS协议</h3><h3 id="IP协议"><a href="#IP协议" class="headerlink" title="IP协议"></a>IP协议</h3><h3 id="CDN"><a href="#CDN" class="headerlink" title="CDN"></a>CDN</h3><h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="">图解HTTP</a></p>
+<p><a href="https://mp.weixin.qq.com/s/smYo1tECl6-TS6anKF8Jgw" target="_blank" rel="noopener">深入理解HTTPS</a></p>
+<p><a href="https://juejin.im/post/5e76bd516fb9a07cce750746#heading-74" target="_blank" rel="noopener">HTTP灵魂之问</a></p>
+<p><a href="[https://zh.wikipedia.org/wiki/%E4%B8%AD%E9%97%B4%E4%BA%BA%E6%94%BB%E5%87%BB](https://zh.wikipedia.org/wiki/中间人攻击">中间人攻击</a>)</p>
+
       
     </div>
 
@@ -1236,7 +1345,7 @@
             
 
             
-              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#HTTP的原理和工作机制"><span class="nav-number">1.</span> <span class="nav-text">HTTP的原理和工作机制</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#什么是HTTP"><span class="nav-number">1.1.</span> <span class="nav-text">什么是HTTP?</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#HTTP工作机制"><span class="nav-number">1.1.1.</span> <span class="nav-text">HTTP工作机制</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#浏览器输入地址后发生了什么？"><span class="nav-number">1.1.1.1.</span> <span class="nav-text">浏览器输入地址后发生了什么？</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#HTTP数据格式"><span class="nav-number">1.1.2.</span> <span class="nav-text">HTTP数据格式</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#URL"><span class="nav-number">1.1.2.1.</span> <span class="nav-text">URL</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#协议类型"><span class="nav-number">1.1.2.1.1.</span> <span class="nav-text">协议类型</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#服务器地址"><span class="nav-number">1.1.2.1.2.</span> <span class="nav-text">服务器地址</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#请求路径"><span class="nav-number">1.1.2.1.3.</span> <span class="nav-text">请求路径</span></a></li></ol></li><li class="nav-item nav-level-4"><a class="nav-link" href="#请求报文-Request"><span class="nav-number">1.1.2.2.</span> <span class="nav-text">请求报文(Request)</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#请求行"><span class="nav-number">1.1.2.2.1.</span> <span class="nav-text">请求行</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#请求头"><span class="nav-number">1.1.2.2.2.</span> <span class="nav-text">请求头</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#请求体"><span class="nav-number">1.1.2.2.3.</span> <span class="nav-text">请求体</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#示例"><span class="nav-number">1.1.2.2.4.</span> <span class="nav-text">示例</span></a></li></ol></li><li class="nav-item nav-level-4"><a class="nav-link" href="#响应报文-Response"><span class="nav-number">1.1.2.3.</span> <span class="nav-text">响应报文(Response)</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#状态行"><span class="nav-number">1.1.2.3.1.</span> <span class="nav-text">状态行</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#响应头"><span class="nav-number">1.1.2.3.2.</span> <span class="nav-text">响应头</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#响应报文"><span class="nav-number">1.1.2.3.3.</span> <span class="nav-text">响应报文</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#示例-1"><span class="nav-number">1.1.2.3.4.</span> <span class="nav-text">示例</span></a></li></ol></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#HTTP-Request-Methods"><span class="nav-number">1.1.3.</span> <span class="nav-text">HTTP Request Methods</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#Tips"><span class="nav-number">1.1.3.1.</span> <span class="nav-text">Tips</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#幂等性"><span class="nav-number">1.1.3.1.1.</span> <span class="nav-text">幂等性</span></a></li></ol></li><li class="nav-item nav-level-4"><a class="nav-link" href="#常见问题"><span class="nav-number">1.1.3.2.</span> <span class="nav-text">常见问题</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#GET和POST请求有什么区别？"><span class="nav-number">1.1.3.2.1.</span> <span class="nav-text">GET和POST请求有什么区别？</span></a></li></ol></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#HTTP-Status-Code"><span class="nav-number">1.1.4.</span> <span class="nav-text">HTTP Status Code</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#1XX-信息状态码"><span class="nav-number">1.1.4.1.</span> <span class="nav-text">1XX 信息状态码</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#2XX-成功状态码"><span class="nav-number">1.1.4.2.</span> <span class="nav-text">2XX 成功状态码</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#3XX-重定向状态码"><span class="nav-number">1.1.4.3.</span> <span class="nav-text">3XX 重定向状态码</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#4XX-客户端错误状态码"><span class="nav-number">1.1.4.4.</span> <span class="nav-text">4XX 客户端错误状态码</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#5XX-服务端错误状态码"><span class="nav-number">1.1.4.5.</span> <span class="nav-text">5XX 服务端错误状态码</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#HTTP-Header"><span class="nav-number">1.1.5.</span> <span class="nav-text">HTTP Header</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#请求报文Header"><span class="nav-number">1.1.5.1.</span> <span class="nav-text">请求报文Header</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#响应报文Header"><span class="nav-number">1.1.5.2.</span> <span class="nav-text">响应报文Header</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#通用Header-请求-响应都可以用"><span class="nav-number">1.1.5.3.</span> <span class="nav-text">通用Header(请求/响应都可以用)</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#HTTP-Cache"><span class="nav-number">1.1.6.</span> <span class="nav-text">HTTP Cache</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#强制缓存"><span class="nav-number">1.1.6.1.</span> <span class="nav-text">强制缓存</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#对比缓存"><span class="nav-number">1.1.6.2.</span> <span class="nav-text">对比缓存</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#HTTP-Cookie"><span class="nav-number">1.1.7.</span> <span class="nav-text">HTTP Cookie</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#属性"><span class="nav-number">1.1.7.1.</span> <span class="nav-text">属性</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#Cookie生命周期-expires-maxAge"><span class="nav-number">1.1.7.1.1.</span> <span class="nav-text">Cookie生命周期-expires,maxAge</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#Cookie作用域-domain-path"><span class="nav-number">1.1.7.1.2.</span> <span class="nav-text">Cookie作用域-domain,path</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#Cookie安全性-secure-httponly-SameSite"><span class="nav-number">1.1.7.1.3.</span> <span class="nav-text">Cookie安全性-secure,httponly,SameSite</span></a></li></ol></li><li class="nav-item nav-level-4"><a class="nav-link" href="#作用"><span class="nav-number">1.1.7.2.</span> <span class="nav-text">作用</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#缺点"><span class="nav-number">1.1.7.3.</span> <span class="nav-text">缺点</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#风险"><span class="nav-number">1.1.7.4.</span> <span class="nav-text">风险</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#HTTPS"><span class="nav-number">1.2.</span> <span class="nav-text">HTTPS</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#HTTPS加密"><span class="nav-number">1.2.1.</span> <span class="nav-text">HTTPS加密</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#对称密钥加密"><span class="nav-number">1.2.1.1.</span> <span class="nav-text">对称密钥加密</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#常用加密算法"><span class="nav-number">1.2.1.1.1.</span> <span class="nav-text">常用加密算法</span></a></li></ol></li><li class="nav-item nav-level-4"><a class="nav-link" href="#非对称密钥加密"><span class="nav-number">1.2.1.2.</span> <span class="nav-text">非对称密钥加密</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#常用加密算法-1"><span class="nav-number">1.2.1.2.1.</span> <span class="nav-text">常用加密算法</span></a></li></ol></li><li class="nav-item nav-level-4"><a class="nav-link" href="#混合加密-HTTPS采用方案"><span class="nav-number">1.2.1.3.</span> <span class="nav-text">混合加密(HTTPS采用方案)</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#数字证书-解决身份伪装问题"><span class="nav-number">1.2.1.4.</span> <span class="nav-text">数字证书(解决身份伪装问题)</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#CA机构"><span class="nav-number">1.2.1.4.1.</span> <span class="nav-text">CA机构</span></a></li></ol></li><li class="nav-item nav-level-4"><a class="nav-link" href="#数字签名-解决数据篡改问题"><span class="nav-number">1.2.1.5.</span> <span class="nav-text">数字签名(解决数据篡改问题)</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#握手过程"><span class="nav-number">1.2.2.</span> <span class="nav-text">握手过程</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#Client-Hello"><span class="nav-number">1.2.2.1.</span> <span class="nav-text">Client Hello</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#Server-Hello"><span class="nav-number">1.2.2.2.</span> <span class="nav-text">Server Hello</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#Certificate"><span class="nav-number">1.2.2.3.</span> <span class="nav-text">Certificate</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#与HTTP区别"><span class="nav-number">1.2.3.</span> <span class="nav-text">与HTTP区别</span></a></li></ol></li></ol></li></ol></div>
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#HTTP的原理和工作机制"><span class="nav-number">1.</span> <span class="nav-text">HTTP的原理和工作机制</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#什么是HTTP"><span class="nav-number">1.1.</span> <span class="nav-text">什么是HTTP?</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#HTTP工作机制"><span class="nav-number">1.1.1.</span> <span class="nav-text">HTTP工作机制</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#浏览器输入地址后发生了什么？"><span class="nav-number">1.1.1.1.</span> <span class="nav-text">浏览器输入地址后发生了什么？</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#HTTP数据格式"><span class="nav-number">1.1.2.</span> <span class="nav-text">HTTP数据格式</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#URL"><span class="nav-number">1.1.2.1.</span> <span class="nav-text">URL</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#协议类型"><span class="nav-number">1.1.2.1.1.</span> <span class="nav-text">协议类型</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#服务器地址"><span class="nav-number">1.1.2.1.2.</span> <span class="nav-text">服务器地址</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#请求路径"><span class="nav-number">1.1.2.1.3.</span> <span class="nav-text">请求路径</span></a></li></ol></li><li class="nav-item nav-level-4"><a class="nav-link" href="#请求报文-Request"><span class="nav-number">1.1.2.2.</span> <span class="nav-text">请求报文(Request)</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#请求行"><span class="nav-number">1.1.2.2.1.</span> <span class="nav-text">请求行</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#请求头"><span class="nav-number">1.1.2.2.2.</span> <span class="nav-text">请求头</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#请求体"><span class="nav-number">1.1.2.2.3.</span> <span class="nav-text">请求体</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#示例"><span class="nav-number">1.1.2.2.4.</span> <span class="nav-text">示例</span></a></li></ol></li><li class="nav-item nav-level-4"><a class="nav-link" href="#响应报文-Response"><span class="nav-number">1.1.2.3.</span> <span class="nav-text">响应报文(Response)</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#状态行"><span class="nav-number">1.1.2.3.1.</span> <span class="nav-text">状态行</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#响应头"><span class="nav-number">1.1.2.3.2.</span> <span class="nav-text">响应头</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#响应报文"><span class="nav-number">1.1.2.3.3.</span> <span class="nav-text">响应报文</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#示例-1"><span class="nav-number">1.1.2.3.4.</span> <span class="nav-text">示例</span></a></li></ol></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#HTTP-Request-Methods"><span class="nav-number">1.1.3.</span> <span class="nav-text">HTTP Request Methods</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#Tips"><span class="nav-number">1.1.3.1.</span> <span class="nav-text">Tips</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#幂等性"><span class="nav-number">1.1.3.1.1.</span> <span class="nav-text">幂等性</span></a></li></ol></li><li class="nav-item nav-level-4"><a class="nav-link" href="#常见问题"><span class="nav-number">1.1.3.2.</span> <span class="nav-text">常见问题</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#GET和POST请求有什么区别？"><span class="nav-number">1.1.3.2.1.</span> <span class="nav-text">GET和POST请求有什么区别？</span></a></li></ol></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#HTTP-Status-Code"><span class="nav-number">1.1.4.</span> <span class="nav-text">HTTP Status Code</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#1XX-信息状态码"><span class="nav-number">1.1.4.1.</span> <span class="nav-text">1XX 信息状态码</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#2XX-成功状态码"><span class="nav-number">1.1.4.2.</span> <span class="nav-text">2XX 成功状态码</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#3XX-重定向状态码"><span class="nav-number">1.1.4.3.</span> <span class="nav-text">3XX 重定向状态码</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#4XX-客户端错误状态码"><span class="nav-number">1.1.4.4.</span> <span class="nav-text">4XX 客户端错误状态码</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#5XX-服务端错误状态码"><span class="nav-number">1.1.4.5.</span> <span class="nav-text">5XX 服务端错误状态码</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#HTTP-Header"><span class="nav-number">1.1.5.</span> <span class="nav-text">HTTP Header</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#请求报文Header"><span class="nav-number">1.1.5.1.</span> <span class="nav-text">请求报文Header</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#响应报文Header"><span class="nav-number">1.1.5.2.</span> <span class="nav-text">响应报文Header</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#通用Header-请求-响应都可以用"><span class="nav-number">1.1.5.3.</span> <span class="nav-text">通用Header(请求/响应都可以用)</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#HTTP-Cache"><span class="nav-number">1.1.6.</span> <span class="nav-text">HTTP Cache</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#强制缓存"><span class="nav-number">1.1.6.1.</span> <span class="nav-text">强制缓存</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#对比缓存"><span class="nav-number">1.1.6.2.</span> <span class="nav-text">对比缓存</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#HTTP-Cookie"><span class="nav-number">1.1.7.</span> <span class="nav-text">HTTP Cookie</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#属性"><span class="nav-number">1.1.7.1.</span> <span class="nav-text">属性</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#Cookie生命周期-expires-maxAge"><span class="nav-number">1.1.7.1.1.</span> <span class="nav-text">Cookie生命周期-expires,maxAge</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#Cookie作用域-domain-path"><span class="nav-number">1.1.7.1.2.</span> <span class="nav-text">Cookie作用域-domain,path</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#Cookie安全性-secure-httponly-SameSite"><span class="nav-number">1.1.7.1.3.</span> <span class="nav-text">Cookie安全性-secure,httponly,SameSite</span></a></li></ol></li><li class="nav-item nav-level-4"><a class="nav-link" href="#作用"><span class="nav-number">1.1.7.2.</span> <span class="nav-text">作用</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#缺点"><span class="nav-number">1.1.7.3.</span> <span class="nav-text">缺点</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#风险"><span class="nav-number">1.1.7.4.</span> <span class="nav-text">风险</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#HTTPS"><span class="nav-number">1.2.</span> <span class="nav-text">HTTPS</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#HTTPS加密"><span class="nav-number">1.2.1.</span> <span class="nav-text">HTTPS加密</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#对称密钥加密"><span class="nav-number">1.2.1.1.</span> <span class="nav-text">对称密钥加密</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#常用加密算法"><span class="nav-number">1.2.1.1.1.</span> <span class="nav-text">常用加密算法</span></a></li></ol></li><li class="nav-item nav-level-4"><a class="nav-link" href="#非对称密钥加密"><span class="nav-number">1.2.1.2.</span> <span class="nav-text">非对称密钥加密</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#常用加密算法-1"><span class="nav-number">1.2.1.2.1.</span> <span class="nav-text">常用加密算法</span></a></li></ol></li><li class="nav-item nav-level-4"><a class="nav-link" href="#混合加密-HTTPS采用方案"><span class="nav-number">1.2.1.3.</span> <span class="nav-text">混合加密(HTTPS采用方案)</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#数字证书-解决身份伪装问题"><span class="nav-number">1.2.1.4.</span> <span class="nav-text">数字证书(解决身份伪装问题)</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#CA机构"><span class="nav-number">1.2.1.4.1.</span> <span class="nav-text">CA机构</span></a></li></ol></li><li class="nav-item nav-level-4"><a class="nav-link" href="#数字签名-解决数据篡改问题"><span class="nav-number">1.2.1.5.</span> <span class="nav-text">数字签名(解决数据篡改问题)</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#握手过程"><span class="nav-number">1.2.2.</span> <span class="nav-text">握手过程</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#Client-Hello"><span class="nav-number">1.2.2.1.</span> <span class="nav-text">Client Hello</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#Server-Hello"><span class="nav-number">1.2.2.2.</span> <span class="nav-text">Server Hello</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#Certificate"><span class="nav-number">1.2.2.3.</span> <span class="nav-text">Certificate</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#Server-Key-Exchange"><span class="nav-number">1.2.2.4.</span> <span class="nav-text">Server Key Exchange</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#Client-Key-Exchange"><span class="nav-number">1.2.2.5.</span> <span class="nav-text">Client Key Exchange</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#HTTPS缺点"><span class="nav-number">1.2.3.</span> <span class="nav-text">HTTPS缺点</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#与HTTP区别"><span class="nav-number">1.2.4.</span> <span class="nav-text">与HTTP区别</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#中间人攻击"><span class="nav-number">1.2.5.</span> <span class="nav-text">中间人攻击</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#如何防御中间人攻击？"><span class="nav-number">1.2.5.1.</span> <span class="nav-text">如何防御中间人攻击？</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#HTTP协议版本区别"><span class="nav-number">1.3.</span> <span class="nav-text">HTTP协议版本区别</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#HTTP1-0"><span class="nav-number">1.3.1.</span> <span class="nav-text">HTTP1.0</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#HTTP1-1"><span class="nav-number">1.3.2.</span> <span class="nav-text">HTTP1.1</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#HTTP2-0"><span class="nav-number">1.3.3.</span> <span class="nav-text">HTTP2.0</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#HTTP相关协议"><span class="nav-number">1.4.</span> <span class="nav-text">HTTP相关协议</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#DNS协议"><span class="nav-number">1.4.1.</span> <span class="nav-text">DNS协议</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#IP协议"><span class="nav-number">1.4.2.</span> <span class="nav-text">IP协议</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#CDN"><span class="nav-number">1.4.3.</span> <span class="nav-text">CDN</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#参考链接"><span class="nav-number">1.5.</span> <span class="nav-text">参考链接</span></a></li></ol></li></ol></div>
             
 
           </div>
