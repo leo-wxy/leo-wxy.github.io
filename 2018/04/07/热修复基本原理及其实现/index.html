@@ -1,0 +1,1404 @@
+<!DOCTYPE html>
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+<html class="theme-next pisces use-motion" lang="zh-CN">
+<head><meta name="generator" content="Hexo 3.9.0">
+  <meta charset="UTF-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  <link rel="stylesheet" href="/lib/fancybox/source/jquery.fancybox.css">
+
+
+
+
+
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/font-awesome.min.css?v=4.6.2">
+
+<link rel="stylesheet" href="/css/main.css?v=7.1.1">
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png?v=7.1.1">
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png?v=7.1.1">
+
+
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png?v=7.1.1">
+
+
+  <link rel="mask-icon" href="/images/logo.svg?v=7.1.1" color="#222">
+
+
+
+
+
+
+
+<script id="hexo.configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '/',
+    scheme: 'Pisces',
+    version: '7.1.1',
+    sidebar: {"position":"left","display":"always","offset":12,"onmobile":false,"dimmer":false},
+    back2top: true,
+    back2top_sidebar: true,
+    fancybox: true,
+    fastclick: false,
+    lazyload: false,
+    tabs: true,
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    algolia: {
+      applicationID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    }
+  };
+</script>
+
+
+  
+
+
+
+
+  <meta name="description" content="目前流行的热修复方案主要有以下三种：  代码修复 资源修复 动态链接库修复   本章主要讲述 第一种方案：代码修复。 代码修复 原理：对出现Bug的类进行修改或替换  类加载方案 核心思想：使用Android的类加载器，通过类加载器去加载已修复好Bug的Class并对有问题的Class进行覆盖。 加载完成后需要重启应用才可生效，因为当前在使用的类是无法卸载的即不可替换，只有重启后重新加载才可成">
+<meta name="keywords" content="Android">
+<meta property="og:type" content="article">
+<meta property="og:title" content="热修复基本原理">
+<meta property="og:url" content="https://leo-wxy.github.io/2018/04/07/热修复基本原理及其实现/index.html">
+<meta property="og:site_name" content="Wxy的个人博客">
+<meta property="og:description" content="目前流行的热修复方案主要有以下三种：  代码修复 资源修复 动态链接库修复   本章主要讲述 第一种方案：代码修复。 代码修复 原理：对出现Bug的类进行修改或替换  类加载方案 核心思想：使用Android的类加载器，通过类加载器去加载已修复好Bug的Class并对有问题的Class进行覆盖。 加载完成后需要重启应用才可生效，因为当前在使用的类是无法卸载的即不可替换，只有重启后重新加载才可成">
+<meta property="og:locale" content="zh-CN">
+<meta property="og:image" content="https://leo-wxy.github.io/images/类加载方案.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/传统编译部署.webp">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Instant%20Run编译部署.webp">
+<meta property="og:updated_time" content="2019-02-05T11:03:00.000Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="热修复基本原理">
+<meta name="twitter:description" content="目前流行的热修复方案主要有以下三种：  代码修复 资源修复 动态链接库修复   本章主要讲述 第一种方案：代码修复。 代码修复 原理：对出现Bug的类进行修改或替换  类加载方案 核心思想：使用Android的类加载器，通过类加载器去加载已修复好Bug的Class并对有问题的Class进行覆盖。 加载完成后需要重启应用才可生效，因为当前在使用的类是无法卸载的即不可替换，只有重启后重新加载才可成">
+<meta name="twitter:image" content="https://leo-wxy.github.io/images/类加载方案.png">
+
+
+
+
+
+  
+  
+  <link rel="canonical" href="https://leo-wxy.github.io/2018/04/07/热修复基本原理及其实现/">
+
+
+
+<script id="page.configurations">
+  CONFIG.page = {
+    sidebar: "",
+  };
+</script>
+
+  <title>热修复基本原理 | Wxy的个人博客</title>
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .motion-element,
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-title { opacity: initial; }
+
+  .use-motion .logo,
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope="" itemtype="http://schema.org/WebPage" lang="zh-CN">
+
+  
+  
+    
+  
+
+  <div class="container sidebar-position-left page-post-detail">
+    <div class="headband"></div>
+
+    <header id="header" class="header" itemscope="" itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-wrapper">
+  <div class="site-meta">
+    
+
+    <div class="custom-logo-site-title">
+      <a href="/" class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">Wxy的个人博客</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+    
+      
+        <p class="site-subtitle">技术路上点滴</p>
+      
+    
+    
+  </div>
+
+  <div class="site-nav-toggle">
+    <button aria-label="切换导航栏">
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+    </button>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  
+    <ul id="menu" class="menu">
+      
+        
+        
+        
+          
+          <li class="menu-item menu-item-home">
+
+    
+    
+    
+      
+    
+
+    
+
+    <a href="/" rel="section"><i class="menu-item-icon fa fa-fw fa-home"></i> <br>首页</a>
+
+  </li>
+        
+        
+        
+          
+          <li class="menu-item menu-item-tags">
+
+    
+    
+    
+      
+    
+
+    
+
+    <a href="/tags/" rel="section"><i class="menu-item-icon fa fa-fw fa-tags"></i> <br>标签</a>
+
+  </li>
+        
+        
+        
+          
+          <li class="menu-item menu-item-categories">
+
+    
+    
+    
+      
+    
+
+    
+
+    <a href="/categories/" rel="section"><i class="menu-item-icon fa fa-fw fa-th"></i> <br>分类</a>
+
+  </li>
+        
+        
+        
+          
+          <li class="menu-item menu-item-archives">
+
+    
+    
+    
+      
+    
+
+    
+
+    <a href="/archives/" rel="section"><i class="menu-item-icon fa fa-fw fa-archive"></i> <br>归档</a>
+
+  </li>
+
+      
+      
+        <li class="menu-item menu-item-search">
+          
+            <a href="javascript:;" class="popup-trigger">
+          
+            
+              <i class="menu-item-icon fa fa-search fa-fw"></i> <br>搜索</a>
+        </li>
+      
+    </ul>
+  
+
+  
+
+  
+    <div class="site-search">
+      
+  <div class="popup search-popup local-search-popup">
+  <div class="local-search-header clearfix">
+    <span class="search-icon">
+      <i class="fa fa-search"></i>
+    </span>
+    <span class="popup-btn-close">
+      <i class="fa fa-times-circle"></i>
+    </span>
+    <div class="local-search-input-wrapper">
+      <input autocomplete="off" placeholder="搜索..." spellcheck="false" type="text" id="local-search-input">
+    </div>
+  </div>
+  <div id="local-search-result"></div>
+</div>
+
+
+
+    </div>
+  
+</nav>
+
+
+
+  
+
+
+
+</div>
+    </header>
+
+    
+
+
+    <main id="main" class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+            
+
+          
+          <div id="content" class="content">
+            
+
+  <div id="posts" class="posts-expand">
+    
+
+  
+
+  
+  
+  
+
+  
+
+  <article class="post post-type-normal" itemscope="" itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="https://leo-wxy.github.io/2018/04/07/热修复基本原理及其实现/">
+
+    <span hidden itemprop="author" itemscope="" itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="Leo-Wxy">
+      <meta itemprop="description" content="如果我没有见过光明，那我本可以忍受黑暗">
+      <meta itemprop="image" content="/images/avatar.png">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope="" itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Wxy的个人博客">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">热修复基本原理
+
+              
+            
+          </h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+
+            
+            
+            
+
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">发表于</span>
+              
+
+              
+                
+              
+
+              <time title="创建时间：2018-04-07 13:11:03" itemprop="dateCreated datePublished" datetime="2018-04-07T13:11:03+08:00">2018-04-07</time>
+            
+
+            
+              
+
+              
+                
+                <span class="post-meta-divider">|</span>
+                
+
+                <span class="post-meta-item-icon">
+                  <i class="fa fa-calendar-check-o"></i>
+                </span>
+                
+                  <span class="post-meta-item-text">更新于</span>
+                
+                <time title="修改时间：2019-02-05 19:03:00" itemprop="dateModified" datetime="2019-02-05T19:03:00+08:00">2019-02-05</time>
+              
+            
+          </span>
+
+          
+
+          
+            
+            
+          
+
+          
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        <!-- <blockquote class="blockquote-center">热修复主要用来解决线上出现大问题的一个补救方案。</blockquote> -->
+<blockquote>
+<p>目前流行的热修复方案主要有以下三种：</p>
+<ul>
+<li>代码修复</li>
+<li>资源修复</li>
+<li>动态链接库修复</li>
+</ul>
+</blockquote>
+<p>本章主要讲述 第一种方案：<strong>代码修复</strong>。</p>
+<h2 id="代码修复"><a href="#代码修复" class="headerlink" title="代码修复"></a>代码修复</h2><blockquote>
+<p>原理：对出现Bug的类进行修改或替换</p>
+</blockquote>
+<h3 id="类加载方案"><a href="#类加载方案" class="headerlink" title="类加载方案"></a>类加载方案</h3><blockquote>
+<p>核心思想：使用Android的类加载器，通过类加载器去加载已修复好Bug的Class并对有问题的Class进行覆盖。</p>
+<p><strong>加载完成后需要重启应用才可生效，因为当前在使用的类是无法卸载的即不可替换，只有重启后重新加载才可成功。</strong></p>
+</blockquote>
+<h4 id="相关概念"><a href="#相关概念" class="headerlink" title="相关概念"></a>相关概念</h4><ul>
+<li><p><code>65536限制</code></p>
+<p>随着应用功能越来越复杂，代码量不断地增大，引入的库也会越来越多，可能导致出现异常</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">com.android.dex.DexIndexOverflowException:method ID not in [0,0xffff]：65536</span><br></pre></td></tr></table></figure>
+<p>应用中是限制了引用方法超过最大数65536个。限制是由于<code>DVM bytecode</code>的限制导致的，因为DVM指令集的方法调用指令<code>invoke-kind</code>索引最大值为16bits，故为65536个方法。</p>
+</li>
+<li><p><code>LinearAlloc限制</code></p>
+<p>在安装应用时可能会提示<code>INSTALL_FAILED_DEXOPT</code>，产生的原因就是<code>LinearAlloc</code>限制，LinearAlloc是一个固定的缓存区，超出即会报错。</p>
+</li>
+</ul>
+<p>为了解决上述的两个问题，产生了<strong>DEX分包方案</strong>。主要在打包时将应用代码分成多个Dex，将应用启动时必须的类以及直接引用类放入主Dex中，其他代码放到次Dex中。<em>应用启动时就先去加载主Dex，然后动态加载次Dex，从而缓解上述限制</em>。</p>
+<h4 id="原理分析"><a href="#原理分析" class="headerlink" title="原理分析"></a>原理分析</h4><p>类加载方案需要通过<code>ClassLoader</code>的实现类完成。在Android中主要有两种类加载器：</p>
+<ul>
+<li><p>DexClassLoader</p>
+<blockquote>
+<p>继承自BaseDexClassLoader，支持加载包含classes.dex的jar、apk，zip文件，可以是SD卡的路径。是实现热修复的关键。<strong>注意不要把优化后的文件放在外部存储，可能导致注入攻击。</strong></p>
+</blockquote>
+<figure class="highlight java"><figcaption><span>/libcore/dalvik/src/main/java/dalvik/system/DexClassLoader.java</span></figcaption><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">DexClassLoader</span> <span class="keyword">extends</span> <span class="title">BaseDexClassLoader</span></span>&#123; </span><br><span class="line"><span class="function"><span class="keyword">public</span> <span class="title">DexClassLoader</span><span class="params">(String dexPath, String optimizedDirectory,</span></span></span><br><span class="line"><span class="function"><span class="params">            String librarySearchPath, ClassLoader parent)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">super</span>(dexPath, <span class="keyword">null</span>, librarySearchPath, parent);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>PathClassLoader</p>
+<blockquote>
+<p>用来加载Android系统类和应用程序的类，<strong>在dalvik上只能加载已安装apk的dex(/data/app目录)，在ART虚拟机上则没有这个限制</strong>。</p>
+</blockquote>
+<figure class="highlight java"><figcaption><span>/libcore/dalvik/src/main/java/dalvik/system/PathClassLoader.java</span></figcaption><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">PathClassLoader</span> <span class="keyword">extends</span> <span class="title">BaseDexClassLoader</span> </span>&#123;</span><br><span class="line">  <span class="function"><span class="keyword">public</span> <span class="title">PathClassLoader</span><span class="params">(String dexPath, ClassLoader parent)</span> </span>&#123;</span><br><span class="line">      <span class="keyword">super</span>(dexPath,<span class="keyword">null</span>, <span class="keyword">null</span>, parent);</span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  <span class="function"><span class="keyword">public</span> <span class="title">PathClassLoader</span><span class="params">(String dexPath, String librarySearchPath, ClassLoader parent)</span> </span>&#123;</span><br><span class="line">      <span class="keyword">super</span>(dexPath,<span class="keyword">null</span>, librarySearchPath, parent);</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+</li>
+</ul>
+<h5 id="上述类加载器都继承自BaseDexClassLoader。"><a href="#上述类加载器都继承自BaseDexClassLoader。" class="headerlink" title="上述类加载器都继承自BaseDexClassLoader。"></a>上述类加载器都继承自<code>BaseDexClassLoader</code>。</h5>  <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">BaseDexClassLoader</span> <span class="keyword">extends</span> <span class="title">ClassLoader</span></span>&#123;</span><br><span class="line">   <span class="keyword">private</span> <span class="keyword">final</span> DexPathList pathList;</span><br><span class="line">   <span class="function"><span class="keyword">public</span> <span class="title">BaseDexClassLoader</span><span class="params">(String dexPath, File optimizedDirectory,</span></span></span><br><span class="line"><span class="function"><span class="params">            String librarySearchPath, ClassLoader parent)</span> </span>&#123;</span><br><span class="line">      <span class="keyword">super</span>(parent);</span><br><span class="line">      <span class="keyword">this</span>.pathList = <span class="keyword">new</span> DexPathList(<span class="keyword">this</span>, dexPath, librarySearchPath, <span class="keyword">null</span>);</span><br><span class="line">     ...</span><br><span class="line">   &#125;</span><br><span class="line">  </span><br><span class="line">  ...</span><br><span class="line">  <span class="meta">@Override</span></span><br><span class="line">  <span class="keyword">protected</span> Class&lt;?&gt; findClass(String name) <span class="keyword">throws</span> ClassNotFoundException &#123;</span><br><span class="line">      List&lt;Throwable&gt; suppressedExceptions = <span class="keyword">new</span> ArrayList&lt;Throwable&gt;();</span><br><span class="line">      <span class="comment">//根据类名去找出对应的类文件</span></span><br><span class="line">      Class c = pathList.findClass(name, suppressedExceptions);</span><br><span class="line">      <span class="keyword">if</span> (c == <span class="keyword">null</span>) &#123;</span><br><span class="line">          ClassNotFoundException cnfe = <span class="keyword">new</span> ClassNotFoundException(</span><br><span class="line">                 <span class="string">"Didn't find class \""</span> + name + <span class="string">"\" on path: "</span> + pathList);</span><br><span class="line">          <span class="keyword">for</span> (Throwable t : suppressedExceptions) &#123;</span><br><span class="line">              cnfe.addSuppressed(t);</span><br><span class="line">          &#125;</span><br><span class="line">          <span class="keyword">throw</span> cnfe;</span><br><span class="line">      &#125;</span><br><span class="line">      <span class="keyword">return</span> c;</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>  主要构造函数介绍：</p>
+<ul>
+<li><code>dexPath</code>：指<code>目标类所在的apk、dex或jar文件的路径，也可以是SD卡的路径</code>，类加载器从该路径加载目标类。如果包含多个路径，路径之间必须用特定的分隔符去分隔，特定的分隔符从<code>System.getProperty(&quot;path.separtor&quot;)</code>获取（默认分割符为”:”）。最终将路径上的文件ODEX优化到optimizedDirectory，然后进行加载。</li>
+<li><code>optimizedDirectory</code>：解压出的dex文件路径，这个路径必须为内部路径，一般情况下的路径为<code>/data/data/&lt;Package_Name&gt;/</code></li>
+<li><code>librarySearchPath</code>：存放目标类中使用的native文件库，也以”:”分割</li>
+<li><code>parent</code>：父加载器，在Android中以<code>context.getClassLoader</code>作为父加载器。</li>
+</ul>
+<blockquote>
+<p>在Android8.0之后，<code>optimizedDirectory</code>参数失效。由子类去控制解压文件路径。</p>
+</blockquote>
+<p><code>findClass()</code>用来加载dex中的Class文件。内部调用到<code>DexPathList.findClass()</code>实现</p>
+<h5 id="DexPathList"><a href="#DexPathList" class="headerlink" title="DexPathList"></a>DexPathList</h5><blockquote>
+<p>内部存储的是一个个的Dex文件地址，方便后续进行寻找调用</p>
+</blockquote>
+<figure class="highlight java"><figcaption><span>/libcore/dalvik/src/main/java/dalvik/system/DexPathList.java</span></figcaption><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">final</span> <span class="class"><span class="keyword">class</span> <span class="title">DexPathList</span></span>&#123;</span><br><span class="line">   <span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">final</span> String DEX_SUFFIX = <span class="string">".dex"</span>;</span><br><span class="line">   <span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">final</span> String zipSeparator = <span class="string">"!/"</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/** class definition context */</span></span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">final</span> ClassLoader definingContext;</span><br><span class="line">    <span class="comment">//存储dex文件</span></span><br><span class="line">    <span class="keyword">private</span> Element[] dexElements;</span><br><span class="line">  </span><br><span class="line">   <span class="function"><span class="keyword">public</span> <span class="title">DexPathList</span><span class="params">(ClassLoader definingContext, String dexPath,</span></span></span><br><span class="line"><span class="function"><span class="params">        String libraryPath, File optimizedDirectory)</span> </span>&#123;</span><br><span class="line">    ...</span><br><span class="line">    <span class="keyword">this</span>.definingContext = definingContext;</span><br><span class="line">    <span class="keyword">this</span>.dexElements = makeDexElements(splitDexPath(dexPath), optimizedDirectory,suppressedExceptions);</span><br><span class="line">    ...</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>保存当前的类加载器<code>definingContext</code>，并调用<code>makeDexElements()</code>初始化Element数组。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">private</span> <span class="keyword">static</span> Element[] makeDexElements(ArrayList&lt;File&gt; files, File optimizedDirectory, ArrayList&lt;IOException&gt; suppressedExceptions) &#123;</span><br><span class="line">    <span class="comment">// 1.创建Element集合</span></span><br><span class="line">    ArrayList&lt;Element&gt; elements = <span class="keyword">new</span> ArrayList&lt;Element&gt;();</span><br><span class="line">    <span class="comment">// 2.遍历所有dex文件（也可能是jar、apk或zip文件）</span></span><br><span class="line">    <span class="keyword">for</span> (File file : files) &#123;</span><br><span class="line">      <span class="keyword">if</span>(file.isDirectory())&#123;</span><br><span class="line">        elements[elementsPos++] = <span class="keyword">new</span> Element(file);</span><br><span class="line">      &#125;<span class="keyword">else</span> <span class="keyword">if</span>(file.isFile)&#123;</span><br><span class="line">        String name = file.getName();</span><br><span class="line">        ...</span><br><span class="line">        <span class="comment">// 如果是dex文件</span></span><br><span class="line">        <span class="keyword">if</span> (name.endsWith(DEX_SUFFIX)) &#123;</span><br><span class="line">          dex = loadDexFile(file, optimizedDirectory, loader, elements);</span><br><span class="line">          <span class="keyword">if</span>(dex!=<span class="keyword">null</span>)&#123;</span><br><span class="line">            elements[elementsPos++] = <span class="keyword">new</span> Elements(dex,<span class="keyword">null</span>);</span><br><span class="line">          &#125;</span><br><span class="line">        <span class="comment">// 如果是apk、jar、zip文件（这部分在不同的Android版本中，处理方式有细微差别）</span></span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            DexFile dex = <span class="keyword">null</span>;</span><br><span class="line">          <span class="keyword">try</span>&#123;</span><br><span class="line">            dex = loadDexFile(file, optimizedDirectory);</span><br><span class="line">          &#125;</span><br><span class="line">            </span><br><span class="line">        &#125;</span><br><span class="line">        ...</span><br><span class="line">        <span class="comment">// 3.将dex文件或压缩文件包装成Element对象，并添加到Element集合中</span></span><br><span class="line">                <span class="keyword">if</span> (dex == <span class="keyword">null</span>) &#123;</span><br><span class="line">                    elements[elementsPos++] = <span class="keyword">new</span> Element(file);</span><br><span class="line">                &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                    elements[elementsPos++] = <span class="keyword">new</span> Element(dex, file);</span><br><span class="line">                &#125;</span><br><span class="line">      &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 4.将Element集合转成Element数组返回</span></span><br><span class="line">  <span class="keyword">if</span>(elementsPos != elements.length)&#123;</span><br><span class="line">    elements = Arrays.copyOf(elements,elementsPos);</span><br><span class="line">  &#125;</span><br><span class="line">    <span class="keyword">return</span> elements;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>在<code>makeDexElement</code>中，将传入的文件(<em>Dex、apk、zip</em>)封装成一个个的<code>Element</code>对象，然后添加至Element集合中。</p>
+<blockquote>
+<p>在Android的类加载器中，他们只会去解析<code>dex文件</code>。通过<code>loadDexFile()</code>就可以将其他类型的文件转换成<code>dex文件</code>以供加载。</p>
+</blockquote>
+<p><code>findClass()</code>：寻找类名相同的类并返回</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> Class <span class="title">findClass</span><span class="params">(String name, List&lt;Throwable&gt; suppressed)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">for</span> (Element element : dexElements) &#123;</span><br><span class="line">        <span class="comment">// 遍历出一个dex文件</span></span><br><span class="line">        DexFile dex = element.dexFile;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (dex != <span class="keyword">null</span>) &#123;</span><br><span class="line">            Class clazz = element.findClass(name,definingContext,suppressed);</span><br><span class="line">            <span class="keyword">if</span> (clazz != <span class="keyword">null</span>) &#123;</span><br><span class="line">                <span class="keyword">return</span> clazz;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> (dexElementsSuppressedExceptions != <span class="keyword">null</span>) &#123;</span><br><span class="line">        suppressed.addAll(Arrays.asList(dexElementsSuppressedExceptions));</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="keyword">null</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">static</span> <span class="class"><span class="keyword">class</span> <span class="title">Element</span></span>&#123;</span><br><span class="line">  ...</span><br><span class="line">     <span class="keyword">public</span> Class&lt;?&gt; findClass(String name, ClassLoader definingContext,</span><br><span class="line">                List&lt;Throwable&gt; suppressed) &#123;</span><br><span class="line">       <span class="comment">//在dex文件中查找类名相同的类</span></span><br><span class="line">       <span class="keyword">return</span> dexFile != <span class="keyword">null</span> ? dexFile.loadClassBinaryName(name, definingContext,suppressed): <span class="keyword">null</span>;</span><br><span class="line">        &#125;</span><br><span class="line">  ...</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>在<code>findClass()</code>中，对Elements数组进行遍历，一旦找到与传入类名相同的类即返回。</p>
+<blockquote>
+<p>Element内部封装了DexFile，DexFile用于加载Dex文件，因此一个Element对象会对应一个Dex文件。多个Element组成了有序数组<code>dexElements</code>。需要查找类时便去遍历<code>dexElements</code>，再去调用<code>findClass()</code>查找类。在Dex中存储的是一堆Class文件，需要在dex文件中通过<code>loadClassBinaryName()</code>去找寻对应的Class文件。<em>如果没有找到就接着去下一个Element中寻找。</em></p>
+</blockquote>
+<h5 id="实现原理"><a href="#实现原理" class="headerlink" title="实现原理"></a>实现原理</h5><p>经过上述的源码分析，加载一个类时都会从<code>dexElements</code>数组获取到对应的类之后再进行加载。遍历过程由数组头部开始。所以我们可以将已修复好的Class打包成一个Dex文件并放置到<code>dexElements</code>数组的第一个位置(<em>也解决了CLASS_ISPREVERIFIED问题，当打上该标记时该类就无法被替换</em>)，这样就可以保证已修复好的Class会被优先加载而排在数组后面的Bug类就不会被加载(<strong>由于双亲委托机制</strong>)。</p>
+<blockquote>
+<p>双亲委托机制：如果一个类加载器收到了类加载的请求，不会自己去尝试加载这个类，而把这个请求委派给父类加载器去完成，每一层都是如此，依次向上递归，直到委托到最顶层的<code>Bootstrap ClassLoader</code>，若父加载器无法处理加载请求（它的搜索范围内没有找到所需的类时），则交由子加载器去加载。</p>
+<p>双亲委托机制的好处：</p>
+<ul>
+<li>避免重复加载，若Class已被加载则从缓存中获取不会重新加载</li>
+<li>更加安全，例如<code>java.lang.Object</code>基础类的加载都需要最终委派到<code>BootstrapClassLoader</code>进行加载，即时去自定义类加载器进行加载也不会产生多个类。</li>
+</ul>
+</blockquote>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/类加载方案.png" class="full-image" alt="类加载方案" title="类加载方案"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<h4 id="修复实战"><a href="#修复实战" class="headerlink" title="修复实战"></a>修复实战</h4><ol>
+<li><p>制作一个有Bug的类</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> BugActivity extends AppCompatActivity&#123;</span><br><span class="line">  <span class="meta">@Override</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">onCreate</span><span class="params">(Bundle savedInstanceState)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">super</span>.onCreate(savedInstanceState);</span><br><span class="line">        setContentView(R.layout.act_bug);</span><br><span class="line">        Log.e(<span class="string">"Bug"</span>, String.valueOf(<span class="number">2</span>/<span class="number">0</span>));</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>制作一个Bug修复类</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> BugActivity extends AppCompatActivity&#123;</span><br><span class="line">  <span class="meta">@Override</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">onCreate</span><span class="params">(Bundle savedInstanceState)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">super</span>.onCreate(savedInstanceState);</span><br><span class="line">        setContentView(R.layout.act_bug);</span><br><span class="line">        Log.e(<span class="string">"Bug"</span>, <span class="string">"fix"</span>);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>将Bug修复类<code>BugActivity.class</code>打包成dex(<strong>DVM只能识别dex文件</strong>)</p>
+<p><code>rebuild project</code>之后在<code>build-&gt;intermediates-&gt;javac</code>可以找到对应的class文件。</p>
+<p>取出该class文件后(<code>取出时需要带上完整的包名路径</code>)，就需要通过<code>SDK/build-tools/XX/dx</code>将class文件转成dex文件</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">//dex文件中放置着对应的class文件及其完整路径 </span><br><span class="line">Mac：sh dx --dex --output=../dex/classes2.dex ../dex</span><br><span class="line">Win: dx --dex --output=../dex/classes2.dex ../dex</span><br><span class="line">//执行完毕后就会生成对应的dex文件 --  classes2.dex</span><br></pre></td></tr></table></figure>
+<p>此时就可以得到最终需要替换进去的dex文件。</p>
+</li>
+<li><p>加载dex文件</p>
+<blockquote>
+<p>利用反射机制去修改<code>DexClassLoader</code>中的<code>dexElements</code>，需要把修复过后的<code>classes2.dex</code>插入到头部位置，保证可以优先加载。</p>
+</blockquote>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">FixDexUtil</span> </span>&#123;</span><br><span class="line">    <span class="comment">//列出修复支持的文件格式</span></span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">final</span> String DEX_SUFFIX = <span class="string">".dex"</span>;</span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">final</span> String APK_SUFFIX = <span class="string">".apk"</span>;</span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">final</span> String JAR_SUFFIX = <span class="string">".jar"</span>;</span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">final</span> String ZIP_SUFFIX = <span class="string">".zip"</span>;</span><br><span class="line">    </span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">final</span> String DEX_DIR = <span class="string">"odex"</span>;</span><br><span class="line">    </span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">final</span> String OPTIMIZE_DEX_DIR = <span class="string">"optimize_dex"</span>;</span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">static</span> HashSet&lt;File&gt; loadedDex = <span class="keyword">new</span> HashSet&lt;&gt;();</span><br><span class="line"></span><br><span class="line">    <span class="keyword">static</span> &#123;</span><br><span class="line">        <span class="comment">//清理已存在的dex</span></span><br><span class="line">        loadedDex.clear();</span><br><span class="line">    &#125; </span><br><span class="line">  </span><br><span class="line">     <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * 加载补丁，使用默认目录：data/data/包名/files/odex</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> context</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title">loadFixedDex</span><span class="params">(Context context)</span> </span>&#123;</span><br><span class="line">        loadFixedDex(context, <span class="keyword">null</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * 加载补丁</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> context       上下文</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> patchFilesDir 补丁所在目录</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title">loadFixedDex</span><span class="params">(Context context, File patchFilesDir)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">boolean</span> canFix = <span class="keyword">false</span>;</span><br><span class="line">        <span class="comment">// 遍历所有的修复dex , 因为可能是多个dex修复包</span></span><br><span class="line">        File fileDir = patchFilesDir != <span class="keyword">null</span> ?</span><br><span class="line">                patchFilesDir :</span><br><span class="line">                <span class="keyword">new</span> File(context.getFilesDir(), DEX_DIR);<span class="comment">// data/data/包名/files/odex（这个可以任意位置）</span></span><br><span class="line"></span><br><span class="line">        File[] listFiles = fileDir.listFiles();</span><br><span class="line">        <span class="keyword">if</span> (listFiles != <span class="keyword">null</span> &amp;&amp; listFiles.length != <span class="number">0</span>)</span><br><span class="line">            <span class="keyword">for</span> (File file : listFiles) &#123;</span><br><span class="line">                <span class="keyword">if</span> (file.getName().startsWith(<span class="string">"classes"</span>) &amp;&amp;</span><br><span class="line">                        (file.getName().endsWith(DEX_SUFFIX)</span><br><span class="line">                                || file.getName().endsWith(APK_SUFFIX)</span><br><span class="line">                                || file.getName().endsWith(JAR_SUFFIX)</span><br><span class="line">                                || file.getName().endsWith(ZIP_SUFFIX))) &#123;</span><br><span class="line"></span><br><span class="line">                    loadedDex.add(file);<span class="comment">// 存入集合</span></span><br><span class="line">                    <span class="comment">//有修复包的存在，意味需要修复</span></span><br><span class="line">                    canFix = <span class="keyword">true</span>;</span><br><span class="line">                &#125;</span><br><span class="line">            &#125;</span><br><span class="line">        <span class="comment">// dex合并之前的dex</span></span><br><span class="line">        <span class="keyword">if</span> (canFix)</span><br><span class="line">            doDexInject(context, loadedDex);</span><br><span class="line">    &#125;</span><br><span class="line">  </span><br><span class="line">   <span class="function"><span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title">doDexInject</span><span class="params">(Context appContext, HashSet&lt;File&gt; loadedDex)</span> </span>&#123;</span><br><span class="line">        String optimizeDir = appContext.getFilesDir().getAbsolutePath() +</span><br><span class="line">                File.separator + OPTIMIZE_DEX_DIR;</span><br><span class="line">        <span class="comment">// data/data/包名/files/optimize_dex（这个必须是自己程序下的目录）</span></span><br><span class="line"></span><br><span class="line">        File fopt = <span class="keyword">new</span> File(optimizeDir);</span><br><span class="line">        <span class="keyword">if</span> (!fopt.exists()) &#123;</span><br><span class="line">            fopt.mkdirs();</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">try</span> &#123;</span><br><span class="line">            <span class="comment">// 1.加载应用程序dex的Loader</span></span><br><span class="line">            PathClassLoader pathLoader = (PathClassLoader) appContext.getClassLoader();</span><br><span class="line">            <span class="keyword">for</span> (File dex : loadedDex) &#123;</span><br><span class="line">                <span class="comment">// 2.加载指定的修复的dex文件的Loader</span></span><br><span class="line">                DexClassLoader dexLoader = <span class="keyword">new</span> DexClassLoader(</span><br><span class="line">                        dex.getAbsolutePath(),<span class="comment">// 修复好的dex（补丁）所在目录</span></span><br><span class="line">                        fopt.getAbsolutePath(),<span class="comment">// 存放dex的解压目录（用于jar、zip、apk格式的补丁）</span></span><br><span class="line">                        <span class="keyword">null</span>,<span class="comment">// 加载dex时需要的库</span></span><br><span class="line">                        pathLoader<span class="comment">// 父类加载器</span></span><br><span class="line">                );</span><br><span class="line">                <span class="comment">// 3.开始合并</span></span><br><span class="line">                <span class="comment">// 合并的目标是Element[],重新赋值它的值即可</span></span><br><span class="line"></span><br><span class="line">                <span class="comment">/**</span></span><br><span class="line"><span class="comment">                 * BaseDexClassLoader中有 变量: DexPathList pathList</span></span><br><span class="line"><span class="comment">                 * DexPathList中有 变量 Element[] dexElements</span></span><br><span class="line"><span class="comment">                 * 依次反射即可</span></span><br><span class="line"><span class="comment">                 */</span></span><br><span class="line"></span><br><span class="line">                <span class="comment">//3.1 准备好pathList的引用</span></span><br><span class="line">                Object dexPathList = getPathList(dexLoader);</span><br><span class="line">                Object pathPathList = getPathList(pathLoader);</span><br><span class="line">                <span class="comment">//3.2 从pathList中反射出element集合</span></span><br><span class="line">                Object leftDexElements = getDexElements(dexPathList);</span><br><span class="line">                Object rightDexElements = getDexElements(pathPathList);</span><br><span class="line">                <span class="comment">//3.3 合并两个dex数组</span></span><br><span class="line">                Object dexElements = combineArray(leftDexElements, rightDexElements);</span><br><span class="line"></span><br><span class="line">                <span class="comment">// 重写给PathList里面的Element[] dexElements;赋值</span></span><br><span class="line">                Object pathList = getPathList(pathLoader);<span class="comment">// 一定要重新获取，不要用pathPathList，会报错</span></span><br><span class="line">                setField(pathList, pathList.getClass(), <span class="string">"dexElements"</span>, dexElements);</span><br><span class="line">            &#125;</span><br><span class="line">        &#125; <span class="keyword">catch</span> (Exception e) &#123;</span><br><span class="line">            e.printStackTrace();</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * 反射给对象中的属性重新赋值</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="function"><span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title">setField</span><span class="params">(Object obj, Class&lt;?&gt; cl, String field, Object value)</span> <span class="keyword">throws</span> NoSuchFieldException, IllegalAccessException </span>&#123;</span><br><span class="line">        Field declaredField = cl.getDeclaredField(field);</span><br><span class="line">        declaredField.setAccessible(<span class="keyword">true</span>);</span><br><span class="line">        declaredField.set(obj, value);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * 反射得到对象中的属性值</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="function"><span class="keyword">private</span> <span class="keyword">static</span> Object <span class="title">getField</span><span class="params">(Object obj, Class&lt;?&gt; cl, String field)</span> <span class="keyword">throws</span> NoSuchFieldException, IllegalAccessException </span>&#123;</span><br><span class="line">        Field localField = cl.getDeclaredField(field);</span><br><span class="line">        localField.setAccessible(<span class="keyword">true</span>);</span><br><span class="line">        <span class="keyword">return</span> localField.get(obj);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * 反射得到类加载器中的pathList对象</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="function"><span class="keyword">private</span> <span class="keyword">static</span> Object <span class="title">getPathList</span><span class="params">(Object baseDexClassLoader)</span> <span class="keyword">throws</span> ClassNotFoundException, NoSuchFieldException, IllegalAccessException </span>&#123;</span><br><span class="line">        <span class="keyword">return</span> getField(baseDexClassLoader, Class.forName(<span class="string">"dalvik.system.BaseDexClassLoader"</span>), <span class="string">"pathList"</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * 反射得到pathList中的dexElements</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="function"><span class="keyword">private</span> <span class="keyword">static</span> Object <span class="title">getDexElements</span><span class="params">(Object pathList)</span> <span class="keyword">throws</span> NoSuchFieldException, IllegalAccessException </span>&#123;</span><br><span class="line">        <span class="keyword">return</span> getField(pathList, pathList.getClass(), <span class="string">"dexElements"</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * 数组合并</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="function"><span class="keyword">private</span> <span class="keyword">static</span> Object <span class="title">combineArray</span><span class="params">(Object arrayLhs, Object arrayRhs)</span> </span>&#123;</span><br><span class="line">        Class&lt;?&gt; clazz = arrayLhs.getClass().getComponentType();</span><br><span class="line">        <span class="keyword">int</span> i = Array.getLength(arrayLhs);<span class="comment">// 得到左数组长度（补丁数组）</span></span><br><span class="line">        <span class="keyword">int</span> j = Array.getLength(arrayRhs);<span class="comment">// 得到原dex数组长度</span></span><br><span class="line">        <span class="keyword">int</span> k = i + j;<span class="comment">// 得到总数组长度（补丁数组+原dex数组）</span></span><br><span class="line">        Object result = Array.newInstance(clazz, k);<span class="comment">// 创建一个类型为clazz，长度为k的新数组</span></span><br><span class="line">        System.arraycopy(arrayLhs, <span class="number">0</span>, result, <span class="number">0</span>, i);</span><br><span class="line">        System.arraycopy(arrayRhs, <span class="number">0</span>, result, i, j);</span><br><span class="line">        <span class="keyword">return</span> result;</span><br><span class="line">    &#125;</span><br><span class="line">  </span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>该类中主要的功能：</p>
+<ol>
+<li>获取对应目录中存在的<code>apk、dex、jar，zip</code>文件</li>
+<li>将文件转换成<code>Element</code>格式并生成一个<code>elements</code>数组</li>
+<li>将生成的数组与原先存在的<code>dexElements</code>数组进行合并</li>
+<li>合并完成后利用<strong>反射</strong>将数组放置回<code>ClassLoader</code>中</li>
+</ol>
+<blockquote>
+<p>如果要加载的文件格式为<code>apk、jar，zip</code>需要进行一些特殊处理</p>
+<p><strong>这些文件格式中需要有一个<code>classes.dex</code>文件，不然会出错</strong></p>
+</blockquote>
+</li>
+<li><p>进行检测以及修复工作</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">//在项目初始化时便去进行修复检测</span></span><br><span class="line"><span class="class"><span class="keyword">class</span> <span class="title">MyApplication</span> <span class="keyword">extends</span> <span class="title">Application</span></span>&#123;</span><br><span class="line">      <span class="meta">@Override</span></span><br><span class="line">    <span class="function"><span class="keyword">protected</span> <span class="keyword">void</span> <span class="title">attachBaseContext</span><span class="params">(Context base)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">super</span>.attachBaseContext(base);</span><br><span class="line">        <span class="comment">//提前进行初始化 提前至 onCreate()之前</span></span><br><span class="line">        FixDexUtil.loadFixedDex(base, Environment.getExternalStorageDirectory());</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>将修复好的<code>classes2.dex</code>文件放到对应的目录中，然后重新打开应用，重新观察结果即可。</p>
+</li>
+</ol>
+<h3 id="底层替换方案"><a href="#底层替换方案" class="headerlink" title="底层替换方案"></a>底层替换方案</h3><blockquote>
+<p>底层替换方案是在已经加载了的类中直接去替换原有方法，是在原来类的基础上进行修改。由于在原有类进行修改限制会比较多，且不能增减原有类的方法和字段，否则会破坏原有类的结构。<strong>底层的替换方案还与反射有所关联。</strong></p>
+</blockquote>
+<p>传统的底层替换方案，都是直接去修改虚拟机方法实现的具体字段。主要是去操作<code>ArtMethod</code>结构体，但是会存在兼容性问题，可能由于厂商对其进行了修改。</p>
+<p>优化点就是 直接替换整个<code>ArtMethod</code>结构体，这样就不会存在兼容性的问题。</p>
+<blockquote>
+<p><code>ArtMethod</code>：包含了Java方法的所有信息，包括执行入口、访问权限、所属类和代码执行地址等。</p>
+</blockquote>
+<p>优点：<strong>底层替换方案直接替换了方法，而且是立即生效不需要进行重启操作。</strong></p>
+<h3 id="Instant-Run方案"><a href="#Instant-Run方案" class="headerlink" title="Instant Run方案"></a>Instant Run方案</h3><p>Instant Run的部署方式有以下三种：</p>
+<ul>
+<li><strong>Hot Swap</strong>：<code>效率最高</code>。代码的增量改变不需要重启App，甚至Activity都不需要重启。修改一个现有方法中的代码多采用这种部署方式。</li>
+<li><strong>Warm Swap</strong>：App不需要重启，但是Activity需要重启。修改或删除一个现有的资源文件时多采用这种部署方式。</li>
+<li><strong>Cold Swap</strong>：App需要重启，但是不需要重新安装。添加、删除或修改一个字段和方法或者修改一个类等多采用这种部署方式。</li>
+</ul>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/传统编译部署.webp" class="full-image" alt="传统编译部署" title="传统编译部署"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/Instant Run编译部署.webp" class="full-image" alt="Instant Run编译部署" title="Instant Run编译部署"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<h4 id="工作原理"><a href="#工作原理" class="headerlink" title="工作原理"></a>工作原理</h4><p>利用<strong>ASM</strong>在每一个方法中注入类似如下的代码：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">interface</span> <span class="title">IncrementalChange</span> </span>&#123;</span><br><span class="line">    Object access$dispatch(String id, Object... args);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">//注入代码如下</span></span><br><span class="line">IncrementalChange localIncrementalChange = $change;</span><br><span class="line"><span class="keyword">if</span>(localIncrementalChange!=<span class="keyword">null</span>)&#123;</span><br><span class="line">  localIncrementalChange.access$dispatch(<span class="string">""</span>);</span><br><span class="line">    <span class="keyword">return</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>$change</code>指代了方法是否发生变化，如果发生变化就会调用到<code>access$dispatch()</code>生成对应的替换类<code>Class$override</code>替代执行原有方法，即完成了对原有方法的修改。</p>
+<h2 id="内容引用"><a href="#内容引用" class="headerlink" title="内容引用"></a>内容引用</h2><p>《深入探索Android热修复技术原理》</p>
+<p>《Android进阶解密》</p>
+
+      
+    </div>
+
+    
+
+    
+    
+    
+
+    
+
+    
+      
+    
+    
+
+    
+
+    <footer class="post-footer">
+
+      <div>
+        
+         <div>
+
+
+    
+<div style="text-align:center;color: #ccc;font-size:14px;">
+------ 本文结束<i class="fa fa-heart"></i>感谢您的阅读 ------</div>
+
+<div>    
+ 
+ 
+    <ul class="post-copyright">
+      <li class="post-copyright-author">
+          <strong>本文作者：</strong> Leo-Wxy
+      </li>
+      <li class="post-copyright-link">
+        <strong>本文链接：</strong>
+        <a href="/2018/04/07/热修复基本原理及其实现/" title="热修复基本原理">2018/04/07/热修复基本原理及其实现/</a>
+      </li>
+      <li class="post-copyright-license">
+        <strong>版权声明： </strong>
+        本博客所有文章除特别声明外，均采用 <a href="http://creativecommons.org/licenses/by-nc-sa/3.0/cn/" rel="external nofollow" target="_blank">CC BY-NC-SA 3.0 CN</a> 许可协议。转载请注明出处！
+      </li>
+    </ul>
+  
+</div>
+
+</div>
+        
+      </div>
+
+      
+        <div class="post-tags">
+          
+            <a href="/tags/Android/" rel="tag"># Android</a>
+          
+        </div>
+      
+
+      
+      
+      
+
+      
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+              <a href="/2018/04/03/Gradle操作小记/" rel="next" title="Gradle操作小记">
+                <i class="fa fa-chevron-left"></i> Gradle操作小记
+              </a>
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+              <a href="/2018/04/09/Android触摸事件分发/" rel="prev" title="Android触摸事件分发">
+                Android触摸事件分发 <i class="fa fa-chevron-right"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+
+      
+      
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+  </div>
+
+
+          </div>
+          
+
+  
+
+
+
+        </div>
+        
+          
+  
+  <div class="sidebar-toggle">
+    <div class="sidebar-toggle-line-wrap">
+      <span class="sidebar-toggle-line sidebar-toggle-line-first"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-middle"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-last"></span>
+    </div>
+  </div>
+
+  <aside id="sidebar" class="sidebar">
+    <div class="sidebar-inner">
+
+      
+
+      
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            文章目录
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            站点概览
+          </li>
+        </ul>
+      
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-overview">
+          <div class="site-author motion-element" itemprop="author" itemscope="" itemtype="http://schema.org/Person">
+            
+              <img class="site-author-image" itemprop="image" src="/images/avatar.png" alt="Leo-Wxy">
+            
+              <p class="site-author-name" itemprop="name">Leo-Wxy</p>
+              <div class="site-description motion-element" itemprop="description">如果我没有见过光明，那我本可以忍受黑暗</div>
+          </div>
+
+          
+            <nav class="site-state motion-element">
+              
+                <div class="site-state-item site-state-posts">
+                
+                  <a href="/archives/">
+                
+                    <span class="site-state-item-count">131</span>
+                    <span class="site-state-item-name">日志</span>
+                  </a>
+                </div>
+              
+
+              
+
+              
+                
+                
+                <div class="site-state-item site-state-tags">
+                  
+                    
+                      <a href="/tags/">
+                    
+                  
+                    
+                    
+                      
+                    
+                      
+                    
+                      
+                    
+                      
+                    
+                      
+                    
+                      
+                    
+                      
+                    
+                      
+                    
+                      
+                    
+                      
+                    
+                      
+                    
+                      
+                    
+                      
+                    
+                      
+                    
+                      
+                    
+                      
+                    
+                      
+                    
+                      
+                    
+                      
+                    
+                      
+                    
+                    <span class="site-state-item-count">20</span>
+                    <span class="site-state-item-name">标签</span>
+                  </a>
+                </div>
+              
+            </nav>
+          
+
+          
+
+          
+
+          
+            <div class="links-of-author motion-element">
+              
+                <span class="links-of-author-item">
+                  
+                  
+                    
+                  
+                  
+                    
+                  
+                  <a href="https://github.com/leo-wxy" title="GitHub &rarr; https://github.com/leo-wxy" rel="noopener" target="_blank"><i class="fa fa-fw fa-github"></i>GitHub</a>
+                </span>
+              
+                <span class="links-of-author-item">
+                  
+                  
+                    
+                  
+                  
+                    
+                  
+                  <a href="/xy.wang.android@gmail.com" title="E-Mail &rarr; xy.wang.android@gmail.com"><i class="fa fa-fw fa-envelope"></i>E-Mail</a>
+                </span>
+              
+            </div>
+          
+
+          
+
+          
+          
+
+          
+            
+          
+          
+
+        </div>
+      </div>
+
+      
+      <!--noindex-->
+        <div class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+            
+            
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#代码修复"><span class="nav-number">1.</span> <span class="nav-text">代码修复</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#类加载方案"><span class="nav-number">1.1.</span> <span class="nav-text">类加载方案</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#相关概念"><span class="nav-number">1.1.1.</span> <span class="nav-text">相关概念</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#原理分析"><span class="nav-number">1.1.2.</span> <span class="nav-text">原理分析</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#上述类加载器都继承自BaseDexClassLoader。"><span class="nav-number">1.1.2.1.</span> <span class="nav-text">上述类加载器都继承自BaseDexClassLoader。</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#DexPathList"><span class="nav-number">1.1.2.2.</span> <span class="nav-text">DexPathList</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#实现原理"><span class="nav-number">1.1.2.3.</span> <span class="nav-text">实现原理</span></a></li></ol></li><li class="nav-item nav-level-4"><a class="nav-link" href="#修复实战"><span class="nav-number">1.1.3.</span> <span class="nav-text">修复实战</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#底层替换方案"><span class="nav-number">1.2.</span> <span class="nav-text">底层替换方案</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Instant-Run方案"><span class="nav-number">1.3.</span> <span class="nav-text">Instant Run方案</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#工作原理"><span class="nav-number">1.3.1.</span> <span class="nav-text">工作原理</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#内容引用"><span class="nav-number">2.</span> <span class="nav-text">内容引用</span></a></li></ol></div>
+            
+
+          </div>
+        </div>
+      <!--/noindex-->
+      
+
+      
+        <div class="back-to-top">
+          <i class="fa fa-arrow-up"></i>
+          
+            <span id="scrollpercent"><span>0</span>%</span>
+          
+        </div>
+      
+
+    </div>
+  </aside>
+  
+
+
+        
+      </div>
+    </main>
+
+    <footer id="footer" class="footer">
+      <div class="footer-inner">
+        <div class="copyright">&copy; <span itemprop="copyrightYear">2020</span>
+  <span class="with-love" id="animate">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Leo-Wxy</span>
+
+  
+
+  
+</div>
+
+
+  <div class="powered-by">由 <a href="https://hexo.io" class="theme-link" rel="noopener" target="_blank">Hexo</a> 强力驱动 v3.9.0</div>
+
+
+
+  <span class="post-meta-divider">|</span>
+
+
+
+  <div class="theme-info">主题 – <a href="https://theme-next.org" class="theme-link" rel="noopener" target="_blank">NexT.Pisces</a> v7.1.1</div>
+
+
+
+
+        
+
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+
+    
+
+    
+
+    
+
+    
+  </div>
+
+  
+
+<script>
+  if (Object.prototype.toString.call(window.Promise) !== '[object Function]') {
+    window.Promise = null;
+  }
+</script>
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  <script src="/lib/jquery/index.js?v=2.1.3"></script>
+
+  
+  <script src="/lib/velocity/velocity.min.js?v=1.2.1"></script>
+
+  
+  <script src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+
+  
+  <script src="/lib/fancybox/source/jquery.fancybox.pack.js"></script>
+
+
+  
+
+
+  <script src="/js/utils.js?v=7.1.1"></script>
+
+  <script src="/js/motion.js?v=7.1.1"></script>
+
+
+
+  
+  
+
+
+  <script src="/js/affix.js?v=7.1.1"></script>
+
+  <script src="/js/schemes/pisces.js?v=7.1.1"></script>
+
+
+
+  
+  <script src="/js/scrollspy.js?v=7.1.1"></script>
+<script src="/js/post-details.js?v=7.1.1"></script>
+
+
+
+  
+
+
+  <script src="/js/next-boot.js?v=7.1.1"></script>
+
+
+  
+
+  
+
+  
+
+  
+
+
+  
+
+
+  
+  <script>
+    // Popup Window;
+    var isfetched = false;
+    var isXml = true;
+    // Search DB path;
+    var search_path = "search.xml";
+    if (search_path.length === 0) {
+      search_path = "search.xml";
+    } else if (/json$/i.test(search_path)) {
+      isXml = false;
+    }
+    var path = "/" + search_path;
+    // monitor main search box;
+
+    var onPopupClose = function (e) {
+      $('.popup').hide();
+      $('#local-search-input').val('');
+      $('.search-result-list').remove();
+      $('#no-result').remove();
+      $(".local-search-pop-overlay").remove();
+      $('body').css('overflow', '');
+    }
+
+    function proceedsearch() {
+      $("body")
+        .append('<div class="search-popup-overlay local-search-pop-overlay"></div>')
+        .css('overflow', 'hidden');
+      $('.search-popup-overlay').click(onPopupClose);
+      $('.popup').toggle();
+      var $localSearchInput = $('#local-search-input');
+      $localSearchInput.attr("autocapitalize", "none");
+      $localSearchInput.attr("autocorrect", "off");
+      $localSearchInput.focus();
+    }
+
+    // search function;
+    var searchFunc = function(path, search_id, content_id) {
+      'use strict';
+
+      // start loading animation
+      $("body")
+        .append('<div class="search-popup-overlay local-search-pop-overlay">' +
+          '<div id="search-loading-icon">' +
+          '<i class="fa fa-spinner fa-pulse fa-5x fa-fw"></i>' +
+          '</div>' +
+          '</div>')
+        .css('overflow', 'hidden');
+      $("#search-loading-icon").css('margin', '20% auto 0 auto').css('text-align', 'center');
+
+      
+
+      $.ajax({
+        url: path,
+        dataType: isXml ? "xml" : "json",
+        async: true,
+        success: function(res) {
+          // get the contents from search data
+          isfetched = true;
+          $('.popup').detach().appendTo('.header-inner');
+          var datas = isXml ? $("entry", res).map(function() {
+            return {
+              title: $("title", this).text(),
+              content: $("content",this).text(),
+              url: $("url" , this).text()
+            };
+          }).get() : res;
+          var input = document.getElementById(search_id);
+          var resultContent = document.getElementById(content_id);
+          var inputEventFunction = function() {
+            var searchText = input.value.trim().toLowerCase();
+            var keywords = searchText.split(/[\s\-]+/);
+            if (keywords.length > 1) {
+              keywords.push(searchText);
+            }
+            var resultItems = [];
+            if (searchText.length > 0) {
+              // perform local searching
+              datas.forEach(function(data) {
+                var isMatch = false;
+                var hitCount = 0;
+                var searchTextCount = 0;
+                var title = data.title.trim();
+                var titleInLowerCase = title.toLowerCase();
+                var content = data.content.trim().replace(/<[^>]+>/g,"");
+                
+                var contentInLowerCase = content.toLowerCase();
+                var articleUrl = decodeURIComponent(data.url).replace(/\/{2,}/g, '/');
+                var indexOfTitle = [];
+                var indexOfContent = [];
+                // only match articles with not empty titles
+                if(title != '') {
+                  keywords.forEach(function(keyword) {
+                    function getIndexByWord(word, text, caseSensitive) {
+                      var wordLen = word.length;
+                      if (wordLen === 0) {
+                        return [];
+                      }
+                      var startPosition = 0, position = [], index = [];
+                      if (!caseSensitive) {
+                        text = text.toLowerCase();
+                        word = word.toLowerCase();
+                      }
+                      while ((position = text.indexOf(word, startPosition)) > -1) {
+                        index.push({position: position, word: word});
+                        startPosition = position + wordLen;
+                      }
+                      return index;
+                    }
+
+                    indexOfTitle = indexOfTitle.concat(getIndexByWord(keyword, titleInLowerCase, false));
+                    indexOfContent = indexOfContent.concat(getIndexByWord(keyword, contentInLowerCase, false));
+                  });
+                  if (indexOfTitle.length > 0 || indexOfContent.length > 0) {
+                    isMatch = true;
+                    hitCount = indexOfTitle.length + indexOfContent.length;
+                  }
+                }
+
+                // show search results
+
+                if (isMatch) {
+                  // sort index by position of keyword
+
+                  [indexOfTitle, indexOfContent].forEach(function (index) {
+                    index.sort(function (itemLeft, itemRight) {
+                      if (itemRight.position !== itemLeft.position) {
+                        return itemRight.position - itemLeft.position;
+                      } else {
+                        return itemLeft.word.length - itemRight.word.length;
+                      }
+                    });
+                  });
+
+                  // merge hits into slices
+
+                  function mergeIntoSlice(text, start, end, index) {
+                    var item = index[index.length - 1];
+                    var position = item.position;
+                    var word = item.word;
+                    var hits = [];
+                    var searchTextCountInSlice = 0;
+                    while (position + word.length <= end && index.length != 0) {
+                      if (word === searchText) {
+                        searchTextCountInSlice++;
+                      }
+                      hits.push({position: position, length: word.length});
+                      var wordEnd = position + word.length;
+
+                      // move to next position of hit
+
+                      index.pop();
+                      while (index.length != 0) {
+                        item = index[index.length - 1];
+                        position = item.position;
+                        word = item.word;
+                        if (wordEnd > position) {
+                          index.pop();
+                        } else {
+                          break;
+                        }
+                      }
+                    }
+                    searchTextCount += searchTextCountInSlice;
+                    return {
+                      hits: hits,
+                      start: start,
+                      end: end,
+                      searchTextCount: searchTextCountInSlice
+                    };
+                  }
+
+                  var slicesOfTitle = [];
+                  if (indexOfTitle.length != 0) {
+                    slicesOfTitle.push(mergeIntoSlice(title, 0, title.length, indexOfTitle));
+                  }
+
+                  var slicesOfContent = [];
+                  while (indexOfContent.length != 0) {
+                    var item = indexOfContent[indexOfContent.length - 1];
+                    var position = item.position;
+                    var word = item.word;
+                    // cut out 100 characters
+                    var start = position - 20;
+                    var end = position + 80;
+                    if(start < 0){
+                      start = 0;
+                    }
+                    if (end < position + word.length) {
+                      end = position + word.length;
+                    }
+                    if(end > content.length){
+                      end = content.length;
+                    }
+                    slicesOfContent.push(mergeIntoSlice(content, start, end, indexOfContent));
+                  }
+
+                  // sort slices in content by search text's count and hits' count
+
+                  slicesOfContent.sort(function (sliceLeft, sliceRight) {
+                    if (sliceLeft.searchTextCount !== sliceRight.searchTextCount) {
+                      return sliceRight.searchTextCount - sliceLeft.searchTextCount;
+                    } else if (sliceLeft.hits.length !== sliceRight.hits.length) {
+                      return sliceRight.hits.length - sliceLeft.hits.length;
+                    } else {
+                      return sliceLeft.start - sliceRight.start;
+                    }
+                  });
+
+                  // select top N slices in content
+
+                  var upperBound = parseInt('1');
+                  if (upperBound >= 0) {
+                    slicesOfContent = slicesOfContent.slice(0, upperBound);
+                  }
+
+                  // highlight title and content
+
+                  function highlightKeyword(text, slice) {
+                    var result = '';
+                    var prevEnd = slice.start;
+                    slice.hits.forEach(function (hit) {
+                      result += text.substring(prevEnd, hit.position);
+                      var end = hit.position + hit.length;
+                      result += '<b class="search-keyword">' + text.substring(hit.position, end) + '</b>';
+                      prevEnd = end;
+                    });
+                    result += text.substring(prevEnd, slice.end);
+                    return result;
+                  }
+
+                  var resultItem = '';
+
+                  if (slicesOfTitle.length != 0) {
+                    resultItem += "<li><a href='" + articleUrl + "' class='search-result-title'>" + highlightKeyword(title, slicesOfTitle[0]) + "</a>";
+                  } else {
+                    resultItem += "<li><a href='" + articleUrl + "' class='search-result-title'>" + title + "</a>";
+                  }
+
+                  slicesOfContent.forEach(function (slice) {
+                    resultItem += "<a href='" + articleUrl + "'>" +
+                      "<p class=\"search-result\">" + highlightKeyword(content, slice) +
+                      "...</p>" + "</a>";
+                  });
+
+                  resultItem += "</li>";
+                  resultItems.push({
+                    item: resultItem,
+                    searchTextCount: searchTextCount,
+                    hitCount: hitCount,
+                    id: resultItems.length
+                  });
+                }
+              })
+            };
+            if (keywords.length === 1 && keywords[0] === "") {
+              resultContent.innerHTML = '<div id="no-result"><i class="fa fa-search fa-5x"></i></div>'
+            } else if (resultItems.length === 0) {
+              resultContent.innerHTML = '<div id="no-result"><i class="fa fa-frown-o fa-5x"></i></div>'
+            } else {
+              resultItems.sort(function (resultLeft, resultRight) {
+                if (resultLeft.searchTextCount !== resultRight.searchTextCount) {
+                  return resultRight.searchTextCount - resultLeft.searchTextCount;
+                } else if (resultLeft.hitCount !== resultRight.hitCount) {
+                  return resultRight.hitCount - resultLeft.hitCount;
+                } else {
+                  return resultRight.id - resultLeft.id;
+                }
+              });
+              var searchResultList = '<ul class=\"search-result-list\">';
+              resultItems.forEach(function (result) {
+                searchResultList += result.item;
+              })
+              searchResultList += "</ul>";
+              resultContent.innerHTML = searchResultList;
+            }
+          }
+
+          if ('auto' === 'auto') {
+            input.addEventListener('input', inputEventFunction);
+          } else {
+            $('.search-icon').click(inputEventFunction);
+            input.addEventListener('keypress', function (event) {
+              if (event.keyCode === 13) {
+                inputEventFunction();
+              }
+            });
+          }
+
+          // remove loading animation
+          $(".local-search-pop-overlay").remove();
+          $('body').css('overflow', '');
+
+          proceedsearch();
+        }
+      });
+    }
+
+    // handle and trigger popup window;
+    $('.popup-trigger').click(function(e) {
+      e.stopPropagation();
+      if (isfetched === false) {
+        searchFunc(path, 'local-search-input', 'local-search-result');
+      } else {
+        proceedsearch();
+      };
+    });
+
+    $('.popup-btn-close').click(onPopupClose);
+    $('.popup').click(function(e){
+      e.stopPropagation();
+    });
+    $(document).on('keyup', function (event) {
+      var shouldDismissSearchPopup = event.which === 27 &&
+        $('.search-popup').is(':visible');
+      if (shouldDismissSearchPopup) {
+        onPopupClose();
+      }
+    });
+  </script>
+
+
+
+
+
+  
+
+  
+
+  
+  
+
+  
+  
+
+  
+
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+</body>
+</html>
