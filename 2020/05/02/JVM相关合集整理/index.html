@@ -131,7 +131,7 @@
                   
                   <span class="post-meta mr-2">
                     <i class="iconfont icon-chart"></i>
-                    3.3k 字
+                    4.6k 字
                   </span>
                 
 
@@ -141,7 +141,7 @@
                       <i class="iconfont icon-clock-fill"></i>
                     
                     
-                    36
+                    49
                      分钟
                   </span>
                 
@@ -410,8 +410,68 @@ String s1 = <span class="hljs-keyword">new</span> String(<span class="hljs-strin
 <p><code>解析</code>阶段将<code>class文件常量池</code>中的<code>符号引用</code>翻译成<code>直接引用</code>也是存储于<code>运行时常量池</code>中。</p>
 <h5 id="动态性"><a href="#动态性" class="headerlink" title="动态性"></a>动态性</h5><p>Java规范并不要求常量只在运行时才能产生，也就是表示<em>运行时常量池的内容不一定都来自于class文件常量池</em>，在运行时可以通过代码生成常量放置于<code>运行时常量池</code>中，例如<code>String.intern()</code></p>
 <h5 id="String-intern"><a href="#String-intern" class="headerlink" title="String.intern()"></a>String.intern()</h5><blockquote>
+<ul>
+<li><p>JDK 1.7之前</p>
+<p><code>intern</code>的处理是：<strong>先判断字符串是否存在于<code>字符串常量池</code>中，如果存在直接返回该常量；如果没有找到，则将字符串常量加入到<code>字符串常量池</code>中。</strong></p>
+</li>
+<li><p>JDK 1.7及之后</p>
+<p><code>intern</code>的处理是：先判断字符串是否存在于<code>字符串常量池</code>中，如果存在直接返回该常量；如果没找到，表示该字符串常量在堆中，然后把<code>Java堆</code>该对象的引用加入到<code>字符串常量池</code>中，以后别人拿到的就是该字符串常量的引用，实际字符串存在于堆中。</p>
+</li>
+</ul>
 </blockquote>
-<h3 id="直接内存"><a href="#直接内存" class="headerlink" title="直接内存"></a>直接内存</h3><h2 id="Java对象创建过程以及访问方式"><a href="#Java对象创建过程以及访问方式" class="headerlink" title="Java对象创建过程以及访问方式"></a>Java对象创建过程以及访问方式</h2><h2 id="类加载机制"><a href="#类加载机制" class="headerlink" title="类加载机制"></a>类加载机制</h2><h2 id="JVM内存分配策略"><a href="#JVM内存分配策略" class="headerlink" title="JVM内存分配策略"></a>JVM内存分配策略</h2><h2 id="JVM垃圾回收机制-GC"><a href="#JVM垃圾回收机制-GC" class="headerlink" title="JVM垃圾回收机制(GC)"></a>JVM垃圾回收机制(GC)</h2><h2 id="Java内存模型-JMM"><a href="#Java内存模型-JMM" class="headerlink" title="Java内存模型(JMM)"></a>Java内存模型(JMM)</h2><h2 id="Class文件结构-字节码"><a href="#Class文件结构-字节码" class="headerlink" title="Class文件结构(字节码)"></a>Class文件结构(字节码)</h2><h2 id="DVM-amp-ART-Android虚拟机"><a href="#DVM-amp-ART-Android虚拟机" class="headerlink" title="DVM&amp;ART(Android虚拟机)"></a>DVM&amp;ART(Android虚拟机)</h2><h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="https://cloud.tencent.com/developer/article/1450501" target="_blank" rel="noopener">彻底弄懂Java中的常量池</a></p>
+<h3 id="直接内存"><a href="#直接内存" class="headerlink" title="直接内存"></a>直接内存</h3><blockquote>
+<p>直接内存并不是JVM的一部分，也不是虚拟机规范中定义的内存区域，但是这部分内存也被频繁的使用，可能导致OOM的出现。</p>
+</blockquote>
+<h2 id="Java对象创建过程以及访问方式"><a href="#Java对象创建过程以及访问方式" class="headerlink" title="Java对象创建过程以及访问方式"></a>Java对象创建过程以及访问方式</h2><h3 id="Java对象创建过程"><a href="#Java对象创建过程" class="headerlink" title="Java对象创建过程"></a>Java对象创建过程</h3><p>在Java语言层面上，创建对象只需要调用<code>new</code>关键字。</p>
+<p>在JVM中，实际需要执行以下几步：</p>
+<h4 id="类加载检查"><a href="#类加载检查" class="headerlink" title="类加载检查"></a>类加载检查</h4><p>遇到一条<code>new</code>指令时，先检查指令对应的参数是否在<code>常量池</code>中可以定位到这个类的符号引用，并且检查这个符号引用代表的类是否已被加载过、解析和初始化过。如果没有，需要执行相应的<code>类加载过程</code>。</p>
+<h4 id="分配内存"><a href="#分配内存" class="headerlink" title="分配内存"></a>分配内存</h4><p><code>类加载检查</code>通过后，JVM将为新生对象<code>分配内存</code>，对象所需大小在类加载完成后便可以确定。</p>
+<p>这块内存由<code>Java堆</code>划分出来。内存的分配方式由<strong>Java堆中内存是否规整</strong>决定，而<code>内存是否规整</code>由<strong>采用的垃圾收集器是否带有压缩整理功能决定</strong>。</p>
+<ul>
+<li><p><strong>指针碰撞</strong></p>
+<blockquote>
+<p><code>Java堆内存规整</code>，把指针向空闲空间挪动对象大小的距离</p>
+</blockquote>
+<p>对应GC收集器：Serial、ParNew</p>
+<p><strong>关键看GC收集器采用了<code>标记-整理、标记-压缩、复制</code>算法进行回收</strong></p>
+</li>
+<li><p><strong>空闲列表</strong></p>
+<blockquote>
+<p><code>Java堆内存不规整</code>，虚拟机维护一个列表记录内存块中的可用区域，在分配内存的时候，找到一块儿足够大的空间划分给对象实例</p>
+</blockquote>
+<p>对应GC收集器：CMS</p>
+<p><strong>关键看GC收集器采用了<code>标记-清除</code>算法进行回收</strong></p>
+</li>
+</ul>
+<h5 id="内存分配并发问题"><a href="#内存分配并发问题" class="headerlink" title="内存分配并发问题"></a>内存分配并发问题</h5><p>创建对象是一个很频繁的事情，就会涉及一个很重要的问题——<strong>线程安全</strong>。作为虚拟机来讲，必须要保证线程安全，通常来讲，虚拟机采用两种方式来保证线程安全：</p>
+<ul>
+<li><p><strong>CAS+失败重试</strong></p>
+<blockquote>
+<p>CAS是乐观锁的一种实现方式</p>
+<p>乐观锁：假设没有冲突而去完成某项操作，若发生冲突就重试直到成功为止。</p>
+</blockquote>
+<p>采用这种方式可以保证更新操作的原子性。</p>
+</li>
+<li><p><strong>TLAB</strong>(本地线程分配缓存)</p>
+<blockquote>
+<p>每个线程预先在<code>Java堆</code>中分配一块内存，JVM在给对象分配内存时，首先在<code>TLAB</code>分配。如果分配的对象大于<code>TLAB</code>的剩余内存或<code>TLAB</code>内存已用尽时，再采用上述CAS方式进行内存分配。</p>
+</blockquote>
+</li>
+</ul>
+<h4 id="初始化零值"><a href="#初始化零值" class="headerlink" title="初始化零值"></a>初始化零值</h4><p><strong>内存分配完成时，虚拟机需要将分配到的内存空间初始化为零值(不包括对象头)。</strong>这一步操作可以保证对象的实例字段在代码中可以不赋值就直接使用，程序也可以访问到这些字段的数据类型所对应的零值。</p>
+<h4 id="设置对象头"><a href="#设置对象头" class="headerlink" title="设置对象头"></a>设置对象头</h4><p><code>初始化零值</code>完成后，<strong>虚拟机要对对象进行必要的设置</strong>。将<code>类的元数据信息、对象的哈希码、对象的GC分代年龄</code>等信息，存放到<code>对象头</code>中。另外根据虚拟机运行状态的不同，如是否启用偏向锁等，对象头都会进行存储。</p>
+<p>可以在<code>对象内存布局</code>这节看到对象头相关内容。</p>
+<h4 id="执行-lt-init-gt-方法"><a href="#执行-lt-init-gt-方法" class="headerlink" title="执行&lt;init&gt;方法"></a>执行<code>&lt;init&gt;</code>方法</h4><p>从虚拟机角度来说，一个新的对象已经产生了。从代码角度来说，对象才刚开始创建，在执行<code>&lt;init&gt;</code>方法之前，所有的字段都还为零。一般执行完<code>new</code>指令后会接着执行<code>&lt;init&gt;</code>方法，把对象按照意愿进行初始化，这时就产生了一个真正可用的对象。</p>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/Jvm对象创建过程.png" srcset="/img/loading.gif" class="full-image" alt="Jvm对象创建过程" title="Jvm对象创建过程"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<h3 id="对象内存布局"><a href="#对象内存布局" class="headerlink" title="对象内存布局"></a>对象内存布局</h3><p>对象内存布局分为以下三块区域：</p>
+<h4 id="对象头-Header"><a href="#对象头-Header" class="headerlink" title="对象头(Header)"></a>对象头(Header)</h4><p>必须先了解 HotSpot虚拟机的对象(<strong>对象头部分</strong>)的内存布局：分为两部分</p>
+<ul>
+<li><strong><em>Mark Word</em></strong>：存储自身的运行时数据，如：<code>HashCode、GC分代年龄和锁信息</code>，这部分数据的长度在32和64位中的JVM中分别为32bit和64bit。<strong>它是实现轻量级锁和偏向锁的关键。</strong></li>
+<li>存储指向方法区对象类型数据的指针，如果是数组对象的话，额外会存储数据的长度。</li>
+</ul>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/MarkWord.png" srcset="/img/loading.gif" class="full-image" alt="Mark Word" title="Mark Word"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<h4 id="实例数据-Instance-Data"><a href="#实例数据-Instance-Data" class="headerlink" title="实例数据(Instance Data)"></a>实例数据(Instance Data)</h4><h4 id="对齐填充"><a href="#对齐填充" class="headerlink" title="对齐填充()"></a>对齐填充()</h4><h3 id="Java对象访问方式"><a href="#Java对象访问方式" class="headerlink" title="Java对象访问方式"></a>Java对象访问方式</h3><h2 id="类加载机制"><a href="#类加载机制" class="headerlink" title="类加载机制"></a>类加载机制</h2><h2 id="JVM内存分配策略"><a href="#JVM内存分配策略" class="headerlink" title="JVM内存分配策略"></a>JVM内存分配策略</h2><h2 id="JVM垃圾回收机制-GC"><a href="#JVM垃圾回收机制-GC" class="headerlink" title="JVM垃圾回收机制(GC)"></a>JVM垃圾回收机制(GC)</h2><h2 id="Java内存模型-JMM"><a href="#Java内存模型-JMM" class="headerlink" title="Java内存模型(JMM)"></a>Java内存模型(JMM)</h2><h2 id="Class文件结构-字节码"><a href="#Class文件结构-字节码" class="headerlink" title="Class文件结构(字节码)"></a>Class文件结构(字节码)</h2><h2 id="DVM-amp-ART-Android虚拟机"><a href="#DVM-amp-ART-Android虚拟机" class="headerlink" title="DVM&amp;ART(Android虚拟机)"></a>DVM&amp;ART(Android虚拟机)</h2><h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="https://cloud.tencent.com/developer/article/1450501" target="_blank" rel="noopener">彻底弄懂Java中的常量池</a></p>
+<p><a href="https://www.cnblogs.com/gxyandwmm/p/9495923.html" target="_blank" rel="noopener">字符串常量池相关问题</a></p>
 
             </article>
             <hr>
