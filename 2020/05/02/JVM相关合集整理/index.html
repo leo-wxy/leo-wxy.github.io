@@ -131,7 +131,7 @@
                   
                   <span class="post-meta mr-2">
                     <i class="iconfont icon-chart"></i>
-                    5k 字
+                    6.4k 字
                   </span>
                 
 
@@ -141,7 +141,7 @@
                       <i class="iconfont icon-clock-fill"></i>
                     
                     
-                    53
+                    68
                      分钟
                   </span>
                 
@@ -481,7 +481,129 @@ String s1 = <span class="hljs-keyword">new</span> String(<span class="hljs-strin
 <h2 id="类加载机制"><a href="#类加载机制" class="headerlink" title="类加载机制"></a>类加载机制</h2><blockquote>
 <p>JVM把描述类的数据从Class文件加载到内存，并对数据进行校验、转换解析和初始化，最终形成可以被虚拟机直接使用的Java类型，这个过程被称为虚拟机的类加载机制。</p>
 </blockquote>
-<h3 id="类的生命周期"><a href="#类的生命周期" class="headerlink" title="类的生命周期"></a>类的生命周期</h3><h3 id="类加载过程"><a href="#类加载过程" class="headerlink" title="类加载过程"></a>类加载过程</h3><h3 id="类加载器"><a href="#类加载器" class="headerlink" title="类加载器"></a>类加载器</h3><h3 id="双亲委托模型"><a href="#双亲委托模型" class="headerlink" title="双亲委托模型"></a>双亲委托模型</h3><h2 id="JVM内存分配策略"><a href="#JVM内存分配策略" class="headerlink" title="JVM内存分配策略"></a>JVM内存分配策略</h2><h2 id="JVM垃圾回收机制-GC"><a href="#JVM垃圾回收机制-GC" class="headerlink" title="JVM垃圾回收机制(GC)"></a>JVM垃圾回收机制(GC)</h2><h2 id="Java内存模型-JMM"><a href="#Java内存模型-JMM" class="headerlink" title="Java内存模型(JMM)"></a>Java内存模型(JMM)</h2><h2 id="Class文件结构-字节码"><a href="#Class文件结构-字节码" class="headerlink" title="Class文件结构(字节码)"></a>Class文件结构(字节码)</h2><h2 id="DVM-amp-ART-Android虚拟机"><a href="#DVM-amp-ART-Android虚拟机" class="headerlink" title="DVM&amp;ART(Android虚拟机)"></a>DVM&amp;ART(Android虚拟机)</h2><h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="https://cloud.tencent.com/developer/article/1450501" target="_blank" rel="noopener">彻底弄懂Java中的常量池</a></p>
+<h3 id="类的生命周期"><a href="#类的生命周期" class="headerlink" title="类的生命周期"></a>类的生命周期</h3><p>一个类从被加载到虚拟机内存中开始，到卸载出内存为止，它的整个生命周期将会经历<strong>加载、验证、准备、解析、初始化、使用、卸载</strong>七个阶段，其中<code>准备、解析、初始化</code>称为<strong>连接</strong>。</p>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/class_lifecycle.png" srcset="/img/loading.gif" class="full-image" alt="类的生命周期" title="类的生命周期"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<h3 id="类加载过程"><a href="#类加载过程" class="headerlink" title="类加载过程"></a>类加载过程</h3><blockquote>
+<p>类加载过程包括上述的五步：<code>加载、验证、准备、解析、初始化</code>。</p>
+</blockquote>
+<h4 id="加载"><a href="#加载" class="headerlink" title="加载"></a>加载</h4><blockquote>
+<p>JVM找到class文件问生成字节流，然后根据字节流创建java.lang.class对象的过程。</p>
+</blockquote>
+<p>JVM在此过程需要完成三件事：</p>
+<ul>
+<li>通过一个类的 <code>全限定名(包名+类名)</code>来查找.class文件，并生成二进制字节流(<strong>使用ClassLoader进行加载</strong>)。其中字节码来源不一定是.class文件，也可以是jar包、zip包，甚至是来源于网络的字节流。</li>
+<li>将字节流所代表的静态存储结构转化为JVM的特定的数据结构，并存储在<code>方法区</code></li>
+<li>在内存中创建一个<code>java.lang.Class</code>类型的对象，作为方法区这个类的各种数据的访问入口。</li>
+</ul>
+<p>一个非数组类的加载阶段(加载阶段获取二进制字节流的动作)是可控性最强的阶段，这一步我们可以去完成还可以自定义类加载器去控制字节流的获取方式(重写类加载器的<code>findClass()</code>或<code>loadClass()</code>)。</p>
+<p>对于数组类而言，数组类本身不通过类加载器创建，由JVM直接在内存中动态创建。</p>
+<h5 id="加载时机"><a href="#加载时机" class="headerlink" title="加载时机"></a>加载时机</h5><p>一个项目经过编译之后，往往会产生大量.class文件，程序运行时，JVM不会一次性将这些文件全部加载到内存中，而是有一定的加载时机去进行加载操作。</p>
+<h6 id="隐式装载"><a href="#隐式装载" class="headerlink" title="隐式装载"></a>隐式装载</h6><p>在程序运行过程中，当碰到通过<code>new</code>生成对象时，系统会隐式调用ClassLoader装载对应class到内存中(<code>loadClass()</code>)</p>
+<div class="hljs"><pre><code class="hljs jaba">protected Class&lt;?&gt; loadClass(String name, boolean resolve)</code></pre></div>
+<h6 id="显示装载"><a href="#显示装载" class="headerlink" title="显示装载"></a>显示装载</h6><p>在编写源代码时，主动调用<code>Class.forName()</code>也会进行class装载操作。执行时会默认调用静态代码块<code>static{...}</code>以及分配静态变量存储空间</p>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Class&lt;?&gt; forName(String name, <span class="hljs-comment">/*要加载的Class名字*/</span>
+										 <span class="hljs-keyword">boolean</span> initialize,<span class="hljs-comment">/*默认为true,是否需要初始化-调用静态代码快及静态变量初始化*/</span>
+                               ClassLoader loader<span class="hljs-comment">/*指定ClassLoader进行加载*/</span>)</code></pre></div>
+<h4 id="验证"><a href="#验证" class="headerlink" title="验证"></a>验证</h4><blockquote>
+<p>确保.class文件的字节流中包含的信息符合虚拟机规范的全部要求，并且不会危及虚拟机本身的安全。</p>
+</blockquote>
+<p>若代码被反复验证和使用过，可以通过配置<code>-XVerify:none</code>关闭大部分的验证措施，缩短加载时间</p>
+<p>主要包含以下四个方面的验证：</p>
+<h5 id="文件格式验证"><a href="#文件格式验证" class="headerlink" title="文件格式验证"></a>文件格式验证</h5><blockquote>
+<p>验证字节流是否符合Class文件格式的规范，并且能被当前版本的虚拟机处理。</p>
+</blockquote>
+<p>这一阶段可能包含以下验证点：</p>
+<ul>
+<li>是否以魔数<code>0xCAFEBABE</code>开头</li>
+<li>主次Java版本号是否在当前JVM接受范围内</li>
+<li>…</li>
+</ul>
+<h5 id="元数据验证"><a href="#元数据验证" class="headerlink" title="元数据验证"></a>元数据验证</h5><blockquote>
+<p>对字节码描述的信息进行语义分析，以保证其描述的信息符合 Java语言规范的要求</p>
+</blockquote>
+<p>这一阶段可能包含以下验证点：</p>
+<ul>
+<li>这个类是否有父类(除了 java.lang.Object外，都应该有父类)</li>
+<li>这个类是否继承了不允许被继承的类(被final修饰的类)</li>
+<li>…</li>
+</ul>
+<h5 id="字节码验证"><a href="#字节码验证" class="headerlink" title="字节码验证"></a>字节码验证</h5><blockquote>
+<p>通过数据流分析和控制流分析，确定程序语义是合法、符合逻辑的</p>
+</blockquote>
+<p>这一阶段可能包含以下验证点：</p>
+<ul>
+<li>任意时刻操作数栈的数据类型与指令代码序列都配合工作</li>
+<li>任何跳转指令都不会跳到方法体以外的的字节码指令中</li>
+<li>…</li>
+</ul>
+<h5 id="符号引用验证"><a href="#符号引用验证" class="headerlink" title="符号引用验证"></a>符号引用验证</h5><blockquote>
+<p>发生于JVM将<code>符号引用</code>转换<code>直接引用</code>的时候。</p>
+<p>对类自身以外(常量池中的各种符号引用)的各类信息进行匹配性校验。通俗来说就是，该类是否缺少或者被禁止访问她依赖的某些外部类、方法、字段等资源。</p>
+</blockquote>
+<p>这一阶段可能包含以下验证点：</p>
+<ul>
+<li>符号引中通过字符串描述的全限定名能否找到对应的类</li>
+<li>在指定类是否存在符合方法的字段描述符及简单名称所描述的方法和字段</li>
+<li>…</li>
+</ul>
+<h4 id="准备"><a href="#准备" class="headerlink" title="准备"></a>准备</h4><blockquote>
+<p>正式为类中定义的变量(即静态变量，被static修饰的变量)分配内存并设置为变量初始值(<code>零值</code>)的阶段，不包括实例变量。</p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">int</span> value = <span class="hljs-number">100</span>;</code></pre></div>
+<p>在准备阶段，JVM会为value分配内存，并将其设置为0。真正的100需要在初始化阶段进行设置。</p>
+<table>
+<thead>
+<tr>
+<th>数据类型</th>
+<th>零值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Int</td>
+<td>0</td>
+</tr>
+<tr>
+<td>long</td>
+<td>0L</td>
+</tr>
+<tr>
+<td>short</td>
+<td>(short)0</td>
+</tr>
+<tr>
+<td>char</td>
+<td>‘\u0000’</td>
+</tr>
+<tr>
+<td>byte</td>
+<td>(byte)0</td>
+</tr>
+<tr>
+<td>boolean</td>
+<td>false</td>
+</tr>
+<tr>
+<td>float</td>
+<td>0.0f</td>
+</tr>
+<tr>
+<td>double</td>
+<td>0.0d</td>
+</tr>
+<tr>
+<td>reference</td>
+<td>Null</td>
+</tr>
+</tbody>
+</table>
+<p>以上是通常情况下初始值是<code>零值</code>，还是会存在一些特殊情况——静态常量。</p>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> value = <span class="hljs-number">100</span>;</code></pre></div>
+<p>此时value的初始值就为100。</p>
+<h4 id="解析"><a href="#解析" class="headerlink" title="解析"></a>解析</h4><blockquote>
+<p>把常量池中的符号引用转换为直接引用，也就是具体的内存地址。JVM会将常量池中的类、接口名、字段名、方法名等转换为具体的内存地址。</p>
+</blockquote>
+<h5 id="符号引用-1"><a href="#符号引用-1" class="headerlink" title="符号引用"></a>符号引用</h5><h5 id="直接引用"><a href="#直接引用" class="headerlink" title="直接引用"></a>直接引用</h5><h4 id="初始化"><a href="#初始化" class="headerlink" title="初始化"></a>初始化</h4><h3 id="类加载器"><a href="#类加载器" class="headerlink" title="类加载器"></a>类加载器</h3><h3 id="双亲委托模型"><a href="#双亲委托模型" class="headerlink" title="双亲委托模型"></a>双亲委托模型</h3><h2 id="JVM内存分配策略"><a href="#JVM内存分配策略" class="headerlink" title="JVM内存分配策略"></a>JVM内存分配策略</h2><h2 id="JVM垃圾回收机制-GC"><a href="#JVM垃圾回收机制-GC" class="headerlink" title="JVM垃圾回收机制(GC)"></a>JVM垃圾回收机制(GC)</h2><h2 id="Java内存模型-JMM"><a href="#Java内存模型-JMM" class="headerlink" title="Java内存模型(JMM)"></a>Java内存模型(JMM)</h2><h2 id="Class文件结构-字节码"><a href="#Class文件结构-字节码" class="headerlink" title="Class文件结构(字节码)"></a>Class文件结构(字节码)</h2><h2 id="DVM-amp-ART-Android虚拟机"><a href="#DVM-amp-ART-Android虚拟机" class="headerlink" title="DVM&amp;ART(Android虚拟机)"></a>DVM&amp;ART(Android虚拟机)</h2><h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="https://cloud.tencent.com/developer/article/1450501" target="_blank" rel="noopener">彻底弄懂Java中的常量池</a></p>
 <p><a href="https://www.cnblogs.com/gxyandwmm/p/9495923.html" target="_blank" rel="noopener">字符串常量池相关问题</a></p>
 
             </article>
