@@ -131,7 +131,7 @@
                   
                   <span class="post-meta mr-2">
                     <i class="iconfont icon-chart"></i>
-                    0 字
+                    716 字
                   </span>
                 
 
@@ -141,7 +141,7 @@
                       <i class="iconfont icon-clock-fill"></i>
                     
                     
-                    1
+                    7
                      分钟
                   </span>
                 
@@ -171,7 +171,50 @@
             
             <article class="markdown-body">
               <!--基于先前的学习内容，重新进行Binder理论知识的整理-->
-
+<h2 id="Linux传统的进程间通信原理"><a href="#Linux传统的进程间通信原理" class="headerlink" title="Linux传统的进程间通信原理"></a>Linux传统的进程间通信原理</h2><span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/Linux-IPC-Basics.png" srcset="/img/loading.gif" class="full-image" alt="Linux进程结构" title="Linux进程结构"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<h3 id="进程隔离"><a href="#进程隔离" class="headerlink" title="进程隔离"></a>进程隔离</h3><blockquote>
+<p>保护系统中进程互不干扰。在操作系统中，进程之间数据是不互通的，相互之间无法访问数据，保证数据的安全星。</p>
+</blockquote>
+<p>在<code>进程隔离</code>的条件下，需要通过<code>IPC(Inter Process Communication)机制</code>进行进程间的通信。</p>
+<h3 id="进程空间划分"><a href="#进程空间划分" class="headerlink" title="进程空间划分"></a>进程空间划分</h3><blockquote>
+<p>操作系统的核心是<strong>内核</strong>，独立于普通的应用程序，可以访问受保护的内存空间以及底层的硬件设备。</p>
+</blockquote>
+<p>为了使用户进程不能操作内核，保证内核的安全性。所以操作系统将虚拟空间划分为两部分：</p>
+<ul>
+<li><p><strong>内核空间</strong>(一般占1GB)</p>
+<p>系统内核运行的空间</p>
+</li>
+<li><p><strong>用户空间</strong>(一般占3GB)</p>
+<p>用于用户程序执行的空间</p>
+</li>
+</ul>
+<p><strong>用户空间在不同进程之间不能共享，内核空间是各个进程之间共享的。</strong></p>
+<h3 id="系统调用"><a href="#系统调用" class="headerlink" title="系统调用"></a>系统调用</h3><blockquote>
+<p>用户空间的权限低于内核空间，导致用户空间无法直接访问内核资源(例如文件操作、网络访问等)，就需要借助<strong>系统调用</strong>实现内核资源访问。</p>
+</blockquote>
+<p><strong>系统调用</strong>是用户空间访问内核的唯一方式，保证了所有资源访问都是在内核的控制下进行，避免用户程序对系统资源的越级访问，提升系统的安全和稳定性。</p>
+<p>Linux采用两级保护机制：</p>
+<ul>
+<li>0级供系统内核使用</li>
+<li>3级供用户程序使用</li>
+</ul>
+<p>当进程使用<code>系统调用</code>执行内核代码时，进程就进入了<strong>内核态</strong>，此时处理器处于<code>0级·</code>；当进程执行自己的代码时，进程就进入<strong>用户态</strong>，此时处理器位于<code>3级·</code>。</p>
+<p><code>系统调用</code>主要通过以下两个函数实现：</p>
+<ul>
+<li><code>copy_from_user</code>：将数据从用户空间拷贝到内核空间</li>
+<li><code>copy_to_user</code>：将数据从内核空间拷贝到用户空间</li>
+</ul>
+<h3 id="传统IPC功能实现"><a href="#传统IPC功能实现" class="headerlink" title="传统IPC功能实现"></a>传统IPC功能实现</h3><span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/Linux-IPC.png" srcset="/img/loading.gif" class="full-image" alt="Linux IPC" title="Linux IPC"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<ol>
+<li>发送进程通过<code>系统调用 copy_from_user·</code>把自己的<code>内存缓存区(发送进程)</code>的数据拷贝到<code>内核缓存区</code>中</li>
+<li>内核程序通过<code>系统调用 copy_to_user</code>把内核缓存区的数据拷贝到接收进程的<code>内存缓存区</code>中</li>
+</ol>
+<p>传统IPC通信过程中暴露了两个明显的缺点：</p>
+<ol>
+<li><strong>性能低下</strong>，需要经历两次数据拷贝过程：<code>发送进程内存缓存区 -&gt; 内核缓存区 -&gt; 接收进程内存缓存区</code></li>
+<li><strong>空间、时间浪费</strong>，接收方需要事先开辟一块内存空间准备接受发送方的数据，由于不能确定数据的大小。所以只能开辟一块较大的空间(<code>空间浪费</code>)或者先行获取发送数据的大小(<code>时间浪费</code>)。</li>
+</ol>
+<h2 id="Binder通信"><a href="#Binder通信" class="headerlink" title="Binder通信"></a>Binder通信</h2>
             </article>
             <hr>
             <div>

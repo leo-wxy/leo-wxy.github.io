@@ -131,7 +131,7 @@
                   
                   <span class="post-meta mr-2">
                     <i class="iconfont icon-chart"></i>
-                    3.7k 字
+                    4k 字
                   </span>
                 
 
@@ -141,7 +141,7 @@
                       <i class="iconfont icon-clock-fill"></i>
                     
                     
-                    40
+                    47
                      分钟
                   </span>
                 
@@ -385,7 +385,67 @@ System.out.println(b.equals(b1)); <span class="hljs-comment">//true</span></code
 <p>切换到<code>Remote</code>配置，点击Debug按钮，然后debug attach成功</p>
 <p>此时运行<code>Make Project</code>等待断点执行到</p>
 </li>
-<li><p>TODO</p>
+<li><p>JNI抛出Java异常</p>
+<div class="hljs"><pre><code class="hljs c++"><span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">throwException</span><span class="hljs-params">(JNIEnv *env, <span class="hljs-keyword">char</span> *msg)</span> </span>&#123;
+    jclass exClass;
+    <span class="hljs-keyword">char</span> *className = <span class="hljs-string">"java/lang/NullPointerException"</span>;
+    exClass = env-&gt;FindClass(className);
+  	<span class="hljs-comment">//调用ThrowNew 抛出异常</span>
+    env-&gt;ThrowNew(exClass, msg);
+&#125;</code></pre></div>
+<p><code>ThrowNew</code>的实现方法在<code>jni_interal.cc</code></p>
+<div class="hljs"><pre><code class="hljs c"><span class="hljs-function"><span class="hljs-keyword">int</span> <span class="hljs-title">ThrowNewException</span><span class="hljs-params">(JNIEnv* env, jclass exception_class, <span class="hljs-keyword">const</span> <span class="hljs-keyword">char</span>* msg, jobject cause)</span>
+    <span class="hljs-title">REQUIRES</span><span class="hljs-params">(!Locks::mutator_lock_)</span> </span>&#123;
+  <span class="hljs-comment">// Turn the const char* into a java.lang.String.</span>
+  ScopedLocalRef&lt;jstring&gt; s(env, env-&gt;NewStringUTF(msg));
+  <span class="hljs-keyword">if</span> (msg != <span class="hljs-literal">nullptr</span> &amp;&amp; s.get() == <span class="hljs-literal">nullptr</span>) &#123;
+    <span class="hljs-keyword">return</span> JNI_ERR;
+  &#125;
+
+  <span class="hljs-comment">// Choose an appropriate constructor and set up the arguments.</span>
+  jvalue args[<span class="hljs-number">2</span>];
+  <span class="hljs-keyword">const</span> <span class="hljs-keyword">char</span>* signature;
+  <span class="hljs-keyword">if</span> (msg == <span class="hljs-literal">nullptr</span> &amp;&amp; cause == <span class="hljs-literal">nullptr</span>) &#123;
+    signature = <span class="hljs-string">"()V"</span>;
+  &#125; <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (msg != <span class="hljs-literal">nullptr</span> &amp;&amp; cause == <span class="hljs-literal">nullptr</span>) &#123;
+    signature = <span class="hljs-string">"(Ljava/lang/String;)V"</span>;
+    args[<span class="hljs-number">0</span>].l = s.get();
+  &#125; <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (msg == <span class="hljs-literal">nullptr</span> &amp;&amp; cause != <span class="hljs-literal">nullptr</span>) &#123;
+    signature = <span class="hljs-string">"(Ljava/lang/Throwable;)V"</span>;
+    args[<span class="hljs-number">0</span>].l = cause;
+  &#125; <span class="hljs-keyword">else</span> &#123;
+    signature = <span class="hljs-string">"(Ljava/lang/String;Ljava/lang/Throwable;)V"</span>;
+    args[<span class="hljs-number">0</span>].l = s.get();
+    args[<span class="hljs-number">1</span>].l = cause;
+  &#125;
+  jmethodID mid = env-&gt;GetMethodID(exception_class, <span class="hljs-string">"&lt;init&gt;"</span>, signature);
+  <span class="hljs-keyword">if</span> (mid == <span class="hljs-literal">nullptr</span>) &#123;
+    <span class="hljs-function">ScopedObjectAccess <span class="hljs-title">soa</span><span class="hljs-params">(env)</span></span>;
+    LOG(ERROR) &lt;&lt; <span class="hljs-string">"No &lt;init&gt;"</span> &lt;&lt; signature &lt;&lt; <span class="hljs-string">" in "</span>
+        &lt;&lt; mirror::Class::PrettyClass(soa.Decode&lt;mirror::Class&gt;(exception_class));
+    <span class="hljs-keyword">return</span> JNI_ERR;
+  &#125;
+
+  ScopedLocalRef&lt;jthrowable&gt; exception(
+      env, <span class="hljs-keyword">reinterpret_cast</span>&lt;jthrowable&gt;(env-&gt;NewObjectA(exception_class, mid, args)));
+  <span class="hljs-keyword">if</span> (exception.get() == <span class="hljs-literal">nullptr</span>) &#123;
+    <span class="hljs-keyword">return</span> JNI_ERR;
+  &#125;
+  <span class="hljs-function">ScopedObjectAccess <span class="hljs-title">soa</span><span class="hljs-params">(env)</span></span>;
+  soa.Self()-&gt;SetException(soa.Decode&lt;mirror::Throwable&gt;(exception.get()));
+  <span class="hljs-keyword">return</span> JNI_OK;
+&#125;
+
+<span class="hljs-comment">//thread.cc</span>
+<span class="hljs-keyword">void</span> Thread::SetException(ObjPtr&lt;mirror::Throwable&gt; new_exception) &#123;
+  CHECK(new_exception != <span class="hljs-literal">nullptr</span>);
+  <span class="hljs-comment">// <span class="hljs-doctag">TODO:</span> DCHECK(!IsExceptionPending());</span>
+  <span class="hljs-comment">//此处设置了 jni插入的异常信息 ,会触发ART的checkPoint的检测，检测到该信息时抛出对应异常</span>
+  tlsPtr_.exception = new_exception.Ptr();
+&#125;</code></pre></div>
+<p>插入位置在<strong>方法调用</strong>或<strong>循环</strong>处。</p>
+</li>
+<li><p>我</p>
 </li>
 </ol>
 
