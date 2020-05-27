@@ -131,7 +131,7 @@
                   
                   <span class="post-meta mr-2">
                     <i class="iconfont icon-chart"></i>
-                    0 字
+                    1.5k 字
                   </span>
                 
 
@@ -141,7 +141,7 @@
                       <i class="iconfont icon-clock-fill"></i>
                     
                     
-                    1
+                    25
                      分钟
                   </span>
                 
@@ -170,12 +170,360 @@
           <div class="post-content mx-auto" id="post">
             
             <article class="markdown-body">
-              
+              <h2 id="Dex文件加载"><a href="#Dex文件加载" class="headerlink" title="Dex文件加载"></a>Dex文件加载</h2><blockquote>
+<p>加载Dex文件后会生成<code>DexFile</code>对象，里面储存了多个类文件信息。</p>
+</blockquote>
+<p>通过<code>PathClassLoader</code>或者<code>DexClassLoader</code>去加载<code>Dex</code>文件，最后还是调用到<code>BaseDexClassLoader</code>的加载方法</p>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">BaseDexClassLoader</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">ClassLaoder</span></span>&#123;
+      <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">BaseDexClassLoader</span><span class="hljs-params">(String dexPath, File optimizedDirectory,
+            String librarySearchPath, ClassLoader parent)</span> </span>&#123;
+        <span class="hljs-keyword">super</span>(parent);
+        <span class="hljs-keyword">this</span>.pathList = <span class="hljs-keyword">new</span> DexPathList(<span class="hljs-keyword">this</span>, dexPath, librarySearchPath, <span class="hljs-keyword">null</span>);
+				...
+    &#125;
+&#125;</code></pre></div>
+<ul>
+<li><p>DexPathList</p>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-keyword">final</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">DexPathList</span></span>&#123;
+  <span class="hljs-keyword">private</span> Element[] dexElements;
+  <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> NativeLibraryElement[] nativeLibraryPathElements;
+  
+  ...
+      <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">DexPathList</span><span class="hljs-params">(ClassLoader definingContext, String dexPath,
+            String librarySearchPath, File optimizedDirectory)</span> </span>&#123;
+   ...
+   <span class="hljs-comment">// 记录所有的dexFile</span>
+   <span class="hljs-keyword">this</span>.dexElements = makeDexElements(splitDexPath(dexPath), optimizedDirectory,                       suppressedExceptions, definingContext);
+    
+   <span class="hljs-comment">//记录app目录的Native库</span>
+   <span class="hljs-keyword">this</span>.nativeLibraryDirectories = splitPaths(librarySearchPath, <span class="hljs-keyword">false</span>);
+   <span class="hljs-comment">//记录系统使用的Native库</span>
+   <span class="hljs-keyword">this</span>.systemNativeLibraryDirectories =                splitPaths(System.getProperty(<span class="hljs-string">"java.library.path"</span>), <span class="hljs-keyword">true</span>);
+   <span class="hljs-comment">//记录所有使用的Native库</span>
+   <span class="hljs-keyword">this</span>.nativeLibraryPathElements = makePathElements(allNativeLibraryDirectories);
+  &#125;
+&#125;</code></pre></div>
+<p>为了初始化以下两个字段：</p>
+<ul>
+<li><code>dexElements</code>：记录所有的DexFile，按照<code>;</code>进行路径分割</li>
+<li><code>nativeLibraryPathElements</code>：记录所有的Native代码库，包括<code>app</code>和<code>系统</code>使用的Native库</li>
+</ul>
+</li>
+<li><p>makeDexElements</p>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> Element[] makeDexElements(List&lt;File&gt; files, File optimizedDirectory,
+        List&lt;IOException&gt; suppressedExceptions, ClassLoader loader) &#123;
+  Element[] elements = <span class="hljs-keyword">new</span> Element[files.size()];
+ <span class="hljs-keyword">for</span> (File file : files) &#123;
+  ...
+    <span class="hljs-comment">//以 dex 文件名结尾</span>
+    <span class="hljs-keyword">if</span> (name.endsWith(DEX_SUFFIX)) &#123;
+      <span class="hljs-keyword">try</span> &#123;
+        <span class="hljs-comment">//加载Dex文件</span>
+         DexFile dex = loadDexFile(file, optimizedDirectory, loader, elements);
+         <span class="hljs-keyword">if</span> (dex != <span class="hljs-keyword">null</span>) &#123;
+             elements[elementsPos++] = <span class="hljs-keyword">new</span> Element(dex, <span class="hljs-keyword">null</span>);
+         &#125;
+         &#125; <span class="hljs-keyword">catch</span> (IOException suppressed) &#123;
+  
+         &#125;
+    &#125;<span class="hljs-keyword">else</span>&#123;
+      dex = loadDexFile(file, optimizedDirectory, loader, elements);              
+          <span class="hljs-keyword">if</span> (dex == <span class="hljs-keyword">null</span>) &#123;
+              elements[elementsPos++] = <span class="hljs-keyword">new</span> Element(file);
+          &#125; <span class="hljs-keyword">else</span> &#123;
+              elements[elementsPos++] = <span class="hljs-keyword">new</span> Element(dex, file);
+          &#125;
+    &#125;
+ &#125;
+ ... 
+&#125;</code></pre></div>
+<p>根据传入的Dex文件路径转换<code>Element</code>数组</p>
+</li>
+<li><p>loadDexFile</p>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> DexFile <span class="hljs-title">loadDexFile</span><span class="hljs-params">(File file, File optimizedDirectory, ClassLoader loader,
+                                   Element[] elements)</span>
+        <span class="hljs-keyword">throws</span> IOException </span>&#123;
+   <span class="hljs-comment">//优化后Dex文件 存放地址是否为空</span>
+    <span class="hljs-keyword">if</span> (optimizedDirectory == <span class="hljs-keyword">null</span>) &#123;
+        <span class="hljs-comment">//为空创建DexFile对象</span>
+        <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> DexFile(file, loader, elements);
+    &#125; <span class="hljs-keyword">else</span> &#123;
+        String optimizedPath = optimizedPathFor(file, optimizedDirectory);
+      <span class="hljs-comment">//不为空将优化后的Dex文件存放到指定目录</span>
+        <span class="hljs-keyword">return</span> DexFile.loadDex(file.getPath(), optimizedPath, <span class="hljs-number">0</span>, loader, elements);
+    &#125;
+&#125;</code></pre></div>
+<p>此处为了加载Dex文件</p>
+</li>
+<li><p>DexFile</p>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">DexFile</span> </span>&#123;
+     DexFile(File file, ClassLoader loader, DexPathList.Element[] elements)
+            <span class="hljs-keyword">throws</span> IOException &#123;
+        <span class="hljs-keyword">this</span>(file.getPath(), loader, elements);
+    &#125;
+  
+  ...
+        DexFile(String fileName, ClassLoader loader, DexPathList.Element[] elements) <span class="hljs-keyword">throws</span> IOException &#123;
+        mCookie = openDexFile(fileName, <span class="hljs-keyword">null</span>, <span class="hljs-number">0</span>, loader, elements);
+        mInternalCookie = mCookie;
+        mFileName = fileName;
+    &#125;
+  ...
+        <span class="hljs-function"><span class="hljs-keyword">static</span> DexFile <span class="hljs-title">loadDex</span><span class="hljs-params">(String sourcePathName, String outputPathName,
+        <span class="hljs-keyword">int</span> flags, ClassLoader loader, DexPathList.Element[] elements)</span> <span class="hljs-keyword">throws</span> IOException </span>&#123;
+        <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> DexFile(sourcePathName, outputPathName, flags, loader, elements);
+    &#125;
+  ...
+&#125;</code></pre></div>
+<p><code>loadDex</code>本质也是调用了<code>new DexFile(...)</code>去加载Dex文件的。</p>
+</li>
+<li><p>openDexFile</p>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> Object <span class="hljs-title">openDexFile</span><span class="hljs-params">(String sourceName, String outputName, <span class="hljs-keyword">int</span> flags,
+        ClassLoader loader, DexPathList.Element[] elements)</span> <span class="hljs-keyword">throws</span> IOException </span>&#123;
+    <span class="hljs-comment">// Use absolute paths to enable the use of relative paths when testing on host.</span>
+    <span class="hljs-comment">//加载Dex文件</span>
+    <span class="hljs-keyword">return</span> openDexFileNative(<span class="hljs-keyword">new</span> File(sourceName).getAbsolutePath(),
+                             (outputName == <span class="hljs-keyword">null</span>)
+                                 ? <span class="hljs-keyword">null</span>
+                                 : <span class="hljs-keyword">new</span> File(outputName).getAbsolutePath(),
+                             flags,
+                             loader,
+                             elements);
+&#125;</code></pre></div>
+<p><code>openDexFile</code>为了加载Dex文件</p>
+</li>
+<li><p>openDexFileNative</p>
+<div class="hljs"><pre><code class="hljs c"><span class="hljs-comment">// art/runtime/native/dalvik_system_DexFile.cc</span>
+<span class="hljs-function"><span class="hljs-keyword">static</span> jobject <span class="hljs-title">DexFile_openDexFileNative</span><span class="hljs-params">(JNIEnv* env,
+                                         jclass,
+                                         jstring javaSourceName,
+                                         jstring javaOutputName ATTRIBUTE_UNUSED,
+                                         jint flags ATTRIBUTE_UNUSED,
+                                         jobject class_loader,
+                                         jobjectArray dex_elements)</span> </span>&#123;
+  <span class="hljs-function">ScopedUtfChars <span class="hljs-title">sourceName</span><span class="hljs-params">(env, javaSourceName)</span></span>;
+  <span class="hljs-keyword">if</span> (sourceName.c_str() == <span class="hljs-literal">nullptr</span>) &#123;
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+  &#125;
+
+  Runtime* <span class="hljs-keyword">const</span> runtime = Runtime::Current();
+  ClassLinker* linker = runtime-&gt;GetClassLinker();
+  <span class="hljs-built_in">std</span>::<span class="hljs-built_in">vector</span>&lt;<span class="hljs-built_in">std</span>::<span class="hljs-built_in">unique_ptr</span>&lt;<span class="hljs-keyword">const</span> DexFile&gt;&gt; dex_files;
+  <span class="hljs-built_in">std</span>::<span class="hljs-built_in">vector</span>&lt;<span class="hljs-built_in">std</span>::<span class="hljs-built_in">string</span>&gt; error_msgs;
+  <span class="hljs-keyword">const</span> OatFile* oat_file = <span class="hljs-literal">nullptr</span>;
+
+  dex_files = runtime-&gt;GetOatFileManager().OpenDexFilesFromOat(sourceName.c_str(),
+                                                               class_loader,
+                                                               dex_elements,
+                                                               <span class="hljs-comment">/*out*/</span> &amp;oat_file,
+                                                               <span class="hljs-comment">/*out*/</span> &amp;error_msgs);
+
+...
+
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">nullptr</span>;
+  &#125;
+&#125;</code></pre></div>
+<p><code>openDexFileNative</code>主要处理dex文件，并生成<code>odex</code>到<code>optimizedDirectory</code>里</p>
+</li>
+<li><p>openDexFilesFromOat</p>
+<p>//TODO 版本差异较大</p>
+<div class="hljs"><pre><code class="hljs c"><span class="hljs-comment">//art/runtime/oat_file_manager.cc</span>
+
+<span class="hljs-built_in">std</span>::<span class="hljs-built_in">vector</span>&lt;<span class="hljs-built_in">std</span>::<span class="hljs-built_in">unique_ptr</span>&lt;<span class="hljs-keyword">const</span> DexFile&gt;&gt; OatFileManager::OpenDexFilesFromOat(
+    <span class="hljs-keyword">const</span> <span class="hljs-keyword">char</span>* dex_location,
+    <span class="hljs-keyword">const</span> <span class="hljs-keyword">char</span>* oat_location,
+    jobject class_loader,
+    jobjectArray dex_elements,
+    <span class="hljs-keyword">const</span> OatFile** out_oat_file,
+    <span class="hljs-built_in">std</span>::<span class="hljs-built_in">vector</span>&lt;<span class="hljs-built_in">std</span>::<span class="hljs-built_in">string</span>&gt;* error_msgs) &#123;
+  
+&#125;
+
+oat_file_manager.cc
+  
+oat_file_assistant.cc</code></pre></div>
+</li>
+</ul>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/Dex加载过程.png" srcset="/img/loading.gif" class="full-image" alt="Dex加载过程" title="Dex加载过程"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<h2 id="Dex中的类文件加载"><a href="#Dex中的类文件加载" class="headerlink" title="Dex中的类文件加载"></a>Dex中的类文件加载</h2><blockquote>
+<p>Dex文件是由多个Class类文件组成，Android加载类需要从Dex中找到对应类进行加载，实际<code>从DexFile找到Class</code></p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">BaseDexClassLoader</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">ClassLoader</span> </span>&#123;
+ ...
+   <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> DexPathList pathList;
+   
+     <span class="hljs-meta">@Override</span>
+    <span class="hljs-keyword">protected</span> Class&lt;?&gt; findClass(String name) <span class="hljs-keyword">throws</span> ClassNotFoundException &#123;
+        <span class="hljs-comment">// First, check whether the class is present in our shared libraries.</span>
+        <span class="hljs-comment">//加载需要使用的Native库</span>
+        <span class="hljs-keyword">if</span> (sharedLibraryLoaders != <span class="hljs-keyword">null</span>) &#123;
+            <span class="hljs-keyword">for</span> (ClassLoader loader : sharedLibraryLoaders) &#123;
+                <span class="hljs-keyword">try</span> &#123;
+                    <span class="hljs-keyword">return</span> loader.loadClass(name);
+                &#125; <span class="hljs-keyword">catch</span> (ClassNotFoundException ignored) &#123;
+                &#125;
+            &#125;
+        &#125;
+        <span class="hljs-comment">// Check whether the class in question is present in the dexPath that</span>
+        <span class="hljs-comment">// this classloader operates on.</span>
+        List&lt;Throwable&gt; suppressedExceptions = <span class="hljs-keyword">new</span> ArrayList&lt;Throwable&gt;();
+        <span class="hljs-comment">// 找寻Dex中对应class</span>
+        Class c = pathList.findClass(name, suppressedExceptions);
+        <span class="hljs-keyword">if</span> (c == <span class="hljs-keyword">null</span>) &#123;
+            ClassNotFoundException cnfe = <span class="hljs-keyword">new</span> ClassNotFoundException(
+                    <span class="hljs-string">"Didn't find class \""</span> + name + <span class="hljs-string">"\" on path: "</span> + pathList);
+            <span class="hljs-keyword">for</span> (Throwable t : suppressedExceptions) &#123;
+                cnfe.addSuppressed(t);
+            &#125;
+            <span class="hljs-keyword">throw</span> cnfe;
+        &#125;
+        <span class="hljs-keyword">return</span> c;
+    &#125;
+
+&#125;</code></pre></div>
+<ul>
+<li><p>DexPathList - findClass</p>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-keyword">public</span> Class&lt;?&gt; findClass(String name, List&lt;Throwable&gt; suppressed) &#123;
+    <span class="hljs-keyword">for</span> (Element element : dexElements) &#123;
+        Class&lt;?&gt; clazz = element.findClass(name, definingContext, suppressed);
+        <span class="hljs-keyword">if</span> (clazz != <span class="hljs-keyword">null</span>) &#123;
+            <span class="hljs-keyword">return</span> clazz;
+        &#125;
+    &#125;
+  
+    <span class="hljs-keyword">if</span> (dexElementsSuppressedExceptions != <span class="hljs-keyword">null</span>) &#123;
+        suppressed.addAll(Arrays.asList(dexElementsSuppressedExceptions));
+    &#125;
+    <span class="hljs-keyword">return</span> <span class="hljs-keyword">null</span>;
+&#125;</code></pre></div>
+<p><code>findClass</code>为了找到Dex文件中的对应类</p>
+<blockquote>
+<p><code>dexElements</code>是由<code>Dex</code>文件加载后得到的<code>DexFile</code>组装成的<code>Element</code>集合形成的。</p>
+<p><code>findClass</code>实质是去遍历已加载完成的<code>Dex</code>文件中的Class，只要找到对应的Class就会结束循环。</p>
+<p><strong>当两个相同的类出现在不同的Dex时，系统会优先处理排在前面的Dex文件中的类，后面出现的就不会被加载。</strong></p>
+<p>热修复的核心逻辑：<code>将需要修复的类所打包的Dex文件插入到dexElements的首位</code>。</p>
+</blockquote>
+</li>
+</ul>
+<ul>
+<li><p>Element - findClass</p>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-keyword">public</span> Class&lt;?&gt; findClass(String name, ClassLoader definingContext,
+         List&lt;Throwable&gt; suppressed) &#123;
+     <span class="hljs-keyword">return</span> dexFile != <span class="hljs-keyword">null</span> ? dexFile.loadClassBinaryName(name, definingContext, suppressed)
+             : <span class="hljs-keyword">null</span>;
+ &#125;</code></pre></div>
+</li>
+</ul>
+<ul>
+<li><p>DexFile - loadClassBinaryName</p>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> Class <span class="hljs-title">loadClassBinaryName</span><span class="hljs-params">(String name, ClassLoader loader, List&lt;Throwable&gt; suppressed)</span> </span>&#123;
+    <span class="hljs-keyword">return</span> defineClass(name, loader, mCookie, <span class="hljs-keyword">this</span>, suppressed);
+&#125;
+  
+<span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> Class <span class="hljs-title">defineClass</span><span class="hljs-params">(String name, ClassLoader loader, Object cookie,
+                                 DexFile dexFile, List&lt;Throwable&gt; suppressed)</span> </span>&#123;
+    Class result = <span class="hljs-keyword">null</span>;
+    <span class="hljs-keyword">try</span> &#123;
+        <span class="hljs-comment">//定义Class</span>
+        result = defineClassNative(name, loader, cookie, dexFile);
+    &#125; <span class="hljs-keyword">catch</span> (NoClassDefFoundError e) &#123;
+        <span class="hljs-keyword">if</span> (suppressed != <span class="hljs-keyword">null</span>) &#123;
+            suppressed.add(e);
+        &#125;
+    &#125; <span class="hljs-keyword">catch</span> (ClassNotFoundException e) &#123;
+        <span class="hljs-keyword">if</span> (suppressed != <span class="hljs-keyword">null</span>) &#123;
+            suppressed.add(e);
+        &#125;
+    &#125;
+    <span class="hljs-keyword">return</span> result;
+&#125;</code></pre></div>
+</li>
+</ul>
+<ul>
+<li><p>Dalvik_system_DexFile.cc - DexFile_defineClassNative</p>
+<div class="hljs"><pre><code class="hljs c">static jclass DexFile_defineClassNative(JNIEnv* env,
+                                        jclass,
+                                        jstring javaName,
+                                        jobject javaLoader,
+                                        jobject cookie,
+                                        jobject dexFile) &#123;
+  std::vector&lt;const DexFile*&gt; dex_files;
+  const OatFile* oat_file;
+  if (!ConvertJavaArrayToDexFiles(env, cookie, /*out*/ dex_files, /*out*/ oat_file)) &#123;
+    VLOG(class_linker) &lt;&lt; "Failed to find dex_file";
+    DCHECK(env-&gt;ExceptionCheck());
+    return nullptr;
+  &#125;
+
+  ScopedUtfChars class_name(env, javaName);
+  if (class_name.c_str() == nullptr) &#123;
+    VLOG(class_linker) &lt;&lt; "Failed to find class_name";
+    return nullptr;
+  &#125;
+  const std::string descriptor(DotToDescriptor(class_name.c_str()));
+  const size_t hash(ComputeModifiedUtf8Hash(descriptor.c_str()));
+  for (auto&amp; dex_file : dex_files) &#123;
+    const DexFile::ClassDef* dex_class_def =
+        OatDexFile::FindClassDef(*dex_file, descriptor.c_str(), hash);
+    if (dex_class_def != nullptr) &#123;
+      ScopedObjectAccess soa(env);
+      ClassLinker* class_linker = Runtime::Current()-&gt;GetClassLinker();
+			...
+        return nullptr;
+      &#125;
+      //创建目标类对象
+      ObjPtr&lt;mirror::Class&gt; result = class_linker-&gt;DefineClass(soa.Self(),
+                                                               descriptor.c_str(),
+                                                               hash,
+                                                               class_loader,
+                                                               *dex_file,
+                                                               *dex_class_def);
+      // Add the used dex file. This only required for the DexFile.loadClass API since normal
+      // class loaders already keep their dex files live.
+      class_linker-&gt;InsertDexFileInToClassLoader(soa.Decode&lt;mirror::Object&gt;(dexFile),
+                                                 class_loader.Get());
+      if (result != nullptr) &#123;
+        VLOG(class_linker) &lt;&lt; "DexFile_defineClassNative returning " &lt;&lt; result
+                           &lt;&lt; " for " &lt;&lt; class_name.c_str();
+        return soa.AddLocalReference&lt;jclass&gt;(result);
+      &#125;
+    &#125;
+  &#125;
+  VLOG(class_linker) &lt;&lt; "Failed to find dex_class_def " &lt;&lt; class_name.c_str();
+  return nullptr;
+&#125;</code></pre></div>
+</li>
+<li><p>Class_linker.cc  - DefineClass</p>
+<div class="hljs"><pre><code class="hljs c">mirror::Class* ClassLinker::DefineClass(Thread* self,
+                                        <span class="hljs-keyword">const</span> <span class="hljs-keyword">char</span>* descriptor,
+                                        <span class="hljs-keyword">size_t</span> hash,
+                                        Handle&lt;mirror::ClassLoader&gt; class_loader,
+                                        <span class="hljs-keyword">const</span> DexFile&amp; dex_file,
+                                        <span class="hljs-keyword">const</span> DexFile::ClassDef&amp; dex_class_def) &#123;
+  
+  
+&#125;</code></pre></div>
+</li>
+</ul>
+<ul>
+<li>ss</li>
+</ul>
+<h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="http://gityuan.com/2017/03/19/android-classloader/" target="_blank" rel="noopener">Android类加载器ClassLoader</a></p>
+<p><a href="cs.android.com">相关源码</a></p>
+<p><a href="https://juejin.im/post/5d6a79de5188256c3920b8f7#heading-4" target="_blank" rel="noopener">谈谈 Android 中的 PathClassLoader 和 DexClassLoader</a></p>
+
             </article>
             <hr>
             <div>
               <div class="post-metas mb-3">
                 
+                
+                  <div class="post-meta">
+                    <i class="iconfont icon-tags"></i>
+                    
+                      <a class="hover-with-bg" href="/tags/Android/">Android</a>
+                    
+                  </div>
                 
               </div>
               
