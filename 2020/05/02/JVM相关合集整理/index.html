@@ -131,7 +131,7 @@
                   
                   <span class="post-meta mr-2">
                     <i class="iconfont icon-chart"></i>
-                    9k 字
+                    10.6k 字
                   </span>
                 
 
@@ -141,7 +141,7 @@
                       <i class="iconfont icon-clock-fill"></i>
                     
                     
-                    101
+                    120
                      分钟
                   </span>
                 
@@ -940,7 +940,160 @@ Child Constructor</code></pre></div>
 &#125;</code></pre></div>
 <p>可以支持<code>BaseDexClassLoader</code>配置的所有参数。</p>
 <h3 id="Android类加载过程"><a href="#Android类加载过程" class="headerlink" title="Android类加载过程"></a>Android类加载过程</h3><a href="/2019/12/19/Android-Art类加载过程/" title="Android-Art类加载过程">Android-Art类加载过程</a>
-<h4 id="热修复领域的应用"><a href="#热修复领域的应用" class="headerlink" title="热修复领域的应用"></a>热修复领域的应用</h4><h2 id="JVM内存分配策略"><a href="#JVM内存分配策略" class="headerlink" title="JVM内存分配策略"></a>JVM内存分配策略</h2><h2 id="JVM垃圾回收机制-GC"><a href="#JVM垃圾回收机制-GC" class="headerlink" title="JVM垃圾回收机制(GC)"></a>JVM垃圾回收机制(GC)</h2><h2 id="Java内存模型-JMM"><a href="#Java内存模型-JMM" class="headerlink" title="Java内存模型(JMM)"></a>Java内存模型(JMM)</h2><h2 id="Class文件结构-字节码"><a href="#Class文件结构-字节码" class="headerlink" title="Class文件结构(字节码)"></a>Class文件结构(字节码)</h2><h2 id="DVM-amp-ART-Android虚拟机"><a href="#DVM-amp-ART-Android虚拟机" class="headerlink" title="DVM&amp;ART(Android虚拟机)"></a>DVM&amp;ART(Android虚拟机)</h2><h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="https://cloud.tencent.com/developer/article/1450501" target="_blank" rel="noopener">彻底弄懂Java中的常量池</a></p>
+<h2 id="JVM垃圾回收机制-GC"><a href="#JVM垃圾回收机制-GC" class="headerlink" title="JVM垃圾回收机制(GC)"></a>JVM垃圾回收机制(GC)</h2><blockquote>
+<p>GC：自动管理回收不再引用的内存数据</p>
+<p>JVM内存运行时区域分为5部分，其中<code>程序计数器、虚拟机栈、本地方法栈</code>3个区域<strong>随线程生而生，随线程灭而灭</strong>，是不需要考虑内存回收的问题，内存自然会回收。<code>Java堆和方法区</code>不一样，只有在程序运行期间才知道创建哪些对象，这部分内存的分配和回收是动态的，主要在这两部分触发GC。</p>
+</blockquote>
+<h3 id="对象是否已死-什么是垃圾"><a href="#对象是否已死-什么是垃圾" class="headerlink" title="对象是否已死(什么是垃圾)"></a>对象是否已死(什么是<code>垃圾</code>)</h3><p>堆中几乎存放所有的对象实例，垃圾回收(GC)前的第一步是判断哪些对象已经死亡(不再被任何途径引用的对象)。</p>
+<h4 id="引用计数法"><a href="#引用计数法" class="headerlink" title="引用计数法"></a>引用计数法</h4><blockquote>
+<p>给对象添加一个引用计数器，每当有一个地方引用它时，计数器加1；引用失效，计数器减1；任何时候计数器为0的对象就是不可能在被使用的。</p>
+</blockquote>
+<p><code>引用计数法</code>虽然需要占用额外的内存空间来进行计数，但是<strong>原理简单，效率也高</strong>。</p>
+<p>但是主流的Java虚拟机里面都没有使用该方法，主要原因是<strong>必须配合大量额外处理才能保证正确的工作，例如无法解决对象之间相互循环引用的问题</strong>。</p>
+<h4 id="可达性分析算法"><a href="#可达性分析算法" class="headerlink" title="可达性分析算法"></a>可达性分析算法</h4><blockquote>
+<p>通过一系列称为<code>GC Roots</code>的根对象作为起始点，从这些节点开始搜索，搜索过程走过的路径称为<strong>引用链</strong>，如果一个对象到<code>GC Roots</code>没有任何引用链相连的话，则证明此对象是不可用的。</p>
+</blockquote>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/gc_reachability_analysis.png" srcset="/img/loading.gif" class="full-image" alt="可达性分析算法" title="可达性分析算法"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<p>可以作为<code>GC Roots</code>的对象类型：</p>
+<ul>
+<li>虚拟机栈中的引用对象(局部变量表)</li>
+<li>方法区中静态属性引用的对象(字符串常量池中的引用)，常量引用的对象</li>
+<li>本地方法栈中JNI所引用的对象</li>
+</ul>
+<h3 id="什么时候回收"><a href="#什么时候回收" class="headerlink" title="什么时候回收"></a>什么时候回收</h3><p>一般会在以下两种情况下触发GC</p>
+<ol>
+<li><code>Allocation Failure</code>：如果内存剩余可用空间不足导致对象内存分配失败，系统会触发一次GC</li>
+<li><code>System.gc()</code>：开发者可主动调用该API触发一次GC</li>
+</ol>
+<h3 id="四大引用类型"><a href="#四大引用类型" class="headerlink" title="四大引用类型"></a>四大引用类型</h3><table>
+<thead>
+<tr>
+<th>引用类型</th>
+<th>GC时机</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>强引用</td>
+<td>不会被回收</td>
+<td>对象一般状态</td>
+</tr>
+<tr>
+<td>软引用</td>
+<td>内存不足时(即将OOM时)</td>
+<td>内存敏感的高速缓存</td>
+</tr>
+<tr>
+<td>弱引用</td>
+<td>触发GC时</td>
+<td>对象缓存</td>
+</tr>
+<tr>
+<td>虚引用</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="强引用Strong-Reference"><a href="#强引用Strong-Reference" class="headerlink" title="强引用Strong Reference"></a>强引用<code>Strong Reference</code></h4><blockquote>
+<p>在程序代码间普遍存在的引用赋值。<strong>无论何种情况，只要存在强引用关系，就永远不会被垃圾回收器回收。即使发生OOM。</strong></p>
+<p><strong>强引用也是造成Java内存泄露的原因之一。</strong></p>
+</blockquote>
+<p>对于一个普通的对象，如果没有其他的引用关系，若显式的将对象赋值为null，就可以认为该对象可以被回收。</p>
+<p><em>设置对象为null，不代表对象会被立即回收，具体回收时机需要看垃圾收集策略。</em></p>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">main</span><span class="hljs-params">(String[] args)</span></span>&#123;
+  Object o1 = <span class="hljs-keyword">new</span> Object();
+  Object o2 = o1;
+  o1= <span class="hljs-keyword">null</span>;
+  System.gc();
+  System.out.println(o1);  <span class="hljs-comment">//null</span>
+  System.out.println(o2);  <span class="hljs-comment">//java.lang.Object@XX</span>
+&#125;</code></pre></div>
+<h4 id="软引用Soft-Reference"><a href="#软引用Soft-Reference" class="headerlink" title="软引用Soft Reference"></a>软引用<code>Soft Reference</code></h4><blockquote>
+<p>描述一些还有用，但并未必需的对象。对于<code>软引用</code>关联的对象，在系统即将发生<code>OOM</code>之前，会把这些对象进行GC，如果GC完毕还没有充足空间，就抛出OOM异常。</p>
+<p><strong>实现内存敏感的高速缓存。</strong></p>
+<p><em>只有系统内存不足时才会被回收，其他情况下等效强引用。</em></p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">main</span><span class="hljs-params">(String[] args)</span></span>&#123;
+   Object o1 = <span class="hljs-keyword">new</span> Object();
+   SoftReference&lt;Object&gt; s1 = <span class="hljs-keyword">new</span> SoftReference&lt;Object&gt;(o1);
+   System.out.println(o1);
+   System.out.println(s1.get());
+
+   o1 = <span class="hljs-keyword">null</span>;
+   System.gc();
+
+   System.out.println(o1); <span class="hljs-comment">// null</span>
+   System.out.println(s1.get()); <span class="hljs-comment">//java.lang.Object@XX</span>
+&#125;
+
+<span class="hljs-comment">//JVM配置`-Xms5m -Xmx5m`</span>
+<span class="hljs-comment">//试图new一个大对象，使内存不足产生OOM，看软引用回收情况</span>
+...
+  <span class="hljs-keyword">byte</span>[] bytes = <span class="hljs-keyword">new</span> <span class="hljs-keyword">byte</span>[<span class="hljs-number">10</span>*<span class="hljs-number">1024</span>*<span class="hljs-number">1024</span>]；
+  ...
+  
+  此时会去试图回收软引用对象。</code></pre></div>
+<h4 id="弱引用Weak-Reference"><a href="#弱引用Weak-Reference" class="headerlink" title="弱引用Weak Reference"></a>弱引用<code>Weak Reference</code></h4><blockquote>
+<p>弱引用也是描述非必须对象，但强度比<code>软引用</code>更弱一些，被弱引用关联的对象只能生存在下一次GC前。</p>
+<p><strong>无论内存是否足够，弱引用关联的对象都会被回收。</strong></p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">main</span><span class="hljs-params">(String[] args)</span> </span>&#123;
+        Object o1 = <span class="hljs-keyword">new</span> Object();
+        WeakReference&lt;Object&gt; w1 = <span class="hljs-keyword">new</span> WeakReference&lt;Object&gt;(o1);
+
+        System.out.println(o1);
+        System.out.println(w1.get());
+
+        o1 = <span class="hljs-keyword">null</span>;
+        System.gc();
+
+        System.out.println(o1); <span class="hljs-comment">//null</span>
+        System.out.println(w1.get()); <span class="hljs-comment">//null</span>
+    &#125;</code></pre></div>
+<p><code>WeakHashMap</code>就是<code>弱引用</code>的一个使用实例</p>
+<p>其中<code>key</code>为弱引用类型，当key不在引用时，对应的key/value也会被移除</p>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">main</span><span class="hljs-params">(String[] args)</span> </span>&#123;
+    WeakHashMap&lt;String,String&gt; weakHashMap = <span class="hljs-keyword">new</span> WeakHashMap&lt;&gt;();
+    String key = <span class="hljs-keyword">new</span> String(<span class="hljs-string">"111"</span>);
+    <span class="hljs-comment">//String key ="111";</span>
+
+    String value= <span class="hljs-string">"value"</span>;
+
+    weakHashMap.put(key,value);
+    System.err.println(weakHashMap);<span class="hljs-comment">// &#123;111=value&#125;</span>
+
+    key = <span class="hljs-keyword">null</span>;
+    System.gc();
+    System.err.println(key); <span class="hljs-comment">//null</span>
+    System.err.println(weakHashMap); <span class="hljs-comment">//&#123;&#125;</span>
+&#125;</code></pre></div>
+<p>当使用<code>String key = “111”</code>时，本质引用的对象已经变成<code>字符串常量池</code>中的对象，这部分的回收无法被GC处理。也导致了<code>weakHashMap</code>对象不为空。</p>
+<h4 id="虚引用Phantom-Reference"><a href="#虚引用Phantom-Reference" class="headerlink" title="虚引用Phantom Reference"></a>虚引用<code>Phantom Reference</code></h4><blockquote>
+<p>最弱的一种引用关系，一个对象是否有虚引用的存在，完全不会对生存时间构成影响，也无法通过<code>虚引用</code>来取得一个对象实例。</p>
+<p>主要用于<code>跟踪对象垃圾回收的状态，在这个对象被回收时可以收到一个系统通知或者后续添加进一步的处理。</code></p>
+</blockquote>
+<p><code>虚引用</code>必须与<code>引用队列</code>联合使用，当准备回收一个对象时，发现对象存在<code>虚引用</code>，就会在回收对象之前把<code>虚引用</code>加入关联的<code>引用队列</code>中，可以根据<code>引用队列</code>是否已加入<code>虚引用</code>来判断被引用的对象是否要被回收。</p>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">main</span><span class="hljs-params">(String[] args)</span> <span class="hljs-keyword">throws</span> InterruptedException </span>&#123;
+        Object o1 = <span class="hljs-keyword">new</span> Object();
+        ReferenceQueue&lt;Object&gt; referenceQueue = <span class="hljs-keyword">new</span> ReferenceQueue&lt;Object&gt;();
+        PhantomReference&lt;Object&gt; phantomReference = <span class="hljs-keyword">new</span> PhantomReference&lt;Object&gt;(o1,referenceQueue);
+
+        System.out.println(o1); <span class="hljs-comment">//java.lang.Object@xxx</span>
+        System.out.println(referenceQueue.poll()); <span class="hljs-comment">//null</span>
+        System.out.println(phantomReference.get()); <span class="hljs-comment">//null</span>
+
+        o1 = <span class="hljs-keyword">null</span>;
+        System.gc();
+        Thread.sleep(<span class="hljs-number">3000</span>);
+
+        System.out.println(o1); <span class="hljs-comment">//null </span>
+        System.out.println(referenceQueue.poll()); <span class="hljs-comment">//引用队列中 java.lang.PhantomReference@xxx</span>
+        System.out.println(phantomReference.get());<span class="hljs-comment">//null</span>
+    &#125;</code></pre></div>
+<h4 id="引用队列Reference-Queue"><a href="#引用队列Reference-Queue" class="headerlink" title="引用队列Reference Queue"></a>引用队列<code>Reference Queue</code></h4><blockquote>
+</blockquote>
+<h2 id="JVM内存分配策略"><a href="#JVM内存分配策略" class="headerlink" title="JVM内存分配策略"></a>JVM内存分配策略</h2><h2 id="Java内存模型-JMM"><a href="#Java内存模型-JMM" class="headerlink" title="Java内存模型(JMM)"></a>Java内存模型(JMM)</h2><h2 id="Class文件结构-字节码"><a href="#Class文件结构-字节码" class="headerlink" title="Class文件结构(字节码)"></a>Class文件结构(字节码)</h2><h2 id="DVM-amp-ART-Android虚拟机"><a href="#DVM-amp-ART-Android虚拟机" class="headerlink" title="DVM&amp;ART(Android虚拟机)"></a>DVM&amp;ART(Android虚拟机)</h2><h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="https://cloud.tencent.com/developer/article/1450501" target="_blank" rel="noopener">彻底弄懂Java中的常量池</a></p>
 <p><a href="https://www.cnblogs.com/gxyandwmm/p/9495923.html" target="_blank" rel="noopener">字符串常量池相关问题</a></p>
 
             </article>

@@ -131,7 +131,7 @@
                   
                   <span class="post-meta mr-2">
                     <i class="iconfont icon-chart"></i>
-                    1.5k 字
+                    1.8k 字
                   </span>
                 
 
@@ -141,7 +141,7 @@
                       <i class="iconfont icon-clock-fill"></i>
                     
                     
-                    25
+                    28
                      分钟
                   </span>
                 
@@ -500,15 +500,33 @@ oat_file_assistant.cc</code></pre></div>
                                         Handle&lt;mirror::ClassLoader&gt; class_loader,
                                         <span class="hljs-keyword">const</span> DexFile&amp; dex_file,
                                         <span class="hljs-keyword">const</span> DexFile::ClassDef&amp; dex_class_def) &#123;
-  
-  
+  ...
+  <span class="hljs-keyword">if</span> (klass == <span class="hljs-literal">nullptr</span>) &#123;
+    <span class="hljs-comment">//加载类实例</span>
+    klass.Assign(AllocClass(self, SizeOfClassWithoutEmbeddedTables(dex_file, dex_class_def)));
+  &#125;
+  ObjPtr&lt;mirror::DexCache&gt; dex_cache = RegisterDexFile(*new_dex_file, class_loader.Get());
+  <span class="hljs-keyword">if</span> (dex_cache == <span class="hljs-literal">nullptr</span>) &#123;
+    self-&gt;AssertPendingException();
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">nullptr</span>;
+  &#125;
+  <span class="hljs-comment">//设置Dex缓存，后续数据从缓存中读取</span>
+  klass-&gt;SetDexCache(dex_cache);
+  <span class="hljs-comment">//设置Class信息</span>
+  SetupClass(*new_dex_file, *new_class_def, klass, class_loader.Get());
+  <span class="hljs-comment">// 把 Class 插入 ClassLoader 的 class_table 中做一个缓存</span>
+  ObjPtr&lt;mirror::Class&gt; existing = InsertClass(descriptor, klass.Get(), hash);
+  <span class="hljs-comment">// 加载类属性</span>
+  LoadClass(self, *new_dex_file, *new_class_def, klass);
+
 &#125;</code></pre></div>
+<p>每当一个类被加载时，ART运行时都会检查该类所属的Dex文件是否已经关联一个<code>dex_cache</code>。</p>
+<p>如果尚未关联，就会创建一个<code>dex_cache</code>与Dex文件建立关联，建立关联后，通过调用<code>RegisterDexFile</code>注册到aRT运行时中去，后续可以直接使用。</p>
+<p><code>dex_cache</code>用来缓存包含在一个Dex文件里的<code>类型(Type)、方法(Method)、域(Field)、字符串(String)和静态存储区(Static Storage)</code>等信息。</p>
+<p><code>通过dex_cache间接调用类方法，可以做到延时解析类方法(只有方法第一次调用才会被解析，可以避免解析永远不调用的方法)；一个类方法只会被解析一次，解析的结果存在dex_cache中，下次调用时可以直接从dex_cache进行调用。</code></p>
 </li>
 </ul>
-<ul>
-<li>ss</li>
-</ul>
-<h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="http://gityuan.com/2017/03/19/android-classloader/" target="_blank" rel="noopener">Android类加载器ClassLoader</a></p>
+<h3 id="加载类成员"><a href="#加载类成员" class="headerlink" title="加载类成员"></a>加载类成员</h3><h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="http://gityuan.com/2017/03/19/android-classloader/" target="_blank" rel="noopener">Android类加载器ClassLoader</a></p>
 <p><a href="cs.android.com">相关源码</a></p>
 <p><a href="https://juejin.im/post/5d6a79de5188256c3920b8f7#heading-4" target="_blank" rel="noopener">谈谈 Android 中的 PathClassLoader 和 DexClassLoader</a></p>
 
