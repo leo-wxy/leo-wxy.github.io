@@ -131,7 +131,7 @@
                   
                   <span class="post-meta mr-2">
                     <i class="iconfont icon-chart"></i>
-                    10.6k 字
+                    11.3k 字
                   </span>
                 
 
@@ -141,7 +141,7 @@
                       <i class="iconfont icon-clock-fill"></i>
                     
                     
-                    120
+                    128
                      分钟
                   </span>
                 
@@ -965,7 +965,7 @@ Child Constructor</code></pre></div>
 <li><code>Allocation Failure</code>：如果内存剩余可用空间不足导致对象内存分配失败，系统会触发一次GC</li>
 <li><code>System.gc()</code>：开发者可主动调用该API触发一次GC</li>
 </ol>
-<h3 id="四大引用类型"><a href="#四大引用类型" class="headerlink" title="四大引用类型"></a>四大引用类型</h3><table>
+<h3 id="四大引用类型-Java堆"><a href="#四大引用类型-Java堆" class="headerlink" title="四大引用类型(Java堆)"></a>四大引用类型(Java堆)</h3><table>
 <thead>
 <tr>
 <th>引用类型</th>
@@ -1092,9 +1092,55 @@ Child Constructor</code></pre></div>
         System.out.println(phantomReference.get());<span class="hljs-comment">//null</span>
     &#125;</code></pre></div>
 <h4 id="引用队列Reference-Queue"><a href="#引用队列Reference-Queue" class="headerlink" title="引用队列Reference Queue"></a>引用队列<code>Reference Queue</code></h4><blockquote>
+<p>配合引用工作的，当GC准备回收一个对象时，如果发现对象被<code>软引用或弱引用或虚引用</code>包装，就会在回收对象前将引用加入到<code>引用队列</code>中。</p>
+<p><strong>如果一个引用(软引用、弱引用、虚引用)存在引用队列中，则表示该引用指向的对象已被回收。</strong></p>
 </blockquote>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">main</span><span class="hljs-params">(String[] args)</span> </span>&#123;
+    ReferenceQueue&lt;String&gt; referenceQueue = <span class="hljs-keyword">new</span> ReferenceQueue&lt;&gt;();
+    String s = <span class="hljs-keyword">new</span> String(<span class="hljs-string">"11"</span>);
+    WeakReference&lt;String&gt; weakReference = <span class="hljs-keyword">new</span> WeakReference&lt;String&gt;(s,referenceQueue);
+    s= <span class="hljs-keyword">null</span>;
+    System.gc();
+    System.err.println(s); <span class="hljs-comment">//null</span>
+    <span class="hljs-comment">//被回收了对象</span>
+    System.err.println(weakReference.isEnqueued()); <span class="hljs-comment">//true</span>
+    System.err.println(referenceQueue.poll()); <span class="hljs-comment">//java.lang.ref.WeakReference@5e481248</span>
+&#125;</code></pre></div>
+<p><code>ReferenceQueue</code>是一个先进先出的队列。</p>
+<h4 id="引用-Reference"><a href="#引用-Reference" class="headerlink" title="引用 Reference"></a>引用 <code>Reference</code></h4><p>上面的<code>弱引用、软引用、虚引用</code>都是<code>java.lang.ref.Reference</code>的直接子类。</p>
+<p><code>Reference</code>主要存在四种状态</p>
+<ul>
+<li><p>Active</p>
+<p>新创建的实例为<code>Active</code>状态</p>
+</li>
+<li><p>Pending</p>
+<p>当实例等待进入<code>引用队列</code>时，处于<code>Pending</code>状态。未注册<code>引用队列</code>时永远不会处于此状态</p>
+</li>
+<li><p>Enqueued</p>
+<p>当实例进入<code>引用队列</code>时，处于<code>Enqueued</code>状态。未注册<code>引用队列</code>时永远不会处于此状态</p>
+</li>
+<li><p>Inactive</p>
+<p>该引用实例指向的实际对象一定已被回收。引用实例未注册<code>引用队列</code>直接从<code>Active</code>状态进入到<code>Inactive</code>状态。</p>
+</li>
+</ul>
+<h4 id="使用实例"><a href="#使用实例" class="headerlink" title="使用实例"></a>使用实例</h4><p>例如<code>Leakcanary</code>，内部主要原理就是：<code>弱引用+引用队列</code>。</p>
+<p>在一个Activity执行完<code>onDestroy()</code>后，用<code>WeakReference</code>引用<code>Activity</code>，再将引用对象与<code>ReferenceQueue</code>关联。这时再从<code>ReferenceQueue</code>中查看是否存在该弱引用对象</p>
+<p>如果存在，执行一次手动GC，再次移除引用，如果弱引用不存在，则这次执行结束。</p>
+<p>如果不存在，执行一次手动GC，再次查看是否存在弱引用对象，如果不存在则表示已发生内存泄露。</p>
+<h3 id="回收方法区"><a href="#回收方法区" class="headerlink" title="回收方法区"></a>回收方法区</h3><blockquote>
+<p>方法区的GC性价比比较低，方法区的回收条件比较苛刻，比较少用。</p>
+</blockquote>
+<p>方法区的垃圾收集主要回收两部分内容：</p>
+<h4 id="废弃常量"><a href="#废弃常量" class="headerlink" title="废弃常量"></a>废弃常量</h4><p>如果常量池中存在字符串<code>wxy</code>，但是当前没有任何String对象引用该字符串常量。就表示了当前这个常量处于废弃状态，当发生内存回收的时候而且有必要进行方法区回收，就会清理<code>wxy</code>出常量池。</p>
+<h4 id="无用类"><a href="#无用类" class="headerlink" title="无用类"></a>无用类</h4><p>需要同时满足以下三个条件：</p>
+<ul>
+<li>该类所有的实例都已被回收，Java堆中已不存在该类的任何实例</li>
+<li>加载该类的类加载器已被回收，所以必须是<strong>自定义加载器去加载</strong></li>
+<li>该类对应的<code>java.lang.Class</code>对象没有在任何地方被引用，也无法在任何地方被反射访问。</li>
+</ul>
 <h2 id="JVM内存分配策略"><a href="#JVM内存分配策略" class="headerlink" title="JVM内存分配策略"></a>JVM内存分配策略</h2><h2 id="Java内存模型-JMM"><a href="#Java内存模型-JMM" class="headerlink" title="Java内存模型(JMM)"></a>Java内存模型(JMM)</h2><h2 id="Class文件结构-字节码"><a href="#Class文件结构-字节码" class="headerlink" title="Class文件结构(字节码)"></a>Class文件结构(字节码)</h2><h2 id="DVM-amp-ART-Android虚拟机"><a href="#DVM-amp-ART-Android虚拟机" class="headerlink" title="DVM&amp;ART(Android虚拟机)"></a>DVM&amp;ART(Android虚拟机)</h2><h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="https://cloud.tencent.com/developer/article/1450501" target="_blank" rel="noopener">彻底弄懂Java中的常量池</a></p>
 <p><a href="https://www.cnblogs.com/gxyandwmm/p/9495923.html" target="_blank" rel="noopener">字符串常量池相关问题</a></p>
+<p><a href="https://juejin.im/post/5ec73c99f265da770c0ee3b1#heading-8" target="_blank" rel="noopener">Java四大引用</a></p>
 
             </article>
             <hr>
