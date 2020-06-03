@@ -131,7 +131,7 @@
                   
                   <span class="post-meta mr-2">
                     <i class="iconfont icon-chart"></i>
-                    11.3k 字
+                    11.9k 字
                   </span>
                 
 
@@ -141,7 +141,7 @@
                       <i class="iconfont icon-clock-fill"></i>
                     
                     
-                    128
+                    134
                      分钟
                   </span>
                 
@@ -1138,7 +1138,67 @@ Child Constructor</code></pre></div>
 <li>加载该类的类加载器已被回收，所以必须是<strong>自定义加载器去加载</strong></li>
 <li>该类对应的<code>java.lang.Class</code>对象没有在任何地方被引用，也无法在任何地方被反射访问。</li>
 </ul>
-<h2 id="JVM内存分配策略"><a href="#JVM内存分配策略" class="headerlink" title="JVM内存分配策略"></a>JVM内存分配策略</h2><h2 id="Java内存模型-JMM"><a href="#Java内存模型-JMM" class="headerlink" title="Java内存模型(JMM)"></a>Java内存模型(JMM)</h2><h2 id="Class文件结构-字节码"><a href="#Class文件结构-字节码" class="headerlink" title="Class文件结构(字节码)"></a>Class文件结构(字节码)</h2><h2 id="DVM-amp-ART-Android虚拟机"><a href="#DVM-amp-ART-Android虚拟机" class="headerlink" title="DVM&amp;ART(Android虚拟机)"></a>DVM&amp;ART(Android虚拟机)</h2><h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="https://cloud.tencent.com/developer/article/1450501" target="_blank" rel="noopener">彻底弄懂Java中的常量池</a></p>
+<p>GC可以对满足上述三个条件的无用类进行回收，但不是必然会进行回收。</p>
+<h3 id="垃圾收集算法"><a href="#垃圾收集算法" class="headerlink" title="垃圾收集算法"></a>垃圾收集算法</h3><h4 id="标记-清除算法"><a href="#标记-清除算法" class="headerlink" title="标记-清除算法"></a>标记-清除算法</h4><blockquote>
+<p>最基础的收集算法</p>
+</blockquote>
+<p>算法分为两个阶段：</p>
+<ul>
+<li><p>标记(Mark)</p>
+<p><code>标记所有需要回收的对象</code>。找到内存中所有的GC Root对象，然后找到与上述对象没有关联的对象(<code>需要回收的垃圾</code>)。</p>
+</li>
+<li><p>清除(Sweep)</p>
+<p><code>回收掉所有被标记的对象</code>。</p>
+</li>
+</ul>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/gc_mark_sweep.png " srcset="/img/loading.gif" class="full-image" alt="标记-清除算法" title="标记-清除算法"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<p>优点：</p>
+<ul>
+<li>实现简单，不需要移动对象</li>
+</ul>
+<p>缺点：</p>
+<ul>
+<li><code>执行效率不稳定</code>。如果存在大部分需要回收的对象，导致标记、清除两个动作执行效率降低。</li>
+<li><code>内存碎片问题</code>。清除过程后会产生大量不连续的内存碎片，导致下次分配大对象时没有连续内存导致再次触发GC。</li>
+</ul>
+<h4 id="复制算法"><a href="#复制算法" class="headerlink" title="复制算法"></a>复制算法</h4><p>将可用内存分为大小相等的两块，每次只使用其中的一块。当这一块的内存用完了，将剩下的对象复制到另一块内存上。然后再清理已使用过的另一块内存，完成GC。</p>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/gc_copying.png" srcset="/img/loading.gif" class="full-image" alt="整理算法" title="整理算法"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<p>优点：</p>
+<ul>
+<li>按顺序分配内存即可，实现简单、运行高效，不用考虑内存碎片</li>
+</ul>
+<p>缺点：</p>
+<ul>
+<li><code>可用内存减少一半</code>。对象存活率较高时会频繁进行复制。</li>
+</ul>
+<h4 id="标记-整理算法"><a href="#标记-整理算法" class="headerlink" title="标记-整理算法"></a>标记-整理算法</h4><blockquote>
+<p><code>标记-清除算法</code>的升级版</p>
+</blockquote>
+<p>算法分为两个阶段：</p>
+<ul>
+<li><p>标记(Mark)</p>
+<p><code>标记所有需要回收的对象</code>。找到内存中所有的GC Root对象，然后找到与上述对象没有关联的对象(<code>需要回收的垃圾</code>)。</p>
+</li>
+<li><p>整理(Compact)</p>
+<p><code>移动剩余存活对象到内存的某一端</code>。然后直接清理边界外的内存对象。</p>
+</li>
+</ul>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/gc_mark_compact.png" srcset="/img/loading.gif" class="full-image" alt="标记-整理算法" title="标记-整理算法"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<p>优点：</p>
+<ul>
+<li>避免内存碎片的产生 <em>相比于标记-清除算法</em></li>
+<li>高效利用内存空间 <em>相比于复制算法</em></li>
+</ul>
+<p>缺点：</p>
+<ul>
+<li>移动对象的过程必须全程暂停用户应用程序(<strong>STW-Stop The World</strong>)，降低了效率。</li>
+</ul>
+<h4 id="分代收集理论"><a href="#分代收集理论" class="headerlink" title="*分代收集理论"></a>*分代收集理论</h4><blockquote>
+<p>主流JVM使用的垃圾收集算法</p>
+</blockquote>
+<p>根据对象存活的周期不同，把堆内存划分几块，一般分为<strong>新生代</strong>和<strong>老年代</strong>。根据不同年代的特点使用不同的垃圾收集算法。</p>
+<p><strong>对于新创建的对象会在<code>新生代</code>分配内存，此区域的对象生命周期一般较短。如果经过多次回收仍然存活下来，则将他们转移到<code>老年代</code>中。</strong></p>
+<h5 id="新生代"><a href="#新生代" class="headerlink" title="新生代"></a>新生代</h5><h5 id="老年代"><a href="#老年代" class="headerlink" title="老年代"></a>老年代</h5><h3 id="垃圾收集器"><a href="#垃圾收集器" class="headerlink" title="垃圾收集器"></a>垃圾收集器</h3><h2 id="JVM内存分配策略"><a href="#JVM内存分配策略" class="headerlink" title="JVM内存分配策略"></a>JVM内存分配策略</h2><h2 id="Java内存模型-JMM"><a href="#Java内存模型-JMM" class="headerlink" title="Java内存模型(JMM)"></a>Java内存模型(JMM)</h2><h2 id="Class文件结构-字节码"><a href="#Class文件结构-字节码" class="headerlink" title="Class文件结构(字节码)"></a>Class文件结构(字节码)</h2><h2 id="DVM-amp-ART-Android虚拟机"><a href="#DVM-amp-ART-Android虚拟机" class="headerlink" title="DVM&amp;ART(Android虚拟机)"></a>DVM&amp;ART(Android虚拟机)</h2><h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="https://cloud.tencent.com/developer/article/1450501" target="_blank" rel="noopener">彻底弄懂Java中的常量池</a></p>
 <p><a href="https://www.cnblogs.com/gxyandwmm/p/9495923.html" target="_blank" rel="noopener">字符串常量池相关问题</a></p>
 <p><a href="https://juejin.im/post/5ec73c99f265da770c0ee3b1#heading-8" target="_blank" rel="noopener">Java四大引用</a></p>
 
