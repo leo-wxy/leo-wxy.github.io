@@ -131,7 +131,7 @@
                   
                   <span class="post-meta mr-2">
                     <i class="iconfont icon-chart"></i>
-                    11.9k 字
+                    14.3k 字
                   </span>
                 
 
@@ -141,7 +141,7 @@
                       <i class="iconfont icon-clock-fill"></i>
                     
                     
-                    134
+                    159
                      分钟
                   </span>
                 
@@ -1198,9 +1198,177 @@ Child Constructor</code></pre></div>
 </blockquote>
 <p>根据对象存活的周期不同，把堆内存划分几块，一般分为<strong>新生代</strong>和<strong>老年代</strong>。根据不同年代的特点使用不同的垃圾收集算法。</p>
 <p><strong>对于新创建的对象会在<code>新生代</code>分配内存，此区域的对象生命周期一般较短。如果经过多次回收仍然存活下来，则将他们转移到<code>老年代</code>中。</strong></p>
-<h5 id="新生代"><a href="#新生代" class="headerlink" title="新生代"></a>新生代</h5><h5 id="老年代"><a href="#老年代" class="headerlink" title="老年代"></a>老年代</h5><h3 id="垃圾收集器"><a href="#垃圾收集器" class="headerlink" title="垃圾收集器"></a>垃圾收集器</h3><h2 id="JVM内存分配策略"><a href="#JVM内存分配策略" class="headerlink" title="JVM内存分配策略"></a>JVM内存分配策略</h2><h2 id="Java内存模型-JMM"><a href="#Java内存模型-JMM" class="headerlink" title="Java内存模型(JMM)"></a>Java内存模型(JMM)</h2><h2 id="Class文件结构-字节码"><a href="#Class文件结构-字节码" class="headerlink" title="Class文件结构(字节码)"></a>Class文件结构(字节码)</h2><h2 id="DVM-amp-ART-Android虚拟机"><a href="#DVM-amp-ART-Android虚拟机" class="headerlink" title="DVM&amp;ART(Android虚拟机)"></a>DVM&amp;ART(Android虚拟机)</h2><h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="https://cloud.tencent.com/developer/article/1450501" target="_blank" rel="noopener">彻底弄懂Java中的常量池</a></p>
+<h5 id="新生代"><a href="#新生代" class="headerlink" title="新生代"></a>新生代</h5><blockquote>
+<p>新生成的对象优先存放<code>新生代</code>，新生代对象朝生夕死，存活率很低，所以回收效率很高。</p>
+<p>新生代经常要进行一些复制操作，所以一般采用<strong>复制算法</strong>进行回收。</p>
+</blockquote>
+<p>新生代继续分为3部分：<code>Eden、From Survivor、To Survivor</code>。这三部分并非均分，而是按照<strong>8:1:1</strong>的比例进行划分。</p>
+<p>新生代GC过程如下：</p>
+<ol>
+<li>绝大多数新创建对象都会先存放在<code>Eden</code>区</li>
+<li>当<code>Eden</code>区满时，会执行一次GC(<strong>Minor GC</strong>)，清除<code>Eden</code>区的垃圾对象，将存活的对象复制到<code>From Survivor</code>区</li>
+<li>当<code>From Survivor</code>区满时，会执行一次<code>Minor GC</code>，将存活的对象复制到<code>To Survivor</code>区。<em>如果存在可以<code>晋升</code>的对象会直接放到<code>老年代</code>中。</em></li>
+<li>将<code>From Survivor</code>与<code>To Survivor</code>区域进行切换。<em>每次切换过程中即GC过后，对象的年龄+1，直到达到<code>晋升年龄阈值(一般为15)</code>之后，对象被放到老年代。——<code>长期存活的对象直接进入老年代</code></em></li>
+</ol>
+<p><code>晋升年龄阈值</code>：该值的大小影响着对象在<code>新生代</code>中的停留时间，可以通过<code>-XX:MaxTenuringThreshold</code>配置数值。</p>
+<h5 id="老年代"><a href="#老年代" class="headerlink" title="老年代"></a>老年代</h5><blockquote>
+<p>在新生代经历了N次(<code>晋升年龄阈值</code>)回收之后仍然存活的对象，就会放入<code>老年代</code>。</p>
+<p><code>老年代</code>的内存一般比<code>新生代</code>大(大概比例为2:1)，可以存放更多的对象。</p>
+<p><em>如果对象比较大(<code>升入老年代对象大小</code>)，并且新生代无法存放，则这个大对象会被直接分配<code>老年代</code>上。——<code>大对象直接进入老年代</code>。</em></p>
+<p><code>老年代</code>通常使用<code>标记-清除、标记-整理</code>算法进行GC。</p>
+</blockquote>
+<p><code>升入老年代对象大小</code>：如果新生代的对象需要分配一块较大连续内存空间才可以存放，且该大小大于该值，则直接在<code>老年代</code>进行内存分配，可以通过<code>-XX:PretenureSizeThreshold</code>配置数值。</p>
+<p><code>老年代</code>发生的GC称为<code>Major GC</code>，针对<code>老年代</code>的GC操作，通常伴随一次<code>Minor GC</code></p>
+<p>在某些虚拟机中，还有<code>Full GC</code>，针对<code>新生代与老年代</code>的GC，回收整个堆的内存。发生时，会导致长时间停顿。</p>
+<p><br></p>
+<p><code>老年代</code>有时候会引用<code>新生代</code>对象，当执行<code>Minor GC</code>时可能就需要查询<code>老年代</code>的引用情况。导致GC过程低效。</p>
+<p>所以老年代会维护一个<code>Card table</code>，记录老年代所引用的新生代对象信息，在发生<code>Minor GC</code>时，只要检查<code>Card table</code>即可。</p>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/gc_java_heap_memory.png" srcset="/img/loading.gif" class="full-image" alt="Java堆内存" title="Java堆内存"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<h3 id="垃圾收集器"><a href="#垃圾收集器" class="headerlink" title="垃圾收集器"></a>垃圾收集器</h3><span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/gc_collectors.png" srcset="/img/loading.gif" class="full-image" alt="垃圾收集器" title="垃圾收集器"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<h4 id="Serial收集器"><a href="#Serial收集器" class="headerlink" title="Serial收集器"></a>Serial收集器</h4><blockquote>
+<p><strong>最基本，发展历史最悠久的收集器。</strong></p>
+<p>是一个<code>单线程</code>工作的收集器，只会使用一条垃圾收集线程去完成垃圾收集工作，更重要的是进行垃圾回收时，必须停止其他所有工作线程(<code>Stop The World</code>)，直到收集结束。</p>
+</blockquote>
+<p><strong>新生代采用<code>复制算法</code>，老年代采用<code>标记-整理算法</code>。</strong></p>
+<p>优点：</p>
+<ul>
+<li>简单而高效</li>
+<li>没有线程交互的开销，可以获得最高的单线程收集效率</li>
+</ul>
+<p>缺点：</p>
+<ul>
+<li>Stop The World可能时间过长</li>
+</ul>
+<h4 id="ParNew收集器"><a href="#ParNew收集器" class="headerlink" title="ParNew收集器"></a>ParNew收集器</h4><blockquote>
+<p>其实就是<code>Serial收集器</code>的多线程版本，不同的就是使用多线程进行垃圾收集</p>
+</blockquote>
+<p><strong>新生代采用<code>复制算法</code>，老年代采用<code>标记-整理算法</code>。</strong></p>
+<p>除了<code>Serial收集器</code>以外，只有它可以和<code>CMS收集器</code>配合工作。</p>
+<p>默认开启的收集线程数与CPU数一致。</p>
+<h4 id="CMS收集器"><a href="#CMS收集器" class="headerlink" title="*CMS收集器"></a>*CMS收集器</h4><blockquote>
+<p>以<code>获取最短回收停顿时间</code>为目标的收集器。</p>
+<p>基于<code>标记-清除</code>算法实现。整体上来说是<code>内存回收线程</code>与<code>用户线程</code>并发执行。</p>
+<p>应用于<code>老年代</code>的垃圾收集器。</p>
+</blockquote>
+<p>运作过程比较复杂，分为以下4步：</p>
+<ol>
+<li><p><code>初始标记</code></p>
+<p>暂停所有其他线程，并记录下与GC Roots关联的对象。<strong>触发Stop-The-World</strong></p>
+</li>
+<li><p><code>并发标记</code></p>
+<p>从GC Roots直接关联对象开始遍历整个对象图的过程(<code>GC Roots Tracing</code>)。这个过程耗时较长但不用停顿用户线程，主要跟踪记录发生引用更新的地方。</p>
+</li>
+<li><p><code>重新标记</code></p>
+<p>为了修正<code>并发标记</code>期间，因用户线程继续运行而导致标记产生变动的对象的标记记录。<strong>触发Stop-The-World</strong></p>
+</li>
+<li><p><code>并发清除</code></p>
+<p>清理删除掉在标记阶段判断的垃圾对象，可以与用户线程一起工作。</p>
+</li>
+</ol>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/gc_collectors_CMS.png" srcset="/img/loading.gif" class="full-image" alt="CMS" title="CMS"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<p>优点：</p>
+<ul>
+<li>并发收集</li>
+<li>低停顿</li>
+</ul>
+<p>缺点：</p>
+<ul>
+<li>对CPU资源非常敏感</li>
+<li>无法处理<code>浮动垃圾</code></li>
+<li>产生大量内存碎片(由于<code>标记-清除算法</code>的实现)</li>
+</ul>
+<h4 id="G1收集器"><a href="#G1收集器" class="headerlink" title="*G1收集器"></a>*G1收集器</h4><blockquote>
+<p>主要面向服务器的垃圾收集器，以极高概率满足GC、停顿时间要求的同时，还具备高吞吐量性能特征。</p>
+</blockquote>
+<p>具备如下特点：</p>
+<ul>
+<li><p><strong>并行与并发</strong></p>
+<p>使用多个CPU缩短<code>STW</code>时间，还可以通过并发的方式让Java程序继续运行。</p>
+</li>
+<li><p><strong>分代收集</strong></p>
+<p>分代概念在<code>G1收集器</code>中进行了保留，但<code>G1</code>可以直接管理新生代和老年代，然后采用不同的方式去管理。</p>
+</li>
+<li><p><strong>空间整合</strong></p>
+<p>整体基于<code>标记-整理算法</code>，局部(两个Region之间)采用了<code>复制算法</code></p>
+</li>
+<li><p><strong>可预测的停顿</strong></p>
+<p>除了追求低停顿外，还可以建立可预测的时间模型，用户去指定期望停顿时间。</p>
+</li>
+</ul>
+<p>运作过程分为以下4步：</p>
+<ol>
+<li><p><code>初始标记</code></p>
+<p>标记一下与GC Roots直接关联的对象。<strong>需要停顿线程</strong></p>
+</li>
+<li><p><code>并发标记</code></p>
+<p>从GC Roots对象开始对堆中对象进行可达性分析，找出需要回收的对象。</p>
+</li>
+<li><p><code>最终标记</code></p>
+<p>修正<code>并发标记</code>期间因为用户线程继续运行导致标记发生变动的对象。<strong>需要停顿线程</strong></p>
+</li>
+<li><p><code>筛选回收</code></p>
+<p>对各个Region的回收价值和成本进行排序，根据用户指定<code>期望停顿时间</code>制定回收计划。然后把决定回收的那部分Region存活对象复制到空Region中，再清理旧Region空间。</p>
+<p><strong>必须暂停用户线程，因为涉及到对象的移动。</strong></p>
+</li>
+</ol>
+<p><code>Region</code></p>
+<p>Java堆的内存布局被划分为多个大小相等的区域(<code>Region</code>)，虽然保留了分代概念，但<code>新生代</code>与<code>老年代</code>都变成了<code>Region</code>的集合。</p>
+<p><code>G1收集器</code>认为大小超过<code>Region</code>容量一半的对象判定为<code>大对象</code>，存放于<code>Humongous</code>区域。</p>
+<p><code>可停顿的时间模型</code></p>
+<p>在后台维护了一个优先列表，每次根据用户设置的<code>期望停顿时间</code>，优先选择回收价值(<code>回收获得的空间大小以及回收所需时间的经验值</code>)最大的Region。</p>
+<p><code>记忆集(Remembered Set)</code></p>
+<p>每个<code>Region</code>都会存在一个<code>记忆集</code>，里面记录下别的<code>Region</code>指向自己的指针并标记这些指针分别在哪些页卡的范围之内。</p>
+<p>通常约占Heap大小的20%或者更高。</p>
+<h4 id="ZGC收集器"><a href="#ZGC收集器" class="headerlink" title="ZGC收集器"></a>ZGC收集器</h4><blockquote>
+<p>在JDK 11中加入的低延迟垃圾收集器。</p>
+</blockquote>
+<p>主要新增了两项新技术</p>
+<ul>
+<li><p>着色指针</p>
+<p>将少量额外的信息存储在指针上，在对象的内存发生变化的时候，指针颜色就会发生变化。就能知道当前对象状态</p>
+</li>
+<li><p>读屏障</p>
+<p>由于<code>着色指针</code>的存在，程序访问对象的时候可以轻易知道对象的存储状态，若发现指针变色，则会触发<code>读屏障</code>，会更新指针并重新返回结果，虽然存在一定的耗费但是可以达到与用户线程并发的效果。</p>
+</li>
+</ul>
+<blockquote>
+<p>与标记对象的传统算法相比。ZGC在指针上做标记，并在访问指针时加入<code>读屏障</code>，比如当对象正被GC移动，指针上的颜色就会不对，这个屏障就先把指针更新为有效地址再返回，永远只会有单个对象读取时有概率被减速(需要更新指针地址)，而不会再发生Stop-The-World。</p>
+</blockquote>
+<h2 id="JVM内存分配策略"><a href="#JVM内存分配策略" class="headerlink" title="JVM内存分配策略"></a>JVM内存分配策略</h2><ul>
+<li><p>对象优先在<code>Eden区</code>分配</p>
+<blockquote>
+<p>大多数情况下，对象在新生代Eden区中分配。当Eden区没有足够空间进行分配时，虚拟机将发起一次<code>Minor GC</code>。</p>
+<p>每次GC后，对象依然存在就会进入<code>两块Survivor区内</code>。</p>
+</blockquote>
+</li>
+<li><p>大对象直接进入<code>老年代</code></p>
+<blockquote>
+<p> 大对象：那种很长的字符串或者元素数量很多的数据。<strong>需要连续内存空间的Java对象。</strong></p>
+</blockquote>
+</li>
+<li><p>长期存活的对象直接进入<code>老年代</code></p>
+<blockquote>
+<p>每经过一次<code>Minor GC</code>仍然存活的对象，并且能被<code>Survivor</code>容纳，其对象年龄就会+1，当达到<code>晋升年龄阈值</code>对象就会晋升到<code>老年代</code>。</p>
+<p><code>晋升年龄阈值</code>：默认为15，通过<code>-XX:MaxTenuringThreshold</code>进行配置。</p>
+</blockquote>
+</li>
+<li><p>动态对象年龄判定</p>
+<blockquote>
+<p>为了更好适应不同的内存情况，不一定对象达到年龄阈值才能晋升老年代。</p>
+<p>如果在<code>survivor区</code>相同年龄的对象大小总和超过<code>Survivor</code>空间的一半，所有年龄大于或等于该年龄的对象都可以直接晋升老年代。</p>
+</blockquote>
+</li>
+<li><p>空间分配担保</p>
+<blockquote>
+<p>如果<code>survivor</code>没有足够空间存放在<code>Eden区</code>存活对象，这些对象将通过<code>分配担保机制</code>直接进入老年代。</p>
+</blockquote>
+</li>
+</ul>
+<h2 id="Java内存模型-JMM"><a href="#Java内存模型-JMM" class="headerlink" title="Java内存模型(JMM)"></a>Java内存模型(JMM)</h2><h2 id="Class文件结构-字节码"><a href="#Class文件结构-字节码" class="headerlink" title="Class文件结构(字节码)"></a>Class文件结构(字节码)</h2><h2 id="DVM-amp-ART-Android虚拟机"><a href="#DVM-amp-ART-Android虚拟机" class="headerlink" title="DVM&amp;ART(Android虚拟机)"></a>DVM&amp;ART(Android虚拟机)</h2><h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="https://cloud.tencent.com/developer/article/1450501" target="_blank" rel="noopener">彻底弄懂Java中的常量池</a></p>
 <p><a href="https://www.cnblogs.com/gxyandwmm/p/9495923.html" target="_blank" rel="noopener">字符串常量池相关问题</a></p>
 <p><a href="https://juejin.im/post/5ec73c99f265da770c0ee3b1#heading-8" target="_blank" rel="noopener">Java四大引用</a></p>
+<p><a href="https://tech.meituan.com/2017/12/29/jvm-optimize.html" target="_blank" rel="noopener">Java应用的GC优化</a></p>
+<p><a href="https://mp.weixin.qq.com/s/KUCs_BJUNfMMCO1T3_WAjw" target="_blank" rel="noopener">ZGC基础概念</a></p>
 
             </article>
             <hr>
