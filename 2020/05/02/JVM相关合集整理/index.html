@@ -131,7 +131,7 @@
                   
                   <span class="post-meta mr-2">
                     <i class="iconfont icon-chart"></i>
-                    14.3k 字
+                    15k 字
                   </span>
                 
 
@@ -141,7 +141,7 @@
                       <i class="iconfont icon-clock-fill"></i>
                     
                     
-                    159
+                    167
                      分钟
                   </span>
                 
@@ -1364,7 +1364,34 @@ Child Constructor</code></pre></div>
 </blockquote>
 </li>
 </ul>
-<h2 id="Java内存模型-JMM"><a href="#Java内存模型-JMM" class="headerlink" title="Java内存模型(JMM)"></a>Java内存模型(JMM)</h2><h2 id="Class文件结构-字节码"><a href="#Class文件结构-字节码" class="headerlink" title="Class文件结构(字节码)"></a>Class文件结构(字节码)</h2><h2 id="DVM-amp-ART-Android虚拟机"><a href="#DVM-amp-ART-Android虚拟机" class="headerlink" title="DVM&amp;ART(Android虚拟机)"></a>DVM&amp;ART(Android虚拟机)</h2><h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="https://cloud.tencent.com/developer/article/1450501" target="_blank" rel="noopener">彻底弄懂Java中的常量池</a></p>
+<h2 id="Java内存模型-JMM-与线程"><a href="#Java内存模型-JMM-与线程" class="headerlink" title="Java内存模型(JMM)与线程"></a>Java内存模型(JMM)与线程</h2><h3 id="CPU缓存一致性"><a href="#CPU缓存一致性" class="headerlink" title="CPU缓存一致性"></a>CPU缓存一致性</h3><h4 id="缓存一致性问题"><a href="#缓存一致性问题" class="headerlink" title="缓存一致性问题"></a>缓存一致性问题</h4><p>线程是CPU调度的最小单位。</p>
+<p>由于CPU的发展，执行速度越来越快，内存与CPU的执行差距会越来越大，导致数据的交互需要等待较长时间。</p>
+<p>因此，为了提升CPU的使用效率，在CPU中添加了<code>高速缓存(cache)</code>作为内存与CPU之间的缓冲：<em>将运算需要的数据复制到Cache中，让运算能快速进行，当运算完成之后，将运算结果刷回主内存，这样CPU就无需等待内存读写完毕。</em></p>
+<p>由于每个CPU都有自己的<code>cache</code>，当多个CPU共同操作一块主内存时，可能导致各自<code>cache</code>中的数据不一致，发生<strong>缓存一致性</strong>问题。</p>
+<p>为了解决<code>缓存一致性</code>的问题，需要各个处理器访问缓存时遵循一些协议，在读写时要根据协议来进行操作，这类协议有<strong>MESI</strong>、<code>MSI</code>、<code>MOSI</code>等。</p>
+<h4 id="MESI-缓存一致性协议"><a href="#MESI-缓存一致性协议" class="headerlink" title="MESI(缓存一致性协议)"></a>MESI(缓存一致性协议)</h4><blockquote>
+<p> 当CPU写数据时，如果发现操作的变量是共享变量，即在其他CPU中也存在该变量的副本，会发出信号通知其他CPU将该变量的缓存行置为无效状态。<br>因此当其他CPU需要读取这个变量时，发现自己缓存变量的缓存行无效时，就需要从主内存中重新获取变量值。</p>
+</blockquote>
+<p>上面介绍到<em>每个处理器都会去检测自己的缓存变量是否有效？</em>，这个检测机制就是通过<strong>嗅探</strong>来实现的。</p>
+<p><code>嗅探</code>：每个处理器都会去检测<code>主内存</code>上的数据来判断自己的缓存数据是否有效，当CPU发现缓存数据对应的内存地址发生修改时，就意味着缓存数据已经无效，需要做以下几步：</p>
+<ul>
+<li>将当前CPU的缓存行设置无效</li>
+<li>当CPU需要操作该数据时，就需要重新从主内存中读取数据</li>
+<li>读取完毕后更新自己的缓存对象</li>
+</ul>
+<p><code>嗅探</code>需要持续的从主内存检测数据并且通过<code>CAS</code>进行循环获取，导致<strong>占用的总线带宽较高</strong>。这也被称之为<strong>总线风暴</strong>。</p>
+<h3 id="指令重排"><a href="#指令重排" class="headerlink" title="指令重排"></a>指令重排</h3><p>为了使CPU的运算单元能够尽量被充分利用，CPU会对输入的代码进行重排序处理，也就是<code>处理器优化</code>。</p>
+<h4 id="as-if-serial"><a href="#as-if-serial" class="headerlink" title="as-if-serial"></a><code>as-if-serial</code></h4><blockquote>
+<p>不管怎么重排序，都不允许单线程下的程序执行结果发生改变。</p>
+</blockquote>
+<p>编译器、runtime和CPU都必须遵守<code>as-if-serial</code>协议。</p>
+<p>一般重排序分为以下三种：</p>
+<ul>
+<li>编译器优化的重排序</li>
+<li>指令级并行的重排序</li>
+<li>内存系统的重排序</li>
+</ul>
+<h3 id="Java内存模型-JMM"><a href="#Java内存模型-JMM" class="headerlink" title="Java内存模型(JMM)"></a>Java内存模型(JMM)</h3><h4 id="概念"><a href="#概念" class="headerlink" title="概念"></a>概念</h4><h4 id="volatile"><a href="#volatile" class="headerlink" title="volatile"></a>volatile</h4><h4 id="原子性"><a href="#原子性" class="headerlink" title="原子性"></a>原子性</h4><h4 id="可见性"><a href="#可见性" class="headerlink" title="可见性"></a>可见性</h4><h4 id="有序性"><a href="#有序性" class="headerlink" title="有序性"></a>有序性</h4><h2 id="Class文件结构-字节码"><a href="#Class文件结构-字节码" class="headerlink" title="Class文件结构(字节码)"></a>Class文件结构(字节码)</h2><h2 id="DVM-amp-ART-Android虚拟机"><a href="#DVM-amp-ART-Android虚拟机" class="headerlink" title="DVM&amp;ART(Android虚拟机)"></a>DVM&amp;ART(Android虚拟机)</h2><h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="https://cloud.tencent.com/developer/article/1450501" target="_blank" rel="noopener">彻底弄懂Java中的常量池</a></p>
 <p><a href="https://www.cnblogs.com/gxyandwmm/p/9495923.html" target="_blank" rel="noopener">字符串常量池相关问题</a></p>
 <p><a href="https://juejin.im/post/5ec73c99f265da770c0ee3b1#heading-8" target="_blank" rel="noopener">Java四大引用</a></p>
 <p><a href="https://tech.meituan.com/2017/12/29/jvm-optimize.html" target="_blank" rel="noopener">Java应用的GC优化</a></p>
