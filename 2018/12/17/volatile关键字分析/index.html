@@ -131,7 +131,7 @@
                   
                   <span class="post-meta mr-2">
                     <i class="iconfont icon-chart"></i>
-                    1k 字
+                    1.3k 字
                   </span>
                 
 
@@ -141,7 +141,7 @@
                       <i class="iconfont icon-clock-fill"></i>
                     
                     
-                    11
+                    14
                      分钟
                   </span>
                 
@@ -170,21 +170,16 @@
           <div class="post-content mx-auto" id="post">
             
             <article class="markdown-body">
-              <span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/volatile.png" srcset="/img/loading.gif" class="full-image" alt="volatile相关概念" title="volatile相关概念"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+              <!--缓存一致性 指令重排序概念-->
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/volatile.png" srcset="/img/loading.gif" class="full-image" alt="volatile相关概念" title="volatile相关概念"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
 <h2 id="volatile基础概念"><a href="#volatile基础概念" class="headerlink" title="volatile基础概念"></a>volatile基础概念</h2><p><strong><em>volatile的主要作用是保证可见性以及有序性，不一定保证原子性。</em></strong></p>
-<!--缓存一致性 指令重排序概念-->
-<blockquote>
-<p>JVM提供的最轻量级的同步机制。</p>
-</blockquote>
+<p><strong>JVM提供的最轻量级的同步机制。</strong></p>
 <p>当一个变量被<code>volatile</code>关键字修饰后，就会具备两层语义：</p>
 <ul>
 <li><strong>保证此变量对所有线程的可见性，这里指  当一条线程修改了这个变量的值，新值对于其他线程来说是立即可得知的。</strong></li>
-<li><strong>禁止进行指令重排序</strong></li>
+<li><strong>禁止进行指令重排序优化</strong></li>
 </ul>
-<blockquote>
-<p>volatile 保证可见性</p>
-</blockquote>
-<p>在使用<code>volatile</code>关键字修饰一个变量后，该变量在一个线程中被修改后，会发生如下事情：</p>
+<h3 id="volatile-保证可见性"><a href="#volatile-保证可见性" class="headerlink" title="volatile 保证可见性"></a>volatile 保证可见性</h3><p>在使用<code>volatile</code>关键字修饰一个变量后，该变量在一个线程中被修改后，会发生如下事情：</p>
 <ol>
 <li>修改后，修改的变量值会强制立即写入主内存中</li>
 <li>然后强制过期其他线程中工作内存中的缓存，使缓存无效</li>
@@ -195,10 +190,7 @@
 <p><strong>缓存一致性</strong>：当其他线程读取该变量时，发现该缓存是无效的，就会从主内存中重新读取。</p>
 </blockquote>
 <span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/volatile-process.png" srcset="/img/loading.gif" class="full-image" alt="volatile可见性" title="volatile可见性"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
-<blockquote>
-<p>volatile 保证有序性</p>
-</blockquote>
-<p><code>volatile</code>禁止指令重排序，可以在一定程度上保证有序性。</p>
+<h3 id="volatile-保证有序性"><a href="#volatile-保证有序性" class="headerlink" title="volatile 保证有序性"></a>volatile 保证有序性</h3><p><code>volatile</code>禁止指令重排序，可以在一定程度上保证有序性。</p>
 <p><strong>指令重排序</strong>：JVM为了优化指令，提高程序运行效率，在不影响<strong>单线程</strong>执行结果的前提下，尽可能的提高并行度。</p>
 <p>volatile关键字通过提供“<strong>内存屏障(重排序时不能把后面的指令重排序到内存屏障之前的位置)</strong>”的方式来防止指令被重排序，为了实现volatile的内存语义，编译器在生成字节码时，会在指令序列中插入内存屏障来禁止特定类型的处理器重排序。<code>加入volatile关键字的代码会多出一个lock前缀指令</code>。</p>
 <p>内存屏障提供如下功能：</p>
@@ -206,10 +198,22 @@
 <li>重排序时不会把后面的指令重排序到内存屏障之前的位置—<code>有序性</code></li>
 <li>本CPU的Cache立即写入内存，并且会引起别的CPU或者别的内核无效化其Cache，可以是对volatile变量的修改对其他CPU可见—<code>可见性</code></li>
 </ul>
-<blockquote>
-<p>volatile不保证原子性</p>
-</blockquote>
-<p><code>volatile</code>只能保证对单个volatile变量的读/写具有原子性，但是对于<code>volatile++</code>这样的复合操作没办法。</p>
+<p><code>内存屏障</code>在<code>volatile</code>读写时是不同位置插入<code>lock</code>指令</p>
+<ul>
+<li><p><code>volatile读</code></p>
+<p>在<code>volatile读</code>操作后分别插入<code>LoadLoad</code>和<code>LoadStore</code>屏障</p>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/volatile读.webp" srcset="/img/loading.gif" class="full-image" alt="volatile读" title="volatile读"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<p><code>LoadLoad</code>屏障：禁止<code>volatile读</code>与后面的普通读进行重排序</p>
+<p><code>LoadStore</code>屏障：禁止<code>volatile读</code>与后面的普通写进行重排序</p>
+</li>
+<li><p><code>volatile写</code></p>
+<p>在<code>volatile写</code>操作前后分别插入<code>StoreStore</code>和<code>StoreLoad</code>屏障</p>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/volatile写.webp" srcset="/img/loading.gif" class="full-image" alt="volatile写" title="volatile写"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<p><code>StoreStore</code>屏障：保证<code>volatile写</code>之前的普通写操作已经对所有线程可见，该屏障保证<strong>前面的所有普通写操作的值都刷新到主内存。</strong></p>
+<p><code>StoreLoad</code>屏障：禁止<code>volatile写</code>与后面可能存在的<code>volatile读/写</code>进行重排序。</p>
+</li>
+</ul>
+<h3 id="volatile不保证原子性"><a href="#volatile不保证原子性" class="headerlink" title="volatile不保证原子性"></a>volatile不保证原子性</h3><p><code>volatile</code>只能保证对单个volatile变量的读/写具有原子性，但是对于<code>volatile++</code>这样的复合操作没办法。</p>
 <p>自增操作 <code>volatile++</code>实际执行了三步：</p>
 <ol>
 <li>读取变量的初始值</li>
@@ -254,6 +258,11 @@ a = a * <span class="hljs-number">2</span>;</code></pre></div>
             <span class="hljs-keyword">synchronized</span>(Sineleton.class)&#123;
                 <span class="hljs-keyword">if</span>(sInstance == <span class="hljs-keyword">null</span>)&#123;
                     sInstance = <span class="hljs-keyword">new</span> Singleton();
+                  <span class="hljs-comment">/**
+                  * 1.内存中创建对象
+                  * 2.分配内存，并将指针指向内存区域
+                  * 如果此时发生指令重排序，可能导致构造函数在初始化对象完成就赋值完成，导致其他线程获取对象为空，所以使用volatile进行修饰，避免指令重排序
+                  */</span>
                 &#125;
             &#125; 
         &#125;
@@ -268,6 +277,7 @@ a = a * <span class="hljs-number">2</span>;</code></pre></div>
 <li><code>volatile</code>不会造成线程的阻塞；<code>synchronized</code>会造成阻塞(<code>阻塞同步</code>)</li>
 <li><code>volatile</code>由于禁止指令重排序，不会被编译器优化；<code>synchronized</code>会被优化</li>
 </ul>
+<h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="https://juejin.im/post/5ea913d35188256d4576d199#heading-17" target="_blank" rel="noopener">volatile</a></p>
 
             </article>
             <hr>
