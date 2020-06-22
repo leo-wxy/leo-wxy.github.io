@@ -131,7 +131,7 @@
                   
                   <span class="post-meta mr-2">
                     <i class="iconfont icon-chart"></i>
-                    998 字
+                    2.1k 字
                   </span>
                 
 
@@ -141,7 +141,7 @@
                       <i class="iconfont icon-clock-fill"></i>
                     
                     
-                    10
+                    24
                      分钟
                   </span>
                 
@@ -230,9 +230,180 @@
 <p>调用了<code>start()</code>后，虚拟机会先创建一个线程，当线程获取<code>时间片</code>后再调用<code>run()</code>。</p>
 <p><strong>不可多次调用<code>start()</code>，否则后续调用会抛出异常<code>java.lang.IllegalThreadStateException</code>。</strong></p>
 </blockquote>
-<h4 id="实现Runnable接口"><a href="#实现Runnable接口" class="headerlink" title="实现Runnable接口"></a>实现Runnable接口</h4><div class="hljs"><pre><code class="hljs java">
-</code></pre></div>
-<h4 id="实现Callable接口"><a href="#实现Callable接口" class="headerlink" title="实现Callable接口"></a>实现Callable接口</h4><h2 id="多线程-1"><a href="#多线程-1" class="headerlink" title="多线程"></a>多线程</h2><h2 id="线程安全"><a href="#线程安全" class="headerlink" title="线程安全"></a>线程安全</h2><h2 id="锁优化"><a href="#锁优化" class="headerlink" title="锁优化"></a>锁优化</h2>
+<h4 id="实现Runnable接口"><a href="#实现Runnable接口" class="headerlink" title="实现Runnable接口"></a>实现Runnable接口</h4><div class="hljs"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">MyRunnable</span> <span class="hljs-keyword">implements</span> <span class="hljs-title">Runnable</span> </span>&#123;
+    <span class="hljs-meta">@Override</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">run</span><span class="hljs-params">()</span> </span>&#123;
+        <span class="hljs-comment">// ...</span>
+    &#125;
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">main</span><span class="hljs-params">(String[] args)</span> </span>&#123;
+    MyRunnable instance = <span class="hljs-keyword">new</span> MyRunnable();
+    Thread thread = <span class="hljs-keyword">new</span> Thread(instance);
+    thread.start();
+&#125;</code></pre></div>
+<p>调用<code>start()</code>后线程才算启动。</p>
+<h4 id="实现Callable接口"><a href="#实现Callable接口" class="headerlink" title="实现Callable接口"></a>实现Callable接口</h4><blockquote>
+<p>需要重写<code>call()</code>并配合<code>Future</code>或<code>FutureTask</code>使用。</p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">Task</span> <span class="hljs-keyword">implements</span> <span class="hljs-title">Callable</span>&lt;<span class="hljs-title">Integer</span>&gt;</span>&#123;
+    <span class="hljs-meta">@Override</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> Integer <span class="hljs-title">call</span><span class="hljs-params">()</span> <span class="hljs-keyword">throws</span> Exception </span>&#123;
+        <span class="hljs-comment">// 模拟计算需要一秒</span>
+        Thread.sleep(<span class="hljs-number">1000</span>);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">2</span>;
+    &#125;
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">main</span><span class="hljs-params">(String args[])</span></span>&#123;
+        <span class="hljs-comment">// 使用</span>
+        ExecutorService executor = Executors.newCachedThreadPool();
+        Task task = <span class="hljs-keyword">new</span> Task();
+        Future&lt;Integer&gt; result = executor.submit(task);
+        <span class="hljs-comment">// 注意调用get方法会阻塞当前线程，直到得到结果。</span>
+        <span class="hljs-comment">// 所以实际编码中建议使用可以设置超时时间的重载get方法。</span>
+        System.out.println(result.get()); 
+    &#125;
+&#125;</code></pre></div>
+<p><code>Callable</code>一般配合<code>ExecutorService</code>来使用的，可以返回<code>call()</code>结果。</p>
+<h5 id="Future接口"><a href="#Future接口" class="headerlink" title="Future接口"></a>Future接口</h5><div class="hljs"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">interface</span> <span class="hljs-title">Future</span>&lt;<span class="hljs-title">V</span>&gt; </span>&#123;
+    <span class="hljs-comment">//试图取消任务的执行。mayInterruptIfRunning确定是否应该以试图停止任务的方式中断执行任务流程。true 直接中断 false等待执行完成 </span>
+    <span class="hljs-function"><span class="hljs-keyword">boolean</span> <span class="hljs-title">cancel</span><span class="hljs-params">(<span class="hljs-keyword">boolean</span> mayInterruptIfRunning)</span></span>;
+    <span class="hljs-comment">//任务正常完成前将其取消，返回true</span>
+    <span class="hljs-function"><span class="hljs-keyword">boolean</span> <span class="hljs-title">isCancelled</span><span class="hljs-params">()</span></span>;
+    <span class="hljs-comment">//任务已完成或者因为正常终止、异常，取消而完成，返回true</span>
+    <span class="hljs-function"><span class="hljs-keyword">boolean</span> <span class="hljs-title">isDone</span><span class="hljs-params">()</span></span>;
+    <span class="hljs-comment">//等待计算结果的返回，如果被取消则抛出异常</span>
+    <span class="hljs-function">V <span class="hljs-title">get</span><span class="hljs-params">()</span> <span class="hljs-keyword">throws</span> InterruptedException, ExecutionException</span>;
+    <span class="hljs-comment">//设定执行时间，超过时间则抛出Timeout异常</span>
+    <span class="hljs-function">V <span class="hljs-title">get</span><span class="hljs-params">(<span class="hljs-keyword">long</span> timeout, TimeUnit unit)</span>
+        <span class="hljs-keyword">throws</span> InterruptedException, ExecutionException, TimeoutException</span>;
+&#125;</code></pre></div>
+<p>通过<code>Callable</code>可以得到一个<code>Future</code>对象，表示异步计算的结果。</p>
+<h5 id="FutureTask"><a href="#FutureTask" class="headerlink" title="FutureTask"></a>FutureTask</h5><div class="hljs"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">interface</span> <span class="hljs-title">RunnableFuture</span>&lt;<span class="hljs-title">V</span>&gt; <span class="hljs-keyword">extends</span> <span class="hljs-title">Runnable</span>, <span class="hljs-title">Future</span>&lt;<span class="hljs-title">V</span>&gt; </span>&#123;
+    <span class="hljs-comment">/**
+     * Sets this Future to the result of its computation
+     * unless it has been cancelled.
+     */</span>
+    <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">run</span><span class="hljs-params">()</span></span>;
+&#125;</code></pre></div>
+<p><code>FutureTask</code>实现了<code>RunnableFuture</code>接口，<code>FutureTask</code>可以简化使用。</p>
+<table>
+<thead>
+<tr>
+<th>方式</th>
+<th>优点</th>
+<th>缺点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>继承Thread类</td>
+<td>编写简单，可以使用<code>this</code>直接访问当前线程</td>
+<td>1.受限于Java类的单继承，无法继承其他类；<br>2.多个线程之间无法共享方法或实例变量</td>
+</tr>
+<tr>
+<td>实现Runnable接口</td>
+<td>多个线程可共享一个实现了<code>Runnable</code>接口的类，非常适合多个线程处理同一任务</td>
+<td>1.<code>run()</code>没有返回值<br>2.不能直接捕获运行过程中的异常，需要使用<code>setDefaultUncaughtExceptionHandler()</code>捕获子线程的异常</td>
+</tr>
+<tr>
+<td>实现Callable接口</td>
+<td>多个线程可共享一个实现了<code>Callable</code>接口的类，非常适合多个线程处理同一任务；可以有返回值；可以抛出异常</td>
+<td>编写略微复杂，要访问当前线程需要使用<code>Thread.currentThread()</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="线程状态"><a href="#线程状态" class="headerlink" title="线程状态"></a>线程状态</h3><span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/Thread-State.png" srcset="/img/loading.gif" class="full-image" alt="线程状态" title="线程状态"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<p>如上图所示，线程共有6种状态</p>
+<h4 id="NEW-新建状态"><a href="#NEW-新建状态" class="headerlink" title="NEW(新建状态)"></a>NEW(新建状态)</h4><p>线程此时尚未启动，还未调用<code>Thread.start()</code></p>
+<blockquote>
+<p>反复调用<code>start()</code>会抛出<code>IllegalThreadStateException</code>，就算线程执行完毕，进入<code>Terminated</code>状态，也无法调用<code>start()</code>重新启动线程。</p>
+<div class="hljs"><pre><code class="hljs java">&gt; <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> <span class="hljs-keyword">void</span> <span class="hljs-title">start</span><span class="hljs-params">()</span> </span>&#123;
+&gt;   <span class="hljs-comment">//第一次start之后，threadStatus不为0，后续再次调用出错</span>
+&gt;     <span class="hljs-keyword">if</span> (threadStatus != <span class="hljs-number">0</span>)
+&gt;         <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> IllegalThreadStateException();
+&gt; 
+&gt;     group.add(<span class="hljs-keyword">this</span>);
+&gt; 
+&gt;     <span class="hljs-keyword">boolean</span> started = <span class="hljs-keyword">false</span>;
+&gt;     <span class="hljs-keyword">try</span> &#123;
+&gt;         start0();
+&gt;         started = <span class="hljs-keyword">true</span>;
+&gt;     &#125; <span class="hljs-keyword">finally</span> &#123;
+&gt;         <span class="hljs-keyword">try</span> &#123;
+&gt;             <span class="hljs-keyword">if</span> (!started) &#123;
+&gt;                 group.threadStartFailed(<span class="hljs-keyword">this</span>);
+&gt;             &#125;
+&gt;         &#125; <span class="hljs-keyword">catch</span> (Throwable ignore) &#123;
+&gt; 
+&gt;         &#125;
+&gt;     &#125;
+&gt; &#125;
+&gt;</code></pre></div>
+</blockquote>
+<h4 id="RUNNABLE-可运行状态"><a href="#RUNNABLE-可运行状态" class="headerlink" title="RUNNABLE(可运行状态)"></a>RUNNABLE(可运行状态)</h4><p>当前线程正在运行中，也可能等待其他系统资源(IO资源)，资源调度完成就进入运行状态。</p>
+<p><strong>可以被运行，无法知道是否正在运行。</strong></p>
+<p>包含<code>Ready</code>和<code>running</code>两个状态。</p>
+<h4 id="BLOCKED-阻塞状态"><a href="#BLOCKED-阻塞状态" class="headerlink" title="BLOCKED(阻塞状态)"></a>BLOCKED(阻塞状态)</h4><p>当前线程被阻塞，等待其他线程释放锁(<code>monitor lock</code>)，暂时不能运行。</p>
+<h4 id="WAITING-无限期等待状态"><a href="#WAITING-无限期等待状态" class="headerlink" title="WAITING(无限期等待状态)"></a>WAITING(无限期等待状态)</h4><p>当前线程处于等待状态，需要其他线程显式唤醒。</p>
+<p>与<code>BLOCKED</code>的区别在于，<code>阻塞</code>是被动的，<code>等待</code>是主动的。</p>
+<p>调用如下方法可以进入<code>WAITING</code>状态</p>
+<table>
+<thead>
+<tr>
+<th>进入<code>WAITING</code>状态</th>
+<th>退出<code>WAITING</code>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Object.wait()</td>
+<td>Object.notify()/Object.notifyAll()</td>
+</tr>
+<tr>
+<td>Thread.join()</td>
+<td>被调用的线程执行完毕</td>
+</tr>
+<tr>
+<td>LockSupport.park()</td>
+<td>LockSupport.unpark(thread)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="TIMED-WAITING-超时等待状态"><a href="#TIMED-WAITING-超时等待状态" class="headerlink" title="TIMED_WAITING(超时等待状态)"></a>TIMED_WAITING(超时等待状态)</h4><p>当前线程等待一个具体时间，时间到后会被系统自动唤醒。</p>
+<p>与<code>WAITING</code>的区别在于，<code>TIMED_WAITING</code>是有限时间的等待。</p>
+<p>调用如下方法可以进入<code>TIMED_WAITING</code>状态</p>
+<table>
+<thead>
+<tr>
+<th>进入<code>TIMED_WAITING</code>状态</th>
+<th>退出<code>TIMED_WAITING</code>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Thread.sleep(long mills)</td>
+<td>时间结束</td>
+</tr>
+<tr>
+<td>Object.wait(long timeout)</td>
+<td>时间结束<br>Object.notify()<br>Object.notifyAll()</td>
+</tr>
+<tr>
+<td>Thread.join(long mills)</td>
+<td>时间结束<br>调用线程执行完毕</td>
+</tr>
+<tr>
+<td>LockSupport.parkNanos(long nanos)</td>
+<td>LockSupport.unpark(thread)</td>
+</tr>
+<tr>
+<td>LockSupport.parkUntil(long deadline)</td>
+<td>LockSupport.unpark(thread)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="TERMINATED-终止状态"><a href="#TERMINATED-终止状态" class="headerlink" title="TERMINATED(终止状态)"></a>TERMINATED(终止状态)</h4><p>当前线程已经中止，可能是任务执行完毕或者发生了异常导致运行结束。</p>
+<h4 id="线程状态的转换"><a href="#线程状态的转换" class="headerlink" title="线程状态的转换"></a>线程状态的转换</h4><h3 id="线程-1"><a href="#线程-1" class="headerlink" title="线程"></a>线程</h3><h2 id="多线程-1"><a href="#多线程-1" class="headerlink" title="多线程"></a>多线程</h2><h2 id="线程安全"><a href="#线程安全" class="headerlink" title="线程安全"></a>线程安全</h2><h2 id="锁优化"><a href="#锁优化" class="headerlink" title="锁优化"></a>锁优化</h2>
             </article>
             <hr>
             <div>
