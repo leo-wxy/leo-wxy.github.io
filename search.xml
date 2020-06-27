@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <search>
   <entry>
+    <title>设计模式整体回顾</title>
+    <url>/2020/06/27/%E8%AE%BE%E8%AE%A1%E6%A8%A1%E5%BC%8F%E6%95%B4%E4%BD%93%E5%9B%9E%E9%A1%BE/</url>
+    <content><![CDATA[]]></content>
+  </entry>
+  <entry>
     <title>重学Binder</title>
     <url>/2020/05/19/%E9%87%8D%E5%AD%A6Binder/</url>
     <content><![CDATA[
@@ -351,25 +356,225 @@ public interface RunnableFuture<V> extends Runnable, Future<V> {
 
 当前线程已经中止，可能是任务执行完毕或者发生了异常导致运行结束。
 
-#### 线程状态的转换
 
 
+### 线程常见方法
 
-### 线程
+#### `start`
 
+线程启动，表示线程进入`RUNNABLE`状态，等待CPU时间片分配可以执行
 
+#### `run`
+
+只是调用线程中的执行代码
+
+#### `join`
+
+在线程中调用另一个线程的`join()`，会将当前线程挂起，而不是忙等待，直到目标线程结束。
+
+`join(long)`设置等待时间
+
+#### `sleep(long mills)`
+
+主动放弃占用的CPU资源，进入`BLOCKED`状态，并进入休眠状态`mills`毫秒。当超过`mills`后，线程就会进入`RUNNABLE`状态，等待执行。
+
+#### `yield()`
+
+主动放弃占用的CPU资源，进入`RUNNABLE`状态，等待CPU时间片。
+
+**建议让步给它优先级比它高或者相同的待运行(`RUNNABLE`)的线程运行。放弃的时间不确定，可能会自己获取CPU时间片继续执行任务。**
+
+#### `interrupte()/interrupted()/isInterrupted()`
+
+`interrupt()`：中断线程，不会立即停止线程，设置线程中断状态为`true`
+
+如果该线程处于`BLOCKED、WAITING、TIMED_WAITING`状态，执行`interrupt()`会抛出`InterruptException`异常。
+
+`interrupted()`：测试当前线程是否中断，线程的中断状态受到这个方法的影响。例如调用一次设置中断状态为`true`，设置两次为`false`。线程会去检测中断位，判断线程是否中断。
+
+`isInterrupted()`：测试当前线程是否中断，调用这个方法不会影响线程中断状态。
+
+> 线程中断只是设置线程中断状态为`true`，具体线程何时中断，由线程自己而定，可能不会发生中断。
+
+#### `setPriority()`
+
+设置线程的优先级。**高优先级的线程会更容易被执行，也需要视具体的系统决定。**
+
+线程的调度策略采用**抢占式**，优先级高的线程比低的更大几率被执行。
+
+线程优先级具有：
+
+- `继承性`：A线程启动B线程，则B线程与A线程优先级一致
+- `随机性`：优先级高的不一定先执行
+
+优先级从`1~10`，越大优先级越高。
+
+> 如果某个线程的优先级大于所属`线程组(ThreadGroup)`的最大优先级，就会采用`线程组`的最大优先级。
 
 ## 多线程
 
+> 一个进程可以开启多个线程，多个线程共享进程资源，提高资源利用率。
+
+优点：
+
+- 资源利用率高
+- 提高程序的执行效率(提高系统的整体的并发能力以及性能)
+- 减少了线程`上下文切换`的开销(多个线程同时运行)
+
+缺点：
+
+- 设计更复杂
+
+  线程间的执行是无序的，线程同步产生的错误是难以发现
+
+- 线程死锁
+
+- 更多的资源消耗
+
+  除了`上下文切换`的开销，还有创建销毁线程的开销还有内存同步的开销
 
 
 
+### 线程死锁
 
-## 线程安全
+> 多个线程同时被阻塞，他们中的一个或多个都在等待某个资源释放，由于线程无限期堵塞，导致程序无法正常中止。
+
+产生死锁的4个条件：
+
+- 互斥条件：该资源任一时刻只能由一个线程占用
+- 请求与保持条件：一个进程因请求资源阻塞时，对已获得的资源保持不放
+- 不剥夺条件：线程获得的资源未使用完之前，无法被其他线程强行剥夺
+- 循环等待条件：进程之间形成头尾相接的循环等待资源关系
+
+```java
+//死锁示例
+public class DeadLockDemo{
+  private static Object resource1 = new Object();
+  private static Object resource2 = new Object();
+  
+  public static void main(String[] args){
+             new Thread("线程1"){
+            @Override
+            public void run() {
+                synchronized (resource1){
+                    System.err.println("get resource1");
+                    try {
+                        Thread.sleep(1000);
+                    }catch (InterruptedException e){
+                        e.printStackTrace();
+                    }
+                    synchronized (resource2){
+                        System.err.println("get resource2");
+                    }
+                }
+            }
+        }.start();
+
+        new Thread("线程2"){
+            @Override
+            public void run() {
+                synchronized (resource2){
+                    System.err.println("get resource1");
+                    try {
+                        Thread.sleep(1000);
+                    }catch (InterruptedException e){
+                        e.printStackTrace();
+                    }
+                    synchronized (resource1){
+                        System.err.println("get resource2");
+                    }
+                }
+            }
+        }.start();
+  }
+}
+```
+
+上述代码中的`线程1、线程2`都试图去获取对方的资源，进入`互相等待`的状态，也就会产生`死锁`。
 
 
 
+#### 避免线程死锁
 
+死锁产生的条件如上4种，只要破坏任意一个条件就可以解除死锁状态：
+
+- 破坏`互斥条件`：无法达成，锁本身就是互斥的
+- 破坏`请求与保持条件`：一次性申请所有资源
+- 破坏`不剥夺条件`：占用部分资源的线程进一步申请资源时，如果申请不到，就主动释放资源
+- 破坏`循环等待条件`：按序申请资源
+
+
+
+### 线程安全
+
+> 当多个线程访问同一个对象时，如果不用考虑这些线程在运行时环境下的调度和交替执行，也不需要进行额外的同步，或者在调用方进行任何其他的协调操作，调用这个对象的行为都可以获得正确的结果，那就表示这个对象是线程安全的。
+
+线程安全有以下几种实现方式：
+
+#### 不可变
+
+**不可变得对象一定是线程安全的。**无论是对象的方法实现还是方法的调用者，都不需要进行任何线程安全保障措施。
+
+不可变的类型：
+
+- `final`关键字修饰的基本数据类型
+- `String`用户调用方法，例如`subString()、replace()`都不会修改原值
+- 枚举类型
+- `Number`的部分子类，例如`Long、Double`等数值包装类型
+
+对于集合类型，可以使用`Collections.unmodifiableXX()`获取一个不可变集合
+
+```java
+public class ImmutableExample {
+    public static void main(String[] args) {
+        Map<String, Integer> map = new HashMap<>();
+        Map<String, Integer> unmodifiableMap = Collections.unmodifiableMap(map);//不可变map
+        unmodifiableMap.put("a", 1);
+    }
+}
+```
+
+`Collections.unmodifiableXX()`本质是 对原始集合进行拷贝，当外部调用修改集合方法时，直接抛出异常`UnsupportedOperationException`。
+
+
+
+#### 互斥同步
+
+**最常见也是最主要的并发正确保障手段。**保证共享数据在同一时刻只被一条线程使用。
+
+常用`互斥同步`手段如下：
+
+##### synchronized
+
+{%post_link synchorized关键字分析%}
+
+##### ReentrantLock
+
+{%post_link ReenTrantLock关键字分析%}
+
+
+
+#### 非阻塞同步
+
+`互斥同步`面临的主要问题是**线程阻塞和唤醒所带来的性能问题**，所以也被称为**阻塞同步**。
+
+> 基于冲突检测的乐观并发策略：`先进行操作，如果没有其他线程争用共享资源，那就直接操作成功；否则不断重试，知道成功为止。`
+
+上述的`操作`和`重试检测`都依赖于`硬件指令集`的发展
+
+
+
+#### 无同步
+
+### 线程间通信
+
+
+
+### *线程池
+
+
+
+### 多线程开发良好实践
 
 ## 锁优化]]></content>
       <tags>
@@ -29152,7 +29357,7 @@ public class HandlerActivity extends Activity{
       </tags>
   </entry>
   <entry>
-    <title>ReenTrantLock关键字分析</title>
+    <title>ReentrantLock关键字分析</title>
     <url>/2018/12/19/ReenTrantLock%E5%85%B3%E9%94%AE%E5%AD%97%E5%88%86%E6%9E%90/</url>
     <content><![CDATA[
 # ReenTrantLock
