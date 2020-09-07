@@ -1,9 +1,693 @@
 <?xml version="1.0" encoding="utf-8"?>
 <search>
   <entry>
+    <title>Kotlin协程原理</title>
+    <url>/2020/09/04/Kotlin%E5%8D%8F%E7%A8%8B%E5%8E%9F%E7%90%86/</url>
+    <content><![CDATA[]]></content>
+  </entry>
+  <entry>
+    <title>WebRTC音频处理模块相关</title>
+    <url>/2020/08/14/WebRTC%E9%9F%B3%E9%A2%91%E5%A4%84%E7%90%86%E6%A8%A1%E5%9D%97%E7%9B%B8%E5%85%B3/</url>
+    <content><![CDATA[
+**[WebRTC源码](https://webrtc.googlesource.com/src/)**基于提交版本`4c2f9c9`
+
+WebRTC音频处理模块，负责在传输音频时对音频进行一定的处理，例如`降噪、增益、回声消除`，整体模块代码位于`modules/audio_processing`。
+
+按照以下模块分别介绍，各模块的功能以及相关配置和源码解析
+
+默认音频处理配置如下：
+
+```c++
+ AudioOptions options;
+    options.echo_cancellation = true;//回声消除
+    options.auto_gain_control = true;//自动增益
+    options.noise_suppression = true;//降噪
+    options.highpass_filter = true;//高通滤波器开启 
+    options.stereo_swapping = false;//立体声
+    options.audio_jitter_buffer_max_packets = 200;//jitter_buffer相关配置
+    options.audio_jitter_buffer_fast_accelerate = false;
+    options.audio_jitter_buffer_min_delay_ms = 0;
+    options.audio_jitter_buffer_enable_rtx_handling = false;
+    options.typing_detection = true;//键盘声音检测
+    options.experimental_agc = false;//实验性增益控制
+    options.experimental_ns = false;//实验性降噪
+    options.residual_echo_detector = true;//残留回声检测
+```
+
+> 高通滤波器：只允许某一频率以上的信号无衰减的通过滤波器，去掉了信号中低于该概率的不必要成分或者说去掉了低于该频率的干扰信号。
+
+## WebRTCVoiceEngine初始化过程
+
+> 在配置后面的可选项之前，需要先行初始化`WebRTCVoiceEngine`，保证配置参数可以生效。 
+
+
+
+## AEC(回声消除)
+
+> WebRTC中的`AEC`模块分为这几部分：`AECM(移动设备使用)`、`AEC3(实验模块)`、`AEC(PC使用)`，源码位于`modules/audio_processing/aec3、./aecm`
+
+### 硬件AEC
+
+> 由硬件设备提供的`AEC`功能，当开启该功能时会主动屏蔽掉软件实现的`AEC`功能.
+
+通过配置`JavaAudioDeviceModule`实现硬件回声消除功能
+
+```java
+return JavaAudioDeviceModule.builder(context)
+                .setUseHardwareAcousticEchoCanceler(true)//开启硬件降噪
+                .createAudioDeviceModule();
+
+# org.webrtc.audio.WebRtcEffects
+//判断是否支持硬件AEC
+public static boolean isAcousticEchoCancelerSupported() {
+        return VERSION.SDK_INT < 18 ? false : isEffectTypeAvailable(AudioEffect.EFFECT_TYPE_AEC, AOSP_ACOUSTIC_ECHO_CANCELER);
+    }
+```
+
+
+
+### 软件AEC
+
+```java
+return JavaAudioDeviceModule.builder(context)
+                .setUseHardwareAcousticEchoCanceler(false)//开启硬件降噪
+                .createAudioDeviceModule();
+```
+
+
+
+### AEC Native代码
+
+```java
+//Native获取当前是否开启硬件AEC    
+@CalledByNative
+    boolean isAcousticEchoCancelerSupported() {
+        return this.isAcousticEchoCancelerSupported;
+    }
+```
+
+在此处获取Java层配置的参数
+
+```c++
+// 源码位置：/sdk/android/src/jni/audio_device/audio_record_jni.cc
+bool AudioRecordJni::IsAcousticEchoCancelerSupported() const {
+  RTC_DCHECK(thread_checker_.IsCurrent());
+  return Java_WebRtcAudioRecord_isAcousticEchoCancelerSupported(
+      env_, j_audio_record_);
+}
+```
+
+```c++
+//源码位置：/sdk/android/src/jni/audio_device/audio_device/audio_device_module.cc
+  bool BuiltInAECIsAvailable() const override {
+    RTC_LOG(INFO) << __FUNCTION__;
+    if (!initialized_)
+      return false;
+    bool isAvailable = input_->IsAcousticEchoCancelerSupported();
+    RTC_LOG(INFO) << "output: " << isAvailable;
+    return isAvailable;
+  }
+```
+
+判断是否启用硬件AEC
+
+```c++
+pc/peer_connection_factory.cc -> channel_manager.cc -> media_engine.cc ->webrtc_voice_engine.cc
+从media_engine.cc调用
+//WebRTCVoiceEngine初始化
+void WebRtcVoiceEngine::Init() {
+  RTC_DCHECK(worker_thread_checker_.IsCurrent());
+  RTC_LOG(LS_INFO) << "WebRtcVoiceEngine::Init";
+
+  // TaskQueue expects to be created/destroyed on the same thread.
+  low_priority_worker_queue_.reset(
+      new rtc::TaskQueue(task_queue_factory_->CreateTaskQueue(
+          "rtc-low-prio", webrtc::TaskQueueFactory::Priority::LOW)));
+
+  // Load our audio codec lists.
+  RTC_LOG(LS_VERBOSE) << "Supported send codecs in order of preference:";
+  send_codecs_ = CollectCodecs(encoder_factory_->GetSupportedEncoders());
+  for (const AudioCodec& codec : send_codecs_) {
+    RTC_LOG(LS_VERBOSE) << ToString(codec);
+  }
+
+  RTC_LOG(LS_VERBOSE) << "Supported recv codecs in order of preference:";
+  recv_codecs_ = CollectCodecs(decoder_factory_->GetSupportedDecoders());
+  for (const AudioCodec& codec : recv_codecs_) {
+    RTC_LOG(LS_VERBOSE) << ToString(codec);
+  }
+
+#if defined(WEBRTC_INCLUDE_INTERNAL_AUDIO_DEVICE)
+  // No ADM supplied? Create a default one.
+  if (!adm_) {
+    adm_ = webrtc::AudioDeviceModule::Create(
+        webrtc::AudioDeviceModule::kPlatformDefaultAudio, task_queue_factory_);
+  }
+#endif  // WEBRTC_INCLUDE_INTERNAL_AUDIO_DEVICE
+  RTC_CHECK(adm());
+  webrtc::adm_helpers::Init(adm());
+
+  // Set up AudioState.
+  {
+    webrtc::AudioState::Config config;
+    if (audio_mixer_) {
+      config.audio_mixer = audio_mixer_;
+    } else {
+      config.audio_mixer = webrtc::AudioMixerImpl::Create();
+    }
+    config.audio_processing = apm_;
+    config.audio_device_module = adm_;
+    audio_state_ = webrtc::AudioState::Create(config);
+  }
+
+  // Connect the ADM to our audio path.
+  adm()->RegisterAudioCallback(audio_state()->audio_transport());
+
+  // Set default engine options.
+  {
+    AudioOptions options;
+    options.echo_cancellation = true;
+    options.auto_gain_control = true;
+    options.noise_suppression = true;
+    options.highpass_filter = true;
+    options.stereo_swapping = false;
+    options.audio_jitter_buffer_max_packets = 200;
+    options.audio_jitter_buffer_fast_accelerate = false;
+    options.audio_jitter_buffer_min_delay_ms = 0;
+    options.audio_jitter_buffer_enable_rtx_handling = false;
+    options.typing_detection = true;
+    options.experimental_agc = false;
+    options.experimental_ns = false;
+    options.residual_echo_detector = true;
+    bool error = ApplyOptions(options);
+    RTC_DCHECK(error);
+  }
+
+  initialized_ = true;
+}
+
+//源码位置：/sdk/android/src/meida/engine/webrtc_voice_engine.cc
+webrtc::AudioDeviceModule* WebRtcVoiceEngine::adm() {
+  RTC_DCHECK(worker_thread_checker_.IsCurrent());
+  RTC_DCHECK(adm_);
+  return adm_.get();
+}
+
+//指向AudioProcessing配置
+webrtc::AudioProcessing* WebRtcVoiceEngine::apm() const {
+  RTC_DCHECK(worker_thread_checker_.IsCurrent());
+  return apm_.get();
+}
+webrtc::AudioProcessing* ap = engine()->apm();
+...
+bool WebRtcVoiceEngine::ApplyOptions(const AudioOptions& options_in) {
+  ...
+//默认配置 options.echo_cancellation 为true
+  if (options.echo_cancellation) {
+    // Check if platform supports built-in EC. Currently only supported on
+    // Android and in combination with Java based audio layer.
+    const bool built_in_aec = adm()->BuiltInAECIsAvailable();//开启硬件AEC就为true
+    if (built_in_aec) {
+      // Built-in EC exists on this device. Enable/Disable it according to the
+      // echo_cancellation audio option.
+      const bool enable_built_in_aec = *options.echo_cancellation;
+      if (adm()->EnableBuiltInAEC(enable_built_in_aec) == 0 &&
+          enable_built_in_aec) {
+        // Disable internal software EC if built-in EC is enabled,
+        // i.e., replace the software EC with the built-in EC.
+        options.echo_cancellation = false;
+        RTC_LOG(LS_INFO)
+            << "Disabling EC since built-in EC will be used instead";
+      }
+    }
+  }
+...
+  //如果编译android源码，默认启用AECM
+  #elif defined(WEBRTC_ANDROID)
+  use_mobile_software_aec = true;
+#endif
+...
+  //配置apm(AudioDeviceModule)参数
+  if (options.echo_cancellation) {
+    apm_config.echo_canceller.enabled = *options.echo_cancellation;
+    apm_config.echo_canceller.mobile_mode = use_mobile_software_aec;
+  }
+...
+  ap->ApplyConfig(apm_config);
+  return true;
+}
+```
+
+`options.echo_cancellation`参数配置完毕后需要应用参数
+
+```c++
+//源码位置：modules/audio_processing/audio_processing_impl.cc
+void AudioProcessingImpl::ApplyConfig(const AudioProcessing::Config& config) {
+  ...
+  if (aec_config_changed) {
+    InitializeEchoController();
+  }
+  ...
+}
+
+//初始化 AEC配置 
+void AudioProcessingImpl::InitializeEchoController() {
+  //是否启动回声消除
+   bool use_echo_controller =
+      echo_control_factory_ ||
+      (config_.echo_canceller.enabled && !config_.echo_canceller.mobile_mode);
+  
+  if (use_echo_controller) {
+    // Create and activate the echo controller.
+    if (echo_control_factory_) {
+      submodules_.echo_controller = echo_control_factory_->Create(
+          proc_sample_rate_hz(), num_reverse_channels(), num_proc_channels());
+      RTC_DCHECK(submodules_.echo_controller);
+    } else {
+      //AEC3模块
+      EchoCanceller3Config config =
+          use_setup_specific_default_aec3_config_
+              ? EchoCanceller3::CreateDefaultConfig(num_reverse_channels(),
+                                                    num_proc_channels())
+              : EchoCanceller3Config();
+      submodules_.echo_controller = std::make_unique<EchoCanceller3>(
+          config, proc_sample_rate_hz(), num_reverse_channels(),
+          num_proc_channels());
+    }
+    ...
+  }
+
+ ...
+   //移动端AECM模块设置
+   if (config_.echo_canceller.mobile_mode) {
+    // Create and activate AECM.
+    size_t max_element_size =
+        std::max(static_cast<size_t>(1),
+                 kMaxAllowedValuesOfSamplesPerBand *
+                     EchoControlMobileImpl::NumCancellersRequired(
+                         num_output_channels(), num_reverse_channels()));
+
+    std::vector<int16_t> template_queue_element(max_element_size);
+
+    aecm_render_signal_queue_.reset(
+        new SwapQueue<std::vector<int16_t>, RenderQueueItemVerifier<int16_t>>(
+            kMaxNumFramesToBuffer, template_queue_element,
+            RenderQueueItemVerifier<int16_t>(max_element_size)));
+
+    aecm_render_queue_buffer_.resize(max_element_size);
+    aecm_capture_queue_buffer_.resize(max_element_size);
+
+    submodules_.echo_control_mobile.reset(new EchoControlMobileImpl());
+
+    submodules_.echo_control_mobile->Initialize(proc_split_sample_rate_hz(),
+                                                num_reverse_channels(),
+                                                num_output_channels());
+    return;
+  }
+  submodules_.echo_control_mobile.reset();
+  aecm_render_signal_queue_.reset();
+  
+}
+```
+
+#### AEC3
+
+> TODO 简单算法介绍
+
+参考类为`src/api/audio/echo_canceller3/echo_canceller3_config.cc`(AEC3配置项)
+
+`echo_canceller3.cc`实际生效类
+
+
+
+#### AECM
+
+> AEC的移动端精简版，降低了计算的复杂度，相比于原版会有更明显的回声
+
+参考类为`echo_control_mobile_impl.cc`
+
+提供了如下配置项：
+
+```c++
+int16_t MapSetting(EchoControlMobileImpl::RoutingMode mode) {
+  switch (mode) {
+    case EchoControlMobileImpl::kQuietEarpieceOrHeadset:
+      return 0;
+    case EchoControlMobileImpl::kEarpiece:
+      return 1;
+    case EchoControlMobileImpl::kLoudEarpiece:
+      return 2;
+    case EchoControlMobileImpl::kSpeakerphone:
+      return 3;
+    case EchoControlMobileImpl::kLoudSpeakerphone:
+      return 4;
+  }
+  RTC_NOTREACHED();
+  return -1;
+}
+```
+
+
+
+
+
+## NS(降噪)
+
+> 主要源代码位于`modules/audio_processing/ns`
+
+### 硬件NS
+
+> 由硬件设备提供的NS功能，开启硬件降噪时，软件降噪关闭
+
+通过配置`JavaAudioDeviceModule`实现硬件降噪功能
+
+```java
+return JavaAudioDeviceModule.builder(context)
+                .setUseHardwareNoiseSuppressor(true)//开启硬件降噪
+                .createAudioDeviceModule();
+
+# org.webrtc.audio.WebRtcEffects
+//判断是否支持硬件NS
+    public static boolean isNoiseSuppressorSupported() {
+        return VERSION.SDK_INT < 18 ? false : isEffectTypeAvailable(AudioEffect.EFFECT_TYPE_NS, AOSP_NOISE_SUPPRESSOR);
+    }
+```
+
+
+
+### 软件NS
+
+```java
+return JavaAudioDeviceModule.builder(context)
+                .setUseHardwareNoiseSuppressor(false)//开启硬件降噪
+                .createAudioDeviceModule();
+```
+
+
+
+### NS Native代码
+
+```java
+//Native获取当前是否支持 硬件NS
+@CalledByNative
+    boolean isNoiseSuppressorSupported() {
+        return this.isNoiseSuppressorSupported;
+    }
+```
+
+获取Java端配置的参数
+
+```c++
+// 源码位置：/sdk/android/src/jni/audio_device/audio_record_jni.cc
+bool AudioRecordJni::IsNoiseSuppressorSupported() const {
+  RTC_DCHECK(thread_checker_.IsCurrent());
+  return Java_WebRtcAudioRecord_isNoiseSuppressorSupported(env_,
+                                                           j_audio_record_);
+}
+
+//源码位置：/sdk/android/src/jni/audio_device/audio_device/audio_device_module.cc
+bool BuiltInNSIsAvailable() const override {
+    RTC_LOG(INFO) << __FUNCTION__;
+    if (!initialized_)
+      return false;
+    bool isAvailable = input_->IsNoiseSuppressorSupported();
+    RTC_LOG(INFO) << "output: " << isAvailable;
+    return isAvailable;
+  }
+```
+
+判断是否启用硬件NS
+
+
+
+
+
+## AGC(音频增益)
+
+gain_controller1、gain_controller2
+
+## VAD(静音检测)
+
+ Voice_detection
+
+## Other(其他模块)
+
+### HighPassFilter(高通滤波）
+
+## jitter_buffer
+
+
+
+## WebRTC内部消息模型
+
+
+
+## 相关链接
+
+[AEC原理与实现](https://www.cnblogs.com/LXP-Never/p/11703440.html)]]></content>
+      <tags>
+        <tag>WebRTC</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>WebRTC相关记录</title>
+    <url>/2020/08/06/WebRTC%E7%9B%B8%E5%85%B3%E8%AE%B0%E5%BD%95/</url>
+    <content><![CDATA[
+## WebRTC连接流程
+
+![连接过程](https://pic4.zhimg.com/80/v2-02ce0ae8a59238a1d4303268ad5f76a5_1440w.jpg)
+
+
+
+当前采用服务端框架为 `LiCode`
+
+
+
+
+
+## WebRTC通话原理及相关概念
+
+### 媒体协商
+
+> 彼此了解对方支持的媒体格式
+
+
+
+#### SDP
+
+##### 参数含义
+
+
+
+### 网络协商
+
+
+
+
+
+## WebRTC源码相关
+
+
+
+
+
+## WebRTC业务SDK功能
+
+1.消息推送（语音电话提醒、新消息接收、对方挂断、支持拓展额外参数）
+
+2.本地长连接（WebRTC dataChannel、保活）
+
+3.语音通话（音频采集、降噪、回声消除、静音）
+
+4.各种状态封装（连接成功、超时、失败、重连等）
+
+
+
+## WebRTC待完成
+
+单独编译VAD（静音检测）、NS（降噪）、AECM（回声消除）三模块
+
+NS：`RNNoise`和`WebRTC-NS`
+
+
+
+## WebRTC随手记
+
+`SamplesReadyCallback`：在采集音频时可以获取音频信息
+
+`setAudioProcessingFactory()`：设置音频处理相关配置
+
+
+
+`webrtc_voice_engine.cc`音频控制
+
+```c++
+//音频处理默认配置
+  {
+    AudioOptions options;
+    options.echo_cancellation = true;
+    options.auto_gain_control = true;
+    options.noise_suppression = true;
+    options.highpass_filter = true;
+    options.stereo_swapping = false;
+    options.audio_jitter_buffer_max_packets = 200;
+    options.audio_jitter_buffer_fast_accelerate = false;
+    options.audio_jitter_buffer_min_delay_ms = 0;
+    options.audio_jitter_buffer_enable_rtx_handling = false;
+    options.typing_detection = true;
+    options.experimental_agc = false;
+    options.experimental_ns = false;
+    options.residual_echo_detector = true;
+    bool error = ApplyOptions(options);
+    RTC_DCHECK(error);
+  }
+
+
+//降噪等级默认为 High  
+if (options.noise_suppression) {
+    const bool enabled = *options.noise_suppression;
+    apm_config.noise_suppression.enabled = enabled;
+    apm_config.noise_suppression.level =
+        webrtc::AudioProcessing::Config::NoiseSuppression::Level::kHigh;
+    RTC_LOG(LS_INFO) << "NS set to " << enabled;
+  }
+
+
+```
+
+
+
+`audio_processing_impl.cc` Audio_processing处理类，包含回声消除、降噪等功能
+
+
+
+
+
+
+
+]]></content>
+      <tags>
+        <tag>WebRTC</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>LeetCode Hot 100</title>
+    <url>/2020/08/03/LeetCode-Hot-100/</url>
+    <content><![CDATA[
+LeetCode 1：两数之和
+
+```java
+class Solution {
+    public int[] twoSum(int[] nums, int target) {
+        int[] result = new int[2];
+
+        Map<Integer,Integer> map = new HashMap<>();
+        for (int i = 0; i < nums.length; i++) {
+            if(map.containsKey(target-nums[i])){
+               int value = map.get(target-nums[i]);
+               result[0] = value;
+               result[1] = i;
+               break;
+            }
+            map.put(nums[i],i);
+        }
+
+        return result;
+        
+    }
+}
+```
+
+
+
+LeetCode 2：两数相加
+
+]]></content>
+      <tags>
+        <tag>算法</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>设计模式整体回顾</title>
     <url>/2020/06/27/%E8%AE%BE%E8%AE%A1%E6%A8%A1%E5%BC%8F%E6%95%B4%E4%BD%93%E5%9B%9E%E9%A1%BE/</url>
     <content><![CDATA[]]></content>
+  </entry>
+  <entry>
+    <title>Android屏幕的刷新机制</title>
+    <url>/2020/05/30/View%E7%9A%84%E5%88%B7%E6%96%B0%E6%9C%BA%E5%88%B6/</url>
+    <content><![CDATA[
+## 基础概念
+
+在显示系统中，一般包含三个部分`CPU、GPU，屏幕`。
+
+`CPU`：执行View的绘制流程`measure,layout.draw`
+
+`GPU`：进一步处理数据，对图形数据进行渲染并放到`buffer缓冲区`中缓存
+
+`屏幕`：将`buffer缓冲区`的数据取出来填充屏幕像素点
+
+
+
+**CPU绘制后提交数据，GPU进一步处理和缓存数据、最后屏幕从缓冲区获取数据并显示。**
+
+![显示流程](https://upload-images.jianshu.io/upload_images/10992781-093b89e6927bfe9c.png?imageMogr2/auto-orient/strip|imageView2/2/w/843/format/webp)
+
+### 屏幕刷新频率
+
+> 一秒内屏幕刷新的次数也即显示了多少帧的图像，单位`Hz`。一般都是60Hz。*该值取决于屏幕参数*
+
+### 逐行扫描
+
+> 屏幕不是一次性进行画面显示，而是从左到右，从上到下的进行`逐行扫描`。
+
+### 帧率
+
+> **GPU一秒内绘制操作的帧数。**Android系统默认60fps
+
+帧率是动态变化的。
+
+### 丢帧
+
+> 
+
+
+
+### 双缓冲
+
+> 为了解决`画面撕裂`提出的概念
+>
+> 画面撕裂：在GPU向缓冲区写入数据的同时，屏幕也在从`buffer缓冲区`读取数据，导致屏幕显示了不同帧的画面，产生`画面撕裂`。
+
+由绘制和屏幕拥有各自的`buffer缓冲区`：
+
+`GPU`处理完数据后，将图形数据写入`Back Buffer`。
+
+`屏幕`从`Frame Buffer`读取图形数据。
+
+当屏幕刷新(Vsync信号到来)时，`FrameBuffer`与`BackBuffer`的数据进行交换，然后屏幕进行绘制。与`屏幕刷新频率`保持一个交换频率。
+
+![双缓冲示意](https://upload-images.jianshu.io/upload_images/10992781-e963541fb3d200bb.png?imageMogr2/auto-orient/strip|imageView2/2/w/1200/format/webp)
+
+
+
+### 垂直同步
+
+> **通过屏幕硬件中断告诉系统应该什么时候刷新屏幕。**
+>
+> 开启后GPU会等待显示器的VSync信号发出后再进行新的一帧渲染和缓冲区更新。
+>
+> 在显卡帧率大于屏幕帧率时有效解决显示问题。
+
+配合`双缓冲`可以使`CPU/GPU`有充分时间处理数据，减少`jank(丢帧)`
+
+
+
+### 三缓冲
+
+]]></content>
+      <tags>
+        <tag>Android</tag>
+      </tags>
   </entry>
   <entry>
     <title>重学Binder</title>
@@ -9031,21 +9715,1703 @@ Gradle插件打包了可以复用的构建逻辑块，这些逻辑可以在不�
 
 ## 协程的使用
 
-### 创建协程
+```kotlin
+GlobalScope.launch(Dispatchers.Main + ,start = CoroutineStart.DEFAULT){
+  // TODO
+}
 
-### 切换协程
+public fun CoroutineScope.launch(
+    context: CoroutineContext = EmptyCoroutineContext,//协程作用域
+    start: CoroutineStart = CoroutineStart.DEFAULT,//协程启动方式
+    block: suspend CoroutineScope.() -> Unit //协程内需要执行的操作
+): Job {...}
+```
 
-### 基础调用
+### 协程作用域(`CoroutineScope`)
 
-### 取消与超时处理
+> 在Android环境中，通常每个界面(Activity、Fragment)启动的协程(`Coroutine`)只在该界面有效，当退出界面时，协程执行的任务也没有意义。所以在设计`Coroutine`时会要求在`Scope`中执行，当`CoroutineScope`取消时，对应的`Coroutine`也需要自动取消。
+
+#### 阻塞协程作用域(`runBlocking`)
+
+> 调用`runBlocking`的线程会被阻塞直到内部协程任务执行完毕
+
+```kotlin
+runBlocking {
+    launch {
+        println("Hello ${System.currentTimeMillis()}")
+        delay(1000)
+    }
+}
+println("world ${System.currentTimeMillis()}")
+
+输出结果：
+Hello 1597924663541
+world 1597924664551
+结果相差接近1s
+```
+
+**多用于单元测试代码中，不会用于实际的业务开发。就因为会堵塞当前线程**
 
 
+
+#### 全局协程作用域(`GlobalScope`)
+
+> 作用于整个应用的生命周期中，并且无法被取消，在界面中使用，例如`Activity`中使用，就会导致内存泄露
+
+```kotlin
+GlobalScope.launch(Dispatchers.Unconfined) {
+    println("Hello ${System.currentTimeMillis()}")
+    delay(1000)
+}
+println("world ${System.currentTimeMillis()}")
+
+输出结果：
+Hello 1597924937030
+world 1597924937038
+结果接近
+```
+
+通过`GlobalScope`创建的协程将不会有`父协程`，也被称为`根协程`。
+
+
+
+```kotlin
+public object GlobalScope : CoroutineScope {
+    /**
+     * Returns [EmptyCoroutineContext].
+     */
+    override val coroutineContext: CoroutineContext
+        get() = EmptyCoroutineContext //返回一个上下文但并没有进行上下文关联，导致无法被取消
+}
+```
+
+
+
+
+
+#### 自定义协程作用域(`: CoroutineScope`)
+
+> 自定义协程的作用域，就不会造成作用域过大导致的内存泄漏
+
+```kotlin
+val coroutineContext : CoroutineContext = Dispatchers.Main + Job()//协程上下文
+val coroutineScope = CoroutineScope(coroutineContext)//自定义作用域
+
+fun main(args:Array<String>){
+  coroutineScope.launch{
+      println("Hello ${System.currentTimeMillis()}")
+      delay(1000)
+  }
+  println("world ${System.currentTimeMillis()}")
+  //主动控制作用域的取消
+  coroutineScope.cancel()
+}
+```
+
+自定义协程作用域最关键的就是**定义CoroutineContext属性**。
+
+自定义`CoroutineContext`主要由两部分构成：`dispatcher`、`job`。
+
+`dispatcher`：用于指定协程默认使用的调度器(*后续会介绍*)
+
+`job`：可在任意时刻取消协程(*后续会介绍*)
+
+```kotlin
+val coroutineContext : CoroutineContext = Dispatchers.Main + Job()
+```
+
+用`+`连接多个上下文，其中如果出现多个同类型的上下文，后面新添加的会成为使用的上下文，例如
+
+```kotlin
+val coroutineContext : CoroutineContext = Dispatchers.Unconfined + Job() + Dispatchers.IO
+print(coroutineContext.toString())
+
+输出结果：
+[JobImpl{Active}@300ffa5d, Dispatchers.IO] //采用了新添加的调度器
+```
+
+#### 系统提供协程作用域
+
+##### MainScope
+
+> 为了方便开发使用，kotlin标准库中定义了`MainScope()`可以快速生成`CoroutineScope`
+
+```kotlin
+//MainScope实现源码
+public fun MainScope(): CoroutineScope = ContextScope(SupervisorJob() + Dispatchers.Main)
+
+使用方式：
+val mainScope  = MainScope()
+
+fun test(){
+  mainScope.launch{
+    //TODO
+  }
+}
+
+fun onDestroy(){
+  mainScope.cancel()
+}
+```
+
+
+
+##### viewModelScope
+
+> 在AndroidX中 引入了`viewModelScope`，当ViewModel销毁时会自动取消协程任务。
+
+```kotlin
+//引用viewModelScope
+implementation "androidx.lifecycle:lifecycle-viewmodel-ktx:2.1.0-beta01:" //也可以引用更高版本
+
+class MyViewModel:ViewModel(){
+  fun test(){
+    viewModelScope.launch{
+      //TODO 
+    }
+  }
+}
+```
+
+简单源码解析：
+
+```kotlin
+//lifecycle/lifecycle-viewmodel-ktx/src/main/java/androidx/lifecycle/ViewModel.kt
+
+private const val JOB_KEY = "androidx.lifecycle.ViewModelCoroutineScope.JOB_KEY"
+
+/**
+ * [CoroutineScope] tied to this [ViewModel].
+ * This scope will be canceled when ViewModel will be cleared, i.e [ViewModel.onCleared] is called
+ *
+ * This scope is bound to
+ * [Dispatchers.Main.immediate][kotlinx.coroutines.MainCoroutineDispatcher.immediate]
+ */
+//使用拓展方法
+val ViewModel.viewModelScope: CoroutineScope
+        get() {
+            val scope: CoroutineScope? = this.getTag(JOB_KEY)
+          //缓存中读取 对应scope
+            if (scope != null) {
+                return scope
+            }
+           //对应了ViewModel内部的实现代码
+            return setTagIfAbsent(JOB_KEY,
+                CloseableCoroutineScope(SupervisorJob() + Dispatchers.Main.immediate))
+        }
+//自动取消 coroutineScope
+internal class CloseableCoroutineScope(context: CoroutineContext) : Closeable, CoroutineScope {
+    override val coroutineContext: CoroutineContext = context
+
+    override fun close() {
+        coroutineContext.cancel()
+    }
+}
+```
+
+`viewModelScope`默认调度器为`Dispatchers.Main`，因为`ViewModel`与UI交互较为频繁，减少线程间的切换。
+
+```kotlin
+//lifecycle/lifecycle-viewmodel/src/main/java/androidx/lifecycle/ViewModel.java
+
+private final Map<String, Object> mBagOfTags = new HashMap<>();
+//同步存值
+    <T> T setTagIfAbsent(String key, T newValue) {
+        T previous;
+        synchronized (mBagOfTags) {
+            previous = (T) mBagOfTags.get(key);
+            if (previous == null) {
+                mBagOfTags.put(key, newValue);
+            }
+        }
+        T result = previous == null ? newValue : previous;
+        if (mCleared) {
+            closeWithRuntimeException(result);
+        }
+        return result;
+    }
+
+ @MainThread
+//销毁ViewModel
+    final void clear() {
+        mCleared = true;
+        // Since clear() is final, this method is still called on mock objects
+        // and in those cases, mBagOfTags is null. It'll always be empty though
+        // because setTagIfAbsent and getTag are not final so we can skip
+        // clearing it
+        if (mBagOfTags != null) {
+            synchronized (mBagOfTags) {
+              //读取缓存好的 viewModelScope对象
+                for (Object value : mBagOfTags.values()) {
+                    // see comment for the similar call in setTagIfAbsent
+                    closeWithRuntimeException(value);
+                }
+            }
+        }
+        onCleared();
+    }
+
+//清理缓存对象 这也是CloseableCoroutineScope存在的原因
+ private static void closeWithRuntimeException(Object obj) {
+        if (obj instanceof Closeable) {
+            try {
+                ((Closeable) obj).close();
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+```
+
+### 协程启动模式(`CoroutineStart`)
+
+> 控制协程创建后的调用规则
+
+#### CoroutineStart.DEFAULT
+
+> 协程的默认启动模式，为`饿汉式调用`，调用协程后，会立即进入调度状态(等待调度器初始化完毕)。
+
+```kotlin
+suspend fun test1(){
+    print(1)
+    val job = GlobalScope.launch {
+        print(2)
+        delay(1000)
+    }
+    print(3)
+    job.join()
+    print(4)
+}
+
+输出结果：
+123(delay 1000ms)4
+```
+
+**协程创建后，立即开始调度，在调度前如果协程被取消，将直接进入取消响应的状态。**
+
+#### CoroutineStart.LAZY
+
+> `懒汉式调用`，`launch`后并不会有任何调度行为，协程也不会执行，直到调用执行时，协程才会执行。
+>
+> 只有主动调用`start、join、或await`后协程才会开始调度。
+>
+> `job.start()`：启动协程
+>
+> `job.join()`：启动协程并等待任务执行结束
+
+```kotlin
+suspend fun test1(){
+    print(1)
+    val job = coroutineScope.launch(start = CoroutineStart.LAZY) {
+        print(2)
+        delay(1000)
+    }
+
+    print(3)
+    job.start()
+  //job.join()
+    print(4)
+}
+
+输出结果：
+job.start() 1324 没有延迟输出4
+job.join() 1324 延迟1s后输出4
+```
+
+**协程创建后，只有被需要使用时才会执行，例如调用`start、join`才会开始调度执行。**
+
+#### CoroutineStart.ATOMIC(实验版)
+
+> 协程创建后，立即开始调度，在**协程执行到第一个挂起点之前不会响应`cancel`操作**
+
+```kotlin
+suspend fun test1(){
+    print(1)
+  //val job = GlobalScope.launch(start = CoroutineStart.DEFAULT) {
+    val job = GlobalScope.launch(start = CoroutineStart.ATOMIC) {
+        print(2)
+        delay(1000)
+    }
+    job.cancel()
+    print(3)
+    print(4)
+}
+
+输出结果：
+DEFAULT：134 由于在准备执行时触发了cancel，导致2无法输出
+ATOMIC：1324 ATOMIC在执行前不会响应到cancel，所以2正常输出
+```
+
+**ATOMIC将`调度`与`执行`合二为一，是一个原子化操作。**
+
+升级版示例：
+
+```kotlin
+    print(1)
+    val job = GlobalScope.launch(start = CoroutineStart.ATOMIC) {
+        print(2)
+        delay(1000)
+        print(5)
+    }
+    job.cancel()
+    print(3)
+    print(4)
+
+输出结果：
+1342 
+不输出5的原因是：`ATOMIC`在第一个挂起点时忽略`cancel`，后续在执行挂起时,`cancel`	功能生效，导致后续无法输出，这里`delay`就是下一次的挂起操作。
+```
+
+#### CoroutineStart.UNDISPATCHED(实验版)
+
+> 协程创建后立即在当前函数调用栈中执行，直到第一个挂起点？
+
+```kotlin
+suspend fun test1(){
+    println("${Thread.currentThread()} 1")
+    val job = GlobalScope.launch(start = CoroutineStart.UNDISPATCHED) {
+ // val job = GlobalScope.launch(start = CoroutineStart.DEFAULT) {
+        println("${Thread.currentThread()} 2")
+        delay(1000)
+        println("${Thread.currentThread()} 5")
+    }
+
+    println("${Thread.currentThread()} 3")
+    job.join()
+    println("${Thread.currentThread()} 4")
+}
+
+输出结果：
+DEFAULT
+Thread[main,5,main] 1
+Thread[main,5,main] 3
+Thread[DefaultDispatcher-worker-1,5,main] 2
+Thread[DefaultDispatcher-worker-1,5,main] 5
+Thread[DefaultDispatcher-worker-1,5,main] 4
+
+UNDISPATCHED
+Thread[main,5,main] 1
+Thread[main,5,main] 2
+Thread[main,5,main] 3
+Thread[DefaultDispatcher-worker-1,5,main] 5
+Thread[DefaultDispatcher-worker-1,5,main] 4
+```
+
+比较`DEFAULT`结果可见，在`UNDISPATCHED`条件下，未达到挂起点时，代码会执行在调用函数栈中，例如`UNDISPATCHED`的`print(2)`就输出在`Main`线程下。
+
+| CoroutineStart配置 | 功能                                                         |
+| ------------------ | ------------------------------------------------------------ |
+| DEFAULT            | 协程创建后立即执行                                           |
+| LAZY               | 协程创建后，等待需要调用时才会执行协程<br>`start、join、await`等代码调用 |
+| ATOMIC             | 功能类似`DEFAULT`，但是在执行协程前无法被取消，直到执行到了第一个`suspend函数`,例如`delay()`就是个`suspend`函数 |
+| UNDISPATCHED       | 立即在当前线程执行协程，直到执行到了第一个`suspend函数`      |
+
+
+
+### *协程上下文(`CoroutineContext`)
+
+> 本体是一个数据结构，可以看做是`map`，内部实现为`单链表`
+>
+> `上下文`记录了协程所需信息：
+>
+> - 协程调度器：Dispatchers
+> - 执行任务：Job
+> - 协程名字：CoroutineName
+
+```kotlin
+val coroutineContext : CoroutineContext = Dispatchers.Main + Job() + CoroutineName("name")//协程上下文
+```
+
+#### 自定义上下文
+
+Kotlin提供了`AbstractCoroutineContextElement`可以快速实现自定义上下文，例如`CoroutineName`就是依赖这个实现的
+
+```kotlin
+public data class CoroutineName(
+    /**
+     * User-defined coroutine name.
+     */
+    val name: String
+) : AbstractCoroutineContextElement(CoroutineName) {
+    /**
+     * Key for [CoroutineName] instance in the coroutine context.
+     */
+    public companion object Key : CoroutineContext.Key<CoroutineName>
+
+    /**
+     * Returns a string representation of the object.
+     */
+    override fun toString(): String = "CoroutineName($name)"
+}
+
+```
+
+//TODO 后续会补充如何调用自定义上下文
+
+### 协程拦截器(`ContinuationInterceptor`)
+
+> 协程拦截器也是`CoroutineContext`的一个实现，可以控制协程的执行流程，功能类似于`Okhttp的拦截器`。
+>
+> `协程拦截器`永远置于`CoroutineContext`组合的最后一位，保证不会被其他实现所覆盖。
+>
+> **协程拦截器最多只能存在1个。**
+>
+> <!--如何配置多个拦截器？-->
+
+```kotlin
+class CustomInterceptor : ContinuationInterceptor {
+    override val key = ContinuationInterceptor
+
+    override fun <T> interceptContinuation(continuation: Continuation<T>): Continuation<T>  = CustomContinuation<T>(continuation)
+
+    class CustomContinuation<T>(val continuation: Continuation<T>) : Continuation<T> {
+        override val context: CoroutineContext = continuation.context
+
+        override fun resumeWith(result: Result<T>) {
+            println("result = $result")
+            //对result进行多次处理，也可以联动成多个拦截器的处理
+            //此处hook 返回值可对其进行修改或者拓展
+            continuation.resumeWith(result)
+        }
+    }
+}
+
+GlobalScope/launch(CustomInterceptor()){
+  //TODO ...
+}
+```
+
+
+
+### 协程调度器(`CoroutineDispatcher`)
+
+> 属于`CoroutineContext`的子类，同时实现了`ContinuationInterceptor`接口，通过拦截功能实现协程的调度。
+>
+> 调度器的主要目的**切换执行线程**。
+
+```kotlin
+public abstract class CoroutineDispatcher :
+    AbstractCoroutineContextElement(ContinuationInterceptor), ContinuationInterceptor {
+  
+      ... 
+      //此处切换任务执行线程
+      public abstract fun dispatch(context: CoroutineContext, block: Runnable)
+
+ }
+```
+
+先了解源码中提供的调度器
+
+#### Dispatchers.Default
+
+> 默认协程调度器，适合处理后台计算，为`CPU密集型`任务调度器
+
+<!--ForkJoinPool-->
+
+```kotlin
+public actual object Dispatchers {
+      @JvmStatic
+    public actual val Default: CoroutineDispatcher = createDefaultDispatcher()
+  ...
+}
+
+internal actual fun createDefaultDispatcher(): CoroutineDispatcher =
+    if (useCoroutinesScheduler) DefaultScheduler else CommonPool
+
+internal object DefaultScheduler : ExperimentalCoroutineDispatcher() {
+    val IO: CoroutineDispatcher = LimitingDispatcher(
+        this,
+        systemProp(IO_PARALLELISM_PROPERTY_NAME, 64.coerceAtLeast(AVAILABLE_PROCESSORS)),
+        "Dispatchers.IO",
+        TASK_PROBABLY_BLOCKING
+    )
+
+    override fun close() {
+        throw UnsupportedOperationException("$DEFAULT_DISPATCHER_NAME cannot be closed")
+    }
+
+    override fun toString(): String = DEFAULT_DISPATCHER_NAME
+
+    @InternalCoroutinesApi
+    @Suppress("UNUSED")
+    public fun toDebugString(): String = super.toString()
+}
+```
+
+#### Dispatchers.IO（仅JVM可用）
+
+> IO调度器，适合执行IO相关操作，例如读写文件，为`IO密集型`任务调度器
+
+IO仅在JVM上有定义，基于`Default`调度器，并实现了独立的队列和限制，因此`Default与IO`切换不会触发线程切换。
+
+```kotlin
+suspend fun test2(){
+    log("1")
+    val job = GlobalScope.async(Dispatchers.IO) {
+        log(2)
+        withContext(Dispatchers.Default){
+            log(3)
+            withContext(Dispatchers.IO){
+                log(4)
+                withContext(Dispatchers.Default){
+                    log(5)
+                    123
+                }
+            }
+        }
+    }
+    log(job.await())
+}
+
+输出结果：
+13:26:04:564 [main] 1
+13:26:04:581 [DefaultDispatcher-worker-1] 2
+13:26:04:586 [DefaultDispatcher-worker-1] 3
+13:26:04:586 [DefaultDispatcher-worker-1] 4
+13:26:04:587 [DefaultDispatcher-worker-1] 5 //切换过程中一直在同一线程
+13:26:04:588 [DefaultDispatcher-worker-2] 123
+```
+
+`Default`与`IO`调度器对任务的执行做了优化，可以保证线程执行效率较高。
+
+主要原理为：Kotlin实现了`CoroutineScheduler`，支持抢占任务。
+
+```kotlin
+internal class CoroutineScheduler(
+    @JvmField val corePoolSize: Int,
+    @JvmField val maxPoolSize: Int,
+    @JvmField val idleWorkerKeepAliveNs: Long = IDLE_WORKER_KEEP_ALIVE_NS,
+    @JvmField val schedulerName: String = DEFAULT_SCHEDULER_NAME
+) : Executor, Closeable {
+  ...
+  //CPU密集任务队列
+    @JvmField
+    val globalCpuQueue = GlobalQueue()
+  //IO密集任务队列
+    @JvmField
+    val globalBlockingQueue = GlobalQueue()
+  
+  ...
+      fun dispatch(block: Runnable, taskContext: TaskContext = NonBlockingContext, tailDispatch: Boolean = false) {
+        trackTask() // this is needed for virtual time support
+        val task = createTask(block, taskContext)
+        // try to submit the task to the local queue and act depending on the result
+        val currentWorker = currentWorker()
+        //任务优先插入本地队列中执行
+        val notAdded = currentWorker.submitToLocalQueue(task, tailDispatch)
+        //本地队列已满，就将任务插入到全局队列中
+        if (notAdded != null) {
+            if (!addToGlobalQueue(notAdded)) {
+                // Global queue is closed in the last step of close/shutdown -- no more tasks should be accepted
+                throw RejectedExecutionException("$schedulerName was terminated")
+            }
+        }
+      ...
+    }
+  //执行的任务
+   internal inner class Worker private constructor() : Thread() {
+      override fun run() = runWorker()
+     //执行任务
+     private fun runWorker() {
+            var rescanned = false
+            while (!isTerminated && state != WorkerState.TERMINATED) {
+              //从队列中找到任务
+                val task = findTask(mayHaveLocalTasks)
+              ...
+            }
+   }
+    //找到本地队列任务
+    fun findTask(scanLocalQueue: Boolean): Task? {
+            //获取CPU控制权
+            if (tryAcquireCpuPermit()) return findAnyTask(scanLocalQueue)
+            // If we can't acquire a CPU permit -- attempt to find blocking task
+            val task = if (scanLocalQueue) {
+                localQueue.poll() ?: globalBlockingQueue.removeFirstOrNull()
+            } else {
+                globalBlockingQueue.removeFirstOrNull()
+            }
+           //从其他队列获取任务执行
+            return task ?: trySteal(blockingOnly = true)
+        }
+
+     //从其他队列获取任务
+     private fun trySteal(blockingOnly: Boolean): Task? {
+            assert { localQueue.size == 0 }
+            val created = createdWorkers
+            // 0 to await an initialization and 1 to avoid excess stealing on single-core machines
+            if (created < 2) {
+                return null
+            }
+
+            var currentIndex = nextInt(created)
+            var minDelay = Long.MAX_VALUE
+            repeat(created) {
+                ++currentIndex
+                if (currentIndex > created) currentIndex = 1
+                val worker = workers[currentIndex]
+                if (worker !== null && worker !== this) {
+                    assert { localQueue.size == 0 }
+                  //从其他工作线程中获取任务来执行
+                    val stealResult = if (blockingOnly) {
+                        localQueue.tryStealBlockingFrom(victim = worker.localQueue)
+                    } else {
+                        localQueue.tryStealFrom(victim = worker.localQueue)
+                    }
+                    if (stealResult == TASK_STOLEN) {
+                        return localQueue.poll()
+                    } else if (stealResult > 0) {
+                        minDelay = min(minDelay, stealResult)
+                    }
+                }
+            }
+            minDelayUntilStealableTaskNs = if (minDelay != Long.MAX_VALUE) minDelay else 0
+            return null
+        }
+  
+}
+```
+
+总体设计分为三步：
+
+1. 优先任务放在本地线程中，放在`Worker`中的`LocalQueue`中
+2. 使用双重队列`GlobalCpuQueue(CPU密集任务队列)`、`GlobalBlockingQueue(IO密集任务队列)`，`LocalQueue`满后，任务会放到对应全局队列中
+3. 当`LocalQueue`和`GlobalQueue`中的任务执行完时，会从其他正在执行任务的`Worker`中获取他的`LocalQueue`的任务放到自己的`LocalQueue`中执行。
+
+这三步可以保证**线程资源的充分利用，减少了多线程的切换开销，提高了使用效率**。实现参考的是`ForkJoinPool`。
+
+#### Dispatchers.Main
+
+> UI调度器，根据执行平台不同会初始化为对应平台UI线程的调度器
+>
+> 在Android中，就会通过`Handler`调度到`UI线程`执行任务
+
+```kotlin
+//加载各个平台下定义的`MainDispatcherFactory`
+private fun loadMainDispatcher(): MainCoroutineDispatcher {
+        return try {
+            val factories = if (FAST_SERVICE_LOADER_ENABLED) {
+                FastServiceLoader.loadMainDispatcherFactory()
+            } else {
+                // We are explicitly using the
+                // `ServiceLoader.load(MyClass::class.java, MyClass::class.java.classLoader).iterator()`
+                // form of the ServiceLoader call to enable R8 optimization when compiled on Android.
+                ServiceLoader.load(
+                        MainDispatcherFactory::class.java,
+                        MainDispatcherFactory::class.java.classLoader
+                ).iterator().asSequence().toList()
+            }
+            @Suppress("ConstantConditionIf")
+            factories.maxBy { it.loadPriority }?.tryCreateDispatcher(factories)
+                ?: createMissingDispatcher()
+        } catch (e: Throwable) {
+            // Service loader can throw an exception as well
+            createMissingDispatcher(e)
+        }
+    }
+```
+
+拿Android举例，分析下如何实现`Dispatchers.Main`功能
+
+```kotlin
+    internal fun loadMainDispatcherFactory(): List<MainDispatcherFactory> {
+        val clz = MainDispatcherFactory::class.java
+        if (!ANDROID_DETECTED) {
+            return load(clz, clz.classLoader)
+        }
+
+        return try {
+            val result = ArrayList<MainDispatcherFactory>(2)
+          //加载对应类名的类
+            createInstanceOf(clz, "kotlinx.coroutines.android.AndroidDispatcherFactory")?.apply { result.add(this) }
+            createInstanceOf(clz, "kotlinx.coroutines.test.internal.TestMainDispatcherFactory")?.apply { result.add(this) }
+            result
+        } catch (e: Throwable) {
+            // Fallback to the regular SL in case of any unexpected exception
+            load(clz, clz.classLoader)
+        }
+    }
+```
+
+Android下的实现
+
+```kotlin
+//在Android编译完成后，可以读取到该类
+internal class AndroidDispatcherFactory : MainDispatcherFactory {
+    override fun createDispatcher(allFactories: List<MainDispatcherFactory>) = HandlerContext(Looper.getMainLooper().asHandler(async = true), "Main")
+}
+internal class HandlerContext private constructor(
+    private val handler: Handler,
+    private val name: String?,
+    private val invokeImmediately: Boolean
+) : HandlerDispatcher(), Delay {
+    public constructor(
+        handler: Handler,
+        name: String? = null
+    ) : this(handler, name, false)
+
+    //android中需要向主looper进行提交调度
+    override fun isDispatchNeeded(context: CoroutineContext): Boolean {
+        return !invokeImmediately || Looper.myLooper() != handler.looper
+    }
+
+    //通过持有主线程looper的handler进行调度
+    override fun dispatch(context: CoroutineContext, block: Runnable) {
+        handler.post(block)
+    }
+    ...
+}
+```
+
+Android的`Dispatchers.Main`通过`Handler`将任务放到主线程中执行。
+
+#### Dispatchers.Unconfined
+
+> 在协程体中，遇到第一个挂起函数前的代码运行在原线程中，执行挂起函数后，就运行在子线程中，
+
+
+
+#### 自定义调度器
+
+> `Default`和`IO`的底层实现都依赖了`线程池`，执行到`挂起函数`时还是会发生线程的切换。可以通过自定义调度器减少这类切换的发生。
+
+```kotlin
+val myDispatcher= Executors.newSingleThreadExecutor{ r -> Thread(r, "MyThread") }.asCoroutineDispatcher() //转换线程池到 Dispatcher
+
+suspend fun test(){
+  GlobalScope.launch(myDispatcher){
+    //TODO 
+  }
+  
+  //任务执行完毕后关闭线程池，避免内存泄漏
+  myDispatcher.close() 
+  
+}
+```
+
+### 协程构造器(`Coroutine Builders`)
+
+> 配置完上述的`启动模式、调度器、上下文`之后，就要开始构造一个`协程`。
+
+协程提供了几个通用的构造器
+
+#### `launch`
+
+> 默认构建一个新的协程，并返回一个`Job`对象，可以对该`Job`进行操作，例如`start()、join()`启动协程,`cancel()`取消该协程。
+
+```kotlin
+val job = GlobalScope.launch{
+  //TODO ...
+}
+job.cancel()
+```
+
+`Job`代表了协程本身，封装了协程需要执行的代码逻辑，并且拥有简单的生命周期。
+
+主要有以下几个生命周期：
+
+- New
+- Active
+- Completing
+- Cancelling
+- Cancelled
+- Completed
+
+```
+*                                       wait children
+* +-----+ start  +--------+ complete   +-------------+  finish  +-----------+
+* | New | -----> | Active | ---------> | Completing  | -------> | Completed |
+* +-----+        +--------+            +-------------+          +-----------+
+*                  |  cancel / fail       |
+*                  |     +----------------+
+*                  |     |
+*                  V     V
+*              +------------+                           finish  +-----------+
+*              | Cancelling | --------------------------------> | Cancelled |
+*              +------------+                                   +-----------+
+```
+
+`Job.join()`：中断与当前`Job`关联的协程，直到所有`子Job`执行完成，所关联的协程才可以继续执行。
+
+`join()`由`suspend`修饰，所以必须在协程内部被调用。
+
+#### `async`
+
+> 创建一个协程后，会返回一个`Deferred<T>`对象，可以通过该对象调用`await()`获取返回值。
+
+```kotlin
+val job = GlobalScope.async(Dispatchers.IO) {
+	log(2)
+  delay(1000)
+  123
+}
+val result = job.await()
+```
+
+`async`允许**并行的允许多个子线程任务**。减少请求的耗时。
+
+`Deferred`提供了`await()`，用`suspend`修饰，需要获取`Deferred`对象的结果时，调用`await()`等待执行结果返回。
+
+### 协程异常处理(`Coroutine Exception`)
+
+以下是会导致协程异常发生的测试代码
+
+```kotlin
+val a = 1
+//模拟产生异常方法
+suspend fun test3() =
+    suspendCoroutine<Int> { continuation ->
+        if (a == 0) {
+            continuation.resume(a)
+        } else {
+            continuation.resumeWithException(IllegalArgumentException("haha"))
+        }
+    }
+
+suspend fun main(args:Array<String>){
+    val dispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher();
+    coroutineScope.launch(dispatcher) {
+        log(1)
+        //创建子协程
+        val job = coroutineScope.async {
+            test2()
+        }
+        job.join()
+        log(2)
+    }
+    log(3)
+    dispatcher.close()
+}
+
+输出结果：
+[main] 3
+[pool-1-thread-1] 1
+Exception in thread "pool-1-thread-1" java.lang.IllegalArgumentException: haha
+
+Process finished with exit code 0 //程序终止
+```
+
+有以下两种手段来对异常进行捕获处理
+
+#### 局部异常捕获
+
+> 这部分主要涉及到`协程作用域`的概念，根据上面对`协程作用域`的描述，主要分为`GlobalScope`以及`自定义CoroutineScope`两种。
+>
+> 对于这两种`协程作用域`异常传播也有不同的形式。
+
+##### 不传播异常
+
+上面提到过`GlobalScope`为全局作用域，本身不存在父协程，发生异常后，只会输出异常信息，不会对运行产生影响。
+
+```kotlin
+suspend fun test5() {
+    coroutineScope.launch {
+        log(1)
+        val job = GlobalScope.launch {
+            throw NullPointerException("11")
+        }
+        log(2)
+        delay(1000)
+        log(3)
+    }
+    delay(1000)
+    log(4)
+}
+
+输出结果：
+20:02:29:623 [DefaultDispatcher-worker-1] 1
+20:02:29:625 [DefaultDispatcher-worker-1] 2
+Global Exception is catch and msg = 11
+Exception in thread "DefaultDispatcher-worker-3" java.lang.NullPointerException: 11
+	at com.webrtc.lib_licode_adaptation.MyClassKt$test5$2$job$1.invokeSuspend(MyClass.kt:183)
+20:02:30:632 [kotlinx.coroutines.DefaultExecutor] 4
+20:02:30:632 [DefaultDispatcher-worker-3] 3
+
+Process finished with exit code 0
+```
+
+使用`GlobalScope`启动协程，发生异常时，不会影响外部协程的运行。
+
+
+
+##### 传播异常
+
+> **将异常主动往外抛到启动顶层协程所在的线程。**
+>
+> 主要采用`try{..}catch{...}`方式进行异常捕获
+
+`coroutineScope`
+
+> 协程默认作用域，在该作用域内当自身执行任务失败的时候，触发双向传播。
+>
+> **子协程异常<=>父协程异常**
+
+示例：
+
+```kotlin
+suspend fun test7() {
+    log(1)
+    coroutineScope {
+        // 启动一个子协程
+        launch {
+            try {
+                delay(1000)
+                println("3")
+            } catch (e: Exception) {
+                println(e.message)
+            }
+        }
+        delay(100)
+        throw NullPointerException("111")
+        println("3")
+    }
+}
+
+输出结果：
+10:15:46:738 [main] 1
+Parent job is Cancelling //由于父协程异常，导致子协程的执行取消
+Exception in thread "main" java.lang.NullPointerException: 111
+```
+
+
+
+`supervisorScope`
+
+> 在作用域内当自身执行任务失败的时候，只会向下传播关闭子协程，不会影响父协程及其他同级协程的运行。
+>
+> **父协程异常->子线程异常，子协程异常不影响父协程**
+>
+> `supervisorScope`使用`SupervisorJob`
+
+```kotlin
+private class SupervisorJobImpl(parent: Job?) : JobImpl(parent) {
+    override fun childCancelled(cause: Throwable): Boolean = false //子协程不影响父协程
+}
+```
+
+示例：
+
+```kotlin
+suspend fun test7() {
+    println(1)
+    supervisorScope {
+        println("2")
+        // 启动一个子协程
+        launch {
+            throw NullPointerException("111")// 故意让子协程出现异常
+        }
+        delay(100)
+        println("3")
+    }
+    println("4")
+}
+
+输出结果：
+1
+2
+Exception in thread "DefaultDispatcher-worker-1" java.lang.NullPointerException: 111
+...
+3
+4
+```
+
+`supervisorScope`内子协程的异常不影响父协程的继续运行。
+
+
+
+#### 全局异常捕获
+
+> 类似`Java`，协程也提供了捕获全局异常(`未声明捕获异常`)的方式。
+
+`Java`的全局异常捕获方式：
+
+```java
+        Thread.setDefaultUncaughtExceptionHandler(new UncaughtExceptionHandler() {
+            @Override
+            public void uncaughtException(Thread t, Throwable e) {
+                //TODO 异常处理
+            }
+        });
+```
+
+##### 协程内全局异常捕获方式（`针对协程作用域内未捕获的异常`）
+
+```kotlin
+suspend fun test4() {
+    val exceptionHandler = CoroutineExceptionHandler { coroutineContext, throwable ->
+        log("Throws an exception with message: ${throwable.message}")
+    }
+    log(1)
+    val job = coroutineScope.launch(exceptionHandler) {
+        log(3)
+        throw ArithmeticException("Hey!")
+    }
+    log(2)
+  //避免执行过程中 进程中断，导致输出结果不一致
+    delay(1000)
+}
+
+输出结果：
+15:31:47:846 [main] 1
+15:31:47:927 [main] 2
+15:31:47:929 [DefaultDispatcher-worker-1] 3
+15:31:47:933 [DefaultDispatcher-worker-1] Throws an exception with message: Hey! //捕获到异常
+
+Process finished with exit code 0
+```
+
+上述代码调用了`launch`的构造方式，`async`的输出结果会如何？
+
+```kotlin
+suspend fun test4() {
+    val exceptionHandler = CoroutineExceptionHandler { coroutineContext, throwable ->
+        log("Throws an exception with message: ${throwable.message}")
+    }
+    log(1)
+    val job = coroutineScope.async(exceptionHandler) {
+        log(3)
+        4
+        throw ArithmeticException("Hey!")
+    }
+    log(2)
+    log(job.await())
+    delay(1000)
+}
+
+输出结果：
+16:04:14:980 [main] 1
+16:04:15:013 [main] 2
+16:04:15:015 [DefaultDispatcher-worker-1] 3
+Exception in thread "main" java.lang.ArithmeticException: Hey!
+	at com.webrtc.lib_licode_adaptation.MyClassKt$test4$job$1.invokeSuspend(MyClass.kt:171)
+```
+
+`async`直接抛出未捕获异常，导致当前进程执行中断
+
+针对`launch`和`async`的不同表现，需要从源码层面进行分析
+
+```kotlin
+`launch`执行指向以下代码
+// kotlinx.coroutines.BuildersKt
+public fun CoroutineScope.launch(
+    context: CoroutineContext = EmptyCoroutineContext,
+    start: CoroutineStart = CoroutineStart.DEFAULT,//启动方式
+    block: suspend CoroutineScope.() -> Unit
+): Job {
+    val newContext = newCoroutineContext(context)
+    val coroutine = if (start.isLazy)
+        LazyStandaloneCoroutine(newContext, block) else
+        StandaloneCoroutine(newContext, active = true)
+    coroutine.start(start, coroutine, block)
+    return coroutine
+}
+
+private open class StandaloneCoroutine(
+    parentContext: CoroutineContext,
+    active: Boolean
+) : AbstractCoroutine<Unit>(parentContext, active) {
+    override fun handleJobException(exception: Throwable): Boolean {
+        handleCoroutineException(context, exception)
+        return true
+    }
+}
+
+public fun handleCoroutineException(context: CoroutineContext, exception: Throwable) {
+    // Invoke an exception handler from the context if present
+    //若context存在 ExceptionHandler 则会对异常进行处理
+    try {
+        context[CoroutineExceptionHandler]?.let {
+            it.handleException(context, exception)
+            return
+        }
+    } catch (t: Throwable) {
+        handleCoroutineExceptionImpl(context, handlerException(exception, t))
+        return
+    }
+    // If a handler is not present in the context or an exception was thrown, fallback to the global handler
+    handleCoroutineExceptionImpl(context, exception)
+}
+
+`async`执行指向如下代码
+public fun <T> CoroutineScope.async(
+    context: CoroutineContext = EmptyCoroutineContext,
+    start: CoroutineStart = CoroutineStart.DEFAULT,
+    block: suspend CoroutineScope.() -> T
+): Deferred<T> {
+    val newContext = newCoroutineContext(context)
+    val coroutine = if (start.isLazy)
+        LazyDeferredCoroutine(newContext, block) else
+        DeferredCoroutine<T>(newContext, active = true)
+    coroutine.start(start, coroutine, block)
+    return coroutine
+}
+
+private open class DeferredCoroutine<T>(
+    parentContext: CoroutineContext,
+    active: Boolean
+) : AbstractCoroutine<T>(parentContext, active), Deferred<T>, SelectClause1<T> {
+  //没有对 exception进行处理，导致全局异常无法处理
+    override fun getCompleted(): T = getCompletedInternal() as T
+    override suspend fun await(): T = awaitInternal() as T
+    override val onAwait: SelectClause1<T> get() = this
+    override fun <R> registerSelectClause1(select: SelectInstance<R>, block: suspend (T) -> R) =
+        registerSelectClause1Internal(select, block)
+}
+```
+
+综上所述：**在全局异常处理下，只有用`launch`启动的协程才可以捕获异常，而`async`不能被捕获异常，会继续抛出异常。**
+
+##### 真·全局异常捕获方式
+
+上述实现的`ExceptionHandler`只能在协程内使用，而无法处理其他协程的异常情况。需要使用`ServiceLoader`来实现全局协程异常捕获
+
+实现全局的异常捕获需要如下几步：
+
+1. 新建全局`ExceptionHandler`类
+
+   ```kotlin
+   class GlobalExceptionHandler : CoroutineExceptionHandler{
+       override val key: CoroutineContext.Key<*> = CoroutineExceptionHandler
+   
+       override fun handleException(context: CoroutineContext, exception: Throwable) {
+           print("Global Exception is catch and msg = ${exception.message}")
+       }
+   }
+   ```
+
+   
+
+2. `classpath`中注册该类
+
+   在`src/main`目录下新建`resources/META-INF/`文件夹，然后新建文件命名为`kotlinx.coroutines.CoroutineExceptionHandler`，文件内写入
+
+   ```
+   com.XX.lib.GlobalExceptionHandler
+   ```
+
+   目录结构如下：
+
+   src
+
+   ​	-main
+
+   ​		-java
+
+   ​		-resources
+
+   ​			-META-INF
+
+   ​				-services
+
+   ​					-kotlinx.coroutines.CoroutineExceptionHandler
+
+3. 测试效果
+
+   ```kotlin
+   suspend fun test4() {
+       val exceptionHandler = CoroutineExceptionHandler { coroutineContext, throwable ->
+           print("Throws an exception with message: ${throwable.message}")
+       }
+       log(1)
+       val job = coroutineScope.launch() { //exceptionHandler配置
+           log(3)
+           throw ArithmeticException("Hey!")
+       }
+       log(2)
+     //避免执行过程中 进程中断，导致输出结果不一致
+       delay(1000)
+   }
+   
+   输出结果：
+   16:04:14:980 [main] 1
+   16:04:15:013 [main] 2
+   16:04:15:015 [DefaultDispatcher-worker-1] 3
+   Global Exception is catch and msg = Hey!
+   Exception in thread "main" java.lang.ArithmeticException: Hey!
+   	at com.webrtc.lib_licode_adaptation.MyClassKt$test4$job$1.invokeSuspend(MyClass.kt:171)
+   
+   若配置了exceptionHandler就会覆盖Global的配置
+   输出如下内容：
+   16:04:14:980 [main] 1
+   16:04:15:013 [main] 2
+   16:04:15:015 [DefaultDispatcher-worker-1] 3
+   Exception in thread "main" java.lang.ArithmeticException: Hey!
+   	at com.webrtc.lib_licode_adaptation.MyClassKt$test4$job$1.invokeSuspend(MyClass.kt:171)
+   
+   
+   ```
+
+   **全局异常捕获的配置只对`launch`有效，`async`无效。**
+
+   `真·全局异常捕获`不支持`JS以及Native`平台。
+   
+   拓展：
+   
+   1. SPI机制
+   
+      > 全称为`Service Provider Interface`，JDK内置的一种服务提供发现机制，主要源码在`java,util.ServiceLoader`。
+   
+      使用时需要在`META-INF/services`创建和服务同名的**全限定名**相同的文件(例如*com.xx.xx.service*)，在文件中写入**服务提供者**的全限定名(例如*com.xxx.xx.XXService*)。
+   
+      实现原理：
+      
+      1. 调用`ServiceLaoder.load()`创建新的`ServiceLoader`
+      2. 再通过迭代器获取对象实例
+         - 判断`providers`是否缓存实例对象，若存在则返回
+         - 不存在，则执行类的装载过程：
+           1. 读取`META-INF/services`的配置文件，获得需要被实例化类的名称
+           2. 反射调用`Class.forName()`并调用`instance()`进行类实例化。**需要对应类必须存在一个无参构造方法。**
+           3. 实例化对象存到`providers`缓存对象中并返回实例对象。
+      
+      缺点：
+      
+      1. 无法按需加载，只能通过遍历的方式获取全部接口实现类
+      2. 无法直接获取实例对象，只能通过遍历匹配对应实现类
+      3. 并发`serviceLoader`是不安全的
+      
+      
+
+#### 总结
+
+1. **协程内部异常处理流程**
+
+   - 在作用域内使用`try..catch`可以直接捕获子线程中的异常
+   - 如果未设置异常捕获，则会走`全局异常捕获流程`(**只在`launch`创建协程下生效**)
+     - 若设置`CoroutineExceptionHandler`则处理
+     - 没配置，向`GlobalExceptionHandler`进行处理，该配置时全局的，对所有协程任务生效
+
+2. **异常传播不同作用域表现**
+
+   - `GlobalScope`：异常不会向外传递，因为已经是`根协程`
+   - `coroutineScope`：异常进行`双向传递`，父协程和子协程都会被取消
+   - `supervisorScope`：异常进行`单向传递`，只有父协程向子协程传递异常，子协程会被取消，父协程不受影响
+
+3. `launch/join`和`async/await`表现不同
+
+   `launch/join`关注的是**任务是否执行完成**，`async/await`关注的是**任务的执行结果**，所以在局部异常捕获的时候，两种创建方式的异常捕获也会有区别
+   
+4. **全局的异常处理器(CoroutineExceptionHandler)只会对父协程生效，子协程的异常最后还是会传递到根协程进行处理。**非`supervisorScope`条件下。
+
+### 协程取消(`Coroutine Cancel`)
+
+> 取消针对`Job`而设的，调用`cancel()`可以取消正在运行的协程。
+
+```kotlin
+//官方示例代码
+val job = launch {
+    repeat(1000) { i ->
+        println("I'm sleeping $i ...")
+        delay(500L)
+    }
+}
+delay(1300L) // 等待一段时间
+println("main: I'm tired of waiting!")
+job.cancel() // 取消 job
+job.join() // 等待 job 结束
+println("main: Now I can quit.")
+```
+
+上述代码是最基础的`cancel`使用方式
+
+
+
+#### 协程之间的关系
+
+> 协程之间是存在着父子关系的，**取消父协程时，也会取消所有子协程！**
+
+主要有以下三种关系：
+
+##### 父协程调用`cancel()`主动或者触发异常结束时，会立即取消所有子协程
+
+```kotlin
+基础调用流程
+Job.cancel() => JobImpl.cancel() => JobSupport.cancelImpl() => JobSupport.notifyCancelling()
+
+    private fun notifyCancelling(list: NodeList, cause: Throwable) {
+        // first cancel our own children
+        onCancelling(cause)
+        notifyHandlers<JobCancellingNode<*>>(list, cause)
+        // then cancel parent
+        cancelParent(cause) // tentative cancellation -- does not matter if there is no parent
+    }
+
+    private fun cancelParent(cause: Throwable): Boolean {
+        // Is scoped coroutine -- don't propagate, will be rethrown
+        if (isScopedCoroutine) return true
+
+        val isCancellation = cause is CancellationException
+        val parent = parentHandle
+        // No parent -- ignore CE, report other exceptions.
+        if (parent === null || parent === NonDisposableHandle) {
+            return isCancellation
+        }
+        //调用所有子协程进行取消任务，子线程也会收到 CancellException
+        return parent.childCancelled(cause) || isCancellation
+    }
+```
+
+
+
+##### 父协程必须等到所有子协程完成(执行完成 或 取消)才算完成
+
+
+
+##### 子协程抛出未捕获的异常时，默认情况下会取消父协程(`CancellationException除外`)
+
+
+
+#### 只有可取消的协程代码，才可以被取消
+
+> 协程的代码必须与外界配合，才能够被取消！
+
+目前只有`kotlinx.coroutines`中的所有挂起函数都是**可取消的**。这些挂起函数会检查协程是否被取消，并在被取消时抛出`CancellationException`异常。
+
+例如`delay()、yield()`这些预置的挂起函数，或者封装的挂起函数都是可以被取消的。
+
+##### delay()
+
+> 让协程挂起，而且不会阻塞CPU。
+>
+> <!--Thread.sleep 让出CPU，不会释放锁。wait会释放锁，等待notify进行唤醒-->
+
+```kotlin
+public suspend fun delay(timeMillis: Long) {
+    if (timeMillis <= 0) return // don't delay
+    return suspendCancellableCoroutine sc@ { cont: CancellableContinuation<Unit> ->
+        //将任务放到
+        cont.context.delay.scheduleResumeAfterDelay(timeMillis, cont)
+    }
+}
+
+//默认延迟线程池
+internal val CoroutineContext.delay: Delay get() = get(ContinuationInterceptor) as? Delay ?: DefaultDelay
+
+//EventLoopImplBase
+    public override fun scheduleResumeAfterDelay(timeMillis: Long, continuation: CancellableContinuation<Unit>) {
+        val timeNanos = delayToNanos(timeMillis)//设置执行时间
+        if (timeNanos < MAX_DELAY_NS) {
+            val now = nanoTime()
+            DelayedResumeTask(now + timeNanos, continuation).also { task -> //按照延时添加任务
+                continuation.disposeOnCancellation(task)
+                schedule(now, task)
+            }
+        }
+    }
+```
+
+关键点就在于`suspendCancellableCoroutine`提供了普通函数的挂起转换
+
+```kotlin
+public suspend inline fun <T> suspendCancellableCoroutine(
+    crossinline block: (CancellableContinuation<T>) -> Unit
+): T =
+    suspendCoroutineUninterceptedOrReturn { uCont ->
+        val cancellable = CancellableContinuationImpl(uCont.intercepted(), resumeMode = MODE_CANCELLABLE)
+        /*
+         * For non-atomic cancellation we setup parent-child relationship immediately
+         * in case when `block` blocks the current thread (e.g. Rx2 with trampoline scheduler), but
+         * properly supports cancellation.
+         */
+        cancellable.initCancellability()
+        block(cancellable)
+        cancellable.getResult()
+    }
+```
+
+
+
+##### yield()
+
+> 挂起当前协程，然后将协程分发到`Dispatcher`的队列，可以让该协程所在线程或线程池可以运行其他协程逻辑，然后等待`Disapcher`空闲的时候继续执行原来协程。
+>
+> <!--Thread.yield() 让出CPU调度，只能让 同优先级的线程有执行机会-->
+
+```kotlin
+val dispatcher = Executors.newFixedThreadPool(2).asCoroutineDispatcher()  
+coroutineScope.launch(dispatcher){
+            launch { //协程1
+                repeat(3) {
+                    log("job1 repeat $it times")
+                    yield() //让协程2得以执行
+                }
+            }
+            launch { //协程2
+                repeat(3) {
+                    log("job2 repeat $it times")
+//                    yield()
+                }
+            }
+    }
+delay(1000)
+dispatcher.close()
+
+输出结果：
+19:28:30:808 [pool-1-thread-2] job1 repeat 0 times
+19:28:30:809 [pool-1-thread-1] job2 repeat 0 times
+19:28:30:809 [pool-1-thread-1] job2 repeat 1 times
+19:28:30:809 [pool-1-thread-1] job2 repeat 2 times
+19:28:30:809 [pool-1-thread-1] job1 repeat 1 times
+19:28:30:809 [pool-1-thread-1] job1 repeat 2 times
+```
+
+`yield()`相关源码
+
+```kotlin
+public suspend fun yield(): Unit = suspendCoroutineUninterceptedOrReturn sc@ { uCont ->
+    val context = uCont.context
+    context.checkCompletion()
+    ...
+    COROUTINE_SUSPENDED
+}
+```
+
+
+
+##### *suspendCoroutineUninterceptedOrReturn
+
+根据上面两个源码发现，转换挂起函数的关键在于`suspendCoroutineUninterceptedOrReturn`，只要实现了该函数，就可以转换为可被取消的挂起函数
+
+通常做转换的时候，可以使用系统提供的两个转换函数
+
+- `suspendCoroutine`
+- `suspendCancellableCoroutine`
+
+这两者都调用了`suspendCoroutineUninterceptedOrReturn`函数
+
+```kotlin
+val aa = 0
+suspend fun ttt() = suspendCancellableCoroutine<Int> { cancellableContinuation ->
+    if (aa == 0) {
+        //执行完毕抛出结果
+        cancellableContinuation.resume(1) {
+            // 执行过程异常捕获
+            log("aaa ${it.message}")
+        }
+    } else {
+        cancellableContinuation.resumeWithException(IllegalArgumentException("123"))
+    }
+
+    cancellableContinuation.invokeOnCancellation {
+       //协程任务执行cancel时，回调该方法
+        log("我被取消了")
+    }
+}
+```
+
+
+
+#### 取消计算代码(使用`isActive`判断)
+
+> 如果协程正处在某个计算过程当中，并且不进行检查状态的取消，那它就是无法被取消的。
+
+对于这种情况有两种处理方式：
+
+1. 周期性调用挂起函数(`采用上面的手段得到挂起函数`)，检查协程是否被取消
+2. 显式检查协程是否被取消
+
+在这一节，采用的就是第二种方案取消协程。
+
+```kotlin
+suspend fun test9() {
+    val startTime = System.currentTimeMillis()
+    val dispatcher = Executors.newFixedThreadPool(3).asCoroutineDispatcher()
+    val job = coroutineScope.launch(dispatcher) {
+        var nextPrintTime = startTime
+        var i = 0
+        while (isActive) { // 一个浪费 CPU 的计算任务循环
+            // 每秒打印信息 2 次
+            if (System.currentTimeMillis() >= nextPrintTime) {
+                i++
+                log(i)
+                nextPrintTime += 500L
+            }
+        }
+    }
+    delay(1300L) // 等待一段时间
+    println("main: I'm tired of waiting!")
+    job.cancelAndJoin() // 取消 job, 并等待它结束
+    println("main: Now I can quit.")
+    dispatcher.close()
+}
+
+输出结果：
+19:30:01:805 [pool-1-thread-1] 1
+19:30:02:292 [pool-1-thread-1] 2
+19:30:02:792 [pool-1-thread-1] 3
+main: I'm tired of waiting!
+main: Now I can quit.
+```
+
+相关源码
+
+```kotlin
+JobSupport.cancelImpl() => JobSupport.makeCancelling() => JobSupport.tryMakeCancelling()
+
+    private fun tryMakeCancelling(state: Incomplete, rootCause: Throwable): Boolean {
+        assert { state !is Finishing } // only for non-finishing states
+        assert { state.isActive } // only for active states
+        // get state's list or else promote to list to correctly operate on child lists
+        val list = getOrPromoteCancellingList(state) ?: return false
+        // Create cancelling state (with rootCause!)
+        val cancelling = Finishing(list, false, rootCause)
+        if (!_state.compareAndSet(state, cancelling)) return false
+        // Notify listeners
+        notifyCancelling(list, rootCause)
+        return true
+    }
+
+    private class Finishing(
+        override val list: NodeList,
+        isCompleting: Boolean,
+        rootCause: Throwable?
+    ) : SynchronizedObject(), Incomplete {
+      
+      ...
+       override val isActive: Boolean get() = rootCause == null // !isCancelling 此处isActive就变为false
+    }
+```
+
+
+
+#### 禁止取消
+
+> 当任务被取消时，挂起函数会收到`CancellationException`后续如果需要执行一些其他的挂起函数任务将无法执行。
+
+可以通过对挂起函数调用`withContext(NonCancellable)`进行包含，保证挂起函数正常执行
+
+```kotlin
+suspend fun test9() {
+    val startTime = System.currentTimeMillis()
+    val dispatcher = Executors.newFixedThreadPool(3).asCoroutineDispatcher()
+    val job = coroutineScope.launch(dispatcher) {
+        try {
+            var nextPrintTime = startTime
+            var i = 0
+            //按道理 这边会被取消，因为设置了 NonCancellable导致任务无法被取消
+            withContext(NonCancellable){
+                log("111")
+                delay(2000)
+            }
+        }
+        finally {
+                withContext(NonCancellable){
+                    delay(1000)
+                }
+                log("111")
+        }
+    }
+    delay(1300L) // 等待一段时间
+    println("main: I'm tired of waiting!")
+    job.cancelAndJoin() // 取消 job, 并等待它结束
+    println("main: Now I can quit.")
+    dispatcher.close()
+}
+
+输出结果：
+20:31:35:163 [pool-1-thread-1] 111
+main: I'm tired of waiting!
+20:31:38:173 [pool-1-thread-3] 111  //间隔大概3s
+main: Now I can quit.
+```
+
+`NonCancellable`就是一个普通的对象
+
+```kotlin
+public object NonCancellable : AbstractCoroutineContextElement(Job), Job {
+ ...
+      override val isActive: Boolean get() = true //永远为true
+}
+```
+
+
+
+#### 超时取消
+
+> 大部分取消协程的原因都是**超出了预期的执行时间**，此时就会去触发取消的操作。
+
+```kotlin
+suspend fun testTimeout() {
+    try {
+        withTimeout(1300) {
+            repeat(5) {
+                delay(500)
+            }
+        }
+    } catch (e: Exception) {
+        log("e.msg = ${e.message}") //捕获超时异常
+    } finally {
+        log("job cancelled") //任务取消后，可以做一些其他工作
+    }
+    delay(1000)
+}
+
+输出结果：
+13:25:54:484 [kotlinx.coroutines.DefaultExecutor] e.msg = Timed out waiting for 1300 ms
+13:25:54:485 [kotlinx.coroutines.DefaultExecutor] job cancelled
+```
+
+执行超过`timeout`的时候，会抛出`TimeoutCancellationException`异常
+
+上述`withTimeout()`超时时会抛出异常，系统另外提供了`withTimeoutOrNull()`超时的时候不会抛出异常，而是返回一个null
+
+
+
+### 协程挂起(`suspend`)
+
+在上节`协程取消`中，说到取消协程的一个要求就是`必须为可被取消的协程代码`，里面就有讲到转换成`挂起函数`就可以被取消。
+
+> 把协程当成一个任务，运行在某个线程之上，该任务是可以中止也可以被继续恢复执行。
+>
+> `协程挂起`指的就是*任务的中止，而且不会阻塞当前的线程。*
+>
+> `协程挂起`的条件是*在协程调用`挂起函数`时，才可以被挂起*。
+
+#### 基础概念
+
+##### 续体接口(`Continuation`)
+
+> 作为协程调用`挂起函数`时的回调，`挂起函数`执行结束后通过使用该接口唤醒调用者。
+
+```kotlin
+@SinceKotlin("1.3")
+public interface Continuation<in T> {
+    /**
+     * The context of the coroutine that corresponds to this continuation.
+     * 定义的协程上下文
+     */
+    public val context: CoroutineContext
+
+    /**
+     * Resumes the execution of the corresponding coroutine passing a successful or failed [result] as the
+     * return value of the last suspension point.
+     * 执行完毕回调，回调成功或失败的结果
+     */
+    public fun resumeWith(result: Result<T>)
+}
+//提供拓展函数，支持直接调用成功或失败回调
+public inline fun <T> Continuation<T>.resume(value: T): Unit =
+    resumeWith(Result.success(value))
+
+public inline fun <T> Continuation<T>.resumeWithException(exception: Throwable): Unit =
+    resumeWith(Result.failure(exception))
+```
+
+`Continuation`作为`挂起函数`调用时的一个`隐式参数`传入，封装了协程恢复后的执行代码逻辑。
+
+##### 挂起函数(`suspend function`)
+
+>  `suspend`修饰挂起函数，可以通过调用其他`挂起函数`执行代码，而且**不阻塞当前执行线程**。
+>
+> `挂起函数`的运行可以被中止，运行`挂起函数`的线程可以去执行其他任务。
+>
+> **挂起函数无法被其他常规函数调用！**
+
+##### 
 
 
 
 ## 协程的原理
 
-
+上述的基础概念已基本涵盖协程的整套执行流程，后面会在{%post_link Kotlin协程原理%} 串联整体流程。
 
 ## 协程在Android中的应用
 
@@ -9112,7 +11478,19 @@ Gradle插件打包了可以复用的构建逻辑块，这些逻辑可以在不�
 
 
 
-## 参考链接]]></content>
+## 参考链接
+
+[viewModelScope简易介绍](https://juejin.im/post/6844903858368413704)
+
+[Kotlin-调度器介绍](https://blog.csdn.net/weixin_42063726/article/details/106198068)
+
+[协程官方文档](https://www.kotlincn.net/docs/reference/coroutines/coroutines-guide.html)
+
+[SPI机制](http://zhoukaibo.com/2019/03/16/java-spi-%E6%9C%BA%E5%88%B6%E5%88%86%E6%9E%90%E5%8F%8A%E5%85%B6%E4%BC%98%E7%BC%BA%E7%82%B9/)
+
+[Kotlin协程设计思路](https://github.com/Kotlin-zh/KEEP/blob/master/proposals/coroutines.md)
+
+]]></content>
       <tags>
         <tag>Kotlin</tag>
       </tags>
@@ -23539,7 +25917,62 @@ data主要分为两部分：
    - LaunchMode设置为`singleTop`，且要启动的Activity已经处于栈顶
    - LaunchMode设置为`singleTask`或者`singleInstance`，且实例已存在
 
-   需要注意的是：*当调用到`onNewIntent(intent)`的时候，需要在内部调用`setNewIntent(intent)`赋值给当前Activity的Intent，否则后续的getIntent()得到的都是老Intent*]]></content>
+   需要注意的是：*当调用到`onNewIntent(intent)`的时候，需要在内部调用`setNewIntent(intent)`赋值给当前Activity的Intent，否则后续的getIntent()得到的都是老Intent*
+   
+2. 监控应用回到桌面或者应用退出
+
+   ```java
+    registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks() {
+               int createdActivityCount = 0;
+               int startedActivityCount = 0;
+   
+               @Override
+               public void onActivityCreated(Activity activity, Bundle savedInstanceState) {
+                   createdActivityCount++;
+               }
+   
+               @Override
+               public void onActivityStarted(Activity activity) {
+                   startedActivityCount++;
+               }
+   
+               @Override
+               public void onActivityResumed(Activity activity) {
+   
+               }
+   
+               @Override
+               public void onActivityPaused(Activity activity) {
+   
+               }
+   
+               @Override
+               public void onActivityStopped(Activity activity) {
+                   startedActivityCount--;
+                   // isChangingConfigurations 避免因为应用配置变化导致的退出使统计失误
+                   if (startedActivityCount == 0 && !activity.isChangingConfigurations() && !activity.isFinishing()) {
+                       Log.e("Home", "回到桌面");
+                   }
+               }
+   
+               @Override
+               public void onActivitySaveInstanceState(Activity activity, Bundle outState) {
+   
+               }
+   
+               @Override
+               public void onActivityDestroyed(Activity activity) {
+                   createdActivityCount--;
+                   if (createdActivityCount == 0 && !activity.isChangingConfigurations()) {
+                       Log.e("Exit", "应用退出");
+                   }
+               }
+           });
+   ```
+
+   
+
+3. s]]></content>
       <tags>
         <tag>Android</tag>
       </tags>
@@ -24867,6 +27300,114 @@ Launcher请求到AMS后，后续逻辑由AMS继续执行。继续执行的是`AM
 ```
 
 调用到`Process`的静态成员函数`start()`启动一个新的应用进程，指定了该进程的入口函数为`ActivityThread.main()`；因此创建应用进程结束时，逻辑就转移到了`ActivityThread.main()`上。
+
+```java 
+Process.start() => ZygoteProcess.start() == LocalSocket连接 => ZygoteServer.runSelectLoop() => ZygoteConnection.processOneCommand() => 
+// 源码路径：java/com/android/internal/os/ZygoteConnection.java
+Runnable processOneCommand(ZygoteServer zygoteServer) {
+...
+  //从Zygote孵化一个新进程并赋予 pid
+          pid = Zygote.forkAndSpecialize(parsedArgs.uid, parsedArgs.gid, parsedArgs.gids,
+                parsedArgs.runtimeFlags, rlimits, parsedArgs.mountExternal, parsedArgs.seInfo,
+                parsedArgs.niceName, fdsToClose, fdsToIgnore, parsedArgs.startChildZygote,
+                parsedArgs.instructionSet, parsedArgs.appDataDir);
+
+        try {
+            if (pid == 0) {
+                // in child
+                zygoteServer.setForkChild();
+
+                zygoteServer.closeServerSocket();
+                IoUtils.closeQuietly(serverPipeFd);
+                serverPipeFd = null;
+
+                return handleChildProc(parsedArgs, descriptors, childPipeFd,
+                        parsedArgs.startChildZygote);
+            } else {
+                // In the parent. A pid < 0 indicates a failure and will be handled in
+                // handleParentProc.
+                IoUtils.closeQuietly(childPipeFd);
+                childPipeFd = null;
+                handleParentProc(pid, descriptors, serverPipeFd);
+                return null;
+            }
+        } finally {
+            IoUtils.closeQuietly(childPipeFd);
+            IoUtils.closeQuietly(serverPipeFd);
+        }
+}
+  
+=> ZygoteConnection.handleChildProc()
+  
+private Runnable handleChildProc(Arguments parsedArgs, FileDescriptor[] descriptors,
+            FileDescriptor pipeFd, boolean isZygote) {
+  ...
+             if (!isZygote) {
+                return ZygoteInit.zygoteInit(parsedArgs.targetSdkVersion, parsedArgs.remainingArgs,
+                        null /* classLoader */);
+            } else {
+                return ZygoteInit.childZygoteInit(parsedArgs.targetSdkVersion,
+                        parsedArgs.remainingArgs, null /* classLoader */);
+            }
+}
+
+=> ZygoteInit.zygoteInit()
+  
+    public static final Runnable zygoteInit(int targetSdkVersion, String[] argv, ClassLoader classLoader) {
+        if (RuntimeInit.DEBUG) {
+            Slog.d(RuntimeInit.TAG, "RuntimeInit: Starting application from zygote");
+        }
+
+        Trace.traceBegin(Trace.TRACE_TAG_ACTIVITY_MANAGER, "ZygoteInit");
+        RuntimeInit.redirectLogStreams();
+
+        RuntimeInit.commonInit();
+        ZygoteInit.nativeZygoteInit();
+        
+        return RuntimeInit.applicationInit(targetSdkVersion, argv, classLoader);
+    }
+
+=> RuntimeInit.applicationInit()
+  
+ protected static Runnable applicationInit(int targetSdkVersion, String[] argv,
+            ClassLoader classLoader) {
+ ...
+           // Remaining arguments are passed to the start class's static main
+        return findStaticMain(args.startClass, args.startArgs, classLoader);
+}
+
+=> RuntimeInit.findStaticMain()//此时完成了对   android.app.ActivityThread.main()的反射调用
+
+      protected static Runnable findStaticMain(String className, String[] argv,
+            ClassLoader classLoader) {
+        Class<?> cl;
+        try {
+            cl = Class.forName(className, true, classLoader);
+        } catch (ClassNotFoundException ex) {
+            throw new RuntimeException(
+                    "Missing class when invoking static main " + className,
+                    ex);
+        }
+
+        Method m;
+        try {
+            m = cl.getMethod("main", new Class[] { String[].class });
+        } catch (NoSuchMethodException ex) {
+            throw new RuntimeException(
+                    "Missing static main on " + className, ex);
+        } catch (SecurityException ex) {
+            throw new RuntimeException(
+                    "Problem getting static main on " + className, ex);
+        }
+  ...
+}
+  
+```
+
+拓展：为什么不用Binder而是采用Socket进行 ZygoteProcess与AMS间的通信。
+
+1. `Socket`的调用是root,group是system，相对是安全的
+2. `fork()`不支持多线程，可能导致binder调用的时候，多个service发起fork请求，导致部分service创建失败
 
 > Zygote进程孵化出新的应用进程后，通过反射执行`ActivityThread.main()`，在该方法中会事先准备好`Looper以及MessageQueue`，继续调用`attach()`用进程绑定到`AMS`，然后开始消息循环，不断读取队列消息，并分发消息。
 
@@ -31404,7 +33945,7 @@ volatile关键字通过提供“**内存屏障(重排序时不能把后面的指
 
 ### DecorView
 
-**DecorView是整个Window界面的最顶层View。** *可以使用Android Studio自带的Layout Inspector查看页面层级*
+**DecorView是整个Window界面的最顶层View。** *可以使用Android Studio自带的Layout Inspector查看页面层级*
 
 一般情况下`DecorView`会包含一个竖直方向的LinearLayout，该LinearLayout分为上下两个部分，上面是标题栏(`titlebar`)，下面是内容栏(`继承自FrameLayout 且id为content`)。因此我们设置Activity的布局方法叫做`setContentView()`，因为他们都被加进了`id为content的FrameLayout`中。
 
@@ -31449,7 +33990,7 @@ private void handleLaunchActivity(ActivityClientRecord r, Intent customIntent, S
 }
 ```
 
-上述方法后续调用到了`handleResumeActivity()`,在这个方法中调用到了`WindowManager.addView()`将View传递至WindowManager
+上述方法后续调用到了`handleResumeActivity()`,在这个方法中调用到了`WindowManager.addView()`将View传递至WindowManager
 
 ```java
 // ../android/app/ActivityThread.java
@@ -32189,7 +34730,7 @@ private void setChildFrame(child,int l,int t,int r,int b){
 
 拓展：
 
-1. View的测量宽/高(`getMeasureWidth()/getMeasureHeight()`)与最终得到的宽/高(`getWidth()/getHeight()`)有什么区别？
+1. View的测量宽/高(`getMeasureWidth()/getMeasureHeight()`)与最终得到的宽/高(`getWidth()/getHeight()`)有什么区别？
 
    ```java
    //	获得View在测量过程中的宽
@@ -32225,7 +34766,7 @@ private void setChildFrame(child,int l,int t,int r,int b){
 | View测量结束宽/高<br>getMeasureWidth()/getMeasureHeight() | View的`measure`过程 | `setMeasureDimension()`                   | 在`onLayout()`获取View的宽/高   |
 | View最终宽/高<br>getWidth()/getHeight()                   | View的`layout`过程  | `layout()`对top,left,right,bottom进行操作 | `onLayout()`结束后获取最终宽/高 |
 
-   **一般情况下，二者返回的数据是相同的，除非人为对View的`layout()`进行重写。**
+   **一般情况下，二者返回的数据是相同的，除非人为对View的`layout()`进行重写。**
 
    ```java
    public void layout(int l,int t,int r,int b){
@@ -32453,6 +34994,122 @@ protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
    如果一个View不需要绘制任何内容，设置这个标记为`true`，系统就会进行相应优化。
 
    ***View默认不开启`willNotDraw`标记位，ViewGroup默认开启。***
+   
+2. `ViewGroup`修改子View绘制顺序
+
+   ```java ViewGroup.java
+   protected void dispatchDraw(Canvas canvas){
+     ...
+       //设置自定义绘制顺序
+      final ArrayList<View> preorderedList = usingRenderNodeProperties
+                   ? null : buildOrderedChildList();
+           //是否允许自定义绘制顺序
+           final boolean customOrder = preorderedList == null
+                   && isChildrenDrawingOrderEnabled();
+           for (int i = 0; i < childrenCount; i++) {
+               while (transientIndex >= 0 && mTransientIndices.get(transientIndex) == i) {
+                   final View transientChild = mTransientViews.get(transientIndex);
+                   if ((transientChild.mViewFlags & VISIBILITY_MASK) == VISIBLE ||
+                           transientChild.getAnimation() != null) {
+                       more |= drawChild(canvas, transientChild, drawingTime);
+                   }
+                   transientIndex++;
+                   if (transientIndex >= transientCount) {
+                       transientIndex = -1;
+                   }
+               }
+   
+               final int childIndex = getAndVerifyPreorderedIndex(childrenCount, i, customOrder);
+               final View child = getAndVerifyPreorderedView(preorderedList, children, childIndex);
+               if ((child.mViewFlags & VISIBILITY_MASK) == VISIBLE || child.getAnimation() != null) {
+                   more |= drawChild(canvas, child, drawingTime);
+               }
+           }
+     ...
+   }
+
+       protected boolean isChildrenDrawingOrderEnabled() {
+           return (mGroupFlags & FLAG_USE_CHILD_DRAWING_ORDER) == FLAG_USE_CHILD_DRAWING_ORDER;
+       }
+   //设置是否允许自定义绘制顺序
+       protected void setChildrenDrawingOrderEnabled(boolean enabled) {
+           setBooleanFlag(FLAG_USE_CHILD_DRAWING_ORDER, enabled);
+       }
+   
+    //初始子View的绘制顺序 按照z轴的值调整绘制顺序，z轴从大到小绘制
+       ArrayList<View> buildOrderedChildList() {
+           final int childrenCount = mChildrenCount;
+           if (childrenCount <= 1 || !hasChildWithZ()) return null;
+   
+           if (mPreSortedChildren == null) {
+               mPreSortedChildren = new ArrayList<>(childrenCount);
+           } else {
+               // callers should clear, so clear shouldn't be necessary, but for safety...
+               mPreSortedChildren.clear();
+               mPreSortedChildren.ensureCapacity(childrenCount);
+           }
+   
+           final boolean customOrder = isChildrenDrawingOrderEnabled();
+           for (int i = 0; i < childrenCount; i++) {
+               // add next child (in child order) to end of list
+               final int childIndex = getAndVerifyPreorderedIndex(childrenCount, i, customOrder);
+               final View nextChild = mChildren[childIndex];
+               final float currentZ = nextChild.getZ();
+   
+               // insert ahead of any Views with greater Z
+               int insertIndex = i;
+               while (insertIndex > 0 && mPreSortedChildren.get(insertIndex - 1).getZ() > currentZ) {
+                   insertIndex--;
+               }
+               mPreSortedChildren.add(insertIndex, nextChild);
+           }
+           return mPreSortedChildren;
+       }
+   
+       //确定当前子View的绘制顺序
+       private int getAndVerifyPreorderedIndex(int childrenCount, int i, boolean customOrder) {
+           final int childIndex;
+           if (customOrder) {
+               final int childIndex1 = getChildDrawingOrder(childrenCount, i);
+               if (childIndex1 >= childrenCount) {
+                   throw new IndexOutOfBoundsException("getChildDrawingOrder() "
+                           + "returned invalid index " + childIndex1
+                           + " (child count is " + childrenCount + ")");
+               }
+               childIndex = childIndex1;
+           } else {
+               childIndex = i;
+           }
+           return childIndex;
+       }
+   //需要重写该方法，调整绘制顺序
+       protected int getChildDrawingOrder(int childCount, int i) {
+           return i;
+       }
+   
+   //调整当前子View顺序
+       private static View getAndVerifyPreorderedView(ArrayList<View> preorderedList, View[] children,
+               int childIndex) {
+           final View child;
+           if (preorderedList != null) {
+               child = preorderedList.get(childIndex);
+               if (child == null) {
+                   throw new RuntimeException("Invalid preorderedList contained null child at index "
+                           + childIndex);
+               }
+           } else {
+               child = children[childIndex];
+           }
+           return child;
+       }
+   ```
+   
+   根据上述源码，默认的绘制顺序按照z轴从大到小的进行绘制，如果需要修改绘制顺序的话，需要执行以下两步：
+   
+   1. `setChildrenDrawingEnabled(true)`打开自定义设置开关
+   2. 继承`ViewGroup`后，重写`getChildDrawingOrder()`方法，设置对应的绘制顺序
+   
+   常用的`RecyclerView`、`ViewPager`都实现了该方法，其中`RecyclerView`通过设置`ChildDrawingOrderCallback`也可以实现这个功能。
 
 ## 自定义View
 
@@ -32908,7 +35565,7 @@ final class ViewRootHandler extends Handler {
     }
 ```
 
-上文中提到`mLayoutRequested`就是防止`invalidate`重新走一遍绘制流程，这里设置为`true`，意味着需要走一遍`measure,layout`。
+上文中提到`mLayoutRequested`就是防止`invalidate`重新走一遍绘制流程，这里设置为`true`，意味着需要走一遍`measure,layout`。
 
 由于`measure`过程设置了`mPrivateTags PFLAG_LAYOUT_REQUIRED`所以会往下继续执行`layout`过程。
 
@@ -35388,7 +38045,13 @@ public class HandlerThread extends Thread {
    }
 ```
 
-## 3. Handler常见问题
+
+
+## 3.Handler异步消息与同步屏障
+
+
+
+## 4. Handler常见问题
 
 ### 1. 消息机制中的主要引用对象及其关系
 
@@ -42514,7 +45177,7 @@ Android系统通过获取`apk配置的targetSdkVersion`在调用系统对应Api�
 
     需要配置在`node-modules/hexo-generator-index2/lib/generator.js`里面
 
-36. ss]]></content>
+36. ]]></content>
       <tags>
         <tag>Android</tag>
         <tag>Java</tag>
