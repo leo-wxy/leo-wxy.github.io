@@ -28,7 +28,7 @@
     
     
       
-      <link rel="stylesheet" href="https://cdn.staticfile.org/highlight.js/10.0.0/styles/github-gist.min.css">
+      <link rel="stylesheet" href="https://cdn.staticfile.org/highlight.js/10.0.0/styles/solarized-light.min.css">
     
   
 
@@ -162,7 +162,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      9.9k 字
+      10.5k 字
     </span>
   
 
@@ -172,7 +172,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      137
+      144
        分钟
     </span>
   
@@ -542,6 +542,7 @@ Thread[DefaultDispatcher-worker<span class="hljs-number">-1</span>,<span class="
 <li>协程调度器：Dispatchers</li>
 <li>执行任务：Job</li>
 <li>协程名字：CoroutineName</li>
+<li>协程异常处理：CoroutineExceptionHandler</li>
 </ul>
 </blockquote>
 <pre><code class="hljs kotlin"><span class="hljs-keyword">val</span> coroutineContext : CoroutineContext = Dispatchers.Main + Job() + CoroutineName(<span class="hljs-string">"name"</span>)<span class="hljs-comment">//协程上下文</span></code></pre>
@@ -562,6 +563,31 @@ Thread[DefaultDispatcher-worker<span class="hljs-number">-1</span>,<span class="
      */</span>
     <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">toString</span><span class="hljs-params">()</span></span>: String = <span class="hljs-string">"CoroutineName(<span class="hljs-variable">$name</span>)"</span>
 &#125;</code></pre>
+<h4 id="协程上下文的父子关系"><a href="#协程上下文的父子关系" class="headerlink" title="协程上下文的父子关系"></a>协程上下文的父子关系</h4><blockquote>
+<p>每个协程都会有一个父级对象，协程的父级对象的<code>上下文</code>也会和父级协程的<code>上下文</code>不一致。</p>
+</blockquote>
+<p>关系遵循如下公式</p>
+<p><strong>父级上下文 = 默认值 + 继承的<code>CoroutineContext</code> + 参数</strong></p>
+<p><code>默认值</code>：一些元素包含的默认值，例如默认<code>Dispatcher</code>就是<code>Dispatchers.Default</code></p>
+<p><code>继承的CoroutineContext</code>：父协程的<code>CoroutineContenxt</code></p>
+<p><code>参数</code>：后续子协程配置的参数，如上文所示组成部分，新添加的参数会覆盖前面的对应配置。</p>
+<pre><code class="hljs kotlin">suspend <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">testCoroutineContextExtend</span><span class="hljs-params">()</span></span> &#123;
+    <span class="hljs-keyword">val</span> parentContext: CoroutineContext = Dispatchers.Default + Job() + CoroutineName(<span class="hljs-string">"parent"</span>)
+    <span class="hljs-keyword">val</span> parentScope = CoroutineScope(parentContext)
+    parentScope.launch &#123;
+        log(currentCoroutineContext().toString()) <span class="hljs-comment">//打印当前上下文内容</span>
+        <span class="hljs-keyword">val</span> childContext = parentContext + Dispatchers.IO + CoroutineName(<span class="hljs-string">"child"</span>)
+        <span class="hljs-keyword">val</span> job =  launch(childContext) &#123;
+            log(currentCoroutineContext().toString())
+        &#125;
+    &#125;
+&#125;
+
+输出结果：
+<span class="hljs-number">19</span>:<span class="hljs-number">29</span>:<span class="hljs-number">57</span>:<span class="hljs-number">497</span> [DefaultDispatcher-worker<span class="hljs-number">-1</span>] [CoroutineName(parent), StandaloneCoroutine&#123;Active&#125;@<span class="hljs-number">4815</span>c1f8, Dispatchers.Default]
+<span class="hljs-number">19</span>:<span class="hljs-number">29</span>:<span class="hljs-number">57</span>:<span class="hljs-number">500</span> [DefaultDispatcher-worker<span class="hljs-number">-2</span>] [CoroutineName(child), StandaloneCoroutine&#123;Active&#125;@<span class="hljs-number">2</span>ca2b65d, Dispatchers.IO]</code></pre>
+<p>根据上述输出结果可得到<strong>后续的同类内容会覆盖前面的元素</strong>。</p>
+<p><code>CoroutineContext</code>使用<strong>+</strong>进行元素的合并，加号右侧的元素会覆盖左侧的元素，最后得到一个新的<code>CoroutineContext</code>元素。</p>
 <p>//TODO 后续会补充如何调用自定义上下文</p>
 <h3 id="协程拦截器-ContinuationInterceptor"><a href="#协程拦截器-ContinuationInterceptor" class="headerlink" title="协程拦截器(ContinuationInterceptor)"></a>协程拦截器(<code>ContinuationInterceptor</code>)</h3><blockquote>
 <p>协程拦截器也是<code>CoroutineContext</code>的一个实现，可以控制协程的执行流程，功能类似于<code>Okhttp的拦截器</code>。</p>
@@ -586,7 +612,7 @@ Thread[DefaultDispatcher-worker<span class="hljs-number">-1</span>,<span class="
     &#125;
 &#125;
 
-GlobalScope/launch(CustomInterceptor())&#123;
+GlobalScope.launch(CustomInterceptor())&#123;
   //TODO ...
 &#125;</code></pre>
 <h3 id="协程调度器-CoroutineDispatcher"><a href="#协程调度器-CoroutineDispatcher" class="headerlink" title="协程调度器(CoroutineDispatcher)"></a>协程调度器(<code>CoroutineDispatcher</code>)</h3><blockquote>
@@ -851,6 +877,38 @@ suspend <span class="hljs-function"><span class="hljs-keyword">fun</span> <span 
   myDispatcher.close() 
   
 &#125;</code></pre>
+<h3 id="协程执行任务-Job"><a href="#协程执行任务-Job" class="headerlink" title="协程执行任务(Job)"></a>协程执行任务(<code>Job</code>)</h3><blockquote>
+<p><code>Job</code>用于处理协程。封装了协程需要执行的代码逻辑，并且拥有简单的生命周期。</p>
+<p><strong>负责管理协程的声明周期。</strong></p>
+</blockquote>
+<p>主要有以下几个生命周期：</p>
+<ul>
+<li><code>New</code> 新建任务</li>
+<li><code>Active</code> 任务活跃</li>
+<li><code>Completing</code> 任务完成中</li>
+<li><code>Cancelling</code> 任务取消中</li>
+<li><code>Cancelled</code> 任务已取消</li>
+<li><code>Completed</code> 任务已完成</li>
+</ul>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/Job生命周期.jpg" srcset="/img/loading.gif" class="full-image" alt="ViewTree" title="ViewTree"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<p><code>Job.join()</code>：中断与当前<code>Job</code>关联的协程，直到所有<code>子Job</code>执行完成，所关联的协程才可以继续执行。</p>
+<p><code>join()</code>由<code>suspend</code>修饰，所以必须在协程内部被调用。</p>
+<h4 id="SupervisorJob"><a href="#SupervisorJob" class="headerlink" title="SupervisorJob"></a><code>SupervisorJob</code></h4><p>使用<code>Job</code>时，若发生异常会导致异常进行传递，导致<code>父任务及兄弟任务都会被取消</code>。</p>
+<p><code>SupervisorJob</code>针对异常传播情况进行处理，当发生异常时，只会影响自身，其他任务不受影响。</p>
+<p><strong><code>SupervisorJob</code>只有在<code>supervisorScope</code>或者<code>CoroutineScope(SupervisorJob())</code>内执行可以生效。</strong></p>
+<pre><code class="hljs kotlin"><span class="hljs-keyword">val</span> scope = CoroutineScope(SupervisorJob())
+
+scope.launch&#123;
+  launch&#123;
+     <span class="hljs-comment">//child 1</span>
+  &#125;
+  
+  launch&#123;
+    <span class="hljs-comment">// child 2</span>
+  &#125;
+&#125;
+
+若 child1 发生异常 child2可以继续运行。</code></pre>
 <h3 id="协程构造器-Coroutine-Builders"><a href="#协程构造器-Coroutine-Builders" class="headerlink" title="协程构造器(Coroutine Builders)"></a>协程构造器(<code>Coroutine Builders</code>)</h3><blockquote>
 <p>配置完上述的<code>启动模式、调度器、上下文</code>之后，就要开始构造一个<code>协程</code>。</p>
 </blockquote>
@@ -863,28 +921,6 @@ suspend <span class="hljs-function"><span class="hljs-keyword">fun</span> <span 
 &#125;
 job.cancel()</code></pre>
 <p><code>Job</code>代表了协程本身，封装了协程需要执行的代码逻辑，并且拥有简单的生命周期。</p>
-<p>主要有以下几个生命周期：</p>
-<ul>
-<li>New</li>
-<li>Active</li>
-<li>Completing</li>
-<li>Cancelling</li>
-<li>Cancelled</li>
-<li>Completed</li>
-</ul>
-<pre><code class="hljs undefined">*                                       wait children
-* +-----+ start  +--------+ complete   +-------------+  finish  +-----------+
-* | New | -----&gt; | Active | ---------&gt; | Completing  | -------&gt; | Completed |
-* +-----+        +--------+            +-------------+          +-----------+
-*                  |  cancel / fail       |
-*                  |     +----------------+
-*                  |     |
-*                  V     V
-*              +------------+                           finish  +-----------+
-*              | Cancelling | --------------------------------&gt; | Cancelled |
-*              +------------+                                   +-----------+</code></pre>
-<p><code>Job.join()</code>：中断与当前<code>Job</code>关联的协程，直到所有<code>子Job</code>执行完成，所关联的协程才可以继续执行。</p>
-<p><code>join()</code>由<code>suspend</code>修饰，所以必须在协程内部被调用。</p>
 <h4 id="async"><a href="#async" class="headerlink" title="async"></a><code>async</code></h4><blockquote>
 <p>创建一个协程后，会返回一个<code>Deferred&lt;T&gt;</code>对象，可以通过该对象调用<code>await()</code>获取返回值。</p>
 </blockquote>
@@ -992,6 +1028,7 @@ Process finished with exit code <span class="hljs-number">0</span></code></pre>
 <span class="hljs-number">10</span>:<span class="hljs-number">15</span>:<span class="hljs-number">46</span>:<span class="hljs-number">738</span> [main] <span class="hljs-number">1</span>
 Parent job <span class="hljs-keyword">is</span> Cancelling <span class="hljs-comment">//由于父协程异常，导致子协程的执行取消</span>
 Exception <span class="hljs-keyword">in</span> thread <span class="hljs-string">"main"</span> java.lang.NullPointerException: <span class="hljs-number">111</span></code></pre>
+<p><img src="/Users/wxy/myblog/blog/source/images/640.gif" srcset="/img/loading.gif" alt="img"></p>
 <p><code>supervisorScope</code></p>
 <blockquote>
 <p>在作用域内当自身执行任务失败的时候，只会向下传播关闭子协程，不会影响父协程及其他同级协程的运行。</p>
@@ -1024,6 +1061,7 @@ Exception <span class="hljs-keyword">in</span> thread <span class="hljs-string">
 <span class="hljs-number">3</span>
 <span class="hljs-number">4</span></code></pre>
 <p><code>supervisorScope</code>内子协程的异常不影响父协程的继续运行。</p>
+<p><img src="/Users/wxy/myblog/blog/source/images/640.png" srcset="/img/loading.gif" alt="img"></p>
 <h4 id="全局异常捕获"><a href="#全局异常捕获" class="headerlink" title="全局异常捕获"></a>全局异常捕获</h4><blockquote>
 <p>类似<code>Java</code>，协程也提供了捕获全局异常(<code>未声明捕获异常</code>)的方式。</p>
 </blockquote>
@@ -1279,7 +1317,7 @@ println(<span class="hljs-string">"main: Now I can quit."</span>)</code></pre>
 <p>协程之间是存在着父子关系的，<strong>取消父协程时，也会取消所有子协程！</strong></p>
 </blockquote>
 <p>主要有以下三种关系：</p>
-<h5 id="父协程调用cancel-主动或者触发异常结束时，会立即取消所有子协程"><a href="#父协程调用cancel-主动或者触发异常结束时，会立即取消所有子协程" class="headerlink" title="父协程调用cancel()主动或者触发异常结束时，会立即取消所有子协程"></a>父协程调用<code>cancel()</code>主动或者触发异常结束时，会立即取消所有子协程</h5><pre><code class="hljs kotlin">基础调用流程
+<h5 id="父协程调用cancel-主动或者触发异常结束时，会立即取消所有子协程；子协程调用cancel-不影响父协程及兄弟协程执行。"><a href="#父协程调用cancel-主动或者触发异常结束时，会立即取消所有子协程；子协程调用cancel-不影响父协程及兄弟协程执行。" class="headerlink" title="父协程调用cancel()主动或者触发异常结束时，会立即取消所有子协程；子协程调用cancel()不影响父协程及兄弟协程执行。"></a>父协程调用<code>cancel()</code>主动或者触发异常结束时，会立即取消所有子协程；子协程调用<code>cancel()</code>不影响父协程及兄弟协程执行。</h5><pre><code class="hljs kotlin">基础调用流程
 Job.cancel() =&gt; JobImpl.cancel() =&gt; JobSupport.cancelImpl() =&gt; JobSupport.notifyCancelling()
 
     <span class="hljs-keyword">private</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">notifyCancelling</span><span class="hljs-params">(list: <span class="hljs-type">NodeList</span>, cause: <span class="hljs-type">Throwable</span>)</span></span> &#123;
@@ -1571,7 +1609,15 @@ main: Now I can quit.</code></pre>
 <p><code>挂起函数</code>的运行可以被中止，运行<code>挂起函数</code>的线程可以去执行其他任务。</p>
 <p><strong>挂起函数无法被其他常规函数调用！</strong></p>
 </blockquote>
-<p>##### </p>
+<pre><code class="hljs kotlin">suspend <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">test</span><span class="hljs-params">()</span></span>&#123;
+  ...
+&#125;</code></pre>
+<p>上述实例为<code>挂起函数</code>。</p>
+<p>当<code>挂起函数</code>在一个协程中被调用时，该挂起函数内部会增加一个参数<code>Continuation</code>，类似下面的代码</p>
+<pre><code class="hljs java"><span class="hljs-function">fun <span class="hljs-title">test</span><span class="hljs-params">(contimuation:Continuation)</span></span>&#123;
+  ...
+&#125;</code></pre>
+<p>这种转换被称为<strong>CPS（续体传递风格）</strong>，每个<code>挂起函数</code>或<code>挂起Lambda表达式</code>都会附加一个<code>Continuation</code>参数，在外界调用<code>挂起函数</code>时隐式入参。 </p>
 <h2 id="协程的原理"><a href="#协程的原理" class="headerlink" title="协程的原理"></a>协程的原理</h2><p>上述的基础概念已基本涵盖协程的整套执行流程，后面会在<a href="/2020/09/04/Kotlin协程原理/" title="Kotlin协程原理">Kotlin协程原理</a> 串联整体流程。</p>
 <h2 id="协程在Android中的应用"><a href="#协程在Android中的应用" class="headerlink" title="协程在Android中的应用"></a>协程在Android中的应用</h2><h2 id="附录"><a href="#附录" class="headerlink" title="附录"></a>附录</h2><h3 id="CPU上下文"><a href="#CPU上下文" class="headerlink" title="CPU上下文"></a>CPU上下文</h3><blockquote>
 <p><strong>CPU寄存器和程序计数器</strong>，这两者都是CPU在运行任务前，都必须的依赖环境。</p>
@@ -1618,6 +1664,7 @@ main: Now I can quit.</code></pre>
 <p><a href="https://www.kotlincn.net/docs/reference/coroutines/coroutines-guide.html" target="_blank" rel="noopener">协程官方文档</a></p>
 <p><a href="http://zhoukaibo.com/2019/03/16/java-spi-%E6%9C%BA%E5%88%B6%E5%88%86%E6%9E%90%E5%8F%8A%E5%85%B6%E4%BC%98%E7%BC%BA%E7%82%B9/" target="_blank" rel="noopener">SPI机制</a></p>
 <p><a href="https://github.com/Kotlin-zh/KEEP/blob/master/proposals/coroutines.md" target="_blank" rel="noopener">Kotlin协程设计思路</a></p>
+<p><a href="https://mp.weixin.qq.com/s?__biz=MzAwODY4OTk2Mg==&amp;mid=2652055127&amp;idx=2&amp;sn=283de8250bfc8a7bd8287a7aadad1339&amp;chksm=808c8612b7fb0f047702c2101d27f4de42363ae5dd462be977ec897c7ae6a36e57b94675750a&amp;scene=178#rd" target="_blank" rel="noopener">揭秘suspend修饰符</a></p>
 
             </div>
             <hr>

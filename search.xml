@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <search>
   <entry>
+    <title>Java-AbstractQueuedSynchronizer简介</title>
+    <url>/2020/09/13/Java-AbstractQueuedSynchronizer%E7%AE%80%E4%BB%8B/</url>
+    <content><![CDATA[]]></content>
+  </entry>
+  <entry>
     <title>Kotlin协程原理</title>
     <url>/2020/09/04/Kotlin%E5%8D%8F%E7%A8%8B%E5%8E%9F%E7%90%86/</url>
     <content><![CDATA[]]></content>
@@ -630,7 +635,7 @@ LeetCode 2：两数相加
 
 **CPU绘制后提交数据，GPU进一步处理和缓存数据、最后屏幕从缓冲区获取数据并显示。**
 
-![显示流程](https://upload-images.jianshu.io/upload_images/10992781-093b89e6927bfe9c.png?imageMogr2/auto-orient/strip|imageView2/2/w/843/format/webp)
+![img](/Users/wxy/myblog/blog/source/images/webp-20200911191007410)
 
 ### 屏幕刷新频率
 
@@ -7033,6 +7038,994 @@ Code_attribute{
       </tags>
   </entry>
   <entry>
+    <title>Java-线程池</title>
+    <url>/2019/09/13/Java-%E7%BA%BF%E7%A8%8B%E6%B1%A0/</url>
+    <content><![CDATA[
+
+
+{% fullimage /images/线程池_ThreadPool.png,线程池脑图,线程池脑图 %}
+
+### 基础概念
+
+- **线程**：进程中负责执行的执行单元，一个进程中至少有一个线程,**操作系统能够进行调度的最小单位**
+- **进程**：一个执行中的程序的实例
+- **多线程**：解决多任务同时执行的需求，合理使用CPU资源。多线程的运行时根据CPU切换完成，如何切换由CPU确定，因此多线程具有不确定性
+- **线程池**： 基本思想是一种对象池的思想，开辟一块内存空间，里面存放了众多（未死亡）的线程，池中线程执行调度由池管理器来处理，当有线程任务时，从池中取一个，执行完成后线程对象回归池中，避免反复创建线程对象所带来的性能开销，节省系统资源。
+
+###  线程池的概念
+
+在执行一个异步任务或并发任务时，往往会通过`new Thread()`方法去开启一个子线程去执行任务，等到子线程操作完成后在利用`Handler`切换至主线程。但是利用这种方法我们无法对自己创建的子线程进行有效的管理，然后由于过多的创建子进程，他们之间相互竞争会导致资源的过度占用。线程池的出现就是为了来对子进程进行管理。
+
+### 为什么要使用线程池
+
+- **降低资源消耗。**通过重复利用已创建的线程降低线程创建和销毁造成的消耗
+- **提高响应速度。**当任务到达时，任务可以不需要等到线程创建就可以立即执行
+- **提高线程的可管理性。**线程是稀缺资源，大量创建会导致系统资源过度消耗且会降低系统的稳定性，线程池可以有效控制线程数，并进行统一的分配、调优和监控。
+
+###  线程池的构造参数与对象成员变量
+
+`Executors`提供了基础的四类线程池方法，最终都是通过`ThreadPoolExecutor`类完成。对于这个类的描述`他维护了一个线程池，对于提交Executor中的任务，不是创建新的线程而是使用池内的线程来执行任务。可以显著减少对于任务执行的开销。`
+
+1. ThreadPoolExecutor构造函数介绍
+
+   ```java
+   public ThreadPoolExecutor(int corePoolSize,
+                                 int maximumPoolSize,
+                                 long keepAliveTime,
+                                 TimeUnit unit,
+                                 BlockingQueue<Runnable> workQueue,
+                                 ThreadFactory threadFactory,
+                                 RejectedExecutionHandler handler)
+   ```
+
+   参数介绍：
+
+   - **`corePoolSize 核心线程数`** 表示线程池中的基本线程数量即核心线程数量。一般情况下核心线程会一直存活在线程池中，即便他们处于闲置状态。只有在`ThreadPoolExecutor的allowCoreThreadTimeOut设置为true`的时候，会有一个超时策略（超过设置好的超时时间，闲置的核心线程会被终止）。**当创建的线程数小于corePoolSize时，不管有没有空闲线程都会创建新的线程**。
+
+   - **`maximumPoolSize 最大线程数`**  表示线程池中允许的最大创建线程数，当活动的线程数达到数值后，后续新任务会被阻塞。**使用有界队列时，未达到该值则会创建新的线程，使用无界队列时该值无效。**
+
+   - **`keepAliveTime 非核心线程闲置时的超时时长`** 表示空闲非核心线程的最大存活时间，一旦超过即被销毁。**当`ThreadPoolExecutor的allowCoreThreadTimeOut设置为true`的时候，该参数也可作用于核心线程**
+
+   - **`unit 存活时间的时间单位`** 用于指定keepAliveTime参数的时间单位，为一个枚举类型。包含下列参数：`NANOSECONDS（纳秒）`,`MICROSECONDS（微秒）`,`MILLSECONDS（毫秒）`,`SECONDS（）秒`,`MINUTES（分）`,`HOURS（时）`,`DAYS（天）`
+
+   - **`workQueue 线程池中的任务队列`** 该队列是`java.util.BlockingQueue<E>`的一个实例，是一种阻塞队列用来存放等待执行的任务。通过`execute()`方法将提交的Runnable对象存储进去。根据具体实现类的不同可以分为以下三种队列策略：
+
+     - `容量为0即直接提交策略--SynchronousQueue`：等待队列容量为0 ，所有需要阻塞的任务必须等待池内的某个线程有空闲才可以继续执行，否则阻塞。`CachedThreadPool`使用该队列策略。
+     - `容量无限即无界队列策略--LinkedBlockingQueue`：等待队列的长度无穷大，在这种策略下不会出现多余corePoolSize的线程被创建，所以maximumPoolSize以及handler无效，因为不存在队列满的情况。不过也有缺点：**线程的执行速度会比提交速度慢，会导致无界队列快速增长，直到系统资源耗尽。**`fixedThreadPool`采用了这种队列策略。
+     - `容量有限即有界队列策略--指定了容量的任何BlockingQueue`：等待队列的长度为限制长度，指定了容量后可以**防止过多的资源被消耗**。 
+
+   - **`threadFactory 线程工厂`**：是一个接口可以为线程池提供新线程的创建。由同一个threadFactory创建的线程同属于一个ThreadGroup，优先级都为Thread.NORM_PRIORITY，以及为非进程守护状态。默认都是采用`Executors.defaultThreadFactory()`返回值。
+
+   - **`handler 拒绝策略`**：当**使用有界队列时且队列任务被填满后并且线程数也达到了最大值，就会触发拒绝策略**。如果任务被拒绝执行，则会调用`RejectedExecutionHandler.rejectedExecution()`方法，默认调用`AbortPolicy`拒绝策略，也可以由用户自定义。JDK中定义了4种拒绝策略：
+
+     - `AbortPolicy`**处理程序遭到拒绝则直接抛出`RejectedExecutionException`异常然后丢弃该任务。**
+
+       实现源码：
+
+       ```java
+        public static class AbortPolicy implements RejectedExecutionHandler {
+               /**
+                * Creates an {@code AbortPolicy}.
+                */
+               public AbortPolicy() { }
+               public void rejectedExecution(Runnable r, ThreadPoolExecutor e) {
+                   throw new RejectedExecutionException("Task " + r.toString() +
+                                                        " rejected from " +
+                                                        e.toString());
+               }
+           }
+       ```
+
+       样例演示：
+
+       ```java
+        static class TestRunnable implements Runnable {
+               private int id;
+       
+               TestRunnable(int id) {
+                   this.id = id;
+               }
+       
+               @Override
+               public void run() {
+                   System.err.println(Thread.currentThread().getName()+" 当前线程id="+ this.id);
+                   try {
+                       Thread.sleep(1000);
+                   } catch (InterruptedException e) {
+                       e.printStackTrace();
+                   }
+               }
+           }
+       
+       public static void abortPolicyDemo() {
+               ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(
+                       1, 1, 60, TimeUnit.SECONDS,
+                       new ArrayBlockingQueue<Runnable>(1), new ThreadPoolExecutor.AbortPolicy());
+       
+               threadPoolExecutor.submit(new TestRunnable(1));
+               threadPoolExecutor.submit(new TestRunnable(2));
+               threadPoolExecutor.submit(new TestRunnable(3));
+               threadPoolExecutor.shutdown();
+           }
+       
+       运行结果：添加进程时直接抛出异常但是没有影响后续的进行
+       pool-1-thread-1 当前线程id=1
+       Exception in thread "main" java.util.concurrent.RejectedExecutionException: Task java.util.concurrent.FutureTask@4b1210ee rejected from java.util.concurrent.ThreadPoolExecutor@4d7e1886[Running, pool size = 1, active threads = 1, queued tasks = 1, completed tasks = 0]
+           at java.util.concurrent.ThreadPoolExecutor$AbortPolicy.rejectedExecution(ThreadPoolExecutor.java:2047)
+           at java.util.concurrent.ThreadPoolExecutor.reject(ThreadPoolExecutor.java:823)
+           at java.util.concurrent.ThreadPoolExecutor.execute(ThreadPoolExecutor.java:1369)
+           at java.util.concurrent.AbstractExecutorService.submit(AbstractExecutorService.java:112)
+           at threadpool.ThreadPoolDemo.abortPolicyDemo(ThreadPoolDemo.java:140)
+           at threadpool.ThreadPoolDemo.main(ThreadPoolDemo.java:13)
+       pool-1-thread-1 当前线程id=2
+       ```
+
+     - `CallerRunsPolicy`**在调用`execute`方法的调用者所在线程来执行被拒绝的任务，提供简单的反馈控制机制，可以减缓新任务的提交速度。**
+
+       实现源码：
+
+       ```java
+       public static class CallerRunsPolicy implements RejectedExecutionHandler {
+               /**
+                * Creates a {@code CallerRunsPolicy}.
+                */
+               public CallerRunsPolicy() { }
+               public void rejectedExecution(Runnable r, ThreadPoolExecutor e) {
+                   if (!e.isShutdown()) {
+                       r.run();
+                   }
+               }
+           }
+       ```
+
+       样例演示：
+
+       ```java
+         public static void callerRunsPolicyDemo(){
+               ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(
+                       1, 1, 60, TimeUnit.SECONDS,
+                       new ArrayBlockingQueue<Runnable>(1), new ThreadPoolExecutor.CallerRunsPolicy());
+       
+               threadPoolExecutor.submit(new TestRunnable(1));
+               threadPoolExecutor.submit(new TestRunnable(2));
+               threadPoolExecutor.submit(new TestRunnable(3));
+               threadPoolExecutor.shutdown();
+           }
+       
+       运行结果：task2执行在了主线程，由于被拒绝执行所以在调用者线程执行了任务
+       pool-1-thread-1 当前线程id=1
+       main 当前线程id=3
+       pool-1-thread-1 当前线程id=2
+       ```
+
+     - `DiscardPolicy`**被拒绝即无法执行的任务被直接删除**
+
+       实现源码：   
+
+       ```java
+       public static class DiscardPolicy implements RejectedExecutionHandler {
+                     /**
+                      * Creates a {@code DiscardPolicy}.
+                      */
+                     public DiscardPolicy() { }
+                     public void rejectedExecution(Runnable r, ThreadPoolExecutor e) {
+                     }
+                 }
+       ```
+
+       样例演示：
+
+       ```java
+           public static void discardPolicyDemo(){
+               ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(
+                       1, 1, 60, TimeUnit.SECONDS,
+                       new ArrayBlockingQueue<Runnable>(1), new ThreadPoolExecutor.DiscardPolicy());
+       
+               threadPoolExecutor.submit(new TestRunnable(1));
+               threadPoolExecutor.submit(new TestRunnable(2));
+               threadPoolExecutor.submit(new TestRunnable(3));
+               threadPoolExecutor.shutdown();
+           }
+       
+       运行结果：由于被拒绝执行在该策略下被直接抛弃
+       pool-1-thread-1 当前线程id=1
+       pool-1-thread-1 当前线程id=2
+       ```
+
+     - `DiscardOldestPolicy`**判断线程池是否被关闭，没有则丢弃最老的一个请求，再尝试提交当前任务。**
+
+       实现源码：
+
+       ```java
+        public static class DiscardOldestPolicy implements RejectedExecutionHandler {
+                     /**
+                      * Creates a {@code DiscardOldestPolicy} for the given executor.
+                      */
+                     public DiscardOldestPolicy() { }
+                     public void rejectedExecution(Runnable r, ThreadPoolExecutor e) {
+                         if (!e.isShutdown()) {
+                             e.getQueue().poll();
+                             e.execute(r);
+                         }
+                     }
+                 }
+       ```
+
+       样例演示：
+
+       ```java
+           public static void discardOldestPolicyDemo(){
+               ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(
+                       1, 1, 60, TimeUnit.SECONDS,
+                       new ArrayBlockingQueue<Runnable>(1), new ThreadPoolExecutor.DiscardOldestPolicy());
+       
+               threadPoolExecutor.submit(new TestRunnable(1));
+               threadPoolExecutor.submit(new TestRunnable(2));
+               threadPoolExecutor.submit(new TestRunnable(3));
+               threadPoolExecutor.submit(new TestRunnable(4));
+               threadPoolExecutor.shutdown();
+           }
+       
+       运行结果：???
+       pool-1-thread-1 当前线程id=1
+       pool-1-thread-1 当前线程id=4
+       ```
+
+     - `CustomRejectPolicy 自定义拒绝策略`**可以用来记录运行日志或者记录无法处理的任务**
+
+       样例演示：
+
+       ```java
+       /**
+       * 自定义拒绝策略，实现RejectedExecutionHandler接口即可
+       */
+       static class CustomRejectedPolicy implements RejectedExecutionHandler{
+               @Override
+               public void rejectedExecution(Runnable r, ThreadPoolExecutor executor) {
+                   if (!executor.isShutdown()){
+                           System.err.println("自定义异常日志记录:  "+  r.toString());
+                   }
+               }
+           }
+       
+       public static void customPolicyDemo(){
+               ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(
+                       1, 1, 60, TimeUnit.SECONDS,
+                       new ArrayBlockingQueue<Runnable>(2), new CustomRejectedPolicy());
+       
+           //使用execute是因为使用submit时会被封装成RunnableFuture对象
+               threadPoolExecutor.execute(new TestRunnable(1));
+               threadPoolExecutor.execute(new TestRunnable(2));
+               threadPoolExecutor.execute(new TestRunnable(3));
+               threadPoolExecutor.execute(new TestRunnable(4));
+       
+               threadPoolExecutor.shutdown();
+           }
+       
+       运行结果：由于4号被拒绝，记录日志
+       自定义异常日志记录:  java.util.concurrent.FutureTask@4b1210ee
+       pool-1-thread-1 当前线程id=1
+       pool-1-thread-1 当前线程id=2
+       pool-1-thread-1 当前线程id=3
+       ```
+
+     - 额外参数扩展 `allowCoreThreadTimeOut 允许核心线程过期 `默认值为false（线程池已不被使用，但是其中还有活着的线程，则该线程池无法被回收，会造成内存泄露）。所以用户可以显式调用`shutDown()`或者该值设置为true，则会被回收。
+
+2. ThreadPoolExecutor的使用
+
+   向线程池提交一个任务的方式有两种：
+
+   - `execute`：这种方法提交任务，是没有返回值的即无法判断在线程池中是否完成该任务
+
+     ```java
+      threadPoolExecutor.execute(new TestRunnable(1));
+     ```
+
+   - `submit`：使用`submit`方法提交任务时，会返回一个future，可以通过这个future来判断任务是否执行成功也可以根据`future的get()`方法获取返回值。**若子线程任务没完成，`get()`方法会阻塞直到任务完成，若使用`get(long timeout,TimeUnit unit)`则会阻塞一段时间后返回，可能尚未完成任务。**
+
+     ```java
+      Future<Integer> future = fixedThreadPool.submit(new Callable<Integer>() {
+     
+                     @Override
+                     public Integer call() throws Exception {
+                         System.err.println(Thread.currentThread().getName() + " , index = " + index);
+                         return 2;
+                     }
+                 });
+     
+                 try {
+                     System.err.println("Future return :" + future.get().toString());
+                 } catch (Exception e) {
+                     e.printStackTrace();
+                 }
+     ```
+
+3. 线程池的关闭
+
+   线程池关闭方法有两种：
+
+   - `shutdown()`：将线程池的状态置为SHUTDOWN状态，然后中断没有正在执行的线程。
+
+     ```java
+     public void shutdown() {
+             final ReentrantLock mainLock = this.mainLock;
+             mainLock.lock();
+             try {
+                 checkShutdownAccess();
+                 advanceRunState(SHUTDOWN);
+                 interruptIdleWorkers();
+                 onShutdown(); // hook for ScheduledThreadPoolExecutor
+             } finally {
+                 mainLock.unlock();
+             }
+             tryTerminate();
+         }
+     ```
+
+   - `shutdownNow()`：将线程池的状态设为STOP状态，中断所有任务包括执行中的线程，并返回等待执行的任务列表。
+
+     ```java
+     public List<Runnable> shutdownNow() {
+             List<Runnable> tasks;
+             final ReentrantLock mainLock = this.mainLock;
+             mainLock.lock();
+             try {
+                 checkShutdownAccess();
+                 advanceRunState(STOP);
+                 interruptWorkers();
+                 tasks = drainQueue();
+             } finally {
+                 mainLock.unlock();
+             }
+             tryTerminate();
+             return tasks;
+         }
+     ```
+
+     中断线程需要采用`interrput`方法，**无法响应中断的任务可能永远无法终止。**
+
+     当需要立即中断所有线程并且不在乎任务是否执行完成时，可以使用`shutdownNow`方法。
+
+4. 线程池的拓展
+
+   `ThreadPoolExecutor`默认提供三个空方法，可以通过重写这三个方法来监控线程池。
+
+   ```java
+   //任务执行前 记录任务开始前时间
+   protected void beforeExecute(Thread t, Runnable r) { }
+   //任务执行后 记录任务结束时间
+   protected void afterExecute(Runnable r, Throwable t) { }
+   //线程池关闭 记录线程池关闭事件以及执行过的线程数量
+   protected void terminated() { }
+   ```
+
+   样例演示：
+
+   ```java
+   class CustomThreadPoolExecutor extends ThreadPoolExecutor{
+   
+           public CustomThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit, BlockingQueue<Runnable> workQueue) {
+               super(corePoolSize, maximumPoolSize, keepAliveTime, unit, workQueue);
+           }
+   
+           @Override
+           protected void beforeExecute(Thread t, Runnable r) {
+               super.beforeExecute(t, r);
+               System.err.println("beforeExecute"+r.toString());
+           }
+   
+           @Override
+           protected void afterExecute(Runnable r, Throwable t) {
+               super.afterExecute(r, t);
+               System.err.println("afterExecute"+r.toString());
+           }
+   
+           @Override
+           protected void terminated() {
+               super.terminated();
+               System.err.println("线程关闭");
+           }
+       }
+   ```
+
+###  线程池的分类以及各自的特性
+
+利用`Executors`类提供了四种不同的线程池，他们都是直接或者间接配置`ThreadPoolExecutor`来实现功能。下面分别介绍着四个线程池
+
+####  `newFixedThreadPool` 
+
+> 创建固定大小的线程池，每次提交一个任务就创建一个线程，直到线程达到线程池的最大大小，线程池的大小一旦达到最大值就不会发生变化，如果某个线程因为异常而结束，则会补充一个新进程。
+>
+> 由于只设置核心线程大小，所以可以**更快的响应外界请求**
+>
+> 线程池的大小设置，可以使用`Runtime.getRuntime().availableProcessors()`
+
+- 实现源码
+
+  ```java
+  /**
+  * 设置了核心线程，并且没有超时机制，使用LinkedBlockingQueue则任务队列大小是无上限的
+  */
+  public static ExecutorService newFixedThreadPool(int nThreads) {
+          return new ThreadPoolExecutor(nThreads, nThreads,
+                                        0L, TimeUnit.MILLISECONDS,
+                                        new LinkedBlockingQueue<Runnable>());
+      }
+  ```
+
+- 样例演示
+
+  ```java
+  public static void fixedThreadPoolDemo(){
+          ExecutorService fixedThreadPool= Executors.newFixedThreadPool(3);
+          for (int i = 0; i <6 ; i++) {
+              final int index=i;
+              fixedThreadPool.execute(new Runnable() {
+                  @Override
+                  public void run() {
+                      System.err.println(Thread.currentThread().getName()+" , index = "+index);
+                  }
+              });
+  
+              try{
+                  Thread.sleep(1000);
+              }catch(Exception e){
+                  e.printStackTrace();
+              }
+          }
+      }
+  
+  运行结果：整个过程都在pool-1的线程池中运行,然后复用线程
+  pool-1-thread-1 , index = 0
+  pool-1-thread-2 , index = 1
+  pool-1-thread-3 , index = 2
+  pool-1-thread-1 , index = 3
+  pool-1-thread-2 , index = 4
+  pool-1-thread-3 , index = 5
+  ```
+
+- 适用场景
+
+  用于负载比较重的服务器，为了资源的合理利用，需要限制当前线程数量。
+
+#### `newCachedThreadPool`
+
+> 可根据需要创建新线程的线程池，但是在一起构造的线程可用时将重用他们。对于很多短期异步任务的程序而言，这类线程池可以提高性能。
+>
+> 如果现有线程没有可用的，则会创建一个新的线程并添加到池中，终止并从缓存中移除那些超过60s没有使用的线程。**因此，长时间保持空闲的newCachedThreadPool线程池是不存在任何线程的，所以这时候几乎不占用系统资源。**
+
+- 实现源码
+
+  ```java
+  /**
+  * 核心线程数为0 线程最大为Int的最大值所以可以认定为线程池最大线程无限大，设置了超时时间为60s。任务队列采用了阻塞队列(必须池内有空闲线程才可以执行)
+  */
+  public static ExecutorService newCachedThreadPool() {
+          return new ThreadPoolExecutor(0, Integer.MAX_VALUE,
+                                        60L, TimeUnit.SECONDS,
+                                        new SynchronousQueue<Runnable>());
+      }
+  ```
+
+- 样例演示
+
+  ```java
+  public static void cachedThreadPoolDemo(){
+          ExecutorService cachedThreadPool= Executors.newCachedThreadPool();
+          for (int i = 0; i <6 ; i++) {
+              final int index=i;
+              cachedThreadPool.execute(new Runnable() {
+                  @Override
+                  public void run() {
+                      System.err.println(Thread.currentThread().getName()+" , index = "+index);
+                  }
+              });
+  
+              try{
+                  Thread.sleep(1000);
+              }catch(Exception e){
+                  e.printStackTrace();
+              }
+          }
+      }
+  
+  运行结果：整个过程都在同一个线程pool-1-thread-1中执行，后面线程复用前面的线程
+  pool-1-thread-1 , index = 0
+  pool-1-thread-1 , index = 1
+  pool-1-thread-1 , index = 2
+  pool-1-thread-1 , index = 3
+  pool-1-thread-1 , index = 4
+  pool-1-thread-1 , index = 5
+  ```
+
+- 适用场景
+
+  并发执行大量短期的小任务，或者负载较轻的服务器
+
+####  `newScheduledThreadPool`
+
+> 创建一个大小无限的线程池，此线程池支持定时以及周期性执行任务的需求。
+
+- 实现源码
+
+  ```java
+  public static ScheduledExecutorService newScheduledThreadPool(int corePoolSize) {
+      return new ScheduledThreadPoolExecutor(corePoolSize);
+  }
+  /**
+  * 核心线程数固定，非核心线程数为无限大，当非核心数处于闲置状态的时候会被立即回收
+  */
+  public ScheduledThreadPoolExecutor(int corePoolSize) {
+      super(corePoolSize, Integer.MAX_VALUE, 0, NANOSECONDS,
+            new DelayedWorkQueue());
+  }
+  ```
+
+- 样例演示
+
+  ```java
+   public static void scheduleThreadPoolDemo() {
+          ScheduledExecutorService scheduledThreadPool = Executors.newScheduledThreadPool(3);
+       //延迟一定时间后执行Runnable任务
+          scheduledThreadPool.schedule(new Runnable() {
+              @Override
+              public void run() {
+                  System.err.println(Thread.currentThread().getName() + " delay 2s");
+              }
+          }, 2, TimeUnit.SECONDS);
+       //延迟一定时间后执行Callable任务
+          scheduledThreadPool.schedule(new Callable<Object>() {
+              @Override
+              public Object call() throws Exception {
+                  return null;
+              }
+          }, 2, TimeUnit.SECONDS);
+       //延迟一定时间（initialDelay）后,以(period)时间间隔执行任务
+          scheduledThreadPool.scheduleAtFixedRate(new Runnable() {
+              @Override
+              public void run() {
+                  System.err.println(Thread.currentThread().getName() + " every 3s");
+              }
+          }, 1, 1, TimeUnit.SECONDS);
+       //延迟一定时间（initialDelay）后,以(delay即上一个任务执行结束到下一个任务开始的间隔)执行
+          scheduledThreadPool.scheduleWithFixedDelay(new Runnable() {
+              @Override
+              public void run() {
+                  System.err.println(Thread.currentThread().getName() + " delay 3s");
+              }
+          }, 1, 1, TimeUnit.SECONDS);
+      }
+  
+  运行结果：
+  pool-1-thread-1 every 3s
+  pool-1-thread-2 delay 3s
+  pool-1-thread-3 delay 3s 1
+  pool-1-thread-2 every 3s
+  ```
+
+- 适用场景
+
+  用于需要多个后台线程执行周期任务，同时需要限制线程数量
+
+####  `newSingleThreadExecutor`
+
+> 创建一个单线程池，该线程池中只有一个线程在工作，其他任务都会依次在任务中排列中等候依次执行，任务是串行执行的。此线程池保证所有的任务的执行顺序按照任务提交顺序执行(FIFO-先进先出)。
+
+- 实现源码
+
+  ```java
+  /**
+  * 只有一个核心线程，对任务队列没有大小限制，将所有外界任务统一到一个线程执行所有我们不需要处理线程同步的问题。
+  */
+  public static ExecutorService newSingleThreadExecutor() {
+          return new FinalizableDelegatedExecutorService
+              (new ThreadPoolExecutor(1, 1,
+                                      0L, TimeUnit.MILLISECONDS,
+                                      new LinkedBlockingQueue<Runnable>()));
+      }
+  ```
+
+- 样例演示
+
+  ```java
+   public static void singleThreadPoolDemo(){
+          ExecutorService singleThreadExecutor=Executors.newSingleThreadExecutor();
+          for (int i = 0; i < 6; i++) {
+              final int index = i;
+              singleThreadExecutor.execute(new Runnable() {
+                  @Override
+                  public void run() {
+                      System.err.println(Thread.currentThread().getName() + " , index = " + index);
+                  }
+              });
+  
+              try {
+                  Thread.sleep(1000);
+              } catch (Exception e) {
+                  e.printStackTrace();
+              }
+          }
+      }
+  
+  运行结果：所有的任务都是在pool-1-thread-1中依次运行
+  pool-1-thread-1 , index = 0
+  pool-1-thread-1 , index = 1
+  pool-1-thread-1 , index = 2
+  pool-1-thread-1 , index = 3
+  pool-1-thread-1 , index = 4
+  pool-1-thread-1 , index = 5
+  ```
+
+- 适用场景
+
+  用于串行执行任务的场景，每个任务需要顺序执行
+
+### 线程池的执行流程
+
+![图2 ThreadPoolExecutor运行流程](/images/77441586f6b312a54264e3fcf5eebe2663494.png)
+
+1. 判断corePoolSize(核心线程数)是否已到达，没到达则可以创建一个新线程执行任务
+2. 判断工作队列是否已满，没满则添加入阻塞队列等待执行
+3. 判断maximum(最大线程数)是否已到达，没到达则创建一个新线程执行任务。已满则执行拒绝策略。
+
+### 线程池实现原理
+
+#### 线程池生命周期
+
+> 线程池的生命周期是**伴随线程池的运行，由内部进行维护的**。
+>
+> 由两个值进行维护
+>
+> - `runState`：运行状态
+> - `workerCount`：线程数量
+
+```java
+private final AtomicInteger ctl = new AtomicInteger(ctlOf(RUNNING, 0));
+```
+
+`ctl`结合两个关键参数，来保证运行状态的一致。
+
+高三位：`runState`，低29位：`workerCount`，两个变量互相不干扰。
+
+![图3 线程池生命周期](/images/582d1606d57ff99aa0e5f8fc59c7819329028.png)
+
+
+
+| 运行状态                      | 描述                                                         |
+| ----------------------------- | ------------------------------------------------------------ |
+| RUNNING(`线程池运行状态`)     | 可以接受新任务，并且也能处理阻塞队列的任务                   |
+| SHUTDOWN(`线程池关闭状态`)    | 不再接受新的任务，但是依然可以处理阻塞队列的任务             |
+| STOP(`线程池停止状态`)        | 不再处理阻塞队列的任务，并且中断正在进行的任务               |
+| TIDYING(`线程池正在终止状态`) | 所有任务都已停止，`workerCount`为0                           |
+| TERMINATED(`线程池终止状态`)  | 线程池已停止运行，所有工作线程都被销毁，所有任务都已被清空或执行完毕 |
+
+源码内部提供了如下方法去获取当前线程池的状态
+
+```java ThreadPoolExecutor.java
+    private static int runStateOf(int c)     { return c & ~CAPACITY; } //运行状态
+    private static int workerCountOf(int c)  { return c & CAPACITY; } //工作线程数量
+    private static int ctlOf(int rs, int wc) { return rs | wc; } //当前runstate与workercount的和
+```
+
+![img](/images/640)
+
+#### 添加任务
+
+线程池通过调用`submit()`或`execute()`提交线程任务，其中`submit()`可以拿到线程执行结果，内部通过`execute()`实现。
+
+```java
+public void execute(Runnable command) {
+        if (command == null)
+            throw new NullPointerException();
+        int c = ctl.get();
+        //1.当前工作线程 < 核心线程时
+        if (workerCountOf(c) < corePoolSize) {
+            //直接创建新的Worker执行任务
+            if (addWorker(command, true))
+                return;
+            //重新获取运行状态
+            c = ctl.get();
+        }
+        //2.线程池处于running状态，任务加入 工作队列
+        if (isRunning(c) && workQueue.offer(command)) {
+            int recheck = ctl.get();
+            //线程不处于running状态，直接执行拒绝任务策略
+            if (! isRunning(recheck) && remove(command))
+                reject(command);
+            //当无可用工作线程时，创建新的工作线程执行任务
+            else if (workerCountOf(recheck) == 0)
+                addWorker(null, false);
+        }
+        //无法添加任务，可能线程池被终止，或者最大线程已经满了
+        else if (!addWorker(command, false))
+            //执行拒绝策略
+            reject(command);
+    }
+```
+
+添加任务都是通过`addWorker()`执行
+
+```java
+    private boolean addWorker(Runnable firstTask, boolean core/*是否核心线程*/) {
+        retry:
+        for (;;) {
+            int c = ctl.get();
+            int rs = runStateOf(c);
+
+            // 当线程池处于 STOP、TIDYING、TERMINATED状态时，无法添加新任务
+            // 或者处于SHUTDOWN时，阻塞队列还有任务就需要继续执行完毕
+            if (rs >= SHUTDOWN &&
+                ! (rs == SHUTDOWN &&
+                   firstTask == null &&
+                   ! workQueue.isEmpty()))
+                return false;
+
+            for (;;) {
+                //获取工作线程数量
+                int wc = workerCountOf(c);
+                //比较工作线程数量，若超出不予执行
+                if (wc >= CAPACITY ||
+                    wc >= (core ? corePoolSize : maximumPoolSize))
+                    return false;
+                if (compareAndIncrementWorkerCount(c))
+                    break retry;
+                c = ctl.get();  // Re-read ctl
+                if (runStateOf(c) != rs)
+                    continue retry;
+                // else CAS failed due to workerCount change; retry inner loop
+            }
+        }
+
+        boolean workerStarted = false;
+        boolean workerAdded = false;
+        Worker w = null;
+        try {
+            //新建工作对象
+            w = new Worker(firstTask);
+            final Thread t = w.thread;
+            if (t != null) {
+                final ReentrantLock mainLock = this.mainLock;
+                mainLock.lock();
+                try {
+                    // Recheck while holding lock.
+                    // Back out on ThreadFactory failure or if
+                    // shut down before lock acquired.
+                    int rs = runStateOf(ctl.get());
+
+                    if (rs < SHUTDOWN ||
+                        (rs == SHUTDOWN && firstTask == null)) {
+                        if (t.isAlive()) // precheck that t is startable
+                            throw new IllegalThreadStateException();
+                        workers.add(w);
+                        int s = workers.size();
+                        if (s > largestPoolSize)
+                            largestPoolSize = s;
+                        workerAdded = true;
+                    }
+                } finally {
+                    mainLock.unlock();
+                }
+                if (workerAdded) {
+                  //启动新任务
+                    t.start();
+                    workerStarted = true;
+                }
+            }
+        } finally {
+            //线程启动失败，移除worker
+            if (! workerStarted)
+                addWorkerFailed(w);
+        }
+        return workerStarted;
+    }
+```
+
+1. 线程池处于`RUNNABLE状态`或者`SHUTDOWN状态并且阻塞队列还有任务`，需要添加新线程执行任务
+2. `Worker`封装了线程对象
+3. 线程启动失败，则移除对应`Worker`
+
+##### `Worker`
+
+> 内部封装了`线程`对象，并且本身也是一个`Runnable`对象。
+
+```java
+   private final class Worker
+        extends AbstractQueuedSynchronizer
+        implements Runnable
+    {
+
+        /** Worker实际执行的线程 */
+        final Thread thread;
+        /** 初始化的任务，可以为null */
+        Runnable firstTask;
+        /** Per-thread task counter */
+        volatile long completedTasks;
+
+        Worker(Runnable firstTask) {
+            setState(-1); // inhibit interrupts until runWorker
+            this.firstTask = firstTask;
+            this.thread = getThreadFactory().newThread(this);
+        }
+
+        /** Delegates main run loop to outer runWorker. */
+        public void run() {
+            runWorker(this);
+        }
+     
+    ...
+    }
+```
+
+`Worker`持有两个对象：
+
+- `thread`：用来执行任务
+- `firstTask`：保存传入的第一个任务，如果该值非空，则优先执行该任务。若为空，就需要创建一个工作线程去执行`workQueue`中的任务
+
+`Worker`继承了`AQS`来实现`独占锁`功能，可以保证线程的执行状态是正确的。
+
+获取独占锁，表示**当前线程正在执行中，任务不可以被中断**。
+
+未获取独占锁，表示**当前线程没有处理任务，可以进行线程中断**。中断后就可以安全的进行线程回收。
+
+#### 执行任务
+
+`addWorker()`添加任务完毕后，就需要执行任务`runWorker()`
+
+```java
+final void runWorker(Worker w) {
+        Thread wt = Thread.currentThread();
+        Runnable task = w.firstTask;
+        w.firstTask = null;
+        w.unlock(); // allow interrupts
+        boolean completedAbruptly = true;
+        try {
+           //存在firstTask则先执行，否则从getTasks()获取阻塞队列的任务
+            while (task != null || (task = getTask()) != null) {
+                w.lock();
+                //检测线程池状态
+                if ((runStateAtLeast(ctl.get(), STOP) ||
+                     (Thread.interrupted() &&
+                      runStateAtLeast(ctl.get(), STOP))) &&
+                    !wt.isInterrupted())
+                    wt.interrupt();
+                try {
+                   //可重写该方法监听任务执行状态
+                    beforeExecute(wt, task);
+                    Throwable thrown = null;
+                    try {
+                      //执行任务
+                        task.run();
+                    } catch (RuntimeException x) {
+                        thrown = x; throw x;
+                    } catch (Error x) {
+                        thrown = x; throw x;
+                    } catch (Throwable x) {
+                        thrown = x; throw new Error(x);
+                    } finally {
+                        afterExecute(task, thrown);
+                    }
+                } finally {
+                    task = null;
+                    w.completedTasks++;
+                    w.unlock();
+                }
+            }
+            completedAbruptly = false;
+        } finally {
+          //线程池无任务可以执行
+            processWorkerExit(w, completedAbruptly);
+        }
+    }
+```
+
+若`firstTask`不为null，则优先执行`firstTak`。`fistTask`未设置时，从`getTasks()`获取`workQueue`中的任务去执行。
+
+```java
+    private Runnable getTask() {
+        boolean timedOut = false; // Did the last poll() time out?
+
+        for (;;) {
+            int c = ctl.get();
+            int rs = runStateOf(c);
+
+            // Check if queue empty only if necessary.
+            if (rs >= SHUTDOWN && (rs >= STOP || workQueue.isEmpty())) {
+                decrementWorkerCount();
+                return null;
+            }
+
+            int wc = workerCountOf(c);
+
+            // 是否允许核心线程超时释放 或者 当前工作线程数大于核心线程
+            boolean timed = allowCoreThreadTimeOut || wc > corePoolSize;
+
+            if ((wc > maximumPoolSize || (timed && timedOut))
+                && (wc > 1 || workQueue.isEmpty())) {
+                if (compareAndDecrementWorkerCount(c))
+                    return null;
+                continue;
+            }
+
+            try {
+                Runnable r = timed ?
+                    workQueue.poll(keepAliveTime, TimeUnit.NANOSECONDS) :
+                    workQueue.take();
+                if (r != null)
+                    return r;
+                timedOut = true;
+            } catch (InterruptedException retry) {
+                timedOut = false;
+            }
+        }
+    }
+```
+
+
+
+![图7 Worker执行任务](/images/03268b9dc49bd30bb63064421bb036bf90315.png)
+
+
+
+#### 线程回收
+
+
+
+#### 任务拒绝
+
+### 线程池中的线程策略
+
+#### 增长策略
+
+默认情况下，线程池是根据任务先**创建足够核心线程数的线程去执行任务**，当核心线程满了时**将任务放入等待队列**。待队列满了的时候，继续**创建新线程执行任务直到达到最大线程数停止**。此时再进入新任务的话，那就只能**执行拒绝策略或是抛出异常**。
+
+#### 收缩策略
+
+当线程池内的线程数大于核心线程数并且当前存在空闲线程并且空闲线程的空闲时间大于`keepAliveTime`时，会对空闲线程进行回收，直到线程数量等于核心线程数(`corePoolSize`)为止。
+
+###  线程池的使用注意
+
+1. 线程池不要用`Executors`的方式去创建，应该利用`ThreadPoolExecutor`的方式，这样可以帮助更好理解实现方式以及避免资源消耗过度的问题。
+
+   **`fixThreadPool以及singleThreadPool`,由于设置的等待队列长度为Integer.MAX_VALUE，导致大量请求堆积，消耗大量资源。**
+
+   **`cachedThreadPool以及scheduledThreadPool`,由于运行允许创建的线程数量为Integer.MAX_VALUE，可能创建大量的请求，消耗大量资源。**
+
+2. 针对具体情况去配置线程池参数，不同的任务类别应采用不同规模的线程池，任务类别分为3种：
+
+   - **`CPU密集型任务(需要进行大量计算，处理)`**：线程池中线程个数尽量少，不应大于CPU核心数，避免出现每个线程都需要长时间使用但是线程过多去抢占资源。
+
+   - **`IO密集型任务(主要时间都在IO，CPU空闲时间比较多)`**：线程池可以配置尽量多的线程，由于CPU大部分时间空闲，可以提高CPU的利用率。
+
+   - **`混合型任务`**：如果可以拆分，则拆分成一个CPU密集型以及IO密集型任务，只要执行任务效率相差不大。若相差太大则没必要拆分。
+
+###  补充知识
+
+1. `submit()`和`execute()`区别
+
+   `submit()`返回一个`future`，根据`future`可以判断任务是否完成--实现`Callable`接口
+
+   `execute()`无返回值。只是执行了任务，不知道结果如何 -- 实现`Runnable`接口
+
+2. `BlockingQueue`介绍
+
+   {% post_link Java-BockingQueue阻塞队列 %}
+
+3. `AbstractQueuedSynchronizer`介绍
+
+   {% post_link Java-AbstractQueuedSynchronizer简介 %}
+
+###  内容引用
+
+[线程池](https://juejin.im/post/5bdbbc3d6fb9a0224a5e486f#heading-14)
+
+[参考链接](https://mp.weixin.qq.com/s?__biz=MzI3OTU0MzI4MQ==&mid=2247486818&idx=1&sn=5d5f87cceadb062c3502cd7a1e2d3e0a&chksm=eb4761fcdc30e8ea3de28eca8c16ce305336852534dbd23edb348b5c1e02334dee025ea8f7bf&mpshare=1&scene=23&srcid=12117GQN5ZAnFwJRhSpKAcO1%23rd)
+
+]]></content>
+      <tags>
+        <tag>Java</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>Android崩溃优化</title>
     <url>/2019/07/20/Android%E5%B4%A9%E6%BA%83%E4%BC%98%E5%8C%96/</url>
     <content><![CDATA[]]></content>
@@ -10117,6 +11110,7 @@ Thread[DefaultDispatcher-worker-1,5,main] 4
 > - 协程调度器：Dispatchers
 > - 执行任务：Job
 > - 协程名字：CoroutineName
+> - 协程异常处理：CoroutineExceptionHandler
 
 ```kotlin
 val coroutineContext : CoroutineContext = Dispatchers.Main + Job() + CoroutineName("name")//协程上下文
@@ -10145,6 +11139,44 @@ public data class CoroutineName(
 }
 
 ```
+
+#### 协程上下文的父子关系
+
+> 每个协程都会有一个父级对象，协程的父级对象的`上下文`也会和父级协程的`上下文`不一致。
+
+关系遵循如下公式
+
+**父级上下文 = 默认值 + 继承的`CoroutineContext` + 参数**
+
+`默认值`：一些元素包含的默认值，例如默认`Dispatcher`就是`Dispatchers.Default`
+
+`继承的CoroutineContext`：父协程的`CoroutineContenxt`
+
+`参数`：后续子协程配置的参数，如上文所示组成部分，新添加的参数会覆盖前面的对应配置。
+
+```kotlin
+suspend fun testCoroutineContextExtend() {
+    val parentContext: CoroutineContext = Dispatchers.Default + Job() + CoroutineName("parent")
+    val parentScope = CoroutineScope(parentContext)
+    parentScope.launch {
+        log(currentCoroutineContext().toString()) //打印当前上下文内容
+        val childContext = parentContext + Dispatchers.IO + CoroutineName("child")
+        val job =  launch(childContext) {
+            log(currentCoroutineContext().toString())
+        }
+    }
+}
+
+输出结果：
+19:29:57:497 [DefaultDispatcher-worker-1] [CoroutineName(parent), StandaloneCoroutine{Active}@4815c1f8, Dispatchers.Default]
+19:29:57:500 [DefaultDispatcher-worker-2] [CoroutineName(child), StandaloneCoroutine{Active}@2ca2b65d, Dispatchers.IO]
+```
+
+根据上述输出结果可得到**后续的同类内容会覆盖前面的元素**。
+
+`CoroutineContext`使用**+**进行元素的合并，加号右侧的元素会覆盖左侧的元素，最后得到一个新的`CoroutineContext`元素。
+
+
 
 //TODO 后续会补充如何调用自定义上下文
 
@@ -10176,7 +11208,7 @@ class CustomInterceptor : ContinuationInterceptor {
     }
 }
 
-GlobalScope/launch(CustomInterceptor()){
+GlobalScope.launch(CustomInterceptor()){
   //TODO ...
 }
 ```
@@ -10488,6 +11520,57 @@ suspend fun test(){
 }
 ```
 
+### 协程执行任务(`Job`)
+
+> `Job`用于处理协程。封装了协程需要执行的代码逻辑，并且拥有简单的生命周期。
+>
+> **负责管理协程的声明周期。**
+
+主要有以下几个生命周期：
+
+- `New` 新建任务
+- `Active` 任务活跃
+- `Completing` 任务完成中
+- `Cancelling` 任务取消中
+- `Cancelled` 任务已取消
+- `Completed` 任务已完成
+
+{% fullimage  /images/Job生命周期.jpg,ViewTree,ViewTree%}
+
+`Job.join()`：中断与当前`Job`关联的协程，直到所有`子Job`执行完成，所关联的协程才可以继续执行。
+
+`join()`由`suspend`修饰，所以必须在协程内部被调用。
+
+
+
+#### `SupervisorJob`
+
+使用`Job`时，若发生异常会导致异常进行传递，导致`父任务及兄弟任务都会被取消`。
+
+`SupervisorJob`针对异常传播情况进行处理，当发生异常时，只会影响自身，其他任务不受影响。
+
+**`SupervisorJob`只有在`supervisorScope`或者`CoroutineScope(SupervisorJob())`内执行可以生效。**
+
+```kotlin
+val scope = CoroutineScope(SupervisorJob())
+
+scope.launch{
+  launch{
+     //child 1
+  }
+  
+  launch{
+    // child 2
+  }
+}
+
+若 child1 发生异常 child2可以继续运行。
+```
+
+
+
+
+
 ### 协程构造器(`Coroutine Builders`)
 
 > 配置完上述的`启动模式、调度器、上下文`之后，就要开始构造一个`协程`。
@@ -10507,32 +11590,7 @@ job.cancel()
 
 `Job`代表了协程本身，封装了协程需要执行的代码逻辑，并且拥有简单的生命周期。
 
-主要有以下几个生命周期：
 
-- New
-- Active
-- Completing
-- Cancelling
-- Cancelled
-- Completed
-
-```
-*                                       wait children
-* +-----+ start  +--------+ complete   +-------------+  finish  +-----------+
-* | New | -----> | Active | ---------> | Completing  | -------> | Completed |
-* +-----+        +--------+            +-------------+          +-----------+
-*                  |  cancel / fail       |
-*                  |     +----------------+
-*                  |     |
-*                  V     V
-*              +------------+                           finish  +-----------+
-*              | Cancelling | --------------------------------> | Cancelled |
-*              +------------+                                   +-----------+
-```
-
-`Job.join()`：中断与当前`Job`关联的协程，直到所有`子Job`执行完成，所关联的协程才可以继续执行。
-
-`join()`由`suspend`修饰，所以必须在协程内部被调用。
 
 #### `async`
 
@@ -10672,7 +11730,7 @@ Parent job is Cancelling //由于父协程异常，导致子协程的执行取�
 Exception in thread "main" java.lang.NullPointerException: 111
 ```
 
-
+![img](/Users/wxy/myblog/blog/source/images/640.gif)
 
 `supervisorScope`
 
@@ -10715,6 +11773,8 @@ Exception in thread "DefaultDispatcher-worker-1" java.lang.NullPointerException:
 ```
 
 `supervisorScope`内子协程的异常不影响父协程的继续运行。
+
+![img](/Users/wxy/myblog/blog/source/images/640.png)
 
 
 
@@ -11020,7 +12080,7 @@ println("main: Now I can quit.")
 
 主要有以下三种关系：
 
-##### 父协程调用`cancel()`主动或者触发异常结束时，会立即取消所有子协程
+##### 父协程调用`cancel()`主动或者触发异常结束时，会立即取消所有子协程；子协程调用`cancel()`不影响父协程及兄弟协程执行。
 
 ```kotlin
 基础调用流程
@@ -11405,7 +12465,33 @@ public inline fun <T> Continuation<T>.resumeWithException(exception: Throwable):
 >
 > **挂起函数无法被其他常规函数调用！**
 
-##### 
+```kotlin
+suspend fun test(){
+  ...
+}
+```
+
+上述实例为`挂起函数`。
+
+
+
+
+
+
+
+
+
+当`挂起函数`在一个协程中被调用时，该挂起函数内部会增加一个参数`Continuation`，类似下面的代码
+
+```java
+fun test(contimuation:Continuation){
+  ...
+}
+```
+
+这种转换被称为**CPS（续体传递风格）**，每个`挂起函数`或`挂起Lambda表达式`都会附加一个`Continuation`参数，在外界调用`挂起函数`时隐式入参。 
+
+
 
 
 
@@ -11489,6 +12575,8 @@ public inline fun <T> Continuation<T>.resumeWithException(exception: Throwable):
 [SPI机制](http://zhoukaibo.com/2019/03/16/java-spi-%E6%9C%BA%E5%88%B6%E5%88%86%E6%9E%90%E5%8F%8A%E5%85%B6%E4%BC%98%E7%BC%BA%E7%82%B9/)
 
 [Kotlin协程设计思路](https://github.com/Kotlin-zh/KEEP/blob/master/proposals/coroutines.md)
+
+[揭秘suspend修饰符](https://mp.weixin.qq.com/s?__biz=MzAwODY4OTk2Mg==&mid=2652055127&idx=2&sn=283de8250bfc8a7bd8287a7aadad1339&chksm=808c8612b7fb0f047702c2101d27f4de42363ae5dd462be977ec897c7ae6a36e57b94675750a&scene=178#rd)
 
 ]]></content>
       <tags>
@@ -18795,7 +19883,7 @@ ANR问题的产生是由于主线程的任务无法在规定事件内无法完�
   </entry>
   <entry>
     <title>数据结构--CopyOnWriteArrayList实现原理及简析</title>
-    <url>/2019/01/18/CopyOnWriteArrayList%E5%AE%9E%E7%8E%B0%E5%8E%9F%E7%90%86%E5%8F%8A%E7%AE%80%E6%9E%90/</url>
+    <url>/2019/01/18/Java-CopyOnWriteArrayList%E5%AE%9E%E7%8E%B0%E5%8E%9F%E7%90%86%E5%8F%8A%E7%AE%80%E6%9E%90/</url>
     <content><![CDATA[
 {% fullimage /images/CopyOnWriteArrayList简析.png,CopyOnWriteArrayList简析,CopyOnWriteArrayList简析%}
 
@@ -18946,7 +20034,7 @@ private E get(Object[] a, int index) {
   </entry>
   <entry>
     <title>数据结构--ConcurrentHashMap原理及解析</title>
-    <url>/2019/01/16/ConcurrentHashMap%E5%8E%9F%E7%90%86%E5%8F%8A%E8%A7%A3%E6%9E%90/</url>
+    <url>/2019/01/16/Java-ConcurrentHashMap%E5%8E%9F%E7%90%86%E5%8F%8A%E8%A7%A3%E6%9E%90/</url>
     <content><![CDATA[
 <!--主要是对HashMap，ArrayMap，ConcurrentHashmap-->
 
@@ -29744,8 +30832,8 @@ public boolean onInterceptTouchEvent(MotionEvent event){
     <content><![CDATA[]]></content>
   </entry>
   <entry>
-    <title>BockingQueue阻塞队列</title>
-    <url>/2018/12/24/BockingQueue%E9%98%BB%E5%A1%9E%E9%98%9F%E5%88%97/</url>
+    <title>Java-BockingQueue阻塞队列</title>
+    <url>/2018/12/24/Java-BockingQueue%E9%98%BB%E5%A1%9E%E9%98%9F%E5%88%97/</url>
     <content><![CDATA[]]></content>
   </entry>
   <entry>
@@ -32403,7 +33491,7 @@ JVM启用了`偏向锁`模式，当锁对象第一次被线程获取的时候，
   </entry>
   <entry>
     <title>Java多线程基础</title>
-    <url>/2018/12/19/Java%E5%A4%9A%E7%BA%BF%E7%A8%8B%E5%9F%BA%E7%A1%80/</url>
+    <url>/2018/12/19/Java-%E5%A4%9A%E7%BA%BF%E7%A8%8B%E5%9F%BA%E7%A1%80/</url>
     <content><![CDATA[
 <!--生成者-消费者模式 创建线程 为什么要使用多线程？会有什么问题 线程池概念以及实现原理、四种初始化方案 开线程影响那块区域 进程与线程 多线程断点续传 线程关闭以及防止线程的内存泄漏 线程池上限 为什么要有线程 并发 线程模型 wait和sleep的区别 控制允许并发访问的个数 自己实现线程安全类-->
 
@@ -39994,675 +41082,6 @@ Socket建立连接过程分为三步：
       </tags>
   </entry>
   <entry>
-    <title>Android-线程池 ThreadPool 专题详解</title>
-    <url>/2018/05/31/Android-Study-Plan-XVII/</url>
-    <content><![CDATA[
-## 线程池的概念以及实现原理（设计原理）？为什么要使用线程池？Android中的线程池有哪些？它们的区别是什么？
-
-{% fullimage /images/线程池_ThreadPool.png,线程池脑图,线程池脑图 %}
-
-### 基础概念
-
-- **线程**：进程中负责执行的执行单元，一个进程中至少有一个线程,**操作系统能够进行调度的最小单位**
-- **进程**：一个执行中的程序的实例
-- **多线程**：解决多任务同时执行的需求，合理使用CPU资源。多线程的运行时根据CPU切换完成，如何切换由CPU确定，因此多线程具有不确定性
-- **线程池**： 基本思想是一种对象池的思想，开辟一块内存空间，里面存放了众多（未死亡）的线程，池中线程执行调度由池管理器来处理，当有线程任务时，从池中取一个，执行完成后线程对象回归池中，避免反复创建线程对象所带来的性能开销，节省系统资源。
-
-### 1. 线程池的概念
-
-在执行一个异步任务或并发任务时，往往会通过`new Thread()`方法去开启一个子线程去执行任务，等到子线程操作完成后在利用`Handler`切换至主线程。但是利用这种方法我们无法对自己创建的子线程进行有效的管理，然后由于过多的创建子进程，他们之间相互竞争会导致资源的过度占用。线程池的出现就是为了来对子进程进行管理。
-
-### 2. 线程池的实现原理
-
-`Executors`提供了基础的四类线程池方法，最终都是通过`ThreadPoolExecutor`类完成。对于这个类的描述`他维护了一个线程池，对于提交Executor中的任务，不是创建新的线程而是使用池内的线程来执行任务。可以显著减少对于任务执行的开销。`
-
-1. ThreadPoolExecutor构造函数介绍
-
-   ```java
-   public ThreadPoolExecutor(int corePoolSize,
-                                 int maximumPoolSize,
-                                 long keepAliveTime,
-                                 TimeUnit unit,
-                                 BlockingQueue<Runnable> workQueue,
-                                 ThreadFactory threadFactory,
-                                 RejectedExecutionHandler handler)
-   ```
-
-   参数介绍：
-
-   - **`corePoolSize 核心线程数`** 表示线程池中的基本线程数量即核心线程数量。一般情况下核心线程会一直存活在线程池中，即便他们处于闲置状态。只有在`ThreadPoolExecutor的allowCoreThreadTimeOut设置为true`的时候，会有一个超时策略（超过设置好的超时时间，闲置的核心线程会被终止）。**当创建的线程数小于corePoolSize时，不管有没有空闲线程都会创建新的线程**。
-
-   - **`maximumPoolSize 最大线程数`**  表示线程池中允许的最大创建线程数，当活动的线程数达到数值后，后续新任务会被阻塞。**使用有界队列时，未达到该值则会创建新的线程，使用无界队列时该值无效。**
-
-   - **`keepAliveTime 非核心线程闲置时的超时时长`** 表示空闲非核心线程的最大存活时间，一旦超过即被销毁。**当`ThreadPoolExecutor的allowCoreThreadTimeOut设置为true`的时候，该参数也可作用于核心线程**
-
-   - **`unit 存活时间的时间单位`** 用于指定keepAliveTime参数的时间单位，为一个枚举类型。包含下列参数：`NANOSECONDS（纳秒）`,`MICROSECONDS（微秒）`,`MILLSECONDS（毫秒）`,`SECONDS（）秒`,`MINUTES（分）`,`HOURS（时）`,`DAYS（天）`
-
-   - **`workQueue 线程池中的任务队列`** 该队列是`java.util.BlockingQueue<E>`的一个实例，是一种阻塞队列用来存放等待执行的任务。通过`execute()`方法将提交的Runnable对象存储进去。根据具体实现类的不同可以分为以下三种队列策略：
-
-     - `容量为0即直接提交策略--SynchronousQueue`：等待队列容量为0 ，所有需要阻塞的任务必须等待池内的某个线程有空闲才可以继续执行，否则阻塞。`CachedThreadPool`使用该队列策略。
-     - `容量无限即无界队列策略--LinkedBlockingQueue`：等待队列的长度无穷大，在这种策略下不会出现多余corePoolSize的线程被创建，所以maximumPoolSize以及handler无效，因为不存在队列满的情况。不过也有缺点：**线程的执行速度会比提交速度慢，会导致无界队列快速增长，直到系统资源耗尽。**`fixedThreadPool`采用了这种队列策略。
-     - `容量有限即有界队列策略--指定了容量的任何BlockingQueue`：等待队列的长度为限制长度，指定了容量后可以**防止过多的资源被消耗**。 
-
-   - **`threadFactory 线程工厂`**：是一个接口可以为线程池提供新线程的创建。由同一个threadFactory创建的线程同属于一个ThreadGroup，优先级都为Thread.NORM_PRIORITY，以及为非进程守护状态。默认都是采用`Executors.defaultThreadFactory()`返回值。
-
-   - **`handler 拒绝策略`**：当**使用有界队列时且队列任务被填满后并且线程数也达到了最大值，就会触发拒绝策略**。如果任务被拒绝执行，则会调用`RejectedExecutionHandler.rejectedExecution()`方法，默认调用`AbortPolicy`拒绝策略，也可以由用户自定义。JDK中定义了4种拒绝策略：
-
-     - `AbortPolicy`**处理程序遭到拒绝则直接抛出`RejectedExecutionException`异常然后丢弃该任务。**
-
-       实现源码：
-
-       ```java
-        public static class AbortPolicy implements RejectedExecutionHandler {
-               /**
-                * Creates an {@code AbortPolicy}.
-                */
-               public AbortPolicy() { }
-               public void rejectedExecution(Runnable r, ThreadPoolExecutor e) {
-                   throw new RejectedExecutionException("Task " + r.toString() +
-                                                        " rejected from " +
-                                                        e.toString());
-               }
-           }
-       ```
-
-       样例演示：
-
-       ```java
-        static class TestRunnable implements Runnable {
-               private int id;
-       
-               TestRunnable(int id) {
-                   this.id = id;
-               }
-       
-               @Override
-               public void run() {
-                   System.err.println(Thread.currentThread().getName()+" 当前线程id="+ this.id);
-                   try {
-                       Thread.sleep(1000);
-                   } catch (InterruptedException e) {
-                       e.printStackTrace();
-                   }
-               }
-           }
-       
-       public static void abortPolicyDemo() {
-               ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(
-                       1, 1, 60, TimeUnit.SECONDS,
-                       new ArrayBlockingQueue<Runnable>(1), new ThreadPoolExecutor.AbortPolicy());
-       
-               threadPoolExecutor.submit(new TestRunnable(1));
-               threadPoolExecutor.submit(new TestRunnable(2));
-               threadPoolExecutor.submit(new TestRunnable(3));
-               threadPoolExecutor.shutdown();
-           }
-       
-       运行结果：添加进程时直接抛出异常但是没有影响后续的进行
-       pool-1-thread-1 当前线程id=1
-       Exception in thread "main" java.util.concurrent.RejectedExecutionException: Task java.util.concurrent.FutureTask@4b1210ee rejected from java.util.concurrent.ThreadPoolExecutor@4d7e1886[Running, pool size = 1, active threads = 1, queued tasks = 1, completed tasks = 0]
-           at java.util.concurrent.ThreadPoolExecutor$AbortPolicy.rejectedExecution(ThreadPoolExecutor.java:2047)
-           at java.util.concurrent.ThreadPoolExecutor.reject(ThreadPoolExecutor.java:823)
-           at java.util.concurrent.ThreadPoolExecutor.execute(ThreadPoolExecutor.java:1369)
-           at java.util.concurrent.AbstractExecutorService.submit(AbstractExecutorService.java:112)
-           at threadpool.ThreadPoolDemo.abortPolicyDemo(ThreadPoolDemo.java:140)
-           at threadpool.ThreadPoolDemo.main(ThreadPoolDemo.java:13)
-       pool-1-thread-1 当前线程id=2
-       ```
-
-     - `CallerRunsPolicy`**在调用`execute`方法的调用者所在线程来执行被拒绝的任务，提供简单的反馈控制机制，可以减缓新任务的提交速度。**
-
-       实现源码：
-
-       ```java
-       public static class CallerRunsPolicy implements RejectedExecutionHandler {
-               /**
-                * Creates a {@code CallerRunsPolicy}.
-                */
-               public CallerRunsPolicy() { }
-               public void rejectedExecution(Runnable r, ThreadPoolExecutor e) {
-                   if (!e.isShutdown()) {
-                       r.run();
-                   }
-               }
-           }
-       ```
-
-       样例演示：
-
-       ```java
-         public static void callerRunsPolicyDemo(){
-               ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(
-                       1, 1, 60, TimeUnit.SECONDS,
-                       new ArrayBlockingQueue<Runnable>(1), new ThreadPoolExecutor.CallerRunsPolicy());
-       
-               threadPoolExecutor.submit(new TestRunnable(1));
-               threadPoolExecutor.submit(new TestRunnable(2));
-               threadPoolExecutor.submit(new TestRunnable(3));
-               threadPoolExecutor.shutdown();
-           }
-       
-       运行结果：task2执行在了主线程，由于被拒绝执行所以在调用者线程执行了任务
-       pool-1-thread-1 当前线程id=1
-       main 当前线程id=3
-       pool-1-thread-1 当前线程id=2
-       ```
-
-     - `DiscardPolicy`**被拒绝即无法执行的任务被直接删除**
-
-       实现源码：   
-
-       ```java
-       public static class DiscardPolicy implements RejectedExecutionHandler {
-                     /**
-                      * Creates a {@code DiscardPolicy}.
-                      */
-                     public DiscardPolicy() { }
-                     public void rejectedExecution(Runnable r, ThreadPoolExecutor e) {
-                     }
-                 }
-       ```
-
-       样例演示：
-
-       ```java
-           public static void discardPolicyDemo(){
-               ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(
-                       1, 1, 60, TimeUnit.SECONDS,
-                       new ArrayBlockingQueue<Runnable>(1), new ThreadPoolExecutor.DiscardPolicy());
-       
-               threadPoolExecutor.submit(new TestRunnable(1));
-               threadPoolExecutor.submit(new TestRunnable(2));
-               threadPoolExecutor.submit(new TestRunnable(3));
-               threadPoolExecutor.shutdown();
-           }
-       
-       运行结果：由于被拒绝执行在该策略下被直接抛弃
-       pool-1-thread-1 当前线程id=1
-       pool-1-thread-1 当前线程id=2
-       ```
-
-     - `DiscardOldestPolicy`**判断线程池是否被关闭，没有则丢弃最老的一个请求，再尝试提交当前任务。**
-
-       实现源码：
-
-       ```java
-        public static class DiscardOldestPolicy implements RejectedExecutionHandler {
-                     /**
-                      * Creates a {@code DiscardOldestPolicy} for the given executor.
-                      */
-                     public DiscardOldestPolicy() { }
-                     public void rejectedExecution(Runnable r, ThreadPoolExecutor e) {
-                         if (!e.isShutdown()) {
-                             e.getQueue().poll();
-                             e.execute(r);
-                         }
-                     }
-                 }
-       ```
-
-       样例演示：
-
-       ```java
-           public static void discardOldestPolicyDemo(){
-               ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(
-                       1, 1, 60, TimeUnit.SECONDS,
-                       new ArrayBlockingQueue<Runnable>(1), new ThreadPoolExecutor.DiscardOldestPolicy());
-       
-               threadPoolExecutor.submit(new TestRunnable(1));
-               threadPoolExecutor.submit(new TestRunnable(2));
-               threadPoolExecutor.submit(new TestRunnable(3));
-               threadPoolExecutor.submit(new TestRunnable(4));
-               threadPoolExecutor.shutdown();
-           }
-       
-       运行结果：???
-       pool-1-thread-1 当前线程id=1
-       pool-1-thread-1 当前线程id=4
-       ```
-
-     - `CustomRejectPolicy 自定义拒绝策略`**可以用来记录运行日志或者记录无法处理的任务**
-
-       样例演示：
-
-       ```java
-       /**
-       * 自定义拒绝策略，实现RejectedExecutionHandler接口即可
-       */
-       static class CustomRejectedPolicy implements RejectedExecutionHandler{
-               @Override
-               public void rejectedExecution(Runnable r, ThreadPoolExecutor executor) {
-                   if (!executor.isShutdown()){
-                           System.err.println("自定义异常日志记录:  "+  r.toString());
-                   }
-               }
-           }
-       
-       public static void customPolicyDemo(){
-               ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(
-                       1, 1, 60, TimeUnit.SECONDS,
-                       new ArrayBlockingQueue<Runnable>(2), new CustomRejectedPolicy());
-       
-           //使用execute是因为使用submit时会被封装成RunnableFuture对象
-               threadPoolExecutor.execute(new TestRunnable(1));
-               threadPoolExecutor.execute(new TestRunnable(2));
-               threadPoolExecutor.execute(new TestRunnable(3));
-               threadPoolExecutor.execute(new TestRunnable(4));
-       
-               threadPoolExecutor.shutdown();
-           }
-       
-       运行结果：由于4号被拒绝，记录日志
-       自定义异常日志记录:  java.util.concurrent.FutureTask@4b1210ee
-       pool-1-thread-1 当前线程id=1
-       pool-1-thread-1 当前线程id=2
-       pool-1-thread-1 当前线程id=3
-       ```
-
-     - 额外参数扩展 `allowCoreThreadTimeOut 允许核心线程过期 `默认值为false（线程池已不被使用，但是其中还有活着的线程，则该线程池无法被回收，会造成内存泄露）。所以用户可以显式调用`shutDown()`或者该值设置为true，则会被回收。
-
-2. ThreadPoolExecutor的使用
-
-   向线程池提交一个任务的方式有两种：
-
-   - `execute`：这种方法提交任务，是没有返回值的即无法判断在线程池中是否完成该任务
-
-     ```java
-      threadPoolExecutor.execute(new TestRunnable(1));
-     ```
-
-   - `submit`：使用`submit`方法提交任务时，会返回一个future，可以通过这个future来判断任务是否执行成功也可以根据`future的get()`方法获取返回值。**若子线程任务没完成，`get()`方法会阻塞直到任务完成，若使用`get(long timeout,TimeUnit unit)`则会阻塞一段时间后返回，可能尚未完成任务。**
-
-     ```java
-      Future<Integer> future = fixedThreadPool.submit(new Callable<Integer>() {
-     
-                     @Override
-                     public Integer call() throws Exception {
-                         System.err.println(Thread.currentThread().getName() + " , index = " + index);
-                         return 2;
-                     }
-                 });
-     
-                 try {
-                     System.err.println("Future return :" + future.get().toString());
-                 } catch (Exception e) {
-                     e.printStackTrace();
-                 }
-     ```
-
-3. 线程池的关闭
-
-   线程池关闭方法有两种：
-
-   - `shutdown()`：将线程池的状态置为SHUTDOWN状态，然后中断没有正在执行的线程。
-
-     ```java
-     public void shutdown() {
-             final ReentrantLock mainLock = this.mainLock;
-             mainLock.lock();
-             try {
-                 checkShutdownAccess();
-                 advanceRunState(SHUTDOWN);
-                 interruptIdleWorkers();
-                 onShutdown(); // hook for ScheduledThreadPoolExecutor
-             } finally {
-                 mainLock.unlock();
-             }
-             tryTerminate();
-         }
-     ```
-
-   - `shutdownNow()`：将线程池的状态设为STOP状态，中断所有任务包括执行中的线程，并返回等待执行的任务列表。
-
-     ```java
-     public List<Runnable> shutdownNow() {
-             List<Runnable> tasks;
-             final ReentrantLock mainLock = this.mainLock;
-             mainLock.lock();
-             try {
-                 checkShutdownAccess();
-                 advanceRunState(STOP);
-                 interruptWorkers();
-                 tasks = drainQueue();
-             } finally {
-                 mainLock.unlock();
-             }
-             tryTerminate();
-             return tasks;
-         }
-     ```
-
-     中断线程需要采用`interrput`方法，**无法响应中断的任务可能永远无法终止。**
-
-     当需要立即中断所有线程并且不在乎任务是否执行完成时，可以使用`shutdownNow`方法。
-
-4. 线程池的拓展
-
-   `ThreadPoolExecutor`默认提供三个空方法，可以通过重写这三个方法来监控线程池。
-
-   ```java
-   //任务执行前 记录任务开始前时间
-   protected void beforeExecute(Thread t, Runnable r) { }
-   //任务执行后 记录任务结束时间
-   protected void afterExecute(Runnable r, Throwable t) { }
-   //线程池关闭 记录线程池关闭事件以及执行过的线程数量
-   protected void terminated() { }
-   ```
-
-   样例演示：
-
-   ```java
-   class CustomThreadPoolExecutor extends ThreadPoolExecutor{
-   
-           public CustomThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit, BlockingQueue<Runnable> workQueue) {
-               super(corePoolSize, maximumPoolSize, keepAliveTime, unit, workQueue);
-           }
-   
-           @Override
-           protected void beforeExecute(Thread t, Runnable r) {
-               super.beforeExecute(t, r);
-               System.err.println("beforeExecute"+r.toString());
-           }
-   
-           @Override
-           protected void afterExecute(Runnable r, Throwable t) {
-               super.afterExecute(r, t);
-               System.err.println("afterExecute"+r.toString());
-           }
-   
-           @Override
-           protected void terminated() {
-               super.terminated();
-               System.err.println("线程关闭");
-           }
-       }
-   ```
-
-
-### 3. 为什么要使用线程池
-
-- **降低资源消耗。**通过重复利用已创建的线程降低线程创建和销毁造成的消耗
-- **提高响应速度。**当任务到达时，任务可以不需要等到线程创建就可以立即执行
-- **提高线程的可管理性。**线程是稀缺资源，大量创建会导致系统资源过度消耗且会降低系统的稳定性，线程池可以有效控制线程数，并进行统一的分配、调优和监控。
-
-### 4. 线程池的分类以及各自的特性
-
-利用`Executors`类提供了四种不同的线程池，他们都是直接或者间接配置`ThreadPoolExecutor`来实现功能。下面分别介绍着四个线程池
-
-####  `newFixedThreadPool` 
-
-> 创建固定大小的线程池，每次提交一个任务就创建一个线程，直到线程达到线程池的最大大小，线程池的大小一旦达到最大值就不会发生变化，如果某个线程因为异常而结束，则会补充一个新进程。
-> 
-> 由于只设置核心线程大小，所以可以**更快的响应外界请求**
-> 
-> 线程池的大小设置，可以使用`Runtime.getRuntime().availableProcessors()`
-
-- 实现源码
-
-  ```java
-  /**
-  * 设置了核心线程，并且没有超时机制，使用LinkedBlockingQueue则任务队列大小是无上限的
-  */
-  public static ExecutorService newFixedThreadPool(int nThreads) {
-          return new ThreadPoolExecutor(nThreads, nThreads,
-                                        0L, TimeUnit.MILLISECONDS,
-                                        new LinkedBlockingQueue<Runnable>());
-      }
-  ```
-
-- 样例演示
-
-  ```java
-  public static void fixedThreadPoolDemo(){
-          ExecutorService fixedThreadPool= Executors.newFixedThreadPool(3);
-          for (int i = 0; i <6 ; i++) {
-              final int index=i;
-              fixedThreadPool.execute(new Runnable() {
-                  @Override
-                  public void run() {
-                      System.err.println(Thread.currentThread().getName()+" , index = "+index);
-                  }
-              });
-  
-              try{
-                  Thread.sleep(1000);
-              }catch(Exception e){
-                  e.printStackTrace();
-              }
-          }
-      }
-  
-  运行结果：整个过程都在pool-1的线程池中运行,然后复用线程
-  pool-1-thread-1 , index = 0
-  pool-1-thread-2 , index = 1
-  pool-1-thread-3 , index = 2
-  pool-1-thread-1 , index = 3
-  pool-1-thread-2 , index = 4
-  pool-1-thread-3 , index = 5
-  ```
-
-- 适用场景
-
-  用于负载比较重的服务器，为了资源的合理利用，需要限制当前线程数量。
-
-#### `newCachedThreadPool`
-
-> 可根据需要创建新线程的线程池，但是在一起构造的线程可用时将重用他们。对于很多短期异步任务的程序而言，这类线程池可以提高性能。
-> 
-> 如果现有线程没有可用的，则会创建一个新的线程并添加到池中，终止并从缓存中移除那些超过60s没有使用的线程。**因此，长时间保持空闲的newCachedThreadPool线程池是不存在任何线程的，所以这时候几乎不占用系统资源。**
-
-- 实现源码
-
-  ```java
-  /**
-  * 核心线程数为0 线程最大为Int的最大值所以可以认定为线程池最大线程无限大，设置了超时时间为60s。任务队列采用了阻塞队列(必须池内有空闲线程才可以执行)
-  */
-  public static ExecutorService newCachedThreadPool() {
-          return new ThreadPoolExecutor(0, Integer.MAX_VALUE,
-                                        60L, TimeUnit.SECONDS,
-                                        new SynchronousQueue<Runnable>());
-      }
-  ```
-
-- 样例演示
-
-  ```java
-  public static void cachedThreadPoolDemo(){
-          ExecutorService cachedThreadPool= Executors.newCachedThreadPool();
-          for (int i = 0; i <6 ; i++) {
-              final int index=i;
-              cachedThreadPool.execute(new Runnable() {
-                  @Override
-                  public void run() {
-                      System.err.println(Thread.currentThread().getName()+" , index = "+index);
-                  }
-              });
-  
-              try{
-                  Thread.sleep(1000);
-              }catch(Exception e){
-                  e.printStackTrace();
-              }
-          }
-      }
-  
-  运行结果：整个过程都在同一个线程pool-1-thread-1中执行，后面线程复用前面的线程
-  pool-1-thread-1 , index = 0
-  pool-1-thread-1 , index = 1
-  pool-1-thread-1 , index = 2
-  pool-1-thread-1 , index = 3
-  pool-1-thread-1 , index = 4
-  pool-1-thread-1 , index = 5
-  ```
-
-- 适用场景
-
-  并发执行大量短期的小任务，或者负载较轻的服务器
-
-####  `newScheduledThreadPool`
-
-> 创建一个大小无限的线程池，此线程池支持定时以及周期性执行任务的需求。
-
-- 实现源码
-
-  ```java
-  public static ScheduledExecutorService newScheduledThreadPool(int corePoolSize) {
-      return new ScheduledThreadPoolExecutor(corePoolSize);
-  }
-  /**
-  * 核心线程数固定，非核心线程数为无限大，当非核心数处于闲置状态的时候会被立即回收
-  */
-  public ScheduledThreadPoolExecutor(int corePoolSize) {
-      super(corePoolSize, Integer.MAX_VALUE, 0, NANOSECONDS,
-            new DelayedWorkQueue());
-  }
-  ```
-
-- 样例演示
-
-  ```java
-   public static void scheduleThreadPoolDemo() {
-          ScheduledExecutorService scheduledThreadPool = Executors.newScheduledThreadPool(3);
-       //延迟一定时间后执行Runnable任务
-          scheduledThreadPool.schedule(new Runnable() {
-              @Override
-              public void run() {
-                  System.err.println(Thread.currentThread().getName() + " delay 2s");
-              }
-          }, 2, TimeUnit.SECONDS);
-       //延迟一定时间后执行Callable任务
-          scheduledThreadPool.schedule(new Callable<Object>() {
-              @Override
-              public Object call() throws Exception {
-                  return null;
-              }
-          }, 2, TimeUnit.SECONDS);
-       //延迟一定时间（initialDelay）后,以(period)时间间隔执行任务
-          scheduledThreadPool.scheduleAtFixedRate(new Runnable() {
-              @Override
-              public void run() {
-                  System.err.println(Thread.currentThread().getName() + " every 3s");
-              }
-          }, 1, 1, TimeUnit.SECONDS);
-       //延迟一定时间（initialDelay）后,以(delay即上一个任务执行结束到下一个任务开始的间隔)执行
-          scheduledThreadPool.scheduleWithFixedDelay(new Runnable() {
-              @Override
-              public void run() {
-                  System.err.println(Thread.currentThread().getName() + " delay 3s");
-              }
-          }, 1, 1, TimeUnit.SECONDS);
-      }
-  
-  运行结果：
-  pool-1-thread-1 every 3s
-  pool-1-thread-2 delay 3s
-  pool-1-thread-3 delay 3s 1
-  pool-1-thread-2 every 3s
-  ```
-
-- 适用场景
-
-  用于需要多个后台线程执行周期任务，同时需要限制线程数量
-
-####  `newSingleThreadExecutor`
-
-> 创建一个单线程池，该线程池中只有一个线程在工作，其他任务都会依次在任务中排列中等候依次执行，任务是串行执行的。此线程池保证所有的任务的执行顺序按照任务提交顺序执行(FIFO-先进先出)。
-
-- 实现源码
-
-  ```java
-  /**
-  * 只有一个核心线程，对任务队列没有大小限制，将所有外界任务统一到一个线程执行所有我们不需要处理线程同步的问题。
-  */
-  public static ExecutorService newSingleThreadExecutor() {
-          return new FinalizableDelegatedExecutorService
-              (new ThreadPoolExecutor(1, 1,
-                                      0L, TimeUnit.MILLISECONDS,
-                                      new LinkedBlockingQueue<Runnable>()));
-      }
-  ```
-
-- 样例演示
-
-  ```java
-   public static void singleThreadPoolDemo(){
-          ExecutorService singleThreadExecutor=Executors.newSingleThreadExecutor();
-          for (int i = 0; i < 6; i++) {
-              final int index = i;
-              singleThreadExecutor.execute(new Runnable() {
-                  @Override
-                  public void run() {
-                      System.err.println(Thread.currentThread().getName() + " , index = " + index);
-                  }
-              });
-  
-              try {
-                  Thread.sleep(1000);
-              } catch (Exception e) {
-                  e.printStackTrace();
-              }
-          }
-      }
-  
-  运行结果：所有的任务都是在pool-1-thread-1中依次运行
-  pool-1-thread-1 , index = 0
-  pool-1-thread-1 , index = 1
-  pool-1-thread-1 , index = 2
-  pool-1-thread-1 , index = 3
-  pool-1-thread-1 , index = 4
-  pool-1-thread-1 , index = 5
-  ```
-
-- 适用场景
-
-  用于串行执行任务的场景，每个任务需要顺序执行
-
-### 5. 线程池的执行流程
-
-{% fullimage /images/study_plan/threadpool_process.png, 线程池执行流程图,线程池执行流程图 %}
-
-1. 判断corePoolSize(核心线程数)是否已到达，没到达则可以创建一个新线程执行任务
-2. 判断工作队列是否已满，没满则添加入队列等待执行
-3. 判断maximum(最大线程数)是否已到达，没到达则创建一个新线程执行任务。已满则执行拒绝策略。
-
-### 6. 线程池的使用注意
-
-1. 线程池不要用`Executors`的方式去创建，应该利用`ThreadPoolExecutor`的方式，这样可以帮助更好理解实现方式以及避免资源消耗过度的问题。
-
-   **`fixThreadPool以及singleThreadPool`,由于设置的等待队列长度为Integer.MAX_VALUE，导致大量请求堆积，消耗大量资源。**
-
-   **`cachedThreadPool以及scheduledThreadPool`,由于运行允许创建的线程数量为Integer.MAX_VALUE，可能创建大量的请求，消耗大量资源。**
-
-2. 针对具体情况去配置线程池参数，不同的任务类别应采用不同规模的线程池，任务类别分为3种：
-
-   - **`CPU密集型任务(需要进行大量计算，处理)`**：线程池中线程个数尽量少，不应大于CPU核心数，避免出现每个线程都需要长时间使用但是线程过多去抢占资源。
-
-   - **`IO密集型任务(主要时间都在IO，CPU空闲时间比较多)`**：线程池可以配置尽量多的线程，由于CPU大部分时间空闲，可以提高CPU的利用率。
-
-   - **`混合型任务`**：如果可以拆分，则拆分成一个CPU密集型以及IO密集型任务，只要执行任务效率相差不大。若相差太大则没必要拆分。
-
-###  7.补充知识
-
-1. `submit()`和`execute()`区别
-
-   `submit()`返回一个`future`，根据`future`可以判断任务是否完成--实现`Callable`接口
-
-   `execute()`无返回值。只是执行了任务，不知道结果如何 -- 实现`Runnable`接口
-
-
-
-### 8. 内容引用
-
-[线程池](https://juejin.im/post/5bdbbc3d6fb9a0224a5e486f#heading-14)
-
-[参考链接](https://mp.weixin.qq.com/s?__biz=MzI3OTU0MzI4MQ==&mid=2247486818&idx=1&sn=5d5f87cceadb062c3502cd7a1e2d3e0a&chksm=eb4761fcdc30e8ea3de28eca8c16ce305336852534dbd23edb348b5c1e02334dee025ea8f7bf&mpshare=1&scene=23&srcid=12117GQN5ZAnFwJRhSpKAcO1%23rd)
-
-]]></content>
-      <tags>
-        <tag>Android</tag>
-      </tags>
-  </entry>
-  <entry>
     <title>Handler机制源码解析</title>
     <url>/2018/05/14/Handler%E6%9C%BA%E5%88%B6%E5%8D%B3%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/</url>
     <content><![CDATA[
@@ -45177,7 +45596,15 @@ Android系统通过获取`apk配置的targetSdkVersion`在调用系统对应Api�
 
     需要配置在`node-modules/hexo-generator-index2/lib/generator.js`里面
 
-36. ]]></content>
+36. kotlin中的`inline`、`noinline`、`crossinline`的作用、
+
+    `inline`：
+
+    `noinline`：
+
+    `crossinline`：
+
+37. ]]></content>
       <tags>
         <tag>Android</tag>
         <tag>Java</tag>
@@ -48760,7 +49187,7 @@ Service默认运行在主线程，所以生命周期的方法都会运行在主�
   </entry>
   <entry>
     <title>Java基础知识</title>
-    <url>/2018/01/17/Java%E5%9F%BA%E7%A1%80%E7%9F%A5%E8%AF%86/</url>
+    <url>/2018/01/17/Java-%E5%9F%BA%E7%A1%80%E7%9F%A5%E8%AF%86/</url>
     <content><![CDATA[
 <!--Java多态，重载和重写，分别应用场景，多态的原理-->
 
