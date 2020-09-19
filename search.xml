@@ -1,6 +1,336 @@
 <?xml version="1.0" encoding="utf-8"?>
 <search>
   <entry>
+    <title>Mac软件清单</title>
+    <url>/2020/09/17/Mac%E8%BD%AF%E4%BB%B6%E6%B8%85%E5%8D%95/</url>
+    <content><![CDATA[]]></content>
+  </entry>
+  <entry>
+    <title>Android-流量统计</title>
+    <url>/2020/09/15/Android-%E6%B5%81%E9%87%8F%E7%BB%9F%E8%AE%A1/</url>
+    <content><![CDATA[
+## 流量统计
+
+Android目前提供了两种流量计算方案
+
+- `TrafficStats`
+- `NetworkStatsManager`
+
+这两种方案有着各自的优缺点与限制，下面简单的记录一下
+
+![流量统计](/images/流量统计.png)
+
+### TrafficStats
+
+> Android API8后提供的该类，可以获取**设备重启以来的流量信息**。
+
+```java
+public class TrafficStats {
+  public static long getMobileRxBytes() //移动网络接受的总流量
+  public static long getMobileTxBytes() //移动网络发送的总流量
+  public static long getTotalTxBytes() //发送的总数据流量
+  public static long getTotalRxBytes() //接收的总数据流量
+  public static long getUidRxBytes(int uid) //指定uid接收的流量
+  public static long getUidTxBytes(int uid) //指定uid发送的流量
+}
+```
+
+以上为`TrafficStats`提供的基本方法
+
+根据上述方法可以大致得到当前设备使用的流量数据，`getMobileXX()`获取移动网络数据，`getTotalXX()`获取总流量数据，所以`getTotalXX()-getMobileXX()`大致可以得到Wifi的使用数据。还可以通过指定`getUidXX()`获取指定应用的流量数据。
+
+优点：
+
+- 调用方法简单，无需特别权限
+
+缺点：
+
+- 无法获取某个时间段内的流量消耗
+
+  统计的是设备启动以来的流量数据，无法判断是从哪个时间段开始的流量统计
+
+- 无法获取指定应用的wifi类型流量数据
+
+  虽然可以通过监听网络变化去获取对应数据，实际可操作性不高
+
+#### 简单原理介绍
+
+上述方法内部实现都是通过`getStatsService()`进行调用
+
+```java
+    private synchronized static INetworkStatsService getStatsService() {
+        if (sStatsService == null) {
+            sStatsService = INetworkStatsService.Stub.asInterface(
+                    ServiceManager.getService(Context.NETWORK_STATS_SERVICE));
+        }
+        return sStatsService;
+    }
+
+    public static long getTotalTxPackets() {
+        try {
+            return getStatsService().getTotalStats(TYPE_TX_PACKETS);
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
+    }
+```
+
+通过AIDL调用到`NetWorkStatsService`
+
+```java
+public class NetworkStatsService extends INetworkStatsService.Stub {
+ ...
+@Override
+    public long getTotalStats(int type) {
+        long nativeTotalStats = nativeGetTotalStat(type, checkBpfStatsEnable());
+        if (nativeTotalStats == -1) {
+            return nativeTotalStats;
+        } else {
+            // Refer to comment in getIfaceStats
+            return nativeTotalStats + getTetherStats(IFACE_ALL, type);
+        }
+    }
+}
+   //判断是否启用 bpf流量监控
+   mUseBpfTrafficStats = new File("/sys/fs/bpf/traffic_uid_stats_map").exists();
+
+    private boolean checkBpfStatsEnable() {
+        return mUseBpfTrafficStats;
+    }
+```
+
+`bpf流量监控`是在Android 9之后提供的，需要在Android P上的设备才可以使用。老的监控方式逐渐被废弃。
+
+通过JNI调用`com_android_server_net_NetworkStatsService.cpp`
+
+```c++
+//流量记录文件路径
+static const char* QTAGUID_IFACE_STATS = "/proc/net/xt_qtaguid/iface_stat_fmt";
+static const char* QTAGUID_UID_STATS = "/proc/net/xt_qtaguid/stats";
+
+static jlong getTotalStat(JNIEnv* env, jclass clazz, jint type, jboolean useBpfStats) {
+    Stats stats = {};
+
+    if (useBpfStats) {
+        if (bpfGetIfaceStats(NULL, &stats) == 0) {
+            return getStatsType(&stats, (StatsType) type);
+        } else {
+            return UNKNOWN;
+        }
+    }
+
+    if (parseIfaceStats(NULL, &stats) == 0) {
+        return getStatsType(&stats, (StatsType) type);
+    } else {
+        return UNKNOWN;
+    }
+}
+```
+
+在Android 9之前，通过读取`/proc/net/xt_qtaguid/stats`文件内容进行解析获取对应流量数据。
+
+Android9 之后，通过读取`/sys/fs/bpf/traffic_uid_stats_map`获取数据
+
+#### 使用实例
+
+```java
+public class TrafficStatsHelper {
+
+
+    public static long getAllRxBytes() {
+        return TrafficStats.getTotalRxBytes();
+    }
+
+    public static long getAllTxBytes() {
+        return TrafficStats.getTotalTxBytes();
+    }
+
+    public static long getAllRxBytesMobile() {
+        return TrafficStats.getMobileRxBytes();
+    }
+
+    public static long getAllTxBytesMobile() {
+        return TrafficStats.getMobileTxBytes();
+    }
+
+    public static long getAllRxBytesWifi() {
+        return TrafficStats.getTotalRxBytes() - TrafficStats.getMobileRxBytes();
+    }
+
+    public static long getAllTxBytesWifi() {
+        return TrafficStats.getTotalTxBytes() - TrafficStats.getMobileTxBytes();
+    }
+
+    public static long getPackageRxBytes(int uid) {
+        return TrafficStats.getUidRxBytes(uid);
+    }
+
+    public static long getPackageTxBytes(int uid) {
+        return TrafficStats.getUidTxBytes(uid);
+    }
+}
+
+调用实例：
+TrafficStats.getUidRxBytes(Process.myUid()) //当前不支持外部获取对应应用的流量信息，如果有需求需要使用NetWorkStatsManager
+```
+
+
+
+
+
+
+
+
+
+### NetworkStatsManager
+
+> Android 6.0之后新增加的类，可以获取历史的流量信息，并且支持查询时间段的流量数据
+
+```java
+public Bucket querySummaryForDevice(int networkType, String subscriberId,
+            long startTime, long endTime)  //获取当前设备指定网络类型以及时间间隔内的所有流量信息
+
+public NetworkStats queryDetailsForUid(int networkType, String subscriberId,
+            long startTime, long endTime, int uid) //获取某id下的所有流量信息
+  
+public static class Bucket {
+ ...
+        public long getRxBytes() { //接收的流量
+            return mRxBytes;
+        }
+
+        public long getTxBytes() { //发送的流量
+            return mTxBytes;
+        }
+}
+```
+
+以上为`NetworkStatsManager`的主要调用方法
+
+根据上述提供的方法，可以得到设备一直的流量数据，并且支持按照`networkType`区分和`startTime~endTime`获取指定时间段的流量数据。
+
+优点：
+
+- 可以获取指定类型以及时间段的流量数据
+
+缺点：
+
+- 需要申请特殊权限以及做权限适配
+- 使用较复杂
+
+#### 简单原理介绍
+
+INetworkStatsSession.aidl -> getDeviceSummaryForNetwork
+
+NetworkStatsService.java
+
+NetworkStatsCollection.java -> getHistory()
+
+#### 使用实例
+
+```java
+AndroidManifest.xml 配置权限
+  
+    <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
+    <uses-permission
+        android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions"/>
+          
+申请权限
+    private void requestPermissions() {
+        //检测有无 查看应用使用情况权限
+        if (!hasPermissionToReadNetworkHistory()) {
+            return;
+        }
+        //检测有无获取 READ_PHOBE_STATE 权限
+        if (!hasPermissionToReadPhoneStats()) {
+            //申请对应权限
+            requestPhoneStateStats();
+        }
+    }
+
+ private boolean hasPermissionToReadNetworkHistory() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return true;
+        }
+        final AppOpsManager appOps = (AppOpsManager) getSystemService(Context.APP_OPS_SERVICE);
+        int mode = appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS,
+                android.os.Process.myUid(), getPackageName());
+        if (mode == AppOpsManager.MODE_ALLOWED) {
+            return true;
+        }
+        appOps.startWatchingMode(AppOpsManager.OPSTR_GET_USAGE_STATS,
+                getApplicationContext().getPackageName(),
+                new AppOpsManager.OnOpChangedListener() {
+                    @Override
+                    @TargetApi(Build.VERSION_CODES.M)
+                    public void onOpChanged(String op, String packageName) {
+                        int mode = appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS,
+                                android.os.Process.myUid(), getPackageName());
+                        if (mode != AppOpsManager.MODE_ALLOWED) {
+                            return;
+                        }
+                        appOps.stopWatchingMode(this);
+                        Intent intent = new Intent(StatsActivity.this, StatsActivity.class);
+                        if (getIntent().getExtras() != null) {
+                            intent.putExtras(getIntent().getExtras());
+                        }
+                        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK | Intent.FLAG_ACTIVITY_NEW_TASK);
+                        getApplicationContext().startActivity(intent);
+                    }
+                });
+        requestReadNetworkHistoryAccess();
+        return false;
+    }
+
+    private void requestReadNetworkHistoryAccess() {
+        Intent intent = new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS);
+        startActivity(intent);
+    }
+
+//上述权限申请完毕后，调用对应方法获取流量数据
+     public long getPackageBytesWithNetTypeAndFlow(Context context, boolean isRx/*Rx、Tx*/,
+                                                  int networkType/*TYPE_MOBILE，TYPE_WIFI*/) {
+        NetworkStats networkStats = null;
+        try {
+            networkStats = networkStatsManager.queryDetailsForUid(networkType, getSubscriberId(context, networkType),
+                    0, System.currentTimeMillis(), packageUid);
+        } catch (RemoteException e) {
+            return -1;
+        }
+        long bytes = 0L;
+        NetworkStats.Bucket bucket = new NetworkStats.Bucket();
+        while (networkStats.hasNextBucket()) {
+            networkStats.getNextBucket(bucket);
+            bytes += isRx ? bucket.getRxBytes() : bucket.getTxBytes();
+        }
+        networkStats.close();
+        return bytes;
+    }
+
+    private String getSubscriberId(Context context, int networkType) {
+        if (ConnectivityManager.TYPE_MOBILE == networkType) {
+            TelephonyManager tm = (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
+            return tm.getSubscriberId();
+        }
+        return "";
+    }
+```
+
+
+
+## 参考链接
+
+[TrafficStats流程分析](https://www.jianshu.com/p/061f8889a888)
+
+[ePBF流量监控](https://source.android.google.cn/devices/tech/datausage/ebpf-traffic-monitor)
+
+[NetStads Demo]( https://github.com/RobertZagorski/NetworkStats.git )]]></content>
+      <tags>
+        <tag>Android</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>Java-AbstractQueuedSynchronizer简介</title>
     <url>/2020/09/13/Java-AbstractQueuedSynchronizer%E7%AE%80%E4%BB%8B/</url>
     <content><![CDATA[]]></content>
@@ -7937,7 +8267,7 @@ final void runWorker(Worker w) {
             int wc = workerCountOf(c);
 
             // 是否允许核心线程超时释放 或者 当前工作线程数大于核心线程
-            boolean timed = allowCoreThreadTimeOut || wc > corePoolSize;
+            boolean timed = allowCoreThreadTimedout || wc > corePoolSize;
 
             if ((wc > maximumPoolSize || (timed && timedOut))
                 && (wc > 1 || workQueue.isEmpty())) {
@@ -30834,7 +31164,389 @@ public boolean onInterceptTouchEvent(MotionEvent event){
   <entry>
     <title>Java-BockingQueue阻塞队列</title>
     <url>/2018/12/24/Java-BockingQueue%E9%98%BB%E5%A1%9E%E9%98%9F%E5%88%97/</url>
-    <content><![CDATA[]]></content>
+    <content><![CDATA[
+## Queue接口
+
+`Queue队列`的特征是`FIFO——先进先出`。只有队尾可以进行插入操作，只有队头可以进行删除操作。
+
+![img](/images/822721-20200318104019498-382557009.png)
+
+
+
+Java中的`Queue`继承了`Collection`接口，并额外实现了以下方法
+
+```java
+public interface Queue<E> extends Collection<E> {
+  boolean add(E e); 
+  boolean offer(E e);
+  E remove();
+  E poll();
+  E element();
+  E peek();
+}
+```
+
+
+
+### 队列插入数据操作(`add/offer`)
+
+> 将新数据插入队尾
+
+`add`：如果队列满时，插入队尾数据，就会抛出`IllegalStateExecption`
+
+`offer`：如果队列满时，插入队尾数据，不会抛出异常，会返回`false`
+
+### 队列删除数据操作(`remove/poll`)
+
+> 获取队头元素并删除
+
+`remove`：当队列为空时，删除元素时，会抛出`NoSuchElementException`
+
+`poll`：当队列为空时，删除元素时，不会抛出异常，只会返回`null`
+
+### 队列检查数据操作(`element/peek`)
+
+> 获取队头元素但并不删除
+
+`element`：当队列为空时，获取队头元素，会抛出`NoSuchElementException`
+
+`peek`：当队列为空时，获取队头元素，不会抛出异常，只会返回`null`
+
+
+
+|                | 抛出异常    | 特殊值                 |
+| -------------- | ----------- | ---------------------- |
+| 插入           | `add()`     | `offer()` 返回 `false` |
+| 删除           | `remove()`  | `poll()` 返回`null`    |
+| 获取数据(检查) | `element()` | `peek()` 返回`null`    |
+
+
+
+## BlockingQueue接口
+
+`BlockingQueue阻塞队列`实现了`Queue接口`，相比于`Queue`提供了额外的功能：
+
+- 获取队头元素时，如果队列为空，执行线程会处于阻塞状态，直到队列非空——`对应删除和检查操作`
+- 添加队尾元素时，如果队列已满，执行线程会处于阻塞状态，直到队列不满——`对应插入操作`
+
+当触发上述两种情况的出现时，按照不同的设置方式，提供了以下几种处理方案：
+
+- 抛出异常
+- 返回特殊值(返回`null`或`false`)
+- 阻塞当前线程直到可以执行
+- 阻塞线程设置最大超时时间，若超过该时间，线程就会继续执行，放弃当次操作
+
+
+
+### 阻塞队列插入数据操作(`put/offer(time)`)
+
+> 对应阻塞队列在队列已满插入数据时的`阻塞`或者`超时处理`
+
+`put`：如果队列满时，插入队尾数据，会阻塞当前线程`直到队列为空`
+
+`offer(time)`：如果队列满时，插入队尾数据，会阻塞当前线程`直到队列为空或者达到了超时时间`,达到超时时间则返回`false`
+
+### 阻塞队列删除数据操作(`take()/poll(time)`)
+
+> 对应阻塞队列在队列为空时获取数据时的`阻塞`或`超时处理`
+
+`take()`：当队列为空时，删除元素时，会阻塞当前线程`直到队列有数据`
+
+`poll(time)`：当队列为空时，删除元素时，会阻塞当前线程`直到队列有数据或者达到了超时时间`，达到超时时间返回`null`
+
+
+
+### ~~阻塞队列检查数据操作~~
+
+
+
+|                | 抛出异常    | 特殊值                 | 阻塞     | 超时                     |
+| -------------- | ----------- | ---------------------- | -------- | ------------------------ |
+| 插入           | `add()`     | `offer()` 返回 `false` | `put()`  | `offer(time)`返回`false` |
+| 删除           | `remove()`  | `poll()` 返回`null`    | `take()` | `poll(time)`返回`null`   |
+| 获取数据(检查) | `element()` | `peek()` 返回`null`    | /        | /                        |
+
+
+
+## `BlockingQueue`实现类
+
+在{% post_link Java-线程池%}中的`workQueue`设置的就是`BlockingQueue`接口的实现类，
+
+例如
+
+- `ArrayBlockingQueue`：数组构成的有界阻塞队列
+- `LinkedBlockingQueue`：链表构成的有界阻塞队列，如果不设置大小的话，近似`无界阻塞队列`
+- `SynchronousQueue`：不存储任何元素的阻塞队列
+- `PriorityBlockingQueue`：支持优先级排序的无界阻塞队列
+
+
+
+
+## `BlockingQueue`原理
+
+`BlockingQueue`只是一个接口，真正的实现都是在`XXBloxckingQueue`中的，想要分析对应的原理就需要从实现类进行分析
+
+
+
+#### `ArrayBlockingQueue`
+
+> 由数组实现的有界阻塞队列，大小一旦确定就无法改变队列的长度。
+
+##### 关键成员变量
+
+```java
+    /** The queued items 维护队列元素的数组*/
+    final Object[] items; 
+
+    /** items index for next take, poll, peek or remove 移除数据的数组下标*/
+    int takeIndex;
+
+    /** items index for next put, offer, or add 插入数据的数组下标*/
+    int putIndex;
+
+    /** Number of elements in the queue 数组长度*/
+    int count;
+
+    /** Main lock guarding all access 数据并发控制类*/
+    final ReentrantLock lock;
+
+    /** Condition for waiting takes 控制take操作是否让线程等待*/
+    private final Condition notEmpty;
+
+    /** Condition for waiting puts 控制put操作是否让线程等待*/
+    private final Condition notFull;
+```
+
+`ArrayBlockingQueue`阻塞功能的实现就是依赖了`ReentrantLock`以及`Condition`实现了`等待机制`。
+
+具体可参考{% post_link Java-ReenTrantLock%}
+
+##### 构造函数
+
+```java
+public ArrayBlockingQueue(int capacity) {
+        this(capacity, false);
+    }    
+
+public ArrayBlockingQueue(int capacity, boolean fair) {
+        if (capacity <= 0)
+            throw new IllegalArgumentException();
+        this.items = new Object[capacity];
+        lock = new ReentrantLock(fair);
+        notEmpty = lock.newCondition();
+        notFull =  lock.newCondition();
+    }
+```
+
+`capacity`：设置阻塞队列的数组容量
+
+`fair`：设置线程并发是否公平(`默认配置非公平锁`)
+
+> 当前锁被一个线程持有时，其他线程会被挂起等待锁的释放，等待时加入等待队列。
+>
+> `公平锁`：当锁释放时，等待队列的前端线程会优先获取锁
+>
+> `非公平锁`：当锁释放时，等待队列中的所有线程都会去尝试获取锁
+
+在`ArrayBlockingQueue`初始化时，构造`ReentrantLock`锁以及两个`Condition`对象控制数据插入、删除时的阻塞。
+
+##### 实现方法
+
+`offer()` 非阻塞添加数据
+
+```java
+ public boolean offer(E e) {
+        Objects.requireNonNull(e);//检查将要添加的数据是否为null
+        final ReentrantLock lock = this.lock;
+        lock.lock();//上锁
+        try {
+            if (count == items.length)//队列已满
+                return false;
+            else {
+                enqueue(e);//数据加入队列
+                return true;
+            }
+        } finally {
+            lock.unlock();//解锁
+        }
+    }
+
+//数据入队
+    private void enqueue(E x) {
+        // assert lock.getHoldCount() == 1;
+        // assert items[putIndex] == null;
+        final Object[] items = this.items;
+        items[putIndex] = x;//数组赋值
+        //如果此时放入的是最后一个下标的数据，重置下标为0，下一次从第一个开始放元素
+        if (++putIndex == items.length) putIndex = 0;
+        count++;
+        notEmpty.signal();//通知 数组非空 
+    }
+```
+
+`offer()`添加数据时，将当前线程上锁。
+
+- 在当前队列已满时，直接返回`false`
+- 当前队列未满时，调用`enqueue()`添加数据，`putIndex`设置对应数据且`putIndex++`。 然后通知阻塞的消费线程`notEmpty`
+
+
+
+`poll()` 非阻塞取出数据
+
+```java
+    public E poll() {
+        final ReentrantLock lock = this.lock;
+        lock.lock();
+        try {
+            return (count == 0) ? null : dequeue();//当前队列非空 取出数据
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private E dequeue() {
+        // assert lock.getHoldCount() == 1;
+        // assert items[takeIndex] != null;
+        final Object[] items = this.items;
+        @SuppressWarnings("unchecked")
+        E x = (E) items[takeIndex];
+        items[takeIndex] = null;
+        //如果此时取出的是最后一个下标的数据，重置下标为0，下一次从第一个开始取出元素
+        if (++takeIndex == items.length) takeIndex = 0;
+        count--;
+        if (itrs != null)
+            itrs.elementDequeued();//数据迭代减少，保证遍历线程安全
+        notFull.signal();//通知 数组不满
+        return x;
+    }
+```
+
+`poll()`取出数据时，将当前线程上锁
+
+- 当前队列为空的时候，直接返回null
+- 当前队列非空的时候，调用`dequeue()`将`takeIndex`元素出队，设置`takeIndex`处元素为`null`且`takeIndex--`。然后通知阻塞的生产线程`notFull`
+
+
+
+`offer(time)`不超时阻塞添加数据
+
+```java
+    public boolean offer(E e, long timeout, TimeUnit unit)
+        throws InterruptedException {
+
+        Objects.requireNonNull(e);
+        long nanos = unit.toNanos(timeout);
+        final ReentrantLock lock = this.lock;
+        lock.lockInterruptibly();
+        try {
+            while (count == items.length) {
+                if (nanos <= 0L)
+                    return false;
+                nanos = notFull.awaitNanos(nanos);
+            }
+            enqueue(e);
+            return true;
+        } finally {
+            lock.unlock();
+        }
+    }
+```
+
+`offer(time)`添加数据时，将当前线程上锁
+
+- 在当前队列已满时，阻塞生产线程`notFull`，超过`time`后，队列还是满的话，直接返回`false`
+- 当前队列未满时，调用`enqueue()`添加数据，`putIndex`设置对应数据且`putIndex++`。 然后通知阻塞的消费者`notEmpty`
+
+
+
+`poll(time)`不超时阻塞取出数据
+
+```java
+    public E poll(long timeout, TimeUnit unit) throws InterruptedException {
+        long nanos = unit.toNanos(timeout);
+        final ReentrantLock lock = this.lock;
+        lock.lockInterruptibly();
+        try {
+            while (count == 0) {
+                if (nanos <= 0L)
+                    return null;
+                nanos = notEmpty.awaitNanos(nanos);
+            }
+            return dequeue();
+        } finally {
+            lock.unlock();
+        }
+    }
+```
+
+`poll(time)`取出数据时，将当前线程上锁
+
+- 当前队列为空的时候，阻塞消费线程`notEmpty`，超过`time`后，队列还是空的话，直接返回`null`
+- 当前队列非空的时候，调用`dequeue()`将`takeIndex`元素出队，设置`takeIndex`处元素为`null`且`takeIndex--`。然后通知阻塞的生产者`notFull`
+
+
+
+###### `put()`阻塞添加数据
+
+```java
+    public void put(E e) throws InterruptedException {
+        Objects.requireNonNull(e);
+        final ReentrantLock lock = this.lock;
+        lock.lockInterruptibly();//生产者线程上锁
+        try {
+            while (count == items.length)
+                notFull.await();//等待消费者线程通知
+            enqueue(e);
+        } finally {
+            lock.unlock();
+        }
+    }
+```
+
+`put()`添加数据时
+
+- 当前队列已满时，阻塞当前线程，等待`notFull`通知(`队列未满`)
+- 当前队列未满时，调用`enqueue()`添加数据，`putIndex`设置对应数据且`putIndex++`。 然后通知阻塞的消费者`notEmpty`
+
+
+
+###### `take()`阻塞获取数据
+
+```java
+    public E take() throws InterruptedException {
+        final ReentrantLock lock = this.lock;
+        lock.lockInterruptibly();//消费者线程上锁
+        try {
+            while (count == 0)
+                notEmpty.await();//等待生产者线程通知
+            return dequeue();
+        } finally {
+            lock.unlock();
+        }
+    }
+```
+
+`take()`获取数据时
+
+- 当前队列为空时，阻塞当前线程，等待`notEmpty`通知(`队列新增数据`)
+- 当前队列非空的时候，调用`dequeue()`将`takeIndex`元素出队，设置`takeIndex`处元素为`null`且`takeIndex--`。然后通知阻塞的生产者`notFull`
+
+
+
+其中`Condition`的`await/signal`类似于`Object`的`wait/notify`实现等待与通知的功能。
+
+在分析`enqueue()`和`dequeue()`时，发现底层数组不会进行扩容，而是在到达边缘时，重置`index`为0，重复利用数组。
+
+![ArrayBlockingQueue循环数组](/images/ArrayBlockingQueue循环数组.jpg)
+
+
+
+
+
+]]></content>
+      <tags>
+        <tag>Java</tag>
+      </tags>
   </entry>
   <entry>
     <title>Android-线程相关</title>
@@ -32994,8 +33706,8 @@ public class HandlerActivity extends Activity{
       </tags>
   </entry>
   <entry>
-    <title>ReentrantLock关键字分析</title>
-    <url>/2018/12/19/ReenTrantLock%E5%85%B3%E9%94%AE%E5%AD%97%E5%88%86%E6%9E%90/</url>
+    <title>Java-ReentrantLock</title>
+    <url>/2018/12/19/Java-ReenTrantLock/</url>
     <content><![CDATA[
 # ReenTrantLock
 
