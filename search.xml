@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <search>
   <entry>
+    <title>Kotlin-泛型</title>
+    <url>/2020/09/21/Kotlin-%E6%B3%9B%E5%9E%8B/</url>
+    <content><![CDATA[]]></content>
+  </entry>
+  <entry>
     <title>Mac软件清单</title>
     <url>/2020/09/17/Mac%E8%BD%AF%E4%BB%B6%E6%B8%85%E5%8D%95/</url>
     <content><![CDATA[]]></content>
@@ -31224,6 +31229,8 @@ public interface Queue<E> extends Collection<E> {
 
 ## BlockingQueue接口
 
+**系统提供的用于多线程环境下存、取共享变量的一种容器。**
+
 `BlockingQueue阻塞队列`实现了`Queue接口`，相比于`Queue`提供了额外的功能：
 
 - 获取队头元素时，如果队列为空，执行线程会处于阻塞状态，直到队列非空——`对应删除和检查操作`
@@ -31265,6 +31272,13 @@ public interface Queue<E> extends Collection<E> {
 | 插入           | `add()`     | `offer()` 返回 `false` | `put()`  | `offer(time)`返回`false` |
 | 删除           | `remove()`  | `poll()` 返回`null`    | `take()` | `poll(time)`返回`null`   |
 | 获取数据(检查) | `element()` | `peek()` 返回`null`    | /        | /                        |
+
+
+
+### 注意点
+
+1. 阻塞队列无法插入`null`，否则抛出空指针异常
+2. 可以访问阻塞队列中的任意元素，尽量避免使用`remove(object)`移除对象
 
 
 
@@ -31539,11 +31553,170 @@ public ArrayBlockingQueue(int capacity, boolean fair) {
 
 ![ArrayBlockingQueue循环数组](/images/ArrayBlockingQueue循环数组.jpg)
 
+从上述源码对`ArrayBlockingQueue`进行总结：
+
+**底层数据结构是一个 数组，生产者和消费者由同一个锁(`ReetrantLock`)控制，生产和消费效率低。**
 
 
 
+#### LinkedBlockingQueue
 
-]]></content>
+> 由链表实现的阻塞队列，默认最大长度为`Integer.MAX`。
+
+##### 关键成员变量
+
+```java
+    /** The capacity bound, or Integer.MAX_VALUE if none 链表最大长度*/
+    private final int capacity;
+
+    /** Current number of elements 当前元素个数*/
+    private final AtomicInteger count = new AtomicInteger();
+
+    /**
+     * Head of linked list.
+     * Invariant: head.item == null
+     * 链表头节点
+     */
+    transient Node<E> head;
+
+    /**
+     * Tail of linked list.
+     * Invariant: last.next == null
+     * 链表尾节点
+     */
+    private transient Node<E> last;
+
+    /** Lock held by take, poll, etc 控制消费并发*/
+    private final ReentrantLock takeLock = new ReentrantLock();
+
+    /** Wait queue for waiting takes 控制take线程等待 非空条件*/
+    private final Condition notEmpty = takeLock.newCondition();
+
+    /** Lock held by put, offer, etc 控制生产并发*/
+    private final ReentrantLock putLock = new ReentrantLock();
+
+    /** Wait queue for waiting puts 控制put线程等待 非满条件*/
+    private final Condition notFull = putLock.newCondition();
+```
+
+`LinkedBlockingQueue`采用了两把锁`putLock、takeLock`，分别进行控制，提高了并发性能。
+
+##### 构造函数
+
+```java
+    public LinkedBlockingQueue() {
+        this(Integer.MAX_VALUE);
+    }
+
+    public LinkedBlockingQueue(int capacity) {
+        if (capacity <= 0) throw new IllegalArgumentException();
+        this.capacity = capacity;
+        last = head = new Node<E>(null);
+    }
+```
+
+`capacity`：设置单链表长度上限，若不设置该值，默认为`Integer.MAX`
+
+构造函数初始化了底层的链表结构。
+
+##### 实现方法
+
+`offer()`非阻塞添加数据
+
+```java
+    public boolean offer(E e) {
+        if (e == null) throw new NullPointerException();
+        final AtomicInteger count = this.count;
+        if (count.get() == capacity) //达到上限直接返回false
+            return false;
+        int c = -1;
+        Node<E> node = new Node<E>(e);
+        final ReentrantLock putLock = this.putLock;
+        putLock.lock();//线程上锁
+        try {
+            if (count.get() < capacity) {
+                enqueue(node);//插入链表
+                c = count.getAndIncrement();
+                if (c + 1 < capacity)
+                    notFull.signal();//唤醒 等待的入队线程
+            }
+        } finally {
+            putLock.unlock();
+        }
+        if (c == 0)
+            signalNotEmpty();//唤醒等待的 出队线程
+        return c >= 0;
+    }
+
+    private void enqueue(Node<E> node) {
+        // assert putLock.isHeldByCurrentThread();
+        // assert last.next == null;
+        last = last.next = node;//赋值操作
+    }
+```
+
+`offer`添加数据时，当队列已满时，直接返回`false`。未满时，插入新数据后，`count`自加后唤醒`notFull、notEmpty`。
+
+`poll()`非阻塞获取数据
+
+```java
+    public E poll() {
+        final AtomicInteger count = this.count;
+        if (count.get() == 0)
+            return null;//队列为空返回null
+        E x = null;
+        int c = -1;
+        final ReentrantLock takeLock = this.takeLock;
+        takeLock.lock();
+        try {
+            if (count.get() > 0) {
+                x = dequeue();//出队
+                c = count.getAndDecrement();
+                if (c > 1)
+                    notEmpty.signal();//通知非空线程
+            }
+        } finally {
+            takeLock.unlock();
+        }
+        if (c == capacity)
+            signalNotFull();//通知非满线程
+        return x;
+    }
+
+    private E dequeue() {
+        // assert takeLock.isHeldByCurrentThread();
+        // assert head.item == null;
+        Node<E> h = head;
+        Node<E> first = h.next;
+        h.next = h; // help GC
+        head = first;
+        E x = first.item;
+        first.item = null;
+        return x;
+    }
+```
+
+`poll`获取数据时，队列为空时，直接返回`null`。队列非空时，获取数据后，数据出队，`count`自减后，先后唤醒`notEmpty`、`notFull`。
+
+
+
+###### `put()`阻塞添加数据
+
+```java
+
+```
+
+
+
+###### `take()`阻塞获取数据
+
+
+
+#### SynchronousQueue
+
+
+
+## 使用场景]]></content>
       <tags>
         <tag>Java</tag>
       </tags>
@@ -46310,13 +46483,136 @@ Android系统通过获取`apk配置的targetSdkVersion`在调用系统对应Api�
 
 36. kotlin中的`inline`、`noinline`、`crossinline`的作用、
 
-    `inline`：
+    `inline`：函数进行内联，将`inline fun`直接插入到调用函数的代码内，优化代码结构，从而减少函数类型对象的创建。
 
-    `noinline`：
+    ```kotlin
+    fun main(args:Array<String>){
+      testInline()
+      print("world")
+    }
+    
+    inline fun testInline(){
+      print("Hello")
+    }
+    
+    输出结果：
+    HelloWorld
+    
+    实际编译结果：
+    fun main(args:Array<String>){
+      print("Hello")
+      print("world")
+    }
+    ```
 
-    `crossinline`：
+    
 
-37. ]]></content>
+    `noinline`：局部关掉函数内联优化，摆脱`inline不能使用函数类型的参数当对象用`的限制。作用于**函数的参数且参数必须为函数类型**
+
+    ```kotlin
+    inline fun test(noinline a : Int) {
+       //Modifier 'noinline' is allowed only for function parameters of an inline function
+       //错误使用方法 `noinline`只能使用在函数参数上
+    }
+    
+    inline fun test(a: Int,  b: (Int) -> Unit): (Int) -> Unit {
+        return b
+      //Illegal usage of inline-parameter 'b' 
+      //错误使用方法 不能直接返回 函数类型，因为经过内联后，函数类型无法被调用，失去了存在意义
+      //这种错误写法，编译器可以直接检测出来
+    }
+    
+    inline fun test(a:Int , noinline b :(String)->Unit) : (String) -> Unit {
+      println(a)
+      b("World")
+      return b
+    }
+    
+    fun main(args:Array<String>){
+      println("Hello")
+      test(3){ it->
+        println(it)
+      }
+    }
+    
+    输出结果：
+    Hello
+    3
+    World
+    
+    实际编辑结果：
+    fun main(args:Array<String>){
+      println("Hello")
+      println(3)
+      b.invoke("World")
+    }
+    ```
+
+    
+
+    `crossinline`：局部加强函数内联优化，将内联函数里的函数类型参数可以当作对象使用。
+
+    首先声明两个概念：
+
+    - Lambda表达式不允许使用`return`，可以使用`return@XX`来指定返回位置
+
+      ```kotlin
+      fun test(a:()->Unit){
+        ...
+      }
+      
+      fun main(args:Array<String>){
+       test {
+         ...
+         return //这个是不被允许使用的
+       //return@test 这个是可以的  
+       } 
+      }
+      ```
+
+      
+
+    - 只有被`inline`修饰的内联函数的`Lambda表达式`可以使用return。在`间接调用`是被禁止的操作
+
+      ```kotlin
+      inline fun test(action:()->Unit){
+        println("Hello")
+        action()
+      }
+      
+      fun main(args:Array<String>){
+        test{
+          println("World")
+          return //是被允许这么做的
+        }
+      }
+      ```
+
+    `crossinline`实质为了**声明函数参数的`lambda`不能写`return`，避免lambda中的return影响外部的执行流程**。
+
+    使用`inline`修饰函数时需要注意以下几点：
+
+    - `inline`修饰函数，最好函数参数也是`函数类型`，否则无法获得性能提升
+
+    - **避免内联大型函数**，因为`inline`会增加代码的生成量
+
+    - `inline`修饰的函数不持有函数的对象引用，也不能将函数参数传递给另一个函数
+
+      ```kotlin
+      fun test123(a:()->Unit){
+      
+      }
+      
+      inline fun test12(a:()->Unit){
+          test123(a) //无法编译
+      }
+      ```
+
+      
+
+37. 
+
+]]></content>
       <tags>
         <tag>Android</tag>
         <tag>Java</tag>

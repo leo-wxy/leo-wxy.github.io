@@ -162,7 +162,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      4.2k 字
+      4.8k 字
     </span>
   
 
@@ -172,7 +172,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      49
+      58
        分钟
     </span>
   
@@ -514,10 +514,119 @@ System.out.println(b.equals(b1)); <span class="hljs-comment">//true</span></code
 <p>需要配置在<code>node-modules/hexo-generator-index2/lib/generator.js</code>里面</p>
 </li>
 <li><p>kotlin中的<code>inline</code>、<code>noinline</code>、<code>crossinline</code>的作用、</p>
-<p><code>inline</code>：</p>
-<p><code>noinline</code>：</p>
-<p><code>crossinline</code>：</p>
+<p><code>inline</code>：函数进行内联，将<code>inline fun</code>直接插入到调用函数的代码内，优化代码结构，从而减少函数类型对象的创建。</p>
+<pre><code class="hljs kotlin"><span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">main</span><span class="hljs-params">(args:<span class="hljs-type">Array</span>&lt;<span class="hljs-type">String</span>&gt;)</span></span>&#123;
+  testInline()
+  print(<span class="hljs-string">"world"</span>)
+&#125;
+
+<span class="hljs-keyword">inline</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">testInline</span><span class="hljs-params">()</span></span>&#123;
+  print(<span class="hljs-string">"Hello"</span>)
+&#125;
+
+输出结果：
+HelloWorld
+
+实际编译结果：
+<span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">main</span><span class="hljs-params">(args:<span class="hljs-type">Array</span>&lt;<span class="hljs-type">String</span>&gt;)</span></span>&#123;
+  print(<span class="hljs-string">"Hello"</span>)
+  print(<span class="hljs-string">"world"</span>)
+&#125;</code></pre>
 </li>
+</ol>
+<pre><code>`noinline`：局部关掉函数内联优化，摆脱`inline不能使用函数类型的参数当对象用`的限制。作用于**函数的参数且参数必须为函数类型**
+
+<pre><code class="hljs kotlin"><span class="hljs-keyword">inline</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">test</span><span class="hljs-params">(<span class="hljs-keyword">noinline</span> a : <span class="hljs-type">Int</span>)</span></span> &#123;
+   <span class="hljs-comment">//Modifier 'noinline' is allowed only for function parameters of an inline function</span>
+   <span class="hljs-comment">//错误使用方法 `noinline`只能使用在函数参数上</span>
+&#125;
+
+<span class="hljs-keyword">inline</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">test</span><span class="hljs-params">(a: <span class="hljs-type">Int</span>,  b: (<span class="hljs-type">Int</span>)</span></span> -&gt; <span class="hljs-built_in">Unit</span>): (<span class="hljs-built_in">Int</span>) -&gt; <span class="hljs-built_in">Unit</span> &#123;
+    <span class="hljs-keyword">return</span> b
+  <span class="hljs-comment">//Illegal usage of inline-parameter 'b' </span>
+  <span class="hljs-comment">//错误使用方法 不能直接返回 函数类型，因为经过内联后，函数类型无法被调用，失去了存在意义</span>
+  <span class="hljs-comment">//这种错误写法，编译器可以直接检测出来</span>
+&#125;
+
+<span class="hljs-keyword">inline</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">test</span><span class="hljs-params">(a:<span class="hljs-type">Int</span> , <span class="hljs-keyword">noinline</span> b :(<span class="hljs-type">String</span>)</span></span>-&gt;<span class="hljs-built_in">Unit</span>) : (String) -&gt; <span class="hljs-built_in">Unit</span> &#123;
+  println(a)
+  b(<span class="hljs-string">"World"</span>)
+  <span class="hljs-keyword">return</span> b
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">main</span><span class="hljs-params">(args:<span class="hljs-type">Array</span>&lt;<span class="hljs-type">String</span>&gt;)</span></span>&#123;
+  println(<span class="hljs-string">"Hello"</span>)
+  test(<span class="hljs-number">3</span>)&#123; it-&gt;
+    println(it)
+  &#125;
+&#125;
+
+输出结果：
+Hello
+<span class="hljs-number">3</span>
+World
+
+实际编辑结果：
+<span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">main</span><span class="hljs-params">(args:<span class="hljs-type">Array</span>&lt;<span class="hljs-type">String</span>&gt;)</span></span>&#123;
+  println(<span class="hljs-string">"Hello"</span>)
+  println(<span class="hljs-number">3</span>)
+  b.invoke(<span class="hljs-string">"World"</span>)
+&#125;</code></pre>
+
+
+
+`crossinline`：局部加强函数内联优化，将内联函数里的函数类型参数可以当作对象使用。
+
+首先声明两个概念：
+
+- Lambda表达式不允许使用`return`，可以使用`return@XX`来指定返回位置
+
+  <pre><code class="hljs kotlin"><span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">test</span><span class="hljs-params">(a:()</span></span>-&gt;<span class="hljs-built_in">Unit</span>)&#123;
+  ...
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">main</span><span class="hljs-params">(args:<span class="hljs-type">Array</span>&lt;<span class="hljs-type">String</span>&gt;)</span></span>&#123;
+ test &#123;
+   ...
+   <span class="hljs-keyword">return</span> <span class="hljs-comment">//这个是不被允许使用的</span>
+ <span class="hljs-comment">//return@test 这个是可以的  </span>
+ &#125; 
+&#125;</code></pre>
+
+
+
+- 只有被`inline`修饰的内联函数的`Lambda表达式`可以使用return。在`间接调用`是被禁止的操作
+
+  <pre><code class="hljs kotlin"><span class="hljs-keyword">inline</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">test</span><span class="hljs-params">(action:()</span></span>-&gt;<span class="hljs-built_in">Unit</span>)&#123;
+  println(<span class="hljs-string">"Hello"</span>)
+  action()
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">main</span><span class="hljs-params">(args:<span class="hljs-type">Array</span>&lt;<span class="hljs-type">String</span>&gt;)</span></span>&#123;
+  test&#123;
+    println(<span class="hljs-string">"World"</span>)
+    <span class="hljs-keyword">return</span> <span class="hljs-comment">//是被允许这么做的</span>
+  &#125;
+&#125;</code></pre>
+
+`crossinline`实质为了**声明函数参数的`lambda`不能写`return`，避免lambda中的return影响外部的执行流程**。
+
+使用`inline`修饰函数时需要注意以下几点：
+
+- `inline`修饰函数，最好函数参数也是`函数类型`，否则无法获得性能提升
+
+- **避免内联大型函数**，因为`inline`会增加代码的生成量
+
+- `inline`修饰的函数不持有函数的对象引用，也不能将函数参数传递给另一个函数
+
+  <pre><code class="hljs kotlin"><span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">test123</span><span class="hljs-params">(a:()</span></span>-&gt;<span class="hljs-built_in">Unit</span>)&#123;
+
+&#125;
+
+<span class="hljs-keyword">inline</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">test12</span><span class="hljs-params">(a:()</span></span>-&gt;<span class="hljs-built_in">Unit</span>)&#123;
+    test123(a) <span class="hljs-comment">//无法编译</span>
+&#125;</code></pre>
+</code></pre><ol>
 <li></li>
 </ol>
 

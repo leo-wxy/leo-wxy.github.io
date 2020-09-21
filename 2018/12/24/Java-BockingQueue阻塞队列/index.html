@@ -162,7 +162,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      2.3k 字
+      3k 字
     </span>
   
 
@@ -172,7 +172,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      28
+      39
        分钟
     </span>
   
@@ -257,7 +257,8 @@
 </tr>
 </tbody>
 </table>
-<h2 id="BlockingQueue接口"><a href="#BlockingQueue接口" class="headerlink" title="BlockingQueue接口"></a>BlockingQueue接口</h2><p><code>BlockingQueue阻塞队列</code>实现了<code>Queue接口</code>，相比于<code>Queue</code>提供了额外的功能：</p>
+<h2 id="BlockingQueue接口"><a href="#BlockingQueue接口" class="headerlink" title="BlockingQueue接口"></a>BlockingQueue接口</h2><p><strong>系统提供的用于多线程环境下存、取共享变量的一种容器。</strong></p>
+<p><code>BlockingQueue阻塞队列</code>实现了<code>Queue接口</code>，相比于<code>Queue</code>提供了额外的功能：</p>
 <ul>
 <li>获取队头元素时，如果队列为空，执行线程会处于阻塞状态，直到队列非空——<code>对应删除和检查操作</code></li>
 <li>添加队尾元素时，如果队列已满，执行线程会处于阻塞状态，直到队列不满——<code>对应插入操作</code></li>
@@ -313,6 +314,10 @@
 </tr>
 </tbody>
 </table>
+<h3 id="注意点"><a href="#注意点" class="headerlink" title="注意点"></a>注意点</h3><ol>
+<li>阻塞队列无法插入<code>null</code>，否则抛出空指针异常</li>
+<li>可以访问阻塞队列中的任意元素，尽量避免使用<code>remove(object)</code>移除对象</li>
+</ol>
 <h2 id="BlockingQueue实现类"><a href="#BlockingQueue实现类" class="headerlink" title="BlockingQueue实现类"></a><code>BlockingQueue</code>实现类</h2><p>在<a href="/2019/09/13/Java-线程池/" title="Java-线程池">Java-线程池</a>中的<code>workQueue</code>设置的就是<code>BlockingQueue</code>接口的实现类，</p>
 <p>例如</p>
 <ul>
@@ -513,7 +518,124 @@
 <p>其中<code>Condition</code>的<code>await/signal</code>类似于<code>Object</code>的<code>wait/notify</code>实现等待与通知的功能。</p>
 <p>在分析<code>enqueue()</code>和<code>dequeue()</code>时，发现底层数组不会进行扩容，而是在到达边缘时，重置<code>index</code>为0，重复利用数组。</p>
 <p><img src="/images/ArrayBlockingQueue循环数组.jpg" srcset="/img/loading.gif" alt="ArrayBlockingQueue循环数组"></p>
+<p>从上述源码对<code>ArrayBlockingQueue</code>进行总结：</p>
+<p><strong>底层数据结构是一个 数组，生产者和消费者由同一个锁(<code>ReetrantLock</code>)控制，生产和消费效率低。</strong></p>
+<h4 id="LinkedBlockingQueue"><a href="#LinkedBlockingQueue" class="headerlink" title="LinkedBlockingQueue"></a>LinkedBlockingQueue</h4><blockquote>
+<p>由链表实现的阻塞队列，默认最大长度为<code>Integer.MAX</code>。</p>
+</blockquote>
+<h5 id="关键成员变量-1"><a href="#关键成员变量-1" class="headerlink" title="关键成员变量"></a>关键成员变量</h5><pre><code class="hljs java"><span class="hljs-comment">/** The capacity bound, or Integer.MAX_VALUE if none 链表最大长度*/</span>
+<span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> capacity;
 
+<span class="hljs-comment">/** Current number of elements 当前元素个数*/</span>
+<span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> AtomicInteger count = <span class="hljs-keyword">new</span> AtomicInteger();
+
+<span class="hljs-comment">/**
+ * Head of linked list.
+ * Invariant: head.item == null
+ * 链表头节点
+ */</span>
+<span class="hljs-keyword">transient</span> Node&lt;E&gt; head;
+
+<span class="hljs-comment">/**
+ * Tail of linked list.
+ * Invariant: last.next == null
+ * 链表尾节点
+ */</span>
+<span class="hljs-keyword">private</span> <span class="hljs-keyword">transient</span> Node&lt;E&gt; last;
+
+<span class="hljs-comment">/** Lock held by take, poll, etc 控制消费并发*/</span>
+<span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> ReentrantLock takeLock = <span class="hljs-keyword">new</span> ReentrantLock();
+
+<span class="hljs-comment">/** Wait queue for waiting takes 控制take线程等待 非空条件*/</span>
+<span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> Condition notEmpty = takeLock.newCondition();
+
+<span class="hljs-comment">/** Lock held by put, offer, etc 控制生产并发*/</span>
+<span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> ReentrantLock putLock = <span class="hljs-keyword">new</span> ReentrantLock();
+
+<span class="hljs-comment">/** Wait queue for waiting puts 控制put线程等待 非满条件*/</span>
+<span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> Condition notFull = putLock.newCondition();</code></pre>
+<p><code>LinkedBlockingQueue</code>采用了两把锁<code>putLock、takeLock</code>，分别进行控制，提高了并发性能。</p>
+<h5 id="构造函数-1"><a href="#构造函数-1" class="headerlink" title="构造函数"></a>构造函数</h5><pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">LinkedBlockingQueue</span><span class="hljs-params">()</span> </span>&#123;
+    <span class="hljs-keyword">this</span>(Integer.MAX_VALUE);
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">LinkedBlockingQueue</span><span class="hljs-params">(<span class="hljs-keyword">int</span> capacity)</span> </span>&#123;
+    <span class="hljs-keyword">if</span> (capacity &lt;= <span class="hljs-number">0</span>) <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> IllegalArgumentException();
+    <span class="hljs-keyword">this</span>.capacity = capacity;
+    last = head = <span class="hljs-keyword">new</span> Node&lt;E&gt;(<span class="hljs-keyword">null</span>);
+&#125;</code></pre>
+<p><code>capacity</code>：设置单链表长度上限，若不设置该值，默认为<code>Integer.MAX</code></p>
+<p>构造函数初始化了底层的链表结构。</p>
+<h5 id="实现方法-1"><a href="#实现方法-1" class="headerlink" title="实现方法"></a>实现方法</h5><p><code>offer()</code>非阻塞添加数据</p>
+<pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">offer</span><span class="hljs-params">(E e)</span> </span>&#123;
+    <span class="hljs-keyword">if</span> (e == <span class="hljs-keyword">null</span>) <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> NullPointerException();
+    <span class="hljs-keyword">final</span> AtomicInteger count = <span class="hljs-keyword">this</span>.count;
+    <span class="hljs-keyword">if</span> (count.get() == capacity) <span class="hljs-comment">//达到上限直接返回false</span>
+        <span class="hljs-keyword">return</span> <span class="hljs-keyword">false</span>;
+    <span class="hljs-keyword">int</span> c = -<span class="hljs-number">1</span>;
+    Node&lt;E&gt; node = <span class="hljs-keyword">new</span> Node&lt;E&gt;(e);
+    <span class="hljs-keyword">final</span> ReentrantLock putLock = <span class="hljs-keyword">this</span>.putLock;
+    putLock.lock();<span class="hljs-comment">//线程上锁</span>
+    <span class="hljs-keyword">try</span> &#123;
+        <span class="hljs-keyword">if</span> (count.get() &lt; capacity) &#123;
+            enqueue(node);<span class="hljs-comment">//插入链表</span>
+            c = count.getAndIncrement();
+            <span class="hljs-keyword">if</span> (c + <span class="hljs-number">1</span> &lt; capacity)
+                notFull.signal();<span class="hljs-comment">//唤醒 等待的入队线程</span>
+        &#125;
+    &#125; <span class="hljs-keyword">finally</span> &#123;
+        putLock.unlock();
+    &#125;
+    <span class="hljs-keyword">if</span> (c == <span class="hljs-number">0</span>)
+        signalNotEmpty();<span class="hljs-comment">//唤醒等待的 出队线程</span>
+    <span class="hljs-keyword">return</span> c &gt;= <span class="hljs-number">0</span>;
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">enqueue</span><span class="hljs-params">(Node&lt;E&gt; node)</span> </span>&#123;
+    <span class="hljs-comment">// assert putLock.isHeldByCurrentThread();</span>
+    <span class="hljs-comment">// assert last.next == null;</span>
+    last = last.next = node;<span class="hljs-comment">//赋值操作</span>
+&#125;</code></pre>
+<p><code>offer</code>添加数据时，当队列已满时，直接返回<code>false</code>。未满时，插入新数据后，<code>count</code>自加后唤醒<code>notFull、notEmpty</code>。</p>
+<p><code>poll()</code>非阻塞获取数据</p>
+<pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> E <span class="hljs-title">poll</span><span class="hljs-params">()</span> </span>&#123;
+    <span class="hljs-keyword">final</span> AtomicInteger count = <span class="hljs-keyword">this</span>.count;
+    <span class="hljs-keyword">if</span> (count.get() == <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">return</span> <span class="hljs-keyword">null</span>;<span class="hljs-comment">//队列为空返回null</span>
+    E x = <span class="hljs-keyword">null</span>;
+    <span class="hljs-keyword">int</span> c = -<span class="hljs-number">1</span>;
+    <span class="hljs-keyword">final</span> ReentrantLock takeLock = <span class="hljs-keyword">this</span>.takeLock;
+    takeLock.lock();
+    <span class="hljs-keyword">try</span> &#123;
+        <span class="hljs-keyword">if</span> (count.get() &gt; <span class="hljs-number">0</span>) &#123;
+            x = dequeue();<span class="hljs-comment">//出队</span>
+            c = count.getAndDecrement();
+            <span class="hljs-keyword">if</span> (c &gt; <span class="hljs-number">1</span>)
+                notEmpty.signal();<span class="hljs-comment">//通知非空线程</span>
+        &#125;
+    &#125; <span class="hljs-keyword">finally</span> &#123;
+        takeLock.unlock();
+    &#125;
+    <span class="hljs-keyword">if</span> (c == capacity)
+        signalNotFull();<span class="hljs-comment">//通知非满线程</span>
+    <span class="hljs-keyword">return</span> x;
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">private</span> E <span class="hljs-title">dequeue</span><span class="hljs-params">()</span> </span>&#123;
+    <span class="hljs-comment">// assert takeLock.isHeldByCurrentThread();</span>
+    <span class="hljs-comment">// assert head.item == null;</span>
+    Node&lt;E&gt; h = head;
+    Node&lt;E&gt; first = h.next;
+    h.next = h; <span class="hljs-comment">// help GC</span>
+    head = first;
+    E x = first.item;
+    first.item = <span class="hljs-keyword">null</span>;
+    <span class="hljs-keyword">return</span> x;
+&#125;</code></pre>
+<p><code>poll</code>获取数据时，队列为空时，直接返回<code>null</code>。队列非空时，获取数据后，数据出队，<code>count</code>自减后，先后唤醒<code>notEmpty</code>、<code>notFull</code>。</p>
+<h6 id="put-阻塞添加数据-1"><a href="#put-阻塞添加数据-1" class="headerlink" title="put()阻塞添加数据"></a><code>put()</code>阻塞添加数据</h6><pre><code class="hljs java">
+</code></pre>
+<h6 id="take-阻塞获取数据-1"><a href="#take-阻塞获取数据-1" class="headerlink" title="take()阻塞获取数据"></a><code>take()</code>阻塞获取数据</h6><h4 id="SynchronousQueue"><a href="#SynchronousQueue" class="headerlink" title="SynchronousQueue"></a>SynchronousQueue</h4><h2 id="使用场景"><a href="#使用场景" class="headerlink" title="使用场景"></a>使用场景</h2>
             </div>
             <hr>
             <div>
