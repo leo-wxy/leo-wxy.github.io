@@ -162,7 +162,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      3k 字
+      4.7k 字
     </span>
   
 
@@ -172,7 +172,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      39
+      62
        分钟
     </span>
   
@@ -273,13 +273,13 @@
 <h3 id="阻塞队列插入数据操作-put-offer-time"><a href="#阻塞队列插入数据操作-put-offer-time" class="headerlink" title="阻塞队列插入数据操作(put/offer(time))"></a>阻塞队列插入数据操作(<code>put/offer(time)</code>)</h3><blockquote>
 <p>对应阻塞队列在队列已满插入数据时的<code>阻塞</code>或者<code>超时处理</code></p>
 </blockquote>
-<p><code>put</code>：如果队列满时，插入队尾数据，会阻塞当前线程<code>直到队列为空</code></p>
-<p><code>offer(time)</code>：如果队列满时，插入队尾数据，会阻塞当前线程<code>直到队列为空或者达到了超时时间</code>,达到超时时间则返回<code>false</code></p>
+<p><code>put</code>：如果队列满时，插入队尾数据，会阻塞当前线程<code>直到队列非满</code></p>
+<p><code>offer(time)</code>：如果队列满时，插入队尾数据，会阻塞当前线程<code>直到队列非满或者达到了超时时间</code>,达到超时时间则返回<code>false</code></p>
 <h3 id="阻塞队列删除数据操作-take-poll-time"><a href="#阻塞队列删除数据操作-take-poll-time" class="headerlink" title="阻塞队列删除数据操作(take()/poll(time))"></a>阻塞队列删除数据操作(<code>take()/poll(time)</code>)</h3><blockquote>
 <p>对应阻塞队列在队列为空时获取数据时的<code>阻塞</code>或<code>超时处理</code></p>
 </blockquote>
-<p><code>take()</code>：当队列为空时，删除元素时，会阻塞当前线程<code>直到队列有数据</code></p>
-<p><code>poll(time)</code>：当队列为空时，删除元素时，会阻塞当前线程<code>直到队列有数据或者达到了超时时间</code>，达到超时时间返回<code>null</code></p>
+<p><code>take()</code>：当队列为空时，删除元素时，会阻塞当前线程<code>直到队列非空</code></p>
+<p><code>poll(time)</code>：当队列为空时，删除元素时，会阻塞当前线程<code>直到队列非空或者达到了超时时间</code>，达到超时时间返回<code>null</code></p>
 <h3 id="阻塞队列检查数据操作"><a href="#阻塞队列检查数据操作" class="headerlink" title="阻塞队列检查数据操作"></a><del>阻塞队列检查数据操作</del></h3><table>
 <thead>
 <tr>
@@ -633,9 +633,248 @@
     <span class="hljs-keyword">return</span> x;
 &#125;</code></pre>
 <p><code>poll</code>获取数据时，队列为空时，直接返回<code>null</code>。队列非空时，获取数据后，数据出队，<code>count</code>自减后，先后唤醒<code>notEmpty</code>、<code>notFull</code>。</p>
-<h6 id="put-阻塞添加数据-1"><a href="#put-阻塞添加数据-1" class="headerlink" title="put()阻塞添加数据"></a><code>put()</code>阻塞添加数据</h6><pre><code class="hljs java">
-</code></pre>
-<h6 id="take-阻塞获取数据-1"><a href="#take-阻塞获取数据-1" class="headerlink" title="take()阻塞获取数据"></a><code>take()</code>阻塞获取数据</h6><h4 id="SynchronousQueue"><a href="#SynchronousQueue" class="headerlink" title="SynchronousQueue"></a>SynchronousQueue</h4><h2 id="使用场景"><a href="#使用场景" class="headerlink" title="使用场景"></a>使用场景</h2>
+<h6 id="put-阻塞添加数据-1"><a href="#put-阻塞添加数据-1" class="headerlink" title="put()阻塞添加数据"></a><code>put()</code>阻塞添加数据</h6><pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">put</span><span class="hljs-params">(E e)</span> <span class="hljs-keyword">throws</span> InterruptedException </span>&#123;
+    <span class="hljs-keyword">if</span> (e == <span class="hljs-keyword">null</span>) <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> NullPointerException();
+    <span class="hljs-comment">// Note: convention in all put/take/etc is to preset local var</span>
+    <span class="hljs-comment">// holding count negative to indicate failure unless set.</span>
+    <span class="hljs-keyword">int</span> c = -<span class="hljs-number">1</span>;
+    Node&lt;E&gt; node = <span class="hljs-keyword">new</span> Node&lt;E&gt;(e);
+    <span class="hljs-keyword">final</span> ReentrantLock putLock = <span class="hljs-keyword">this</span>.putLock;
+    <span class="hljs-keyword">final</span> AtomicInteger count = <span class="hljs-keyword">this</span>.count;
+    putLock.lockInterruptibly();
+    <span class="hljs-keyword">try</span> &#123;
+        <span class="hljs-keyword">while</span> (count.get() == capacity) &#123;
+            notFull.await();<span class="hljs-comment">//队列已满时，等待非满通知</span>
+        &#125;
+        enqueue(node);<span class="hljs-comment">//插入新数据</span>
+        c = count.getAndIncrement();<span class="hljs-comment">//数据自增</span>
+        <span class="hljs-keyword">if</span> (c + <span class="hljs-number">1</span> &lt; capacity)
+            notFull.signal();<span class="hljs-comment">//通知非满线程</span>
+    &#125; <span class="hljs-keyword">finally</span> &#123;
+        putLock.unlock();
+    &#125;
+    <span class="hljs-keyword">if</span> (c == <span class="hljs-number">0</span>)
+        signalNotEmpty();<span class="hljs-comment">//通知非空线程</span>
+&#125;</code></pre>
+<p><code>put()</code>添加数据时，队列已满时，会进行阻塞等待直到队列非满。</p>
+<h6 id="take-阻塞获取数据-1"><a href="#take-阻塞获取数据-1" class="headerlink" title="take()阻塞获取数据"></a><code>take()</code>阻塞获取数据</h6><pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> E <span class="hljs-title">take</span><span class="hljs-params">()</span> <span class="hljs-keyword">throws</span> InterruptedException </span>&#123;
+    E x;
+    <span class="hljs-keyword">int</span> c = -<span class="hljs-number">1</span>;
+    <span class="hljs-keyword">final</span> AtomicInteger count = <span class="hljs-keyword">this</span>.count;
+    <span class="hljs-keyword">final</span> ReentrantLock takeLock = <span class="hljs-keyword">this</span>.takeLock;
+    takeLock.lockInterruptibly();
+    <span class="hljs-keyword">try</span> &#123;
+        <span class="hljs-keyword">while</span> (count.get() == <span class="hljs-number">0</span>) &#123;
+            notEmpty.await();<span class="hljs-comment">//队列为空时，等待非空通知</span>
+        &#125;
+        x = dequeue();<span class="hljs-comment">//出队</span>
+        c = count.getAndDecrement();
+        <span class="hljs-keyword">if</span> (c &gt; <span class="hljs-number">1</span>)
+            notEmpty.signal();<span class="hljs-comment">//通知非空线程</span>
+    &#125; <span class="hljs-keyword">finally</span> &#123;
+        takeLock.unlock();
+    &#125;
+    <span class="hljs-keyword">if</span> (c == capacity)
+        signalNotFull();<span class="hljs-comment">//通知非满线程</span>
+    <span class="hljs-keyword">return</span> x;
+&#125;</code></pre>
+<p><code>take()</code>获取数据时，队列为空时，会进行阻塞等到直到队列非空。</p>
+<p><img src="/images/v2-8bc04760ad1133e7630717dbc38c1cc7_1440w.jpg" srcset="/img/loading.gif" alt="img"></p>
+<p>从上述源码对<code>LinkedBlockingQueue</code>进行总结：</p>
+<p><strong><code>LinkedBlockingQueue</code>底层数据结构为<code>单链表</code>，内部持有两个<code>Lock：putLock、takeLock</code>，相互之间不会干扰执行，提高了并发性能。</strong></p>
+<h5 id="与ArrayBlockingQueue比较"><a href="#与ArrayBlockingQueue比较" class="headerlink" title="与ArrayBlockingQueue比较"></a>与<code>ArrayBlockingQueue</code>比较</h5><table>
+<thead>
+<tr>
+<th></th>
+<th>ArrayBlockingQueue</th>
+<th>LinkedBlockingQueue</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>构造方法</td>
+<td>必须指定构造大小<br>指定后无法修改</td>
+<td>默认大小为<code>Integer.MAX</code><br>可以指定大小</td>
+</tr>
+<tr>
+<td>底层数据结构</td>
+<td>数组</td>
+<td>单链表</td>
+</tr>
+<tr>
+<td>锁</td>
+<td>出队入队使用同一把锁<br>数据的删除和添加操作互斥</td>
+<td>出队使用<code>takeLock</code>，入队使用<code>putLock</code><br>数据删除、添加操作不干扰，提升并发性能</td>
+</tr>
+</tbody>
+</table>
+<h4 id="SynchronousQueue"><a href="#SynchronousQueue" class="headerlink" title="SynchronousQueue"></a>SynchronousQueue</h4><blockquote>
+<p>容量为0，无法储存数据的阻塞队列。提供了公平与非公平锁的设置。</p>
+</blockquote>
+<h5 id="关键成员变量-2"><a href="#关键成员变量-2" class="headerlink" title="关键成员变量"></a>关键成员变量</h5><pre><code class="hljs java"><span class="hljs-comment">//针对不同操作定义的统一接口</span>
+<span class="hljs-keyword">private</span> <span class="hljs-keyword">transient</span> <span class="hljs-keyword">volatile</span> Transferer&lt;E&gt; transferer;
+
+    <span class="hljs-keyword">abstract</span> <span class="hljs-keyword">static</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">Transferer</span>&lt;<span class="hljs-title">E</span>&gt; </span>&#123;
+       <span class="hljs-comment">//e为空则表示 需要获取数据；e不为空表示 需要添加数据</span>
+        <span class="hljs-function"><span class="hljs-keyword">abstract</span> E <span class="hljs-title">transfer</span><span class="hljs-params">(E e, <span class="hljs-keyword">boolean</span> timed, <span class="hljs-keyword">long</span> nanos)</span></span>;
+    &#125;</code></pre>
+<h5 id="构造函数-2"><a href="#构造函数-2" class="headerlink" title="构造函数"></a>构造函数</h5><pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">SynchronousQueue</span><span class="hljs-params">()</span> </span>&#123;
+    <span class="hljs-keyword">this</span>(<span class="hljs-keyword">false</span>);<span class="hljs-comment">//默认非公平构造</span>
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">SynchronousQueue</span><span class="hljs-params">(<span class="hljs-keyword">boolean</span> fair)</span> </span>&#123;
+    <span class="hljs-comment">//公平与非公平对应两种实现形式</span>
+    transferer = fair ? <span class="hljs-keyword">new</span> TransferQueue&lt;E&gt;() : <span class="hljs-keyword">new</span> TransferStack&lt;E&gt;();
+&#125;</code></pre>
+<h5 id="实现方法-2"><a href="#实现方法-2" class="headerlink" title="实现方法"></a>实现方法</h5><p>数据操作<code>offer()/poll() put()/take()</code></p>
+<pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">offer</span><span class="hljs-params">(E e)</span> </span>&#123;
+    <span class="hljs-keyword">if</span> (e == <span class="hljs-keyword">null</span>) <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> NullPointerException();
+    <span class="hljs-keyword">return</span> transferer.transfer(e, <span class="hljs-keyword">true</span>, <span class="hljs-number">0</span>) != <span class="hljs-keyword">null</span>;
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">public</span> E <span class="hljs-title">poll</span><span class="hljs-params">()</span> </span>&#123;
+    <span class="hljs-keyword">return</span> transferer.transfer(<span class="hljs-keyword">null</span>, <span class="hljs-keyword">true</span>, <span class="hljs-number">0</span>);
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">put</span><span class="hljs-params">(E e)</span> <span class="hljs-keyword">throws</span> InterruptedException </span>&#123;
+    <span class="hljs-keyword">if</span> (e == <span class="hljs-keyword">null</span>) <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> NullPointerException();
+    <span class="hljs-keyword">if</span> (transferer.transfer(e, <span class="hljs-keyword">false</span>, <span class="hljs-number">0</span>) == <span class="hljs-keyword">null</span>) &#123;
+        Thread.interrupted();
+        <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> InterruptedException();
+    &#125;
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">public</span> E <span class="hljs-title">take</span><span class="hljs-params">()</span> <span class="hljs-keyword">throws</span> InterruptedException </span>&#123;
+    E e = transferer.transfer(<span class="hljs-keyword">null</span>, <span class="hljs-keyword">false</span>, <span class="hljs-number">0</span>);
+    <span class="hljs-keyword">if</span> (e != <span class="hljs-keyword">null</span>)
+        <span class="hljs-keyword">return</span> e;
+    Thread.interrupted();
+    <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> InterruptedException();
+&#125;</code></pre>
+<p>上述的数据操作方法都涉及到了两部分内容：</p>
+<ul>
+<li><code>transferer</code>：数据调度</li>
+<li><code>transfer</code>：数据执行</li>
+</ul>
+<h6 id="TransferQueue"><a href="#TransferQueue" class="headerlink" title="TransferQueue"></a>TransferQueue</h6><blockquote>
+<p><code>SynchronousQueue</code>的<strong>公平</strong>实现，内部实现使用队列，可以保证先进先出的特性。</p>
+</blockquote>
+<p>基本实现方法：</p>
+<p>当前队列为空的时候或者存在了与当前操作模式相同(<code>isData</code>一致)的节点。线程进行同步等待，尝试封装一个<code>QNode</code>节点，添加到队列中；然后等待与当前操作互补的操作发生（<code>写操作(isData = true)，等待一个读操作(isData = false)</code>）并且返回节点的元素。</p>
+<p>如果队列中包含了与当前操作互补的等待节点，尝试通过<code>CAS</code>更新等待节点的item字段，然后让等待节点出队列。</p>
+<p>如果队列中的节点的<code>waiter</code>等待线程被取消，节点也会被清理出队列。</p>
+<p><img src="/images/TransferQueue.jpg" srcset="/img/loading.gif" alt="TransferQueue公平队列"></p>
+<p><code>isData</code>：true 表示<code>put</code>操作，false表示<code>take</code>操作。</p>
+<p><code>next</code>：下一个节点</p>
+<p><code>waiter</code>：当前等待的线程</p>
+<p><code>item</code>：元素信息</p>
+<h6 id="TransferStack"><a href="#TransferStack" class="headerlink" title="TransferStack"></a>TransferStack</h6><blockquote>
+<p><code>SynchronousQueue</code>非公平实现，内部实现使用<strong>栈</strong>，实现了<code>先进后出</code>的特性。</p>
+</blockquote>
+<p>基本实现方法：</p>
+<p>如果栈为空或者栈中包含了相同模式的节点(<code>mode</code>一致)，尝试将节点推入栈中，然后一直等待，等到与之匹配的节点(<code>mode= Data 和 mode = Request</code> )出现，最后返回。</p>
+<p>栈中若包含了与当前模式互补的节点，尝试将当前线程作为满足匹配的新节点入栈，与栈中等待的节点进行匹配。匹配完成之后，将这一对节点弹出，然后返回匹配节点的内容。</p>
+<p>如果栈顶元素找到匹配节点，就会继续匹配，在匹配完成后弹出栈，接着进行匹配。</p>
+<p><img src="/images/TransferStack.jpg" srcset="/img/loading.gif" alt="TranferStack"></p>
+<p><code>next</code>：下一个元素</p>
+<p><code>item</code>：元素信息</p>
+<p><code>waiter</code>：当前等待的线程</p>
+<p><code>match</code>：匹配的节点</p>
+<p><code>mode</code>：<code>DATA(1)</code>-添加数据、<code>REQUEST(0)</code>-获取数据、<code>FULFILLING(2)</code>-互补模式</p>
+<h5 id="特点"><a href="#特点" class="headerlink" title="特点"></a>特点</h5><ul>
+<li><code>SynchronousQueue</code>容量为0，无法进行数据存储</li>
+<li>每次写入数据时，写线程都需要等待；直到另一个线程执行读操作，写线程会返回数据。<em>写入元素不能为null</em></li>
+<li><code>peek()</code>返回<code>null</code>；<code>size()</code>返回<code>0</code>；无法进行迭代操作</li>
+<li>提供了<code>公平</code>，<code>非公平</code>两种策略处理，分别是基于<code>Queue-TransferQueue</code>与<code>Stack-TransferStack</code>实现。</li>
+</ul>
+<h4 id="原理介绍"><a href="#原理介绍" class="headerlink" title="原理介绍"></a>原理介绍</h4><p>绝大多数都是利用了<strong>Lock锁的多条件(Condition)阻塞控制</strong>。</p>
+<p>拿<code>ArrayBlockigQueue</code>进行简单描述就是：</p>
+<ol>
+<li><code>put</code>和<code>take</code>操作都需要先<strong>获取锁</strong>，无法获取的话就要一直自旋拿锁，直到获取锁为止</li>
+<li>在拿到锁以后。还需要判断当前队列是否可用(<code>队列非满且非空</code>)，如果队列不可用就会被阻塞，并<strong>释放锁</strong></li>
+<li>阻塞的线程被唤醒时，依然需要在拿到锁之后才可以继续执行，否则，自旋拿锁，拿到锁继续判断当前队列是否可用(<strong>使用while判断</strong>)</li>
+</ol>
+<h2 id="使用场景"><a href="#使用场景" class="headerlink" title="使用场景"></a>使用场景</h2><h5 id="生产-消费模型"><a href="#生产-消费模型" class="headerlink" title="生产-消费模型"></a>生产-消费模型</h5><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">PCDemo</span> </span>&#123;
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">int</span> queueSize = <span class="hljs-number">10</span>;
+    <span class="hljs-keyword">private</span> ArrayBlockingQueue&lt;Integer&gt; queue = <span class="hljs-keyword">new</span> ArrayBlockingQueue&lt;Integer&gt;(queueSize, <span class="hljs-keyword">true</span>);
+
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">main</span><span class="hljs-params">(String[] args)</span> </span>&#123;
+
+        PCDemo blockQueue = <span class="hljs-keyword">new</span> PCDemo();
+        Producter producter = blockQueue.new Producter();
+        Customer customer = blockQueue.new Customer();
+
+        producter.start();
+        customer.start();
+    &#125;
+
+    <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">Customer</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">Thread</span> </span>&#123;
+        <span class="hljs-meta">@Override</span>
+        <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">run</span><span class="hljs-params">()</span> </span>&#123;
+            <span class="hljs-keyword">while</span> (<span class="hljs-keyword">true</span>) &#123;
+                <span class="hljs-keyword">try</span> &#123;
+                    queue.take();
+                    System.err.println(<span class="hljs-string">"消费哦，剩余空间为"</span> + queue.size());
+                    Thread.sleep(<span class="hljs-number">100</span>);
+                &#125; <span class="hljs-keyword">catch</span> (InterruptedException e) &#123;
+                    e.printStackTrace();
+                &#125;
+            &#125;
+        &#125;
+    &#125;
+
+    <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">Producter</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">Thread</span> </span>&#123;
+        <span class="hljs-meta">@Override</span>
+        <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">run</span><span class="hljs-params">()</span> </span>&#123;
+            <span class="hljs-keyword">while</span> (<span class="hljs-keyword">true</span>) &#123;
+                <span class="hljs-keyword">try</span> &#123;
+                    queue.put(<span class="hljs-number">1</span>);
+                    System.err.println(<span class="hljs-string">"生产哦，剩余空间为"</span> + (queueSize - queue.size()));
+                    Thread.sleep(<span class="hljs-number">100</span>);
+                &#125; <span class="hljs-keyword">catch</span> (InterruptedException e) &#123;
+                    e.printStackTrace();
+                &#125;
+            &#125;
+        &#125;
+    &#125;
+&#125;</code></pre>
+<h5 id="线程池"><a href="#线程池" class="headerlink" title="线程池"></a>线程池</h5><a href="/2019/09/13/Java-线程池/" title="Java-线程池">Java-线程池</a>
+<h2 id="拓展知识"><a href="#拓展知识" class="headerlink" title="拓展知识"></a>拓展知识</h2><h3 id="Guarded-Suspension（保护性暂时挂起）"><a href="#Guarded-Suspension（保护性暂时挂起）" class="headerlink" title="Guarded Suspension（保护性暂时挂起）"></a>Guarded Suspension（保护性暂时挂起）</h3><p><strong>当服务进程准备好时，才提供服务。</strong></p>
+<p><img src="/images/java-concurrent-guarded-suspension.png" srcset="/img/loading.gif" alt="img"></p>
+<p>本质是一种<strong>等待唤醒机制的实现</strong>，也称为<strong>多线程的if</strong></p>
+<p>基本实现代码</p>
+<pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">GuardedObject</span>&lt;<span class="hljs-title">T</span>&gt;</span>&#123;
+  <span class="hljs-keyword">private</span> T obj;
+  <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> ReetrantLock lock = <span class="hljs-keyword">new</span> ReentrantLock();
+  <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> Condition done = lock.newCondition();
+  
+  <span class="hljs-function"><span class="hljs-keyword">public</span> T <span class="hljs-title">get</span><span class="hljs-params">(Predicate&lt;T&gt; p)</span></span>&#123;
+    lock.lock();
+    <span class="hljs-keyword">try</span>&#123;
+      <span class="hljs-keyword">while</span>(!p.test(obj))&#123;
+        done.await(); <span class="hljs-comment">//等待事件执行</span>
+      &#125;
+    &#125;<span class="hljs-keyword">catch</span>(Exception e)&#123;
+      e.printStacktrace();
+    &#125;<span class="hljs-keyword">finally</span>&#123;
+      lock.unlock();
+    &#125;
+    <span class="hljs-keyword">return</span> obj;
+  &#125;
+  
+  <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">onChange</span><span class="hljs-params">(T obj)</span></span>&#123;
+    lock.lock();
+    <span class="hljs-keyword">try</span>&#123;
+      <span class="hljs-keyword">this</span>.obj = obj;
+      done.signAll();<span class="hljs-comment">//数据发生变化，进行通知</span>
+    &#125;<span class="hljs-keyword">finally</span>&#123;
+      lock.unlock();
+    &#125;
+  &#125;
+&#125;</code></pre>
+<h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="https://www.cnblogs.com/dwlsxj/archive/2004/01/13/Thread.html" target="_blank" rel="noopener">SynchronousQueue-公平模式</a></p>
+<p><a href="https://www.jianshu.com/p/a565b0b25c43" target="_blank" rel="noopener">SynchronousQueue</a></p>
+
             </div>
             <hr>
             <div>
