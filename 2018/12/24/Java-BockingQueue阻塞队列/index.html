@@ -205,7 +205,8 @@
             <h1 style="display: none">Java-BockingQueue阻塞队列</h1>
             
             <div class="markdown-body" id="post-body">
-              <h2 id="Queue接口"><a href="#Queue接口" class="headerlink" title="Queue接口"></a>Queue接口</h2><p><code>Queue队列</code>的特征是<code>FIFO——先进先出</code>。只有队尾可以进行插入操作，只有队头可以进行删除操作。</p>
+              <p><img src="/images/BlockingQueue 阻塞队列xmind.png" srcset="/img/loading.gif" alt="BlockingQueue阻塞队列"></p>
+<h2 id="Queue接口"><a href="#Queue接口" class="headerlink" title="Queue接口"></a>Queue接口</h2><p><code>Queue队列</code>的特征是<code>FIFO——先进先出</code>。只有队尾可以进行插入操作，只有队头可以进行删除操作。</p>
 <p><img src="/images/822721-20200318104019498-382557009.png" srcset="/img/loading.gif" alt="img"></p>
 <p>Java中的<code>Queue</code>继承了<code>Collection</code>接口，并额外实现了以下方法</p>
 <pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">interface</span> <span class="hljs-title">Queue</span>&lt;<span class="hljs-title">E</span>&gt; <span class="hljs-keyword">extends</span> <span class="hljs-title">Collection</span>&lt;<span class="hljs-title">E</span>&gt; </span>&#123;
@@ -760,8 +761,9 @@
 <p><code>SynchronousQueue</code>的<strong>公平</strong>实现，内部实现使用队列，可以保证先进先出的特性。</p>
 </blockquote>
 <p>基本实现方法：</p>
-<p>当前队列为空的时候或者存在了与当前操作模式相同(<code>isData</code>一致)的节点。线程进行同步等待，尝试封装一个<code>QNode</code>节点，添加到队列中；然后等待与当前操作互补的操作发生（<code>写操作(isData = true)，等待一个读操作(isData = false)</code>）并且返回节点的元素。</p>
-<p>如果队列中包含了与当前操作互补的等待节点，尝试通过<code>CAS</code>更新等待节点的item字段，然后让等待节点出队列。</p>
+<p>当前队列为空的时候或者存在了与即将添加的<code>QNode</code>操作模式一致(<code>isData一致</code>)的节点，线程进行同步等待，<code>QNode</code>添加到队列中。</p>
+<p>继续等待与队列头部<code>QNode</code>操作互补(<code>写操作(isData = true)，等待一个读操作(isData = false)</code>)的<code>QNode</code>节点</p>
+<p>新添加的<code>QNode</code>节点与队头<code>QNode</code>操作互补时，尝试通过<code>CAS</code>更新等待节点的item字段，然后让队头等待节点出列，并返回节点元素和更新队头节点。</p>
 <p>如果队列中的节点的<code>waiter</code>等待线程被取消，节点也会被清理出队列。</p>
 <p><img src="/images/TransferQueue.jpg" srcset="/img/loading.gif" alt="TransferQueue公平队列"></p>
 <p><code>isData</code>：true 表示<code>put</code>操作，false表示<code>take</code>操作。</p>
@@ -772,9 +774,10 @@
 <p><code>SynchronousQueue</code>非公平实现，内部实现使用<strong>栈</strong>，实现了<code>先进后出</code>的特性。</p>
 </blockquote>
 <p>基本实现方法：</p>
-<p>如果栈为空或者栈中包含了相同模式的节点(<code>mode</code>一致)，尝试将节点推入栈中，然后一直等待，等到与之匹配的节点(<code>mode= Data 和 mode = Request</code> )出现，最后返回。</p>
-<p>栈中若包含了与当前模式互补的节点，尝试将当前线程作为满足匹配的新节点入栈，与栈中等待的节点进行匹配。匹配完成之后，将这一对节点弹出，然后返回匹配节点的内容。</p>
-<p>如果栈顶元素找到匹配节点，就会继续匹配，在匹配完成后弹出栈，接着进行匹配。</p>
+<p>当前栈为空或者存在了与即将添加的<code>SNode</code>模式相同的节点(<code>mode一致</code>)，线程进行同步等待，<code>SNode</code>添加到栈中</p>
+<p>继续等待与栈顶<code>SNode</code>操作互补(<code>写操作(mode = DATA)，读操作(mode=REQUEST)</code>)的节点</p>
+<p>出现与栈顶<code>SNode</code>操作互补的节点后，新增<code>SNode</code>节点的<code>mode</code>会变为<code>FULFILLING</code>，与栈顶节点匹配，匹配完成后，将俩节点都弹出并返回匹配节点的结果。</p>
+<p>如果栈顶元素找到匹配节点，就会继续向下帮助匹配(<code>此时上一个匹配操作还没结束又进入一个新的请求</code>)</p>
 <p><img src="/images/TransferStack.jpg" srcset="/img/loading.gif" alt="TranferStack"></p>
 <p><code>next</code>：下一个元素</p>
 <p><code>item</code>：元素信息</p>
