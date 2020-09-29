@@ -8097,13 +8097,26 @@ Code_attribute{
 
   用于串行执行任务的场景，每个任务需要顺序执行
 
+
+
+|                                  | newCachedThreadPool                                         | newFixedThreadPool                                           | newSingleThreadExecutor                                     | newScheduledThreadPool                                       |
+| -------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------ | ----------------------------------------------------------- | ------------------------------------------------------------ |
+| corePoolSize/<br>maximumPoolSize | 0/Integer.MAX<br> `创建非核心线程`执行任务                  | n/n<br>`创建核心线程`执行任务                                | 1/1<br>`只创建1个核心线程`执行任务                          | n/Integer.MAX                                                |
+| workQueue                        | SynchronousQueue                                            | LinkedBlockingQueue(Integer.MAX)                             | LinkedBlockingQueue(Integer.MAX)                            | DelayedQueue                                                 |
+| keepAliveTime                    | 60s<br />即使没有任务进来，线程也会被很快回收               | 0ms<br />没有任务的情况下，线程会一直被阻塞等待任务          | 0ms<br />没有任务的情况下，线程会一直被阻塞等待任务         | 10s                                                          |
+| 适用场景                         | 并发执行大量短期的小任务，或者负载较轻的服务器              | 用于负载较重的服务器，合理的利用服务器资源                   | 用于串行执行任务的场景，每个任务按照**先来先执行**的原则    | 用于执行后台周期性任务                                       |
+| 缺点                             | 最大线程数为`Integer.MAX`，导致创建大量请求，消耗服务器资源 | 等待队列长度为`Integer.MAX`，导致大量请求堆积，消耗服务器资源 | 最大线程数为`Integer.MAX`，导致创建大量请求，消耗服务器资源 | 等待队列长度为`Integer.MAX`，导致大量请求堆积，消耗服务器资源 |
+
+
+
 ### 线程池的执行流程
 
 ![图2 ThreadPoolExecutor运行流程](/images/77441586f6b312a54264e3fcf5eebe2663494.png)
 
-1. 判断corePoolSize(核心线程数)是否已到达，没到达则可以创建一个新线程执行任务
-2. 判断工作队列是否已满，没满则添加入阻塞队列等待执行
-3. 判断maximum(最大线程数)是否已到达，没到达则创建一个新线程执行任务。已满则执行拒绝策略。
+1. 判断`corePoolSize(核心线程数)`是否已到达，没到达则可以创建一个新线程执行任务
+2. 判断`workQueue(工作队列)`是否已满，没满则添加入阻塞队列等待执行
+3. 判断`maximumPoolSize(最大线程数)`是否已到达，没到达则创建一个新线程执行任务。
+4.  已经达到了`maximumPoolSize(最大线程数)`或者线程池不处于`RUNNABLE`状态，执行`handler(任务拒绝策略)`
 
 ### 线程池实现原理
 
@@ -8345,6 +8358,7 @@ final void runWorker(Worker w) {
                     } catch (Throwable x) {
                         thrown = x; throw new Error(x);
                     } finally {
+                       //可重写该方法监听任务执行状态
                         afterExecute(task, thrown);
                     }
                 } finally {
@@ -8391,8 +8405,8 @@ final void runWorker(Worker w) {
 
             try {
                 Runnable r = timed ?
-                    workQueue.poll(keepAliveTime, TimeUnit.NANOSECONDS) :
-                    workQueue.take();
+                    workQueue.poll(keepAliveTime, TimeUnit.NANOSECONDS) : //等待 keepAliveTime 后释放线程
+                    workQueue.take(); //使用take()获取任务，阻塞线程，直到拿到任务为止
                 if (r != null)
                     return r;
                 timedOut = true;
@@ -8403,23 +8417,132 @@ final void runWorker(Worker w) {
     }
 ```
 
+线程池里的线程从`workQueue阻塞队列`里拿任务，如果存在非核心线程且`workQueue`没有任务，非核心线程就会等到`keppAliveTime`时间后被释放。如果当前仅有核心线程存在时，设置了`allowCoreThreadTimedout(true)`，核心线程也会被释放。否则就会通过`take()`一致阻塞直到拿到任务为止。
+
+核心线程不会被释放的原因：**通过`workQueue.take()`一直阻塞线程**。
+
+<br>
+
+核心线程与非核心线程的区别：
+
+这两者之间并没有明显的标志区分，根据上面的代码可以发现，两者的区别在于**核心线程可以无限等待获取任务(阻塞队列take())，非核心线程要限时获取任务(keepAliveTime之内)**。核心线程其实指代的就是`0~corePoolSize`之间创建的线程，`corePoolSize~maximumPoolSie`表示的就是非核心线程。
+
+
+
+
+
 
 
 ![图7 Worker执行任务](/images/03268b9dc49bd30bb63064421bb036bf90315.png)
 
-
+通过调用`execute(runnable)`传进去的`runnable`对象不是直接通过`new Thread(runnable).start()`的方式去执行，而是通过一个**正在运行的线程**去执行`runnable.run()`。根据上述源码中的`runWorker()`，在执行完`firstTask`后就会调用`getTask()`获取任务去执行，如果`getTask()`没有获取到任务，就会在等待`keepAliveTime`之后关闭非核心线程，核心线程通过`workQueue.take()`阻塞线程避免自身被回收。
 
 #### 线程回收
 
 `getTask()`获取不到任务时，执行`processWorkerExit()`进行线程回收
 
 ```java
- 
+     private void processWorkerExit(Worker w, boolean completedAbruptly) {
+        if (completedAbruptly) // If abrupt, then workerCount wasn't adjusted
+            //减少工作线程数
+            decrementWorkerCount();
+
+        final ReentrantLock mainLock = this.mainLock;
+        mainLock.lock();
+        try {
+            completedTaskCount += w.completedTasks;
+            workers.remove(w);
+        } finally {
+            mainLock.unlock();
+        }
+        //尝试终止线程池
+        tryTerminate();
+
+        int c = ctl.get();
+       //线程池处于RUNNABLE或SHUTDOWN状态
+        if (runStateLessThan(c, STOP)) {
+            if (!completedAbruptly) {
+                //根据是否配置 allowCoreThreadTimeout 来判断线程池的最小保留线程数
+                int min = allowCoreThreadTimeOut ? 0 : corePoolSize;
+                //阻塞队列还有任务的话，至少保留一个线程去执行任务
+                if (min == 0 && ! workQueue.isEmpty())
+                    min = 1;
+                if (workerCountOf(c) >= min)
+                    return; // replacement not needed
+            }
+            //因为线程中断，导致没有线程执行阻塞队列任务
+            //尝试新建线程去执行任务
+            addWorker(null, false);
+        }
+    }
 ```
 
 
 
 #### 任务拒绝
+
+当线程池处于`非RUNNABLE`状态或者`workerCount > maximumPoolSize`时，就会执行`reject(runnable)`拒绝策略
+
+```java
+public void execute(Runnable command) {
+        if (command == null)
+            throw new NullPointerException();
+        int c = ctl.get();
+        if (workerCountOf(c) < corePoolSize) {
+            if (addWorker(command, true))
+                return;
+            c = ctl.get();
+        }
+        if (isRunning(c) && workQueue.offer(command)) {
+            int recheck = ctl.get();
+            if (! isRunning(recheck) && remove(command)) //当前不是RUNNABLE，移除当前任务
+                reject(command);
+            else if (workerCountOf(recheck) == 0)
+                addWorker(null, false);
+        }
+        else if (!addWorker(command, false))//添加非核心线程失败，表示已经超出了maximumPoolSize
+            reject(command);
+    }
+
+    final void reject(Runnable command) {
+        handler.rejectedExecution(command, this);
+    }
+
+    public static class AbortPolicy implements RejectedExecutionHandler {
+        /**
+         * Creates an {@code AbortPolicy}.
+         */
+        public AbortPolicy() { }
+
+        public void rejectedExecution(Runnable r, ThreadPoolExecutor e) {
+            throw new RejectedExecutionException("Task " + r.toString() +
+                                                 " rejected from " +
+                                                 e.toString());
+        }
+    }
+```
+
+通过自定义类实现`RejectedExecutionHandler`接口，执行对应的拒绝策略。默认拒绝策略是`AbortPolicy`。
+
+#### 总结
+
+![img](/images/640-1293801.)
+
+线程里容纳了一定的`Worker(执行任务的线程)`。根据线程池状态的不同，有新任务加入时，执行不同的操作。
+
+- 核心线程未满(`workerCount < corePoolSize`)，创建`核心线程`执行任务
+- 核心线程已满(`workerCount>= corePoolSize`)，将任务添加到`workQueue`中
+- `workQueue`已满(`workerCount< maximumPoolSize`)，创建`非核心线程`执行任务
+- 最大任务队列已满(`workerCount = maximumPoolSize`)，执行`handler`拒绝策略
+
+
+
+线程执行任务时，先执行`Worker的firstTask`，后续从`getTask()`获取任务去执行，根据线程池的容量区间获取任务的方式也不同
+
+- 容量区间位于`0~corePoolSize(核心线程)`，执行`workQueue.take()`阻塞获取任务，不会被回收。*若设置`allowCoreThreadTimeout(true)`也会被回收*
+- 容量区间位于`corePoolSize~maximumPoolSize(非核心线程)`，执行`workQueue.poll(keepAliveTime)`获取任务，超出`keepAliveTime`该线程就会被回收
+
+
 
 ### 线程池中的线程策略
 
@@ -8441,9 +8564,9 @@ final void runWorker(Worker w) {
 
 2. 针对具体情况去配置线程池参数，不同的任务类别应采用不同规模的线程池，任务类别分为3种：
 
-   - **`CPU密集型任务(需要进行大量计算，处理)`**：线程池中线程个数尽量少，不应大于CPU核心数，避免出现每个线程都需要长时间使用但是线程过多去抢占资源。
+   - **`CPU密集型任务(需要进行大量计算，处理)`**：线程池中线程个数尽量少，不应大于CPU核心数，避免出现每个线程都需要长时间使用但是线程过多去抢占资源。建议`corePoolSize`为**2n**
 
-   - **`IO密集型任务(主要时间都在IO，CPU空闲时间比较多)`**：线程池可以配置尽量多的线程，由于CPU大部分时间空闲，可以提高CPU的利用率。
+   - **`IO密集型任务(主要时间都在IO，CPU空闲时间比较多)`**：线程池可以配置尽量多的线程，由于CPU大部分时间空闲，可以提高CPU的利用率。建议`corePoolSize`为**n+1**
 
    - **`混合型任务`**：如果可以拆分，则拆分成一个CPU密集型以及IO密集型任务，只要执行任务效率相差不大。若相差太大则没必要拆分。
 
@@ -8467,7 +8590,9 @@ final void runWorker(Worker w) {
 
 [线程池](https://juejin.im/post/5bdbbc3d6fb9a0224a5e486f#heading-14)
 
-[参考链接](https://mp.weixin.qq.com/s?__biz=MzI3OTU0MzI4MQ==&mid=2247486818&idx=1&sn=5d5f87cceadb062c3502cd7a1e2d3e0a&chksm=eb4761fcdc30e8ea3de28eca8c16ce305336852534dbd23edb348b5c1e02334dee025ea8f7bf&mpshare=1&scene=23&srcid=12117GQN5ZAnFwJRhSpKAcO1%23rd)
+[线程池深入解析](https://mp.weixin.qq.com/s/HpMu_QI_N-J18fNJG96yzA)
+
+[Java线程池实现原理及其在美团业务中的实践](https://tech.meituan.com/2020/04/02/java-pooling-pratice-in-meituan.html)
 
 ]]></content>
       <tags>
@@ -16166,9 +16291,11 @@ public ExchangeCodec find(
 ```
 最终通过`Socket.connect()`进行连接。
 
-### 连接池
+### 连接池(ConnectionPool)
 > 频繁的进行Socket连接(三次握手)和Socket断开(四次挥手)非常消耗网络资源以及时间。在HTTP1.1之后提供了`keep-alive`这个header，可以实现长连接，有效的降低了延迟并提升了处理速度。
 > 连接池就是为了**复用已存在连接**，可以有效降低创建连接的开销。
+
+
 
 ## OkHttp拓展
 
@@ -47039,7 +47166,11 @@ Android系统通过获取`apk配置的targetSdkVersion`在调用系统对应Api�
 
       
 
-37. 
+37. 匿名内存(Ashmem)
+
+    以Android Q为目标平台(`targetVersion 29`)的应用无法直接使用`ashmem`，必须通过NDK的`AsharedMemory`来访问共享内存，也无法直接使用`ioctl`，必须改为`AShredMemory`来创建共享内存区域。
+
+38. XX
 
 ]]></content>
       <tags>
