@@ -162,7 +162,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      8.1k 字
+      8.3k 字
     </span>
   
 
@@ -172,7 +172,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      105
+      108
        分钟
     </span>
   
@@ -1163,9 +1163,9 @@ pool-<span class="hljs-number">1</span>-thread-<span class="hljs-number">1</span
 </li>
 <li><p>针对具体情况去配置线程池参数，不同的任务类别应采用不同规模的线程池，任务类别分为3种：</p>
 <ul>
-<li><p><strong><code>CPU密集型任务(需要进行大量计算，处理)</code></strong>：线程池中线程个数尽量少，不应大于CPU核心数，避免出现每个线程都需要长时间使用但是线程过多去抢占资源。建议<code>corePoolSize</code>为<strong>2n</strong></p>
+<li><p><strong><code>CPU密集型任务(需要进行大量计算，处理)</code></strong>：线程池中线程个数尽量少，不应大于CPU核心数，避免出现每个线程都需要长时间使用但是线程过多去抢占资源。建议<code>corePoolSize</code>为<strong>n+1</strong></p>
 </li>
-<li><p><strong><code>IO密集型任务(主要时间都在IO，CPU空闲时间比较多)</code></strong>：线程池可以配置尽量多的线程，由于CPU大部分时间空闲，可以提高CPU的利用率。建议<code>corePoolSize</code>为<strong>n+1</strong></p>
+<li><p><strong><code>IO密集型任务(主要时间都在IO，CPU空闲时间比较多)</code></strong>：线程池可以配置尽量多的线程，由于CPU大部分时间空闲，可以提高CPU的利用率。建议<code>corePoolSize</code>为<strong>2n</strong></p>
 </li>
 <li><p><strong><code>混合型任务</code></strong>：如果可以拆分，则拆分成一个CPU密集型以及IO密集型任务，只要执行任务效率相差不大。若相差太大则没必要拆分。</p>
 </li>
@@ -1183,6 +1183,39 @@ pool-<span class="hljs-number">1</span>-thread-<span class="hljs-number">1</span
 <li><p><code>AbstractQueuedSynchronizer</code>介绍</p>
 <a href="/2020/09/13/Java-AbstractQueuedSynchronizer简介/" title="Java-AbstractQueuedSynchronizer简介">Java-AbstractQueuedSynchronizer简介</a>
 </li>
+<li><p>为什么存在<code>newSingleThreadExecutor</code>?不能使用<code>newFixedThreadPool(1)</code>代替</p>
+<p>再次对比一下两者的源码</p>
+<pre><code class="hljs java"><span class="hljs-comment">/*     
+* Creates an Executor that uses a single worker thread operating
+     * off an unbounded queue, and uses the provided ThreadFactory to
+     * create a new thread when needed. Unlike the otherwise
+     * equivalent &#123;@code newFixedThreadPool(1, threadFactory)&#125; the
+     * returned executor is guaranteed not to be reconfigurable to use
+     * additional threads.
+       */</span>
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> ExecutorService <span class="hljs-title">newSingleThreadExecutor</span><span class="hljs-params">()</span> </span>&#123;
+        <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> FinalizableDelegatedExecutorService
+            (<span class="hljs-keyword">new</span> ThreadPoolExecutor(<span class="hljs-number">1</span>, <span class="hljs-number">1</span>,
+                                    <span class="hljs-number">0L</span>, TimeUnit.MILLISECONDS,
+                                    <span class="hljs-keyword">new</span> LinkedBlockingQueue&lt;Runnable&gt;()));
+    &#125;
+
+
+
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> ExecutorService <span class="hljs-title">newFixedThreadPool</span><span class="hljs-params">(<span class="hljs-keyword">int</span> nThreads)</span> </span>&#123;<span class="hljs-comment">//nThreads为1</span>
+        <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> ThreadPoolExecutor(nThreads, nThreads,<span class="hljs-comment">//1 , 1</span>
+                                      <span class="hljs-number">0L</span>, TimeUnit.MILLISECONDS,
+                                      <span class="hljs-keyword">new</span> LinkedBlockingQueue&lt;Runnable&gt;());
+    &#125;</code></pre>
+<p>两者之间最大的差异就在于包装类的区别：</p>
+<ul>
+<li><code>newSingleThreadExecutor</code>——FinalizableDelegatedExecutorService</li>
+<li><code>newFixedThreadPool</code>——ThreadPoolExecutor</li>
+</ul>
+</li>
+</ol>
+<ol>
+<li>ss</li>
 </ol>
 <h3 id="内容引用"><a href="#内容引用" class="headerlink" title="内容引用"></a>内容引用</h3><p><a href="https://juejin.im/post/5bdbbc3d6fb9a0224a5e486f#heading-14" target="_blank" rel="noopener">线程池</a></p>
 <p><a href="https://mp.weixin.qq.com/s/HpMu_QI_N-J18fNJG96yzA" target="_blank" rel="noopener">线程池深入解析</a></p>

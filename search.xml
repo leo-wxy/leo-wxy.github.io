@@ -8564,9 +8564,9 @@ public void execute(Runnable command) {
 
 2. 针对具体情况去配置线程池参数，不同的任务类别应采用不同规模的线程池，任务类别分为3种：
 
-   - **`CPU密集型任务(需要进行大量计算，处理)`**：线程池中线程个数尽量少，不应大于CPU核心数，避免出现每个线程都需要长时间使用但是线程过多去抢占资源。建议`corePoolSize`为**2n**
+   - **`CPU密集型任务(需要进行大量计算，处理)`**：线程池中线程个数尽量少，不应大于CPU核心数，避免出现每个线程都需要长时间使用但是线程过多去抢占资源。建议`corePoolSize`为**n+1**
 
-   - **`IO密集型任务(主要时间都在IO，CPU空闲时间比较多)`**：线程池可以配置尽量多的线程，由于CPU大部分时间空闲，可以提高CPU的利用率。建议`corePoolSize`为**n+1**
+   - **`IO密集型任务(主要时间都在IO，CPU空闲时间比较多)`**：线程池可以配置尽量多的线程，由于CPU大部分时间空闲，可以提高CPU的利用率。建议`corePoolSize`为**2n**
 
    - **`混合型任务`**：如果可以拆分，则拆分成一个CPU密集型以及IO密集型任务，只要执行任务效率相差不大。若相差太大则没必要拆分。
 
@@ -8585,6 +8585,46 @@ public void execute(Runnable command) {
 3. `AbstractQueuedSynchronizer`介绍
 
    {% post_link Java-AbstractQueuedSynchronizer简介 %}
+   
+4. 为什么存在`newSingleThreadExecutor`?不能使用`newFixedThreadPool(1)`代替
+
+   再次对比一下两者的源码
+
+   ```java
+   /*     
+   * Creates an Executor that uses a single worker thread operating
+        * off an unbounded queue, and uses the provided ThreadFactory to
+        * create a new thread when needed. Unlike the otherwise
+        * equivalent {@code newFixedThreadPool(1, threadFactory)} the
+        * returned executor is guaranteed not to be reconfigurable to use
+        * additional threads.
+          */
+   public static ExecutorService newSingleThreadExecutor() {
+           return new FinalizableDelegatedExecutorService
+               (new ThreadPoolExecutor(1, 1,
+                                       0L, TimeUnit.MILLISECONDS,
+                                       new LinkedBlockingQueue<Runnable>()));
+       }
+   
+   
+   
+       public static ExecutorService newFixedThreadPool(int nThreads) {//nThreads为1
+           return new ThreadPoolExecutor(nThreads, nThreads,//1 , 1
+                                         0L, TimeUnit.MILLISECONDS,
+                                         new LinkedBlockingQueue<Runnable>());
+       }
+   ```
+
+   两者之间最大的差异就在于包装类的区别：
+
+   - `newSingleThreadExecutor`——FinalizableDelegatedExecutorService
+   - `newFixedThreadPool`——ThreadPoolExecutor
+
+   
+
+5. ss
+
+   
 
 ###  内容引用
 
