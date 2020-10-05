@@ -162,7 +162,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      983 字
+      1.8k 字
     </span>
   
 
@@ -172,7 +172,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      12
+      21
        分钟
     </span>
   
@@ -205,21 +205,86 @@
             <h1 style="display: none">Java-ReentrantLock原理及解析</h1>
             
             <div class="markdown-body" id="post-body">
-              <h1 id="ReenTrantLock"><a href="#ReenTrantLock" class="headerlink" title="ReenTrantLock"></a>ReenTrantLock</h1><blockquote>
+              <p>一般的锁都是配合<code>synchronized</code>使用的，实际上在<code>java.util.concurrent.locks</code>还提供了其他几个锁的实现，拥有更加强大的功能和更好的性能。</p>
+<h2 id="锁的分类"><a href="#锁的分类" class="headerlink" title="锁的分类"></a>锁的分类</h2><h3 id="可重入锁"><a href="#可重入锁" class="headerlink" title="可重入锁"></a>可重入锁</h3><blockquote>
+<p><code>可重入锁</code>：任意线程在获取该锁后能够再次获取锁时不会被阻塞。</p>
+<p><strong>当前线程恶可以反复加锁，但必须释放同样多次数的锁，否则会导致锁不会释放。可以避免<code>死锁</code></strong></p>
+</blockquote>
+<h4 id="原理"><a href="#原理" class="headerlink" title="原理"></a>原理</h4><p>通过组合自定义同步器(<code>AQS</code>)实现锁的获取与释放</p>
+<ul>
+<li>再次进行<code>lock()</code>，需要判断当前是否为已获得锁的线程，如果是，计数+1</li>
+<li>执行<code>unlock()</code>，计数-1</li>
+</ul>
+<p>在释放锁后，如果计数不为0，就会导致程序卡死。</p>
+<h4 id="分类"><a href="#分类" class="headerlink" title="分类"></a>分类</h4><ul>
+<li><code>synchronized</code>修饰的方法或代码块</li>
+<li><code>ReentrantLock</code></li>
+</ul>
+<h3 id="公平锁与非公平锁"><a href="#公平锁与非公平锁" class="headerlink" title="公平锁与非公平锁"></a>公平锁与非公平锁</h3><h4 id="公平锁"><a href="#公平锁" class="headerlink" title="公平锁"></a>公平锁</h4><p><strong>多个线程按照申请锁的先后顺序获取锁</strong>。内部持有一个等待队列，按照<code>FIFO</code>取出线程获取锁。</p>
+<p>实现：<code>ReentrantLock(true)</code></p>
+<h4 id="非公平锁"><a href="#非公平锁" class="headerlink" title="非公平锁"></a>非公平锁</h4><p><strong>多个线程不是按照申请锁的先后顺序去获取锁。</strong></p>
+<p><code>非公平锁</code>的性能高于<code>公平锁</code>，但是可能发生<strong>线程饥饿(某个线程长时间无法获得锁)</strong>。</p>
+<p>实现：<code>synchronized</code>和<code>ReentrantLock(false)默认非公平</code></p>
+<h3 id="读写锁和排他锁"><a href="#读写锁和排他锁" class="headerlink" title="读写锁和排他锁"></a>读写锁和排他锁</h3><h4 id="读写锁"><a href="#读写锁" class="headerlink" title="读写锁"></a>读写锁</h4><p><strong>同一时刻允许多个读线程访问。</strong>分为了<strong>读锁</strong>和<strong>写锁</strong>，<code>读锁</code>允许多个线程获取读锁，访问同一个资源；<code>写锁</code>只允许一个线程获取写锁，不允许同时访问同一资源。</p>
+<p><strong>在读多写少的情况下，大大提高了性能。</strong></p>
+<blockquote>
+<p>即使用读写锁，在写线程访问时，所有读线程和其他写线程都会被阻塞。</p>
+</blockquote>
+<p>实现：<code>ReentrantReadWhiteLock</code></p>
+<h4 id="排他锁"><a href="#排他锁" class="headerlink" title="排他锁"></a>排他锁</h4><p><strong>同一时刻只允许一个线程访问</strong>。</p>
+<p>实现：<code>ReentrantLock</code>、<code>synchronized</code></p>
+<h3 id="死锁"><a href="#死锁" class="headerlink" title="死锁"></a>死锁</h3><blockquote>
+<p>两个或两个以上的进程在执行过程中，由于竞争资源或者由于彼此通信而造成的一种阻塞现象，若无外力作用，他们都将无法推进下去。</p>
+</blockquote>
+<p>死锁形成必须要求四个条件：</p>
+<ul>
+<li><p><strong>互斥条件</strong>：一个资源每次只能被一个线程使用</p>
+</li>
+<li><p><strong>请求与保持条件</strong>：一个线程引请求资源而阻塞时，对已获得的资源保持不放</p>
+</li>
+<li><strong>不剥夺条件</strong>：线程已获得的资源，在未使用完之前，不能强行剥夺</li>
+<li><strong>循环等待条件</strong>：若干进程之间形成一种头尾相接的循环等待资源关系</li>
+</ul>
+<h2 id="Lock接口"><a href="#Lock接口" class="headerlink" title="Lock接口"></a>Lock接口</h2><blockquote>
+<p> 在Java中锁是用来控制多个线程访问共享资源的方式。在Java SE5.0之后新增Lock接口。提供了与<code>synchronized</code>关键字类似的同步功能，只是在使用时需要显式的获取和释放锁，缺点就是无法像<code>synchronized</code>可以隐式的释放锁，但是可以自由操作获取锁和释放锁。</p>
+</blockquote>
+<h3 id="synchronized的不足之处"><a href="#synchronized的不足之处" class="headerlink" title="synchronized的不足之处"></a><code>synchronized</code>的不足之处</h3><ul>
+<li>如果只是只读操作，应该多线程一起执行会更好，但是<code>synchronized</code>在<strong>同一时间只能一个线程执行</strong>。</li>
+<li><code>synchronized</code>无法知道线程是否获取锁，而且无法主动进行释放锁</li>
+<li>使用<code>synchronized</code>获取锁后，如果发生阻塞，就会导致所有线程等待锁释放</li>
+</ul>
+<h3 id="提供方法"><a href="#提供方法" class="headerlink" title="提供方法"></a>提供方法</h3><h4 id="lock-获取锁"><a href="#lock-获取锁" class="headerlink" title="lock()-获取锁"></a><code>lock()</code>-获取锁</h4><blockquote>
+<p>执行时，如果锁处于空闲状态，当前线程获得锁。如果锁已被其他线程持有，将禁用当前线程，直到该线程获取锁。</p>
+<p><strong>不会响应中断，直到获取锁成功才会进行响应。</strong></p>
+</blockquote>
+<h4 id="lockInterruptibly-获取锁，响应中断"><a href="#lockInterruptibly-获取锁，响应中断" class="headerlink" title="lockInterruptibly()-获取锁，响应中断"></a><code>lockInterruptibly()</code>-获取锁，响应中断</h4><blockquote>
+<p><strong>获取锁时，优先响应中断，而不是先去进行获取。</strong></p>
+</blockquote>
+<h4 id="tryLock-非阻塞获取锁"><a href="#tryLock-非阻塞获取锁" class="headerlink" title="tryLock()-非阻塞获取锁"></a><code>tryLock()</code>-非阻塞获取锁</h4><blockquote>
+<p>非阻塞获取锁，立即返回获取锁结果，<code>true</code>-成功，<code>false</code>-失败</p>
+</blockquote>
+<h4 id="tryLock-time-unit-指定时间获取锁"><a href="#tryLock-time-unit-指定时间获取锁" class="headerlink" title="tryLock(time,unit)-指定时间获取锁"></a><code>tryLock(time,unit)</code>-指定时间获取锁</h4><blockquote>
+<p>指定时间获取锁，会响应中断</p>
+<ul>
+<li><code>time</code>内获取锁立即返回<code>true</code></li>
+<li><code>time</code>内线程中断会立即返回获取锁结果</li>
+<li><code>time</code>时间结束后，立即返回获取锁结果</li>
+</ul>
+</blockquote>
+<h4 id="unlock-释放锁"><a href="#unlock-释放锁" class="headerlink" title="unlock()-释放锁"></a><code>unlock()</code>-释放锁</h4><blockquote>
+<p>当前线程释放持有锁，<strong>锁只能由持有者释放，如果并未持有锁，执行解锁方法，就会抛出异常</strong>。</p>
+</blockquote>
+<h4 id="newCondition-获取锁条件"><a href="#newCondition-获取锁条件" class="headerlink" title="newCondition()-获取锁条件"></a><code>newCondition()</code>-获取锁条件</h4><blockquote>
+<p>返回该锁的<code>Condition</code>实例，实现<strong>多线程通信</strong>。该组件会与当前锁绑定，当前线程只有获取了锁，才能调用组件的<code>await()</code>方法，调用后，线程释放锁。</p>
+</blockquote>
+<h2 id="ReentrantLock"><a href="#ReentrantLock" class="headerlink" title="ReentrantLock"></a>ReentrantLock</h2><blockquote>
 <p>一个可重入的互斥锁，具备一样的线程重入特性</p>
 </blockquote>
-<h2 id="特性"><a href="#特性" class="headerlink" title="特性"></a>特性</h2><ul>
+<h4 id="特性"><a href="#特性" class="headerlink" title="特性"></a>特性</h4><ul>
 <li>尝试获得锁</li>
 <li>获取到锁的线程能够响应中断</li>
 </ul>
-<h2 id="Lock接口"><a href="#Lock接口" class="headerlink" title="Lock接口"></a>Lock接口</h2><blockquote>
-<p>在Java中锁是用来控制多个线程访问共享资源的方式。在Java SE5.0之后新增Lock接口。提供了与<code>synchronized</code>关键字类似的同步功能，只是在使用时需要显式的获取和释放锁，缺点就是无法像<code>synchronized</code>可以隐式的释放锁，但是可以自由操作获取锁和释放锁。</p>
-</blockquote>
-<p><code>void lock()</code>：执行时，如果锁处于空闲状态，当前线程将获得锁。如果锁已经被其他线程持有，将禁用当前线程，直到当前线程获得锁。</p>
-<p><code>boolean tryLock()</code>：如果锁可用，则获取锁，并返回true，否则返回false。该方法只是试图获取锁，如果锁已被其他线程持有，当前线程不会被禁用，会继续向下执行代码。</p>
-<p><code>void unlock</code>：当前线程将释放持有锁，<strong>锁只能由持有者释放，如果线程并不持有锁，执行该方法，可能导致异常的发生。</strong></p>
-<p><code>Condition newCondition()</code>：条件对象，获取等待通知组件。该组件会与当前锁绑定，当前线程只有获取了锁，才能调用组件的<code>await()</code>方法，调用后，线程释放锁。</p>
-<h2 id="读写锁"><a href="#读写锁" class="headerlink" title="读写锁"></a>读写锁</h2><blockquote>
+<h2 id="读写锁-1"><a href="#读写锁-1" class="headerlink" title="读写锁"></a>读写锁</h2><blockquote>
 <p>ReentrantLock是完全互斥排他的，这样其实效率不高</p>
 </blockquote>
 <h2 id="使用方式"><a href="#使用方式" class="headerlink" title="使用方式"></a>使用方式</h2><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">ReenTrantLockTest</span> <span class="hljs-keyword">implements</span> <span class="hljs-title">Runnable</span> </span>&#123;
