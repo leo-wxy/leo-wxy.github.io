@@ -162,7 +162,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      5.8k 字
+      6k 字
     </span>
   
 
@@ -172,7 +172,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      86
+      90
        分钟
     </span>
   
@@ -368,6 +368,23 @@ animSet.start();</code></pre>
 </blockquote>
 <h5 id="应用代码-3"><a href="#应用代码-3" class="headerlink" title="应用代码"></a>应用代码</h5><pre><code class="hljs java"><span class="hljs-comment">//设置View 透明度以及平移</span>
 view.animate().alpha(<span class="hljs-number">0</span>).translationX(<span class="hljs-number">100</span>).setDuration(<span class="hljs-number">500</span>).start();</code></pre>
+<h3 id="注意内存泄露"><a href="#注意内存泄露" class="headerlink" title="注意内存泄露"></a>注意内存泄露</h3><blockquote>
+<p>在使用属性动画中的无限循环动画(<code>setRepeatCount(ValueAnimator.INFINITE)</code>)时，需要在合适的场合(<code>Activity关闭、View的detach</code>)取消动画</p>
+</blockquote>
+<pre><code class="hljs java"><span class="hljs-meta">@Override</span>
+<span class="hljs-function"><span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> <span class="hljs-title">onDestroy</span><span class="hljs-params">()</span> </span>&#123;
+    <span class="hljs-keyword">super</span>.onDestroy();
+    <span class="hljs-keyword">if</span>(animator.isRunning())&#123;
+      animator.cancel();
+    &#125;
+&#125;</code></pre>
+<h3 id="对于View可用属性"><a href="#对于View可用属性" class="headerlink" title="对于View可用属性"></a>对于View可用属性</h3><ul>
+<li><code>alpha</code>：更改View的不透明度</li>
+<li><code>x</code>、<code>y</code>、<code>translationX</code>、<code>translationY</code>：更改View的位置</li>
+<li><code>scaleX</code>、<code>scaleY</code>：更改View的缩放</li>
+<li><code>rotation</code>、<code>rotationX</code>、<code>rotationY</code>：更改View在3D空间的方向</li>
+<li><code>pivotX</code>、<code>pivotY</code>：更改View的转换原点</li>
+</ul>
 <h2 id="3-理解插值器和估值器"><a href="#3-理解插值器和估值器" class="headerlink" title="3.理解插值器和估值器"></a>3.理解插值器和估值器</h2><h3 id="1-插值器-Interpolator"><a href="#1-插值器-Interpolator" class="headerlink" title="1.插值器(Interpolator)"></a>1.插值器(<code>Interpolator</code>)</h3><blockquote>
 <p>根据时间流逝的百分比计算出当前属性值改变的百分比。确定了动画效果变化的模式，如匀速变化、加速变化等。</p>
 </blockquote>
@@ -812,7 +829,7 @@ animator.addListener(<span class="hljs-keyword">new</span> AnimatorListenerAdapt
                 callback, FRAME_CALLBACK_TOKEN, delayMillis);
     &#125;</code></pre>
 <p>其中<code>postCallbackDelayedInternal()</code>内部相关的代码可以参考<a href="/2020/05/30/View的刷新机制/" title="Android屏幕的刷新机制">Android屏幕的刷新机制</a></p>
-<h3 id="AnimationHelper-doAnimationFrame"><a href="#AnimationHelper-doAnimationFrame" class="headerlink" title="AnimationHelper.doAnimationFrame()"></a>AnimationHelper.doAnimationFrame()</h3><blockquote>
+<h3 id="AnimationHandler-doAnimationFrame"><a href="#AnimationHandler-doAnimationFrame" class="headerlink" title="AnimationHandler.doAnimationFrame()"></a>AnimationHandler.doAnimationFrame()</h3><blockquote>
 <p>每次在<code>Vsync</code>信号来临时会执行到<code>doFrame()</code>对应执行到<code>doAnimationFrame()</code></p>
 </blockquote>
 <pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">doAnimationFrame</span><span class="hljs-params">(<span class="hljs-keyword">long</span> frameTime)</span> </span>&#123;
@@ -843,7 +860,7 @@ animator.addListener(<span class="hljs-keyword">new</span> AnimatorListenerAdapt
         mChoreographer.postCallback(Choreographer.CALLBACK_COMMIT, runnable, <span class="hljs-keyword">null</span>);
     &#125;</code></pre>
 <h4 id="cleanUpList"><a href="#cleanUpList" class="headerlink" title="cleanUpList()"></a>cleanUpList()</h4><blockquote>
-<p>清理已经执行完毕的动画回调</p>
+<p>清理已经执行完毕的动画</p>
 </blockquote>
 <pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">cleanUpList</span><span class="hljs-params">()</span> </span>&#123;
     <span class="hljs-keyword">if</span> (mListDirty) &#123;
@@ -1212,7 +1229,30 @@ animator.addListener(<span class="hljs-keyword">new</span> AnimatorListenerAdapt
     &#125;
 &#125;</code></pre>
 <p>拿<code>ObjectAnimator.ofFloat(view,View.SCALE_X,0f,1f)</code>为例，分析<code>setAnimatedValue()</code>执行结果</p>
-<p>//TODO</p>
+<pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">setupSetter</span><span class="hljs-params">(Class targetClass)</span> </span>&#123;
+    Class&lt;?&gt; propertyType = mConverter == <span class="hljs-keyword">null</span> ? mValueType : mConverter.getTargetType();
+    mSetter = setupSetterOrGetter(targetClass, sSetterPropertyMap, <span class="hljs-string">"set"</span>, propertyType);
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">private</span> Method <span class="hljs-title">setupSetterOrGetter</span><span class="hljs-params">(Class targetClass,
+        HashMap&lt;Class, HashMap&lt;String, Method&gt;&gt; propertyMapMap,
+        String prefix, Class valueType)</span> </span>&#123;
+  ...
+    setterOrGetter = getPropertyFunction(targetClass, prefix, valueType);
+  ...
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">private</span> Method <span class="hljs-title">getPropertyFunction</span><span class="hljs-params">(Class targetClass, String prefix, Class valueType)</span> </span>&#123;
+    Method returnVal = <span class="hljs-keyword">null</span>;
+    String methodName = getMethodName(prefix, mPropertyName); <span class="hljs-comment">//方法名setScaleX() </span>
+    ... <span class="hljs-comment">//反射获取方法</span>
+   
+&#125;</code></pre>
+<blockquote>
+<p><code>PropertyValuesHolder</code>负责<strong>保存动画过程中所需要操作的属性和值</strong>。<code>ObjectAnimator.ofFloat(Object target,String propertyName.float... values)</code>内部的参数会被封装成<code>PropertyValuesHolder</code>实例。</p>
+</blockquote>
+<p><img src="/images/属性动画执行过程.jpg" srcset="/img/loading.gif" alt="属性动画执行过程"></p>
+<h2 id="7-参考链接"><a href="#7-参考链接" class="headerlink" title="7.参考链接"></a>7.参考链接</h2><p><a href="http://gityuan.com/2015/09/06/android-anaimator-4/" target="_blank" rel="noopener">源码解读Android属性动画</a></p>
 
             </div>
             <hr>
