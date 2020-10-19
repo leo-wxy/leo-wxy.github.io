@@ -15,7 +15,7 @@
   <meta name="theme-color" content="#9b868d">
   <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
   <meta name="author" content="Leo-Wxy">
-  <meta name="keywords" content="">
+  <meta name="keywords" content>
   <title>Handler机制源码解析 - Wxy的个人博客</title>
 
   <link rel="stylesheet" href="https://cdn.staticfile.org/twitter-bootstrap/4.4.1/css/bootstrap.min.css">
@@ -28,7 +28,7 @@
     
     
       
-      <link rel="stylesheet" href="https://cdn.staticfile.org/highlight.js/10.0.0/styles/solarized-light.min.css">
+      <link rel="stylesheet" href="https://cdn.staticfile.org/highlight.js/10.0.0/styles/atom-one-light.min.css">
     
   
 
@@ -162,7 +162,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      4.3k 字
+      5.4k 字
     </span>
   
 
@@ -172,7 +172,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      59
+      76
        分钟
     </span>
   
@@ -205,20 +205,28 @@
             <h1 style="display: none">Handler机制源码解析</h1>
             
             <div class="markdown-body" id="post-body">
-              <h1 id="主要的内容包括Handler的机制以及四个组成部分和源码的分析"><a href="#主要的内容包括Handler的机制以及四个组成部分和源码的分析" class="headerlink" title="主要的内容包括Handler的机制以及四个组成部分和源码的分析"></a>主要的内容包括Handler的机制以及四个组成部分和源码的分析</h1><blockquote>
+              <blockquote>
+<p>主要的内容包括Handler的机制以及四个组成部分和源码的分析</p>
 <p>下面的代码分析都是基于Android8.0 - Oreo的源代码</p>
 </blockquote>
-<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/Android消息机制.png" srcset="/img/loading.gif" class="full-image" alt="Android消息机制" title="Android消息机制"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<p><img src="/images/Android消息机制.png" srcset="/img/loading.gif" alt="Android消息机制"></p>
 <a id="more"></a>
 <h2 id="1-消息机制简介"><a href="#1-消息机制简介" class="headerlink" title="1.  消息机制简介"></a>1.  消息机制简介</h2><p>在应用启动时，会执行<code>main()</code>方法，<code>main()</code>会创建一个Looper对象，然后开启一个死循环，目的是<strong>不断从消息队列<code>MessageQueue</code>里面取出<code>Message</code>对象并处理。</strong></p>
 <p>在Android中使用消息机制，会优先想到的是Handler。Handler可以轻松的将一个任务切换到Handler所在的线程去执行。在多线程的应用场景中，<strong>可以将工作线程中需要更新UI的操作信息传递到主线程去执行</strong>，从而实现工作线程更新UI的操作，最终实现异步消息的处理。</p>
-<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/study_plan/handler_process.png" srcset="/img/loading.gif" class="full-image" alt="Handler执行流程图" title="Handler执行流程图"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span> 
+<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/study_plan/handler_process.png" srcset="/img/loading.gif" class="full-image" alt="Handler执行流程图" title="Handler执行流程图"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span> 
 <h2 id="2-Handler机制模型"><a href="#2-Handler机制模型" class="headerlink" title="2. Handler机制模型"></a>2. Handler机制模型</h2><p>消息机制主要包含<strong>Handler、Message、MessageQueue，Looper</strong>这四个类。</p>
 <h3 id="Handler：消息辅助类"><a href="#Handler：消息辅助类" class="headerlink" title="Handler：消息辅助类"></a>Handler：消息辅助类</h3><p>主要功能将<code>Message</code>对象发送到<code>MessageQueue</code>中，同时将自己的引用赋值给<code>Message#target</code>(Handler.sendMessage())。也可以实现<code>handleMessage()</code>方法处理回调。</p>
-<h3 id="Message：消息实体"><a href="#Message：消息实体" class="headerlink" title="Message：消息实体"></a>Message：消息实体</h3><p>。需要传递的消息也可以传递数据。</p>
+<h3 id="Message：消息实体"><a href="#Message：消息实体" class="headerlink" title="Message：消息实体"></a>Message：消息实体</h3><p>需要传递的消息也可以传递数据。</p>
+<p><code>Message</code>分为三种：</p>
+<ul>
+<li>同步消息(<code>默认消息</code>)</li>
+<li>异步消息(<code>setAsynchronous(true)</code>)</li>
+<li>同步屏障消息</li>
+</ul>
 <h3 id="MessageQueue：消息队列"><a href="#MessageQueue：消息队列" class="headerlink" title="MessageQueue：消息队列"></a>MessageQueue：消息队列</h3><p><strong>内部实现并不是队列，而是利用单链表去实现因为在插入和删除数据有优势。</strong>用于存储Handler发给来的消息(<code>Message</code>)以及取出。<code>内部使用单链表实现</code></p>
 <h3 id="Looper：消息循环"><a href="#Looper：消息循环" class="headerlink" title="Looper：消息循环"></a>Looper：消息循环</h3><p>与线程绑定，不止局限于主线程，绑定的线程来处理<code>Message</code>。不断循环执行<code>Looper.loop()</code>，从<code>MessageQueue</code>中读取<code>Message</code>，按分发机制将消息分发出去给目标处理(将<code>Message</code>发到<code>Handler.dispatchMessage</code>方法去处理)。</p>
-<h2 id="3-Handler运行流程"><a href="#3-Handler运行流程" class="headerlink" title="3. Handler运行流程"></a>3. Handler运行流程</h2><span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/study_plan/handler_run_process.png" srcset="/img/loading.gif" class="full-image" alt="Handler运行流程图" title="Handler运行流程图"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span> 
+<h2 id="3-Handler运行流程"><a href="#3-Handler运行流程" class="headerlink" title="3. Handler运行流程"></a>3. Handler运行流程</h2><span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/study_plan/handler_run_process.png" srcset="/img/loading.gif" class="full-image" alt="Handler运行流程图" title="Handler运行流程图"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span> 
+<p><img src="/images/study_plan/handler_run_process.png" srcset="/img/loading.gif" alt="Handler运行流程"></p>
 <p>工作流程：<strong>异步通信准备==&gt;消息入队==&gt;消息循环==&gt;消息处理</strong></p>
 <ol>
 <li><p><strong>异步通信准备</strong></p>
@@ -313,7 +321,7 @@
 <span class="hljs-comment">//为主线程创建一个Looper对象 该方法会在主线程创建时自动调用</span>
 <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">prepareMainLooper</span><span class="hljs-params">()</span> </span>&#123;
         prepare(<span class="hljs-keyword">false</span>);
-        <span class="hljs-keyword">synchronized</span> (Looper.class) &#123;
+        <span class="hljs-keyword">synchronized</span> (Looper<span class="hljs-class">.<span class="hljs-keyword">class</span>) </span>&#123;
             <span class="hljs-keyword">if</span> (sMainLooper != <span class="hljs-keyword">null</span>) &#123;
                 <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> IllegalStateException(<span class="hljs-string">"The main Looper has already been prepared."</span>);
             &#125;
@@ -576,8 +584,9 @@ msg.obj = <span class="hljs-string">"test"</span>;
                     <span class="hljs-keyword">if</span> (p == <span class="hljs-keyword">null</span> || when &lt; p.when) &#123;
                         <span class="hljs-keyword">break</span>;
                     &#125;
+                    <span class="hljs-comment">//如果是异步消息 且 存在同步屏障</span>
                     <span class="hljs-keyword">if</span> (needWake &amp;&amp; p.isAsynchronous()) &#123;
-                        needWake = <span class="hljs-keyword">false</span>;
+                        needWake = <span class="hljs-keyword">false</span>;<span class="hljs-comment">//不需要唤醒 队列</span>
                     &#125;
                 &#125;
                 msg.next = p; <span class="hljs-comment">// invariant: p == prev.next</span>
@@ -809,7 +818,189 @@ msg.obj = <span class="hljs-string">"test"</span>;
             &#125;
         &#125;
     &#125;</code></pre>
-<h2 id="6-主线程的消息循环"><a href="#6-主线程的消息循环" class="headerlink" title="6. 主线程的消息循环"></a>6. 主线程的消息循环</h2><p>Android的主线程就是<code>ActivityThread</code>，主线程的入口方法为<code>main()</code>。</p>
+<h2 id="6-Handler异步消息与同步屏障"><a href="#6-Handler异步消息与同步屏障" class="headerlink" title="6. Handler异步消息与同步屏障"></a>6. Handler异步消息与同步屏障</h2><h3 id="异步消息"><a href="#异步消息" class="headerlink" title="异步消息"></a>异步消息</h3><p><code>Handler</code>构造函数</p>
+<pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">Handler</span><span class="hljs-params">()</span> </span>&#123;
+       <span class="hljs-keyword">this</span>(<span class="hljs-keyword">null</span>, <span class="hljs-keyword">false</span>);
+   &#125;   
+
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">Handler</span><span class="hljs-params">(Callback callback, <span class="hljs-keyword">boolean</span> async<span class="hljs-comment">/*是否异步*/</span>)</span> </span>&#123;
+       <span class="hljs-keyword">if</span> (FIND_POTENTIAL_LEAKS) &#123;
+           <span class="hljs-keyword">final</span> Class&lt;? extends Handler&gt; klass = getClass();
+           <span class="hljs-keyword">if</span> ((klass.isAnonymousClass() || klass.isMemberClass() || klass.isLocalClass()) &amp;&amp;
+                   (klass.getModifiers() &amp; Modifier.STATIC) == <span class="hljs-number">0</span>) &#123;
+               Log.w(TAG, <span class="hljs-string">"The following Handler class should be static or leaks might occur: "</span> +
+                   klass.getCanonicalName());
+           &#125;
+       &#125;
+
+       mLooper = Looper.myLooper();
+       <span class="hljs-keyword">if</span> (mLooper == <span class="hljs-keyword">null</span>) &#123;
+           <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> RuntimeException(
+               <span class="hljs-string">"Can't create handler inside thread "</span> + Thread.currentThread()
+                       + <span class="hljs-string">" that has not called Looper.prepare()"</span>);
+       &#125;
+       mQueue = mLooper.mQueue;
+       mCallback = callback;
+       mAsynchronous = async;<span class="hljs-comment">//设置异步标志</span>
+   &#125;</code></pre>
+<p><code>mAsynchronus</code>异步标志默认为<code>false</code>，在以下代码中使用</p>
+<pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">enqueueMessage</span><span class="hljs-params">(MessageQueue queue, Message msg, <span class="hljs-keyword">long</span> uptimeMillis)</span> </span>&#123;
+    msg.target = <span class="hljs-keyword">this</span>;
+    <span class="hljs-keyword">if</span> (mAsynchronous) &#123;
+        msg.setAsynchronous(<span class="hljs-keyword">true</span>);<span class="hljs-comment">//设置异步消息</span>
+    &#125;
+    <span class="hljs-keyword">return</span> queue.enqueueMessage(msg, uptimeMillis);
+&#125;</code></pre>
+<p>设置消息为<code>异步消息</code>有两种方式：</p>
+<ul>
+<li><code>new Handler(true)</code>：所有发出去的消息都会<code>setAsynchronous(true)</code><strong>对应方法都为@hide，不推荐使用</strong></li>
+<li><code>msg.setAsynchonous(true)</code>：手动设置消息为异步</li>
+</ul>
+<h4 id="使用场景"><a href="#使用场景" class="headerlink" title="使用场景"></a>使用场景</h4><ul>
+<li>View的刷新(<code>Chorgographer</code>发送的都是异步消息)</li>
+</ul>
+<h3 id="同步屏障"><a href="#同步屏障" class="headerlink" title="同步屏障"></a>同步屏障</h3><blockquote>
+<p><code>同步屏障</code>：挡住普通消息，使得<code>异步消息</code>可以被更快处理</p>
+</blockquote>
+<h4 id="添加同步屏障"><a href="#添加同步屏障" class="headerlink" title="添加同步屏障"></a>添加同步屏障</h4><pre><code class="hljs java"><span class="hljs-comment">//MessageQueue.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> <span class="hljs-title">postSyncBarrier</span><span class="hljs-params">()</span> </span>&#123;
+        <span class="hljs-keyword">return</span> postSyncBarrier(SystemClock.uptimeMillis());
+    &#125;
+
+    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">int</span> <span class="hljs-title">postSyncBarrier</span><span class="hljs-params">(<span class="hljs-keyword">long</span> when)</span> </span>&#123;
+        <span class="hljs-comment">// Enqueue a new sync barrier token.</span>
+        <span class="hljs-comment">// We don't need to wake the queue because the purpose of a barrier is to stall it.</span>
+        <span class="hljs-keyword">synchronized</span> (<span class="hljs-keyword">this</span>) &#123;
+            <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> token = mNextBarrierToken++;
+            <span class="hljs-comment">//没有赋值target，后面需要通过判断target == null，判断是否为同步屏障消息</span>
+            <span class="hljs-keyword">final</span> Message msg = Message.obtain();
+            msg.markInUse();
+            msg.when = when;
+            msg.arg1 = token;
+
+            Message prev = <span class="hljs-keyword">null</span>;
+            Message p = mMessages;
+            <span class="hljs-keyword">if</span> (when != <span class="hljs-number">0</span>) &#123;
+                <span class="hljs-keyword">while</span> (p != <span class="hljs-keyword">null</span> &amp;&amp; p.when &lt;= when) &#123;
+                    prev = p;
+                    p = p.next;
+                &#125;
+            &#125;
+            <span class="hljs-comment">//插入同步屏障</span>
+            <span class="hljs-keyword">if</span> (prev != <span class="hljs-keyword">null</span>) &#123; <span class="hljs-comment">// invariant: p == prev.next</span>
+                msg.next = p;
+                prev.next = msg;
+            &#125; <span class="hljs-keyword">else</span> &#123;
+                msg.next = p;
+                mMessages = msg;
+            &#125;
+            <span class="hljs-keyword">return</span> token;<span class="hljs-comment">//用来取消同步屏障</span>
+        &#125;
+    &#125;</code></pre>
+<p><code>同步屏障</code>也是消息的一种，特殊之处在于<code>target==null</code>。<code>target</code>表示了<code>消息需要分发的对象</code>，而<code>同步屏障</code>不需要被分发。而且不会唤醒<code>消息队列</code>。</p>
+<p>上面有说到<a href="#7-获取消息">获取消息</a>通过<code>MessageQueue.next()</code></p>
+<pre><code class="hljs java"><span class="hljs-comment">//MessageQueue.java</span>
+<span class="hljs-function">Message <span class="hljs-title">next</span><span class="hljs-params">()</span> </span>&#123;
+        <span class="hljs-comment">// Return here if the message loop has already quit and been disposed.</span>
+        <span class="hljs-comment">// This can happen if the application tries to restart a looper after quit</span>
+        <span class="hljs-comment">// which is not supported.</span>
+        <span class="hljs-keyword">final</span> <span class="hljs-keyword">long</span> ptr = mPtr;
+        <span class="hljs-keyword">if</span> (ptr == <span class="hljs-number">0</span>) &#123;
+            <span class="hljs-keyword">return</span> <span class="hljs-keyword">null</span>;
+        &#125;
+
+        <span class="hljs-keyword">int</span> pendingIdleHandlerCount = -<span class="hljs-number">1</span>; <span class="hljs-comment">// -1 only during first iteration</span>
+        <span class="hljs-keyword">int</span> nextPollTimeoutMillis = <span class="hljs-number">0</span>;
+        <span class="hljs-keyword">for</span> (;;) &#123;
+            <span class="hljs-keyword">if</span> (nextPollTimeoutMillis != <span class="hljs-number">0</span>) &#123;
+                Binder.flushPendingCommands();
+            &#125;
+            <span class="hljs-comment">//唤醒队列</span>
+            nativePollOnce(ptr, nextPollTimeoutMillis);
+
+            <span class="hljs-keyword">synchronized</span> (<span class="hljs-keyword">this</span>) &#123;
+                <span class="hljs-comment">// Try to retrieve the next message.  Return if found.</span>
+                <span class="hljs-keyword">final</span> <span class="hljs-keyword">long</span> now = SystemClock.uptimeMillis();
+                Message prevMsg = <span class="hljs-keyword">null</span>;
+                Message msg = mMessages;
+                <span class="hljs-keyword">if</span> (msg != <span class="hljs-keyword">null</span> &amp;&amp; msg.target == <span class="hljs-keyword">null</span>) &#123;
+                    <span class="hljs-comment">//同步屏障，找到下一个 异步消息</span>
+                    <span class="hljs-comment">// Stalled by a barrier.  Find the next asynchronous message in the queue.</span>
+                    <span class="hljs-keyword">do</span> &#123;
+                        prevMsg = msg;
+                        msg = msg.next;
+                    &#125; <span class="hljs-keyword">while</span> (msg != <span class="hljs-keyword">null</span> &amp;&amp; !msg.isAsynchronous());
+                &#125;
+                <span class="hljs-keyword">if</span> (msg != <span class="hljs-keyword">null</span>) &#123;
+                    <span class="hljs-keyword">if</span> (now &lt; msg.when) &#123;
+                        <span class="hljs-comment">// Next message is not ready.  Set a timeout to wake up when it is ready.</span>
+                        nextPollTimeoutMillis = (<span class="hljs-keyword">int</span>) Math.min(msg.when - now, Integer.MAX_VALUE);
+                    &#125; <span class="hljs-keyword">else</span> &#123;
+                        <span class="hljs-comment">// Got a message.</span>
+                        mBlocked = <span class="hljs-keyword">false</span>;
+                        <span class="hljs-keyword">if</span> (prevMsg != <span class="hljs-keyword">null</span>) &#123;
+                          <span class="hljs-comment">//取出异步消息</span>
+                            prevMsg.next = msg.next;
+                        &#125; <span class="hljs-keyword">else</span> &#123;
+                            mMessages = msg.next;
+                        &#125;
+                        msg.next = <span class="hljs-keyword">null</span>;
+                        <span class="hljs-keyword">if</span> (DEBUG) Log.v(TAG, <span class="hljs-string">"Returning message: "</span> + msg);
+                        msg.markInUse();
+                        <span class="hljs-keyword">return</span> msg;
+                    &#125;
+                &#125; <span class="hljs-keyword">else</span> &#123;
+                    <span class="hljs-comment">// No more messages.</span>
+                    nextPollTimeoutMillis = -<span class="hljs-number">1</span>;
+                &#125;
+
+                <span class="hljs-comment">// Process the quit message now that all pending messages have been handled.</span>
+                <span class="hljs-keyword">if</span> (mQuitting) &#123;
+                    dispose();
+                    <span class="hljs-keyword">return</span> <span class="hljs-keyword">null</span>;
+                &#125;
+               ...
+            &#125;
+           ...
+        &#125;
+    &#125;</code></pre>
+<p><code>Looper</code>通过循环调用<code>MessageQueue.next()</code>不断获取队头的<code>message</code>，执行一个再去取下一个。当<code>next()</code>获取队头消息为<code>同步屏障</code>时，就会向后遍历队列，获取<code>异步消息</code>优先执行，如果没有找到<code>异步消息</code>，就会让<code>next()</code>进入阻塞状态，主线程也会处于<code>空闲状态</code>，直到有<code>异步消息</code>进入队列，或者<code>移除同步屏障</code>。</p>
+<h4 id="移除同步屏障"><a href="#移除同步屏障" class="headerlink" title="移除同步屏障"></a>移除同步屏障</h4><p>添加完<code>同步屏障</code>后，如果一直都没有消息处理，主线程就会进入空闲状态并且无法处理其他普通消息，此时就需要移除<code>同步屏障</code>，保证正常的消息处理。</p>
+<pre><code class="hljs java"><span class="hljs-comment">//MessageQueue.java</span>
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">removeSyncBarrier</span><span class="hljs-params">(<span class="hljs-keyword">int</span> token)</span> </span>&#123;
+        <span class="hljs-comment">// Remove a sync barrier token from the queue.</span>
+        <span class="hljs-comment">// If the queue is no longer stalled by a barrier then wake it.</span>
+        <span class="hljs-keyword">synchronized</span> (<span class="hljs-keyword">this</span>) &#123;
+            Message prev = <span class="hljs-keyword">null</span>;
+            Message p = mMessages;
+            <span class="hljs-comment">//根据token找到对应的 同步屏障消息，并移除</span>
+            <span class="hljs-keyword">while</span> (p != <span class="hljs-keyword">null</span> &amp;&amp; (p.target != <span class="hljs-keyword">null</span> || p.arg1 != token)) &#123;
+                prev = p;
+                p = p.next;
+            &#125;
+            <span class="hljs-keyword">if</span> (p == <span class="hljs-keyword">null</span>) &#123;
+                <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> IllegalStateException(<span class="hljs-string">"The specified message queue synchronization "</span>
+                        + <span class="hljs-string">" barrier token has not been posted or has already been removed."</span>);
+            &#125;
+            <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> needWake;
+            <span class="hljs-keyword">if</span> (prev != <span class="hljs-keyword">null</span>) &#123;
+                prev.next = p.next;
+                needWake = <span class="hljs-keyword">false</span>;
+            &#125; <span class="hljs-keyword">else</span> &#123;
+                mMessages = p.next;
+                needWake = mMessages == <span class="hljs-keyword">null</span> || mMessages.target != <span class="hljs-keyword">null</span>;
+            &#125;
+            p.recycleUnchecked();
+
+            <span class="hljs-comment">// If the loop is quitting then it is already awake.</span>
+            <span class="hljs-comment">// We can assume mPtr != 0 when mQuitting is false.</span>
+            <span class="hljs-keyword">if</span> (needWake &amp;&amp; !mQuitting) &#123;
+                nativeWake(mPtr);
+            &#125;
+        &#125;
+    &#125;</code></pre>
+<p>移除<code>同步屏障</code>消息后，再次唤醒消息队列。</p>
+<h2 id="7-主线程的消息循环"><a href="#7-主线程的消息循环" class="headerlink" title="7. 主线程的消息循环"></a>7. 主线程的消息循环</h2><p>Android的主线程就是<code>ActivityThread</code>，主线程的入口方法为<code>main()</code>。</p>
 <pre><code class="hljs java"><span class="hljs-comment">// ../android/app/ActivityThread.java</span>
 <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">main</span><span class="hljs-params">(String[] args)</span> </span>&#123;
  ...

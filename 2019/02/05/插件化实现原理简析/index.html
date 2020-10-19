@@ -15,7 +15,7 @@
   <meta name="theme-color" content="#9b868d">
   <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
   <meta name="author" content="Leo-Wxy">
-  <meta name="keywords" content="">
+  <meta name="keywords" content>
   <title>插件化实现原理简析(基础概念) - Wxy的个人博客</title>
 
   <link rel="stylesheet" href="https://cdn.staticfile.org/twitter-bootstrap/4.4.1/css/bootstrap.min.css">
@@ -28,7 +28,7 @@
     
     
       
-      <link rel="stylesheet" href="https://cdn.staticfile.org/highlight.js/10.0.0/styles/solarized-light.min.css">
+      <link rel="stylesheet" href="https://cdn.staticfile.org/highlight.js/10.0.0/styles/atom-one-light.min.css">
     
   
 
@@ -235,11 +235,11 @@
 <h4 id="单DexClassLoader与多DexClassLoader"><a href="#单DexClassLoader与多DexClassLoader" class="headerlink" title="单DexClassLoader与多DexClassLoader"></a>单DexClassLoader与多DexClassLoader</h4><p>通过给插件apk生成相应的<code>DexClassLoader</code>便可以去访问其中的类。这边又分成两种形式：</p>
 <ul>
 <li><p>单DexClassLoader</p>
-<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/单ClassLoader结构.png" srcset="/img/loading.gif" class="full-image" alt="单ClassLoader结构" title="单ClassLoader结构"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/单ClassLoader结构.png" srcset="/img/loading.gif" class="full-image" alt="单ClassLoader结构" title="单ClassLoader结构"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
 <p>将插件Apk中的DexClassLoader的DexPathList都合并进宿主Apk中。可以在不同的插件及主工程间直接调用相关类和方法，也可以直接抽出共用模块供其他插件使用。</p>
 </li>
 <li><p>多DexClassLoader</p>
-<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/多ClassLoader结构.png" srcset="/img/loading.gif" class="full-image" alt="多ClassLoader结构" title="多ClassLoader结构"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/多ClassLoader结构.png" srcset="/img/loading.gif" class="full-image" alt="多ClassLoader结构" title="多ClassLoader结构"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
 <p>每个插件都会去生成一个DexClassLoader，当加载该插件中的类需要通过各自的DexClassLoader去加载，这样不同插件的类就是相互隔离的。</p>
 </li>
 </ul>
@@ -510,16 +510,16 @@
     &#125;
 &#125;</code></pre>
 <p>实现了自定义Callback对象<code>HCallback</code>后，就需要把它设置到<code>ActivityThread.H</code>中使其拦截后续启动动作。</p>
-<pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">HookHelper</span> </span>&#123;
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">hookHandler</span><span class="hljs-params">()</span> <span class="hljs-keyword">throws</span> Exception </span>&#123;
-        Class&lt;?&gt; activityThreadClass = Class.forName(<span class="hljs-string">"android.app.ActivityThread"</span>);
-        <span class="hljs-comment">//当前对应的ActivityThread对象</span>
-        Object currentActivityThread = FieldUtil.getField(activityThreadClass, <span class="hljs-keyword">null</span>, <span class="hljs-string">"sCurrentActivityThread"</span>);
-        <span class="hljs-comment">//对应Handler对象</span>
-        Field mHField = FieldUtil.getField(activityThreadClass, <span class="hljs-string">"mH"</span>);
+<pre><code class="hljs java">public class HookHelper &#123;
+    public static void hookHandler() throws Exception &#123;
+        Class&lt;?&gt; activityThreadClass = Class.forName("android.app.ActivityThread");
+        //当前对应的ActivityThread对象
+        Object currentActivityThread = FieldUtil.getField(activityThreadClass, null, "sCurrentActivityThread");
+        //对应Handler对象
+        Field mHField = FieldUtil.getField(activityThreadClass, "mH");
         Handler mH = (Handler) mHField.get(currentActivityThread);
-        <span class="hljs-comment">//替换掉mh中的mCallback对象</span>
-        FieldUtil.setField(Handler.class, mH, <span class="hljs-string">"mCallback"</span>, <span class="hljs-keyword">new</span> HCallback(mH));
+        //替换掉mh中的mCallback对象
+        FieldUtil.setField(Handler.class, mH, "mCallback", new HCallback(mH));
     &#125;
 &#125;</code></pre>
 <p>上述执行完毕后，启动的就会是目标Activity。</p>
@@ -574,47 +574,47 @@
 </ul>
 </blockquote>
 <h6 id="1-注册占坑Activity-1"><a href="#1-注册占坑Activity-1" class="headerlink" title="1.注册占坑Activity"></a>1.注册占坑Activity</h6><p>方法同上</p>
-<h6 id="2-设置Instrumentation代理对象"><a href="#2-设置Instrumentation代理对象" class="headerlink" title="2.设置Instrumentation代理对象"></a>2.设置Instrumentation代理对象</h6><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">InstrumentationProxy</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">Instrumentation</span> </span>&#123;
-    <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> String TAG = <span class="hljs-string">"InstrumentationProxy"</span>;
-    <span class="hljs-keyword">private</span> Instrumentation mInstrumentation;
-    <span class="hljs-keyword">private</span> PackageManager mPackageManager;
+<h6 id="2-设置Instrumentation代理对象"><a href="#2-设置Instrumentation代理对象" class="headerlink" title="2.设置Instrumentation代理对象"></a>2.设置Instrumentation代理对象</h6><pre><code class="hljs java">public class InstrumentationProxy extends Instrumentation &#123;
+    private static final String TAG = "InstrumentationProxy";
+    private Instrumentation mInstrumentation;
+    private PackageManager mPackageManager;
 
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">InstrumentationProxy</span><span class="hljs-params">(Instrumentation _instrumentation, PackageManager _packageManager)</span> </span>&#123;
+    public InstrumentationProxy(Instrumentation _instrumentation, PackageManager _packageManager) &#123;
         mInstrumentation = _instrumentation;
         mPackageManager = _packageManager;
     &#125;
   
-   <span class="hljs-function"><span class="hljs-keyword">public</span> Activity <span class="hljs-title">newActivity</span><span class="hljs-params">(ClassLoader cl, String className,
-                                Intent intent)</span> <span class="hljs-keyword">throws</span> InstantiationException, IllegalAccessException, ClassNotFoundException </span>&#123;
-        String intentName = intent.getStringExtra(<span class="hljs-string">"target_intent"</span>);
-        <span class="hljs-keyword">if</span> (!TextUtils.isEmpty(intentName)) &#123;
-            <span class="hljs-keyword">return</span> <span class="hljs-keyword">super</span>.newActivity(cl, intentName, intent);
+   public Activity newActivity(ClassLoader cl, String className,
+                                Intent intent) throws InstantiationException, IllegalAccessException, ClassNotFoundException &#123;
+        String intentName = intent.getStringExtra("target_intent");
+        if (!TextUtils.isEmpty(intentName)) &#123;
+            return super.newActivity(cl, intentName, intent);
         &#125;
-        <span class="hljs-keyword">return</span> <span class="hljs-keyword">super</span>.newActivity(cl, className, intent);
+        return super.newActivity(cl, className, intent);
     &#125;
 
-    <span class="hljs-function"><span class="hljs-keyword">public</span> ActivityResult <span class="hljs-title">execStartActivity</span><span class="hljs-params">(Context who, IBinder contextThread, IBinder token, Activity target,
-                                            Intent intent, <span class="hljs-keyword">int</span> requestCode, Bundle options)</span> </span>&#123;
+    public ActivityResult execStartActivity(Context who, IBinder contextThread, IBinder token, Activity target,
+                                            Intent intent, int requestCode, Bundle options) &#123;
         List&lt;ResolveInfo&gt; infos = mPackageManager.queryIntentActivities(intent, PackageManager.MATCH_ALL);
-        <span class="hljs-comment">//判断需要启动的Activity是否已被注册</span>
-        <span class="hljs-keyword">if</span> (infos.isEmpty()) &#123;
-            intent.putExtra(<span class="hljs-string">"target_intent"</span>, intent.getComponent().getClassName());
-            <span class="hljs-comment">//未注册则指向StubActivity</span>
-            intent.setClassName(who, <span class="hljs-string">"com.example.wxy.ipc.hook.StubActivity"</span>);
+        //判断需要启动的Activity是否已被注册
+        if (infos.isEmpty()) &#123;
+            intent.putExtra("target_intent", intent.getComponent().getClassName());
+            //未注册则指向StubActivity
+            intent.setClassName(who, "com.example.wxy.ipc.hook.StubActivity");
         &#125;
-        <span class="hljs-keyword">try</span> &#123;
-            <span class="hljs-comment">//反射调用 execStartActivity</span>
-            <span class="hljs-meta">@SuppressLint</span>(<span class="hljs-string">"PrivateApi"</span>) Method execStartActivity = Instrumentation.class.getDeclaredMethod(
-                    <span class="hljs-string">"execStartActivity"</span>,
+        try &#123;
+            //反射调用 execStartActivity
+            @SuppressLint("PrivateApi") Method execStartActivity = Instrumentation.class.getDeclaredMethod(
+                    "execStartActivity",
                     Context.class, IBinder.class, IBinder.class, Activity.class,
-                    Intent.class, <span class="hljs-keyword">int</span>.class, Bundle.class);
-            execStartActivity.setAccessible(<span class="hljs-keyword">true</span>);
-            <span class="hljs-keyword">return</span> (ActivityResult) execStartActivity.invoke(mInstrumentation, who,
+                    Intent.class, int.class, Bundle.class);
+            execStartActivity.setAccessible(true);
+            return (ActivityResult) execStartActivity.invoke(mInstrumentation, who,
                     contextThread, token, target, intent, requestCode, options);
-        &#125; <span class="hljs-keyword">catch</span> (Exception e) &#123;
+        &#125; catch (Exception e) &#123;
             e.printStackTrace();
         &#125;
-        <span class="hljs-keyword">return</span> <span class="hljs-keyword">null</span>;
+        return null;
     &#125;
 &#125;</code></pre>
 <p>设置好代理对象后，需要把代理对象Hook到<code>ActivityThread</code>上，方便后续调用</p>

@@ -15,7 +15,7 @@
   <meta name="theme-color" content="#9b868d">
   <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
   <meta name="author" content="Leo-Wxy">
-  <meta name="keywords" content="">
+  <meta name="keywords" content>
   <title>Hook技术简析 - Wxy的个人博客</title>
 
   <link rel="stylesheet" href="https://cdn.staticfile.org/twitter-bootstrap/4.4.1/css/bootstrap.min.css">
@@ -28,7 +28,7 @@
     
     
       
-      <link rel="stylesheet" href="https://cdn.staticfile.org/highlight.js/10.0.0/styles/solarized-light.min.css">
+      <link rel="stylesheet" href="https://cdn.staticfile.org/highlight.js/10.0.0/styles/atom-one-light.min.css">
     
   
 
@@ -212,9 +212,9 @@
 <li>动态分析：在程序运行时对程序进行调试的技术。<em>Hook属于动态分析。</em></li>
 </ul>
 <h2 id="代理模式"><a href="#代理模式" class="headerlink" title="代理模式"></a>代理模式</h2><a href="/2018/04/09/动态代理模式原理及实现/" title="设计模式--静态代理模式和动态代理模式原理及实现">设计模式--静态代理模式和动态代理模式原理及实现</a>
-<h2 id="Hook技术概述"><a href="#Hook技术概述" class="headerlink" title="Hook技术概述"></a>Hook技术概述</h2><span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/正常的调用与回调.png" srcset="/img/loading.gif" class="full-image" alt="正常的调用与回调" title="正常的调用与回调"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<h2 id="Hook技术概述"><a href="#Hook技术概述" class="headerlink" title="Hook技术概述"></a>Hook技术概述</h2><span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/正常的调用与回调.png" srcset="/img/loading.gif" class="full-image" alt="正常的调用与回调" title="正常的调用与回调"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
 <p>对象A直接调用B，对象B结果直接回调给A。</p>
-<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/Hook后的调用与回调.png" srcset="/img/loading.gif" class="full-image" alt="Hook后的调用与回调" title="Hook后的调用与回调"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/Hook后的调用与回调.png" srcset="/img/loading.gif" class="full-image" alt="Hook后的调用与回调" title="Hook后的调用与回调"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
 <p>Hook可以是一个方法或者对象，它位于对象A和B之间，当对象A调用对象B时会在之前做一些处理。也可以用于应用进程调用系统进程时做一些处理，更改他们间的关系。</p>
 <p>其中被Hook的对象B，称作<strong>Hook点</strong>。</p>
 <p>整个Hook的过程分为三步：</p>
@@ -226,12 +226,12 @@
 <h2 id="Hook实例简析"><a href="#Hook实例简析" class="headerlink" title="Hook实例简析"></a>Hook实例简析</h2><h3 id="Hook-startActivity"><a href="#Hook-startActivity" class="headerlink" title="Hook startActivity()"></a>Hook <code>startActivity()</code></h3><p>Activity的启动方式有两种</p>
 <ul>
 <li><p>一个Activity启动另一个Activity</p>
-<pre><code class="hljs java">startActivity(<span class="hljs-keyword">new</span> Intent(<span class="hljs-keyword">this</span>,XXActivity.class));</code></pre>
+<pre><code class="hljs java">startActivity(<span class="hljs-keyword">new</span> Intent(<span class="hljs-keyword">this</span>,XXActivity<span class="hljs-class">.<span class="hljs-keyword">class</span>))</span>;</code></pre>
 </li>
 </ul>
 <ul>
 <li><p>通过Service或者其他非Activity类进行启动Activity(<em>必须设置 FLAG_NEW_TASK</em>)</p>
-<pre><code class="hljs java">Intent intent = <span class="hljs-keyword">new</span> Intent(<span class="hljs-keyword">this</span>, XXActivity.class);
+<pre><code class="hljs java">Intent intent = <span class="hljs-keyword">new</span> Intent(<span class="hljs-keyword">this</span>, XXActivity<span class="hljs-class">.<span class="hljs-keyword">class</span>)</span>;
 intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 context.startActivity(intent);</code></pre>
 </li>
@@ -267,68 +267,68 @@ context.startActivity(intent);</code></pre>
 <blockquote>
 <p>先创建<code>Instrumentation</code>代理对象<code>InstrumentationProxy</code></p>
 </blockquote>
-<pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">InstrumentationProxy</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">Instrumentation</span> </span>&#123;
-    <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> String TAG = <span class="hljs-string">"InstrumentationProxy"</span>;
+<pre><code class="hljs java">public class InstrumentationProxy extends Instrumentation &#123;
+    private static final String TAG = "InstrumentationProxy";
     Instrumentation mInstrumentation;
 
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">InstrumentationProxy</span><span class="hljs-params">(Instrumentation _instrumentation)</span> </span>&#123;
+    public InstrumentationProxy(Instrumentation _instrumentation) &#123;
         mInstrumentation = _instrumentation;
     &#125;
   
-    <span class="hljs-comment">//为了兼容9.0添加该方法</span>
-    <span class="hljs-function"><span class="hljs-keyword">public</span> Activity <span class="hljs-title">newActivity</span><span class="hljs-params">(ClassLoader cl, String className,
-                                Intent intent)</span>
-            <span class="hljs-keyword">throws</span> InstantiationException, IllegalAccessException,
-            ClassNotFoundException </span>&#123;
-        <span class="hljs-keyword">return</span> mInstrumentation.newActivity(cl, className, intent);
+    //为了兼容9.0添加该方法
+    public Activity newActivity(ClassLoader cl, String className,
+                                Intent intent)
+            throws InstantiationException, IllegalAccessException,
+            ClassNotFoundException &#123;
+        return mInstrumentation.newActivity(cl, className, intent);
     &#125;
 
-    <span class="hljs-function"><span class="hljs-keyword">public</span> ActivityResult <span class="hljs-title">execStartActivity</span><span class="hljs-params">(Context who, IBinder contextThread, IBinder token, Activity target,
-                                            Intent intent, <span class="hljs-keyword">int</span> requestCode, Bundle options)</span> </span>&#123;
-        Log.e(TAG, <span class="hljs-string">"hook success"</span> + who);
-        <span class="hljs-comment">// 开始调用原始的方法, 调不调用随你,但是不调用的话, 所有的startActivity都失效了.</span>
-        <span class="hljs-comment">// 由于这个方法是隐藏的,因此需要使用反射调用;首先找到这个方法</span>
-        <span class="hljs-keyword">try</span> &#123;
-            <span class="hljs-meta">@SuppressLint</span>(<span class="hljs-string">"PrivateApi"</span>) Method execStartActivity = Instrumentation.class.getDeclaredMethod(
-                    <span class="hljs-string">"execStartActivity"</span>,
+    public ActivityResult execStartActivity(Context who, IBinder contextThread, IBinder token, Activity target,
+                                            Intent intent, int requestCode, Bundle options) &#123;
+        Log.e(TAG, "hook success" + who);
+        // 开始调用原始的方法, 调不调用随你,但是不调用的话, 所有的startActivity都失效了.
+        // 由于这个方法是隐藏的,因此需要使用反射调用;首先找到这个方法
+        try &#123;
+            @SuppressLint("PrivateApi") Method execStartActivity = Instrumentation.class.getDeclaredMethod(
+                    "execStartActivity",
                     Context.class, IBinder.class, IBinder.class, Activity.class,
-                    Intent.class, <span class="hljs-keyword">int</span>.class, Bundle.class);
-            execStartActivity.setAccessible(<span class="hljs-keyword">true</span>);
-            <span class="hljs-keyword">return</span> (ActivityResult) execStartActivity.invoke(mInstrumentation, who,
+                    Intent.class, int.class, Bundle.class);
+            execStartActivity.setAccessible(true);
+            return (ActivityResult) execStartActivity.invoke(mInstrumentation, who,
                     contextThread, token, target, intent, requestCode, options);
-        &#125; <span class="hljs-keyword">catch</span> (Exception e) &#123;
-            <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> RuntimeException(<span class="hljs-string">"do not support!!! pls adapt it"</span>);
+        &#125; catch (Exception e) &#123;
+            throw new RuntimeException("do not support!!! pls adapt it");
         &#125;
     &#125;
 &#125;</code></pre>
 <blockquote>
 <p>在需要使用的Activity中实现Hook方法</p>
 </blockquote>
-<pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">LoadActivity</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">AppCompatActivity</span> </span>&#123;
+<pre><code class="hljs java">public class LoadActivity extends AppCompatActivity &#123;
 
-    <span class="hljs-meta">@Override</span>
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">onCreate</span><span class="hljs-params">(Bundle savedInstanceState)</span> </span>&#123;
-        <span class="hljs-keyword">super</span>.onCreate(savedInstanceState);
+    @Override
+    public void onCreate(Bundle savedInstanceState) &#123;
+        super.onCreate(savedInstanceState);
         setContentView(R.layout.act_load);
-        <span class="hljs-comment">//Hook当前Activity使用的Instrumentation</span>
-        replaceActivityInstrumentation(LoadActivity.<span class="hljs-keyword">this</span>);
+        //Hook当前Activity使用的Instrumentation
+        replaceActivityInstrumentation(LoadActivity.this);
         Button btn_jump = findViewById(R.id.btn_jump);
-        btn_jump.setOnClickListener(<span class="hljs-keyword">new</span> View.OnClickListener() &#123;
-            <span class="hljs-meta">@Override</span>
-            <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">onClick</span><span class="hljs-params">(View v)</span> </span>&#123;
-                startActivity(<span class="hljs-keyword">new</span> Intent(LoadActivity.<span class="hljs-keyword">this</span>, MainActivity.class));
+        btn_jump.setOnClickListener(new View.OnClickListener() &#123;
+            @Override
+            public void onClick(View v) &#123;
+                startActivity(new Intent(LoadActivity.this, MainActivity.class));
             &#125;
         &#125;);
     &#125;
 
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">replaceActivityInstrumentation</span><span class="hljs-params">(Activity activity)</span> </span>&#123;
-        <span class="hljs-keyword">try</span> &#123;
-            Field field = Activity.class.getDeclaredField(<span class="hljs-string">"mInstrumentation"</span>);
-            field.setAccessible(<span class="hljs-keyword">true</span>);
+    public void replaceActivityInstrumentation(Activity activity) &#123;
+        try &#123;
+            Field field = Activity.class.getDeclaredField("mInstrumentation");
+            field.setAccessible(true);
             Instrumentation instrumentation = (Instrumentation) field.get(activity);
-            Instrumentation instrumentationProxy = <span class="hljs-keyword">new</span> InstrumentationProxy(instrumentation);
+            Instrumentation instrumentationProxy = new InstrumentationProxy(instrumentation);
             field.set(activity, instrumentationProxy);
-        &#125; <span class="hljs-keyword">catch</span> (Exception e) &#123;
+        &#125; catch (Exception e) &#123;
             e.printStackTrace();
         &#125;
     &#125;

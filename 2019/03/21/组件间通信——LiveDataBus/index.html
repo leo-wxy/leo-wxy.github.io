@@ -15,7 +15,7 @@
   <meta name="theme-color" content="#9b868d">
   <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
   <meta name="author" content="Leo-Wxy">
-  <meta name="keywords" content="">
+  <meta name="keywords" content>
   <title>组件间通信——LiveDataBus - Wxy的个人博客</title>
 
   <link rel="stylesheet" href="https://cdn.staticfile.org/twitter-bootstrap/4.4.1/css/bootstrap.min.css">
@@ -28,7 +28,7 @@
     
     
       
-      <link rel="stylesheet" href="https://cdn.staticfile.org/highlight.js/10.0.0/styles/solarized-light.min.css">
+      <link rel="stylesheet" href="https://cdn.staticfile.org/highlight.js/10.0.0/styles/atom-one-light.min.css">
     
   
 
@@ -220,13 +220,13 @@
 <li><strong>订阅者</strong>：通过消息通道获取对应的<code>LiveData</code>，调用<code>observe()</code>进行订阅</li>
 <li><strong>发布者</strong>：通过消息通道获取对应的<code>LiveData</code>，调用<code>postValue()、setValue()</code>进行消息发送</li>
 </ul>
-<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/LiveDataBus结构.png" srcset="/img/loading.gif" class="full-image" alt="LiveDataBus结构" title="LiveDataBus结构"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/LiveDataBus结构.png" srcset="/img/loading.gif" class="full-image" alt="LiveDataBus结构" title="LiveDataBus结构"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
 <h2 id="LiveDataBus的实现"><a href="#LiveDataBus的实现" class="headerlink" title="LiveDataBus的实现"></a>LiveDataBus的实现</h2><p>按照上述结构图，可以马上就写出一个大致结构</p>
 <pre><code class="hljs kotlin"><span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">LiveDataBus</span> <span class="hljs-keyword">private</span> <span class="hljs-keyword">constructor</span></span>() &#123;
     <span class="hljs-comment">//用于存放消息通道</span>
     <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> map: MutableMap&lt;String, MutableLiveData&lt;Any&gt;?&gt;
 
-    init &#123;
+    <span class="hljs-keyword">init</span> &#123;
         map = HashMap()
     &#125;
 
@@ -257,7 +257,7 @@ LiveDataBus.instance.getChannel(<span class="hljs-string">"web"</span>,String::<
            &#125;)</code></pre>
 <p>但是在实际的使用过程中发现了另一个问题，再打开一个新页面时，如果也存在监听者，就会收到该页面打开前所发送的消息，类似<em>粘性事件</em>，但大部分场景下是不需要这样的，所以需要针对这个问题进行改进。</p>
 <h2 id="LiveDataBus改进"><a href="#LiveDataBus改进" class="headerlink" title="LiveDataBus改进"></a>LiveDataBus改进</h2><p>根据这部分源码分析可知，LiveData中的数据分发流程如下图所示：</p>
-<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/LiveData-dispatch.png" srcset="/img/loading.gif" class="full-image" alt="LiveData Dispatch" title="LiveData Dispatch"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/LiveData-dispatch.png" srcset="/img/loading.gif" class="full-image" alt="LiveData Dispatch" title="LiveData Dispatch"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
 <p>根据上述流程分析：调用到<code>setValue()/postValue()</code>将用户数据进行发送，然后进入到<code>dispatchValue()</code>下进行分发，设置<code>mVersion++(mVersion表示调用方法次数)</code>，想下调用到<code>considerNotify()</code>内部需要判断<code>observer.mLastVersion(Observer注册次数)</code>与<code>mVersion</code>大小，如果小于就会调用到对应<code>Observer.onChanged()</code>事件进行分发。</p>
 <p><em>由于初始化时，先会调用到<code>postValue()/setValue()</code>此时mVersion+1，就比<code>mLastVersion</code>要大，就会触发事件的分发。</em></p>
 <h3 id="改进方案"><a href="#改进方案" class="headerlink" title="改进方案"></a>改进方案</h3><p><strong>只要可以设置<code>mLastVersion</code>与<code>mVersion</code>保持一致，就不会进行事件的分发。</strong></p>
@@ -302,7 +302,7 @@ LiveDataBus.instance.getChannel(<span class="hljs-string">"web"</span>,String::<
     <span class="hljs-comment">//用于存放消息通道</span>
     <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> map: MutableMap&lt;String, BusMutableLiveData&lt;Any&gt;?&gt;
 
-    init &#123;
+    <span class="hljs-keyword">init</span> &#123;
         map = HashMap()
     &#125;
 
