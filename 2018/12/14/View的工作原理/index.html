@@ -162,7 +162,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      12.5k 字
+      12.2k 字
     </span>
   
 
@@ -172,7 +172,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      192
+      187
        分钟
     </span>
   
@@ -1991,72 +1991,7 @@ registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs
 <p>常用的<code>RecyclerView</code>、<code>ViewPager</code>都实现了该方法，其中<code>RecyclerView</code>通过设置<code>ChildDrawingOrderCallback</code>也可以实现这个功能。</p>
 </li>
 </ol>
-<h2 id="View绘制过程Pro"><a href="#View绘制过程Pro" class="headerlink" title="View绘制过程Pro"></a>View绘制过程Pro</h2><p>绘制过程入口位于<code>ViewRootImpl.performDraw()</code>中</p>
-<pre><code class="hljs java"><span class="hljs-comment">//viewRootImpl.java</span>
-    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">performDraw</span><span class="hljs-params">()</span> </span>&#123;
-      ...
-        <span class="hljs-keyword">try</span> &#123;
-            <span class="hljs-comment">//调用draw()执行实际的绘制工作</span>
-            <span class="hljs-keyword">boolean</span> canUseAsync = draw(fullRedrawNeeded);
-            <span class="hljs-keyword">if</span> (usingAsyncReport &amp;&amp; !canUseAsync) &#123;
-                mAttachInfo.mThreadedRenderer.setFrameCompleteCallback(<span class="hljs-keyword">null</span>);
-                usingAsyncReport = <span class="hljs-keyword">false</span>;
-            &#125;
-        &#125; <span class="hljs-keyword">finally</span> &#123;
-            mIsDrawing = <span class="hljs-keyword">false</span>;
-            Trace.traceEnd(Trace.TRACE_TAG_VIEW);
-        &#125;
-    &#125;</code></pre>
-<p><code>ViewRootImpl.draw()</code>实际执行的绘制工作</p>
-<pre><code class="hljs java"><span class="hljs-comment">//ViewRootImpl.java</span>
-<span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">draw</span><span class="hljs-params">(<span class="hljs-keyword">boolean</span> fullRedrawNeeded)</span> </span>&#123;
-  ...
-    <span class="hljs-keyword">final</span> Rect dirty = mDirty;<span class="hljs-comment">//需要重新绘制的区域</span>
-  ...
-    <span class="hljs-keyword">if</span> (!dirty.isEmpty() || mIsAnimating || accessibilityFocusDirty) &#123;
-            <span class="hljs-comment">//是否支持硬件加速</span>
-            <span class="hljs-keyword">if</span> (mAttachInfo.mThreadedRenderer != <span class="hljs-keyword">null</span> &amp;&amp; mAttachInfo.mThreadedRenderer.isEnabled()) &#123;
-              ...
-                mAttachInfo.mThreadedRenderer.draw(mView, mAttachInfo, <span class="hljs-keyword">this</span>, callback);<span class="hljs-comment">//硬件绘制</span>
-            &#125; <span class="hljs-keyword">else</span> &#123;
-              ...
-                <span class="hljs-comment">//软件绘制</span>
-                <span class="hljs-keyword">if</span> (!drawSoftware(surface, mAttachInfo, xOffset, yOffset,
-                        scalingRequired, dirty, surfaceInsets)) &#123;
-                    <span class="hljs-keyword">return</span> <span class="hljs-keyword">false</span>;
-                &#125;
-            &#125;
-      ...
-    &#125;
-  ...
-  
-&#125;</code></pre>
-<h3 id="软件绘制"><a href="#软件绘制" class="headerlink" title="软件绘制"></a>软件绘制</h3><h4 id="ViewRootImpl软件绘制相关"><a href="#ViewRootImpl软件绘制相关" class="headerlink" title="ViewRootImpl软件绘制相关"></a>ViewRootImpl软件绘制相关</h4><blockquote>
-<p>未开启<code>硬件加速</code>时，执行到<code>drawSoftware()</code></p>
-</blockquote>
-<pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">drawSoftware</span><span class="hljs-params">(Surface surface, AttachInfo attachInfo, <span class="hljs-keyword">int</span> xoff, <span class="hljs-keyword">int</span> yoff,
-        <span class="hljs-keyword">boolean</span> scalingRequired, Rect dirty, Rect surfaceInsets)</span> </span>&#123;
-    <span class="hljs-comment">// Draw with software renderer.</span>
-    <span class="hljs-keyword">final</span> Canvas canvas;
-  
-   canvas = mSurface.lockCanvas(dirty);<span class="hljs-comment">//获取用于绘制的Canvas</span>
-   ...
-   mView.draw(canvas);<span class="hljs-comment">//将mView的内容绘制到Canvas</span>
-   ...
-&#125;</code></pre>
-<p>此处的<code>mView</code>对应的就是<code>DecorView</code></p>
-<pre><code class="hljs java"><span class="hljs-comment">//DecorView.java</span>
-    <span class="hljs-meta">@Override</span>
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">draw</span><span class="hljs-params">(Canvas canvas)</span> </span>&#123;
-        <span class="hljs-keyword">super</span>.draw(canvas);
-
-        <span class="hljs-keyword">if</span> (mMenuBackground != <span class="hljs-keyword">null</span>) &#123;
-            mMenuBackground.draw(canvas);
-        &#125;
-    &#125;</code></pre>
-<p>执行到<code>super.draw()</code>，<code>DecorView</code>继承自<code>FrameLayout</code>，等价于执行到<code>ViewGroup.draw()</code>。参考<a href="#ViewGroup的draw过程">ViewGroup的draw过程</a></p>
-<h4 id="View软件绘制相关"><a href="#View软件绘制相关" class="headerlink" title="View软件绘制相关"></a>View软件绘制相关</h4><p>参考<a href="#View的draw过程">View的draw过程</a></p>
-<h3 id="硬件绘制"><a href="#硬件绘制" class="headerlink" title="硬件绘制"></a>硬件绘制</h3><h3 id="绘制缓存"><a href="#绘制缓存" class="headerlink" title="绘制缓存"></a>绘制缓存</h3><h2 id="自定义View-1"><a href="#自定义View-1" class="headerlink" title="自定义View"></a>自定义View</h2><blockquote>
+<h2 id="自定义View-1"><a href="#自定义View-1" class="headerlink" title="自定义View"></a>自定义View</h2><blockquote>
 <p>自定义View需要了解View的层次、View的事件分发机制以及View的工作流程。</p>
 </blockquote>
 <h3 id="分类"><a href="#分类" class="headerlink" title="分类"></a>分类</h3><h4 id="1-继承View重写onDraw"><a href="#1-继承View重写onDraw" class="headerlink" title="1.继承View重写onDraw()"></a>1.继承View重写<code>onDraw()</code></h4><blockquote>
