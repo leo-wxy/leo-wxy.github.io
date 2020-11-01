@@ -162,7 +162,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      12.2k 字
+      12.4k 字
     </span>
   
 
@@ -172,7 +172,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      187
+      191
        分钟
     </span>
   
@@ -2029,7 +2029,41 @@ registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs
 </blockquote>
 <h4 id="5-View若有滑动冲突情况，需要处理"><a href="#5-View若有滑动冲突情况，需要处理" class="headerlink" title="5.View若有滑动冲突情况，需要处理"></a>5.View若有滑动冲突情况，需要处理</h4><h3 id="实例"><a href="#实例" class="headerlink" title="实例"></a>实例</h3><a href="/2019/01/02/自定义View实践/" title="自定义View实践">自定义View实践</a>
 <a href="/2019/01/02/自定义ViewGroup实践/" title="自定义ViewGroup实践">自定义ViewGroup实践</a>
-<h2 id="拓展-1"><a href="#拓展-1" class="headerlink" title="拓展"></a>拓展</h2><h3 id="Invalidate、postInvalidate、requestLayout源码及应用场景"><a href="#Invalidate、postInvalidate、requestLayout源码及应用场景" class="headerlink" title="Invalidate、postInvalidate、requestLayout源码及应用场景"></a>Invalidate、postInvalidate、requestLayout源码及应用场景</h3><h4 id="invalidate"><a href="#invalidate" class="headerlink" title="invalidate"></a>invalidate</h4><blockquote>
+<h2 id="拓展-1"><a href="#拓展-1" class="headerlink" title="拓展"></a>拓展</h2><h3 id="如何触发View的重新绘制？"><a href="#如何触发View的重新绘制？" class="headerlink" title="如何触发View的重新绘制？"></a>如何触发View的重新绘制？</h3><p>通过调用<code>invalidate()/postInvalidate()</code>或<code>requestLayout()</code>实现。</p>
+<h4 id="requestLayout"><a href="#requestLayout" class="headerlink" title="requestLayout"></a>requestLayout</h4><blockquote>
+<p>在需要刷新<code>View</code>的布局时会调用该函数。不应该在布局的过程中调用这个函数。</p>
+<p>这个请求可能会在以下场景执行：当前布局结束、当前帧绘制完成，下次布局发生时</p>
+</blockquote>
+<pre><code class="hljs java"><span class="hljs-comment">//View.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">requestLayout</span><span class="hljs-params">()</span> </span>&#123;
+        <span class="hljs-keyword">if</span> (mMeasureCache != <span class="hljs-keyword">null</span>) mMeasureCache.clear();
+
+        <span class="hljs-keyword">if</span> (mAttachInfo != <span class="hljs-keyword">null</span> &amp;&amp; mAttachInfo.mViewRequestingLayout == <span class="hljs-keyword">null</span>) &#123;
+            <span class="hljs-comment">// Only trigger request-during-layout logic if this is the view requesting it,</span>
+            <span class="hljs-comment">// not the views in its parent hierarchy</span>
+            ViewRootImpl viewRoot = getViewRootImpl();
+            <span class="hljs-keyword">if</span> (viewRoot != <span class="hljs-keyword">null</span> &amp;&amp; viewRoot.isInLayout()) &#123;
+                <span class="hljs-keyword">if</span> (!viewRoot.requestLayoutDuringLayout(<span class="hljs-keyword">this</span>)) &#123;
+                  <span class="hljs-comment">//如果当前在layout过程中，且调用了 requestLayout，就需要直接返回</span>
+                  <span class="hljs-comment">//等待下一次信号到来时执行</span>
+                    <span class="hljs-keyword">return</span>;
+                &#125;
+            &#125;
+            mAttachInfo.mViewRequestingLayout = <span class="hljs-keyword">this</span>;
+        &#125;
+        <span class="hljs-comment">//设置强制刷新标记</span>
+        mPrivateFlags |= PFLAG_FORCE_LAYOUT;<span class="hljs-comment">//该标记可执行onMeasure()</span>
+        mPrivateFlags |= PFLAG_INVALIDATED;<span class="hljs-comment">//</span>
+
+        <span class="hljs-keyword">if</span> (mParent != <span class="hljs-keyword">null</span> &amp;&amp; !mParent.isLayoutRequested()) &#123;
+            <span class="hljs-comment">//向父布局继续请求刷新布局</span>
+            mParent.requestLayout();
+        &#125;
+        <span class="hljs-keyword">if</span> (mAttachInfo != <span class="hljs-keyword">null</span> &amp;&amp; mAttachInfo.mViewRequestingLayout == <span class="hljs-keyword">this</span>) &#123;
+            mAttachInfo.mViewRequestingLayout = <span class="hljs-keyword">null</span>;
+        &#125;
+    &#125;</code></pre>
+<h4 id="invalidate"><a href="#invalidate" class="headerlink" title="invalidate"></a>invalidate</h4><h3 id="Invalidate、postInvalidate、requestLayout源码及应用场景"><a href="#Invalidate、postInvalidate、requestLayout源码及应用场景" class="headerlink" title="Invalidate、postInvalidate、requestLayout源码及应用场景"></a>Invalidate、postInvalidate、requestLayout源码及应用场景</h3><h4 id="invalidate-1"><a href="#invalidate-1" class="headerlink" title="invalidate"></a>invalidate</h4><blockquote>
 <p><code>invalidate()</code>必须在主线程调用，用于请求View的重绘，意味着只影响View的<code>draw</code>过程。</p>
 </blockquote>
 <pre><code class="hljs java"><span class="hljs-comment">// ../android/view/View.java</span>
@@ -2350,7 +2384,7 @@ registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs
        &#125;
   ...
 &#125;</code></pre>
-<h4 id="requestLayout"><a href="#requestLayout" class="headerlink" title="requestLayout"></a>requestLayout</h4><blockquote>
+<h4 id="requestLayout-1"><a href="#requestLayout-1" class="headerlink" title="requestLayout"></a>requestLayout</h4><blockquote>
 <p>强制重新布局，重新走一遍View的绘制流程。</p>
 </blockquote>
 <pre><code class="hljs java"><span class="hljs-comment">// ../android/view/View.java</span>
@@ -2424,7 +2458,7 @@ registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs
 <h3 id="include、merge、ViewStub作用以及实现"><a href="#include、merge、ViewStub作用以及实现" class="headerlink" title="include、merge、ViewStub作用以及实现"></a>include、merge、ViewStub作用以及实现</h3><a href="/2019/01/03/include、merge-ViewStub相关/" title="include、merge及ViewStub相关">include、merge及ViewStub相关</a>
 <h3 id="View的层级计算"><a href="#View的层级计算" class="headerlink" title="View的层级计算"></a>View的层级计算</h3><p>//TODO 提供代码</p>
 <p>由于View是树形结构，代码的话可以利用<code>getParent()</code>实现 ，直到返回值为null，说明已经到了最高层。</p>
-<h3 id="AsyncLayoutInflater异步加载"><a href="#AsyncLayoutInflater异步加载" class="headerlink" title="AsyncLayoutInflater异步加载"></a>AsyncLayoutInflater异步加载</h3><p><a href="https://www.jianshu.com/p/8548db25a475" target="_blank" rel="noopener">AynncLayoutInfalter</a></p>
+<h3 id="AsyncLayoutInflater异步加载"><a href="#AsyncLayoutInflater异步加载" class="headerlink" title="AsyncLayoutInflater异步加载"></a>AsyncLayoutInflater异步加载</h3><p><a href="https://www.jianshu.com/p/8548db25a475" target="_blank" rel="noopener">AsyncLayoutInfalter</a></p>
 <h3 id="inflate-时，root与attachToRoot的结果源码"><a href="#inflate-时，root与attachToRoot的结果源码" class="headerlink" title="inflate()时，root与attachToRoot的结果源码"></a>inflate()时，<code>root</code>与<code>attachToRoot</code>的结果源码</h3><h3 id="MeasureSpec-UNSPECIFIED使用场景"><a href="#MeasureSpec-UNSPECIFIED使用场景" class="headerlink" title="MeasureSpec.UNSPECIFIED使用场景"></a><code>MeasureSpec.UNSPECIFIED</code>使用场景</h3>
             </div>
             <hr>
