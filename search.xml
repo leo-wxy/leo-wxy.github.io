@@ -45109,6 +45109,16 @@ final void attach(Context context, ActivityThread aThread,
 
 ```
 
+#### 拓展使用
+
+系统通过`Factory`提供`hook`方法，方便拦截`LayoutInflater`创建View的过程。支持以下应用场景：
+
+- 支持对自定义标签名称的处理
+- 全局替换系统控件为自定义View
+- **替换字体**
+- **全局换肤**
+- **获取控件加载耗时**
+
 
 
 ### View默认创建流程
@@ -46566,50 +46576,204 @@ protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
 
 ```
 
-
-
-#### invalidate
-
-
-
-
-
-### Invalidate、postInvalidate、requestLayout源码及应用场景
-
-#### invalidate
-
-> `invalidate()`必须在主线程调用，用于请求View的重绘，意味着只影响View的`draw`过程。
+`mParent`对应父节点，一层层向上递归调用父节点`requestLayout()。`直到调用`ViewRootImpl.requestLayout()`结束.
 
 ```java
-// ../android/view/View.java
- public void invalidate() {
+//ViewRootImpl.java
+    @Override
+    public void requestLayout() {
+        if (!mHandlingLayoutInLayoutRequest) {
+          //检查当前是否主线程
+            checkThread();
+            mLayoutRequested = true;
+            scheduleTraversals();
+        }
+    }
+```
+
+调用到`scheduleTraversals()`就是开始了`View的绘制流程`。
+
+一开始调用的`performMeasure()`
+
+```java
+//ViewRootImpl.java
+    private void performMeasure(int childWidthMeasureSpec, int childHeightMeasureSpec) {
+       ...
+        try {
+            mView.measure(childWidthMeasureSpec, childHeightMeasureSpec);
+        } finally {
+            Trace.traceEnd(Trace.TRACE_TAG_VIEW);
+        }
+    }
+
+
+//View.java
+    public final void measure(int widthMeasureSpec, int heightMeasureSpec) {
+      ...
+        //需要执行onMeasure
+        final boolean forceLayout = (mPrivateFlags & PFLAG_FORCE_LAYOUT) == PFLAG_FORCE_LAYOUT;
+      ...
+        if (forceLayout || needsLayout) {
+          ...
+            onMeasure(widthMeasureSpec, heightMeasureSpec);
+          ...
+            //添加 PFLAG_LAYOUT_REQUIRED标记，表示需要执行 layout流程
+             mPrivateFlags |= PFLAG_LAYOUT_REQUIRED;
+        }
+    }
+```
+
+继续向下调用`performLayout()`
+
+```java
+//ViewRootImpl.java
+    private void performLayout(WindowManager.LayoutParams lp, int desiredWindowWidth,
+            int desiredWindowHeight) {
+       //正在执行layout流程
+       mInLayout = true;
+
+       final View host = mView;//对应DecorView
+       //在layout过程中 尚未执行requestLayout的view
+       int numViewsRequestingLayout = mLayoutRequesters.size();
+       if (numViewsRequestingLayout > 0) {
+          //寻找mPrivateFlags为PFLAG_FORCE_LAYOUT的View
+           ArrayList<View> validLayoutRequesters = getValidLayoutRequesters(mLayoutRequesters,
+                        false);
+                if (validLayoutRequesters != null) {
+                  //当前View重新measure
+                     measureHierarchy(host, lp, mView.getContext().getResources(),
+                            desiredWindowWidth, desiredWindowHeight);     
+                  //重新执行layout
+                     host.layout(0, 0, host.getMeasuredWidth(), host.getMeasuredHeight());  
+                  ...
+                    //寻找尚未设置 PFLAG_FORCE_LAYOUT的View
+                     validLayoutRequesters = getValidLayoutRequesters(mLayoutRequesters, true);                   
+                     if (validLayoutRequesters != null) {
+                        final ArrayList<View> finalRequesters = validLayoutRequesters;
+                        // 执行requestLayout在下一帧执行时
+                        getRunQueue().post(new Runnable() {
+                            @Override
+                            public void run() {
+                                int numValidRequests = finalRequesters.size();
+                                for (int i = 0; i < numValidRequests; ++i) {
+                                    final View view = finalRequesters.get(i);
+                                    Log.w("View", "requestLayout() improperly called by " + view +
+                                            " during second layout pass: posting in next frame");
+                                    view.requestLayout();
+                                }
+                            }
+                        });
+                    }                 
+                }
+       }
+      
+    }
+```
+
+主要执行了三步：
+
+- 执行`DecorView`的`layout`过程
+- 执行调用过`requestLayout()`的View(包含`PFLAG_FORCE_LAYOUT`标志)的`measure`和`layout`
+- 还没调用过`requestLayout()`的View加入到队列中，等待下一帧绘制时执行
+
+```java
+//View.java
+    public void layout(int l, int t, int r, int b) {
+      //判断当前位置是否发生变化
+        boolean changed = isLayoutModeOptical(mParent) ?
+                setOpticalFrame(l, t, r, b) : setFrame(l, t, r, b);      
+      //位置发生变化。或 需要layout
+        if (changed || (mPrivateFlags & PFLAG_LAYOUT_REQUIRED) == PFLAG_LAYOUT_REQUIRED) {
+          //回调onLayout()
+            onLayout(changed, l, t, r, b);
+          ...
+         //移除 PFLAG_LAYOUT_REQUIRED标志 在measure过程添加   
+          mPrivateFlags &= ~PFLAG_LAYOUT_REQUIRED;
+          ...
+        }
+      ...
+        //layout过程完成后 移除 PFLAG_FORCE_LAYOUT标志
+        mPrivateFlags &= ~PFLAG_FORCE_LAYOUT;        
+      
+    }
+
+    protected boolean setFrame(int left, int top, int right, int bottom) {
+      //位置发生变化时，就需要执行 invalidate()重绘View
+      if (mLeft != left || mRight != right || mTop != top || mBottom != bottom) {
+         boolean sizeChanged = (newWidth != oldWidth) || (newHeight != oldHeight);
+          //需要重绘视图
+            invalidate(sizeChanged);
+      }
+    }
+```
+
+
+
+>`requestLayout()`主要执行了以下几步：
+>
+>- 添加`PFLAG_FORCE_LAYOUT`和`PFLAG_INVALIDATED`标记
+>- `measure`执行需要判断`PFLAG_FORCE_LAYOUT`标记是否存在
+>- `measure`执行后，添加`PFLAG_LAYOUT_REQUIRED`标记，可以去执行`onLayout()`
+>- `layout`执行后，移除`PFLAG_LAYOUT_REQUIRED`和`PFLAG_FORCE_LAYOUT`标记
+>- 在`layout`过程中，如果位置发生了变化，会执行到`invalidate()`，可能会执行`draw`过程；如果未发生变化，就不会执行`draw`过程
+
+#### invalidate/postInvalidate
+
+> `invalidate()`必须在主线程调用。`postInvalidate()`可以在子线程调用(通过handler发送消息到主线程调用)
+>
+> 主要用于请求View的重绘，只会影响到View的`draw`过程
+
+```java
+//View.java
+    public void postInvalidate() {
+        postInvalidateDelayed(0);
+    }
+
+    public void dispatchInvalidateDelayed(View view, long delayMilliseconds) {
+        Message msg = mHandler.obtainMessage(MSG_INVALIDATE, view);
+        mHandler.sendMessageDelayed(msg, delayMilliseconds);
+    }
+
+    @Override
+    public void handleMessage(Message msg) {
+            switch (msg.what) {
+                case MSG_INVALIDATE:
+                    ((View) msg.obj).invalidate();//继续执行到invalidate()
+                    break;
+                ...
+            }
+    }
+
+    public void invalidate() {
         invalidate(true);
     }
+```
 
- public void invalidate(boolean invalidateCache) {
-        invalidateInternal(0, 0, mRight - mLeft, mBottom - mTop, invalidateCache, true);
-    }
+最终执行到`invalidateInternal()`
 
- void invalidateInternal(int l, int t, int r, int b, boolean invalidateCache,
+```java
+//View.java
+    void invalidateInternal(int l, int t, int r, int b, boolean invalidateCache,
             boolean fullInvalidate) {
-     //View不可见或者在移动中 不进行重绘
-     if (skipInvalidate()) {
+        ...
+        //当前View不可见
+        if (skipInvalidate()) {
             return;
         }
-     
-     if ((mPrivateFlags & (PFLAG_DRAWN | PFLAG_HAS_BOUNDS)) == (PFLAG_DRAWN | PFLAG_HAS_BOUNDS)
+
+        if ((mPrivateFlags & (PFLAG_DRAWN | PFLAG_HAS_BOUNDS)) == (PFLAG_DRAWN | PFLAG_HAS_BOUNDS)
                 || (invalidateCache && (mPrivateFlags & PFLAG_DRAWING_CACHE_VALID) == PFLAG_DRAWING_CACHE_VALID)
-                || (mPrivateFlags & PFLAG_INVALIDATED) != PFLAG_INVALIDATED
+                || (mPrivateFlags & PFLAG_INVALIDATED) != PFLAG_INVALIDATED//当前没有执行invalidate
                 || (fullInvalidate && isOpaque() != mLastIsOpaque)) {
-            //需要全部重绘
+          //需要全量重绘
             if (fullInvalidate) {
                 mLastIsOpaque = isOpaque();
-                //修改绘制完成标记
+              //添加重绘标记
                 mPrivateFlags &= ~PFLAG_DRAWN;
             }
-            //修改正在绘制标记
+           //添加当前View重绘标记
             mPrivateFlags |= PFLAG_DIRTY;
-            //清除缓存
+           //是否刷新缓存
             if (invalidateCache) {
                 mPrivateFlags |= PFLAG_INVALIDATED;
                 mPrivateFlags &= ~PFLAG_DRAWING_CACHE_VALID;
@@ -46621,20 +46785,12 @@ protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
             if (p != null && ai != null && l < r && t < b) {
                 final Rect damage = ai.mTmpInvalRect;
                 damage.set(l, t, r, b);
-                //设置重绘区域 并把自身传递到父布局
+              //设置重绘区域 并把自身传递到父布局
                 p.invalidateChild(this, damage);
             }
-
-            // Damage the entire projection receiver, if necessary.
-            if (mBackground != null && mBackground.isProjected()) {
-                final View receiver = getProjectionReceiver();
-                if (receiver != null) {
-                    receiver.damageInParent();
-                }
-            }
-        }     
-     
- }
+          ...
+        }
+    }
 ```
 
 上述代码修改标记完成后，调用父类的`invalidateChild()`将需要重绘的区域(`脏区域`)传入。(`ViewGroup以及ViewRootImpl都继承自ViewParent类`)
@@ -46642,29 +46798,26 @@ protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
 > 脏区域：*为了保证绘制的效率，控件树仅对需要绘制的区域进行重绘，需要重绘的区域成为`脏区域`*。
 
 ```java
-//../android/view/VireGroup.java
+//ViewGroup.java
     public final void invalidateChild(View child, final Rect dirty) {
-        final AttachInfo attachInfo = mAttachInfo;
-        //需要在开启硬件加速的情况下 会调用新的重绘方案
+      //开启硬件加速
         if (attachInfo != null && attachInfo.mHardwareAccelerated) {
-            // HW accelerated fast path
+            // 更新DisplayList
             onDescendantInvalidated(child, child);
             return;
-        }
-
-        ViewParent parent = this;
-        if (attachInfo != null) {
-          ...
-            //开始遍历循环 从当前View不断向上调用父布局的绘制方法
-            do {
+        }      
+         //当前View是否 不透明
+        final boolean isOpaque = child.isOpaque() && !drawAnimation &&
+                    child.getAnimation() == null && childMatrix.isIdentity(); 
+        //全不透明 标记为 PFLAG_DIRTY_OPAQUE
+        //部分透明 标记为 PFLAG_DIRTY
+        int opaqueFlag = isOpaque ? PFLAG_DIRTY_OPAQUE : PFLAG_DIRTY;
+      ...
+        do {
                 View view = null;
-                // 当前父布局还为ViewGroup
                 if (parent instanceof View) {
                     view = (View) parent;
-                }else {
-                  // 当前父布局到了ViewRootImpl
                 }
-                
 
                 if (drawAnimation) {
                     if (view != null) {
@@ -46676,7 +46829,6 @@ protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
 
                 // If the parent is dirty opaque or not dirty, mark it dirty with the opaque
                 // flag coming from the child that initiated the invalidate
-                // 父布局为实心 就需要设置 privateFlag标记
                 if (view != null) {
                     if ((view.mViewFlags & FADING_EDGE_MASK) != 0 &&
                             view.getSolidColor() == 0) {
@@ -46688,139 +46840,47 @@ protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
                 }
                 //递归调用父布局的重绘方法
                 parent = parent.invalidateChildInParent(location, dirty);
-                if (view != null) {
-                    // Account for transform on current parent
-                    Matrix m = view.getMatrix();
-                    if (!m.isIdentity()) {
-                        RectF boundingRect = attachInfo.mTmpTransformRect;
-                        boundingRect.set(dirty);
-                        m.mapRect(boundingRect);
-                       //将子View的脏区域 转换 父布局中的一块区域
-                        dirty.set((int) Math.floor(boundingRect.left),
+                //计算需要重绘区域
+                dirty.set((int) Math.floor(boundingRect.left),
                                 (int) Math.floor(boundingRect.top),
                                 (int) Math.ceil(boundingRect.right),
-                                (int) Math.ceil(boundingRect.bottom));
-                    }
-                }
+                                (int) Math.ceil(boundingRect.bottom));                
+          ...
             } while (parent != null);
-        }
+      
     }
 
-    //将子视图坐标位置转化为当前视图的显示位置 
+//ViewGroup.java
     public ViewParent invalidateChildInParent(final int[] location, final Rect dirty) {
         if ((mPrivateFlags & (PFLAG_DRAWN | PFLAG_DRAWING_CACHE_VALID)) != 0) {
-            // either DRAWN, or DRAWING_CACHE_VALID
-            //ViewGroup中没有动画在执行 或者 已完成
-            if ((mGroupFlags & (FLAG_OPTIMIZE_INVALIDATE | FLAG_ANIMATION_DONE))
-                    != FLAG_OPTIMIZE_INVALIDATE) {
-                dirty.offset(location[CHILD_LEFT_INDEX] - mScrollX,
-                        location[CHILD_TOP_INDEX] - mScrollY);
-                if ((mGroupFlags & FLAG_CLIP_CHILDREN) == 0) {
-                    dirty.union(0, 0, mRight - mLeft, mBottom - mTop);
-                }
-
-                final int left = mLeft;
-                final int top = mTop;
-
-                if ((mGroupFlags & FLAG_CLIP_CHILDREN) == FLAG_CLIP_CHILDREN) {
-                    if (!dirty.intersect(0, 0, mRight - left, mBottom - top)) {
-                        dirty.setEmpty();
-                    }
-                }
-
-                location[CHILD_LEFT_INDEX] = left;
-                location[CHILD_TOP_INDEX] = top;
-            } else {
-                
-                if ((mGroupFlags & FLAG_CLIP_CHILDREN) == FLAG_CLIP_CHILDREN) {
-                    dirty.set(0, 0, mRight - mLeft, mBottom - mTop);
-                } else {
-                    // in case the dirty rect extends outside the bounds of this container
-                    dirty.union(0, 0, mRight - mLeft, mBottom - mTop);
-                }
-                location[CHILD_LEFT_INDEX] = mLeft;
-                location[CHILD_TOP_INDEX] = mTop;
-
-                mPrivateFlags &= ~PFLAG_DRAWN;
-            }
-            mPrivateFlags &= ~PFLAG_DRAWING_CACHE_VALID;
-            if (mLayerType != LAYER_TYPE_NONE) {
-                mPrivateFlags |= PFLAG_INVALIDATED;
-            }
-
-            return mParent;
+          //将子View转换为当前View显示的位置
+          ...
         }
-
-        return null;
     }
 ```
 
-当`parent`不为View时，说明已经到达了最顶层即`ViewRootImpl`
-
-> 为什么最顶层会是`ViewRootImpl`?
->
-> ```java
-> 在ViewRoot与DecorView关联时讲到最后 WindowManagerGlobal 调用了 ViewRootImpl.setView() 传递进去DecorView
-> public void setView(View view, WindowManager.LayoutParams attrs, View panelParentView) {
->    //设置当前ViewRootImpl为DecorView的parent
->    view.assignParent(this);
-> }
-> //给当前View设置父布局
-> void assignParent(ViewParent parent) {
->         if (mParent == null) {
->             mParent = parent;
->         } else if (parent == null) {
->             mParent = null;
->         } else {
->             throw new RuntimeException("view " + this + " being added, but"
->                     + " it already has a parent");
->         }
->     }
-> ```
->
-> 不断向上回溯的过程中，最终走到DecorView `getParent()`就为ViewRootImpl
-
-走到最后调用到了ViewRootImpl的`invalidateChild`方法，内部实现为`invalidateChildInParent()`
+当`parent==null`时，表示已经到了最顶层`ViewRootImpl`
 
 ```java
-// ../android/view/ViewRootImpl.java
-    public void invalidateChild(View child, Rect dirty) {
-        invalidateChildInParent(null, dirty);
-    }
-
+//ViewRootImpl.java
     public ViewParent invalidateChildInParent(int[] location, Rect dirty) {
-        //判断当前线程是否与View线程相同
+      //检查当前是否主线程
         checkThread();
         if (DEBUG_DRAW) Log.v(mTag, "Invalidate child: " + dirty);
 
         if (dirty == null) {
-            //整个窗口重绘
             invalidate();
             return null;
         } else if (dirty.isEmpty() && !mIsAnimating) {
-            //需要重绘区域为空 就不管了
             return null;
         }
-        //设置 重绘区域偏移
-        if (mCurScrollY != 0 || mTranslator != null) {
-            mTempRect.set(dirty);
-            dirty = mTempRect;
-            if (mCurScrollY != 0) {
-                dirty.offset(0, -mCurScrollY);
-            }
-            if (mTranslator != null) {
-                mTranslator.translateRectInAppWindowToScreen(dirty);
-            }
-            if (mAttachInfo.mScalingRequired) {
-                dirty.inset(-1, -1);
-            }
-        }
-
+       ...
+      //更新屏幕对应脏区域
         invalidateRectOnScreen(dirty);
 
         return null;
     }
-    //在屏幕上找到对应的重绘区域进行重绘
+
     private void invalidateRectOnScreen(Rect dirty) {
         final Rect localDirty = mDirty;
         if (!localDirty.isEmpty() && !localDirty.contains(dirty)) {
@@ -46839,166 +46899,76 @@ protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
             localDirty.setEmpty();
         }
         if (!mWillDrawSoon && (intersected || mIsAnimating)) {
-            //真正执行绘制的地方
+          //执行绘制流程
             scheduleTraversals();
         }
     }
 ```
 
-最终调用到了`scheduleTraversals()`，在上面讲到`View的绘制流程`时，有提到最初就是从`performTraversals()`开始，这里的`scheduleTraversals()`就是去触发一次`performTraversals()`开始一次绘制流程。
+通过`scheduleTraversals()`执行绘制流程，由于未设置`PFLAG_FORCE_LAYOUT`无法执行`measure`过程，如果位置没有发生变化后续`layout`也无法执行。
 
-> 由于`scheduleTraversals`是在主线程执行的，所以调用`invalidate()`时由于请求还未处理该消息，当多次调用重绘请求时，重绘也不会发生多次，提升效率。
->
-> 调用到`performTraversals()`按道理会重新走一遍绘制流程即`measure->layout->draw`，由于重绘时，设置`layoutRequested为false`就不会重新触发`measure及layout`流程。
-
-{% fullimage /images/View-Invalidate.png,View的重绘流程,View的重绘流程%}
-
-根据上述流程图，简单总结：
-
-- View调用`invalidate()`时，会调用父布局的`invalidateChild()`并传入自身View以及需要重绘区域
-- ViewGroup接收到传参时，会开启循环(`条件为直到没有父布局为止`)，调用自身的`invalidateChildInParent()-主要功能为将子布局区域转换成当前布局的区域`向父布局层层传递
-- 当父布局不为ViewGroup时，意味着已经到了最顶层的DecorView(`因为它的parent为ViewRootImpl`)，所以最终会执行到`ViewRootImpl.invalidateChild()`
-- ViewRootImpl执行`invalidateChild()`最终调用到的就是`performTraversals()`进行View的绘制流程(`draw`)，由于设置了`mLayoutRequested`限制了`measure,layout`的执行，所以只会发生`draw`
-
-#### postInvalidate
-
-> `postInvalidate`就是可以在子线程重绘View。实际的实现还是调用`invalidate()`
+最后调用`performDraw()`
 
 ```java
-// ../android/view/View.java
-    public void postInvalidate() {
-        postInvalidateDelayed(0);
+//ViewRootImpl.java
+    private void performDraw() {
+      ...
+        boolean canUseAsync = draw(fullRedrawNeeded);
     }
 
-    public void postInvalidate(int left, int top, int right, int bottom) {
-        postInvalidateDelayed(0, left, top, right, bottom);
-    }
-
-    public void postInvalidateDelayed(long delayMilliseconds, int left, int top,
-            int right, int bottom) {
-
-        // We try only with the AttachInfo because there's no point in invalidating
-        // if we are not attached to our window
-        final AttachInfo attachInfo = mAttachInfo;
-        if (attachInfo != null) {
-            final AttachInfo.InvalidateInfo info = AttachInfo.InvalidateInfo.obtain();
-            info.target = this;
-            info.left = left;
-            info.top = top;
-            info.right = right;
-            info.bottom = bottom;
-
-            attachInfo.mViewRootImpl.dispatchInvalidateRectDelayed(info, delayMilliseconds);
-        }
-    }
-
-// ../android/view/ViewRootImpl.java
-public void dispatchInvalidateDelayed(View view, long delayMilliseconds) {
-    Message msg = mHandler.obtainMessage(MSG_INVALIDATE, view);
-    mHandler.sendMessageDelayed(msg, delayMilliseconds);
-}
-
-final ViewRootHandler mHandler = new ViewRootHandler();
-final class ViewRootHandler extends Handler {
-  ..
-     @Override
-        public void handleMessage(Message msg) {
-            switch (msg.what) {
-            case MSG_INVALIDATE:
-                //最终调用到了 invalidate 
-                ((View) msg.obj).invalidate();
-                break;
-                ...
-            }
-       }
-  ...
-}
-```
-
-
-
-#### requestLayout
-
-> 强制重新布局，重新走一遍View的绘制流程。
-
-```java
-// ../android/view/View.java
-    public void requestLayout() {
-        if (mMeasureCache != null) mMeasureCache.clear();
-
-        if (mAttachInfo != null && mAttachInfo.mViewRequestingLayout == null) {
-            // Only trigger request-during-layout logic if this is the view requesting it,
-            // not the views in its parent hierarchy
-            ViewRootImpl viewRoot = getViewRootImpl();
-            if (viewRoot != null && viewRoot.isInLayout()) {
-                if (!viewRoot.requestLayoutDuringLayout(this)) {
-                    return;
+    private boolean draw(boolean fullRedrawNeeded) {
+        if (!dirty.isEmpty() || mIsAnimating || accessibilityFocusDirty) {
+            if (mAttachInfo.mThreadedRenderer != null && mAttachInfo.mThreadedRenderer.isEnabled()) {
+              //硬件绘制
+              ...
+                mAttachInfo.mThreadedRenderer.draw(mView, mAttachInfo, this, callback);              
+            } else {
+              //软件绘制
+              ...
+              if (!drawSoftware(surface, mAttachInfo, xOffset, yOffset,
+                        scalingRequired, dirty, surfaceInsets)) {
+                    return false;
                 }
             }
-            mAttachInfo.mViewRequestingLayout = this;
-        }
-        //设置强制刷新标记
-        mPrivateFlags |= PFLAG_FORCE_LAYOUT;
-        mPrivateFlags |= PFLAG_INVALIDATED;
-
-        if (mParent != null && !mParent.isLayoutRequested()) {
-            //向父布局继续请求刷新布局
-            mParent.requestLayout();
-        }
-        if (mAttachInfo != null && mAttachInfo.mViewRequestingLayout == this) {
-            mAttachInfo.mViewRequestingLayout = null;
-        }
+          ...
     }
-
 ```
 
-不断向父布局请求重新布局，逐层传递直到ViewRootImpl层。
+向下调用到`View.draw()`
 
 ```java
-    @Override
-    public void requestLayout() {
-        if (!mHandlingLayoutInLayoutRequest) {
-            checkThread();
-            //设置标记 重新布局
-            mLayoutRequested = true;
-            scheduleTraversals();
+//View.java
+    public void draw(Canvas canvas) {
+        final boolean dirtyOpaque = (privateFlags & PFLAG_DIRTY_MASK) == PFLAG_DIRTY_OPAQUE &&
+                (mAttachInfo == null || !mAttachInfo.mIgnoreDirtyState);
+        if (!dirtyOpaque) {
+            drawBackground(canvas);//绘制背景
         }
+        if (!dirtyOpaque) onDraw(canvas);//绘制自身
+        dispatchDraw(canvas); //绘制子View 
+        onDrawForeground(canvas);//绘制前景
     }
 ```
 
-上文中提到`mLayoutRequested`就是防止`invalidate`重新走一遍绘制流程，这里设置为`true`，意味着需要走一遍`measure,layout`。
+关键在于是否持有`PFLAG_DIRTY_OPAQUE`标志，这个标志主要是在`invalidate()`打上的。
 
-由于`measure`过程设置了`mPrivateTags PFLAG_LAYOUT_REQUIRED`所以会往下继续执行`layout`过程。
+> `invalidate()`通过设置`PFLAG_INVALIDATED`和`PFLAG_DRAWING_CACHE_VALID`标记，然后执行`invalidateChild()`通过层层向上调用`parent.invalidateChildInParent()`把需要重新绘制的区域传递上去，直到达到`ViewRootImpl`为止。最后调用到`invalidateRectOnScreen()`传入最终需要重新绘制的区域，开始执行绘制流程。
+>
+> **invalidate()会打上`PFLAG_DIRTY_OPAQUE`标记，只有这个标记才会执行`onDraw()`。**
 
-> `requestLayout`是否会触发`draw`过程？
->
-> 按照流程来说`layout`之后就是`draw`，所以可以从`layout`过程中查看相关代码
->
-> ```java
-> 在上文中说到 View的layout过程 会调用到 layout 后续是 setFrame 确定顶点，最后onLayout执行
-> protected boolean setFrame(int left, int top, int right, int bottom) {
->    //意味着 如果布局的坐标发生了改变 就需要重新绘制
-> 	 if (mLeft != left || mRight != right || mTop != top || mBottom != bottom) {
->             changed = true;
-> 
->             // Remember our drawn bit
->             int drawn = mPrivateFlags & PFLAG_DRAWN;
-> 
->             int oldWidth = mRight - mLeft;
->             int oldHeight = mBottom - mTop;
->             int newWidth = right - left;
->             int newHeight = bottom - top;
->             boolean sizeChanged = (newWidth != oldWidth) || (newHeight != oldHeight);
-> 
->             // Invalidate our old position
->             invalidate(sizeChanged);
->             ...
->        }
->    ...
-> }
-> ```
->
-> 综上所述，如果layout的布局有变化还是会触发`draw`过程的
+#### 两者区别
+
+`rquestLayout()`和`invalidate()`都可以触发整个绘制流程，但是触发`measure`、`layout`、`draw`各条件都不同
+
+- `measure`过程触发：`mPrivateFlags`包含`PFLAG_FORCE_LAYOUT`
+- `layout`过程触发：`mPrivateFlags`包含`PFLAG_LAYOUT_REQUIRED(measure执行后添加)`或者`位置发生变化`
+- `draw`过程触发：`mPrivateFlags`包含`PFLAG_DIRTY_OPAQUE`
+
+`requestLayout()`主要用来设置`PFLAG_FORCE_LAYOUT`标志，会执行到`measure、layout`过程，如果位置发生变化则可能执行`draw`过程
+
+`invalidate()`主要用来设置`PFLAG_DIRTY_OPAQUE`标志，若发生位置变化会执行`layout`过程，继续往后执行`draw`过程
+
+
 
 ### include、merge、ViewStub作用以及实现
 
@@ -47006,19 +46976,343 @@ final class ViewRootHandler extends Handler {
 
 ### View的层级计算
 
-//TODO 提供代码
+```java
+//实际形成一个二叉树 递归计算深度    
+private int maxViewDeep(View view) {
+        if (!(view instanceof ViewGroup)) {
+            return 0;
+        }
 
-由于View是树形结构，代码的话可以利用`getParent()`实现 ，直到返回值为null，说明已经到了最高层。
+        ViewGroup vp = (ViewGroup) view;
+        if (vp.getChildCount() == 0) {
+            return 0;
+        }
+
+        int max = 0;
+        int count = vp.getChildCount();
+        for (int i = 0; i < count; i++) {
+            int deep = maxViewDeep(vp.getChildAt(i)) + 1;
+            if (deep > max) {
+                max = deep;
+            }
+        }
+        return max;
+    }
+```
+
+
 
 ### AsyncLayoutInflater异步加载
 
-[AsyncLayoutInfalter](https://www.jianshu.com/p/8548db25a475)
+{% post_link Android布局优化-AsyncLayoutInflater简析 AsyncLayoutInflater%}
 
 ### inflate()时，`root`与`attachToRoot`的结果源码
 
 
 
-### `MeasureSpec.UNSPECIFIED`使用场景]]></content>
+### `MeasureSpec.UNSPECIFIED`使用场景
+
+]]></content>
+      <tags>
+        <tag>Android</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>Android布局优化-AsyncLayoutInflater简析</title>
+    <url>/2020/11/02/Android%E5%B8%83%E5%B1%80%E4%BC%98%E5%8C%96-AsyncLayoutInflater%E7%AE%80%E6%9E%90/</url>
+    <content><![CDATA[
+![AsyncLayoutInflater](/images/AsyncLayoutInflater.png)
+
+布局加载过程中存在两个耗时点：
+
+1. 布局文件读取慢，涉及IO操作
+2. 根据`<tag>`创建View慢(`createViewFromTag()`)，使用反射的方式创建View。*布局嵌套层数越多，控件个数越多，反射的次数就会越多*。
+
+当XML文件过大、嵌套过深时，就会导致页面发生卡顿甚至ANR。
+
+解决方案有两种：
+
+1. **直接解决**：不使用IO操作以及反射
+2. **侧面缓解**：把耗时操作放到子线程，等待加载完毕返回主线程展示即可。下面提到的`AsyncLayoutInflater`就是使用这个方案。
+
+## AsyncLayoutInflater
+
+采用**异步加载**的方式去加载布局，可以节省主线程时间，并且在异步加载完毕后回到主线程。
+
+## 使用方法
+
+```java
+        new AsyncLayoutInflater(this).inflate(R.layout.XX, null, new AsyncLayoutInflater.OnInflateFinishedListener() {
+            @Override
+            public void onInflateFinished(@NonNull View view, int i, @Nullable ViewGroup viewGroup) {
+                setContentView(view);
+            }
+        });
+```
+
+## 基本原理
+
+### 构造方法
+
+```java
+public final class AsyncLayoutInflater {
+    LayoutInflater mInflater;//布局加载器
+    Handler mHandler;//处理加载完成消息
+    InflateThread mInflateThread;//执行加载任务
+
+     public AsyncLayoutInflater(@NonNull Context context) {
+        mInflater = new BasicInflater(context);
+        mHandler = new Handler(mHandlerCallback);
+        mInflateThread = InflateThread.getInstance();
+    }
+}
+```
+
+#### BasicInflater
+
+自定义加载器。实现类似`PhoneLayoutInflater(默认布局加载器)`
+
+```java
+
+    private static class BasicInflater extends LayoutInflater {
+      //优先在这三个包下加载
+        private static final String[] sClassPrefixList = {
+            "android.widget.",
+            "android.webkit.",
+            "android.app."
+        };
+
+        BasicInflater(Context context) {
+            super(context);
+        }
+
+        @Override
+        public LayoutInflater cloneInContext(Context newContext) {
+            return new BasicInflater(newContext);
+        }
+
+        @Override
+        protected View onCreateView(String name, AttributeSet attrs) throws ClassNotFoundException {
+            for (String prefix : sClassPrefixList) {
+                try {
+                  //加载View
+                    View view = createView(name, prefix, attrs);
+                    if (view != null) {
+                        return view;
+                    }
+                } catch (ClassNotFoundException e) {
+                    // In this case we want to let the base class take a crack
+                    // at it.
+                }
+            }
+
+            return super.onCreateView(name, attrs);
+        }
+    }
+```
+
+
+
+#### InflateThread
+
+创建子线程，将`布局加载`请求加入`阻塞队列`中，按照插入顺序执行`LayoutInflater.inflate()`加载过程
+
+```java
+    private static class InflateThread extends Thread {
+        private static final InflateThread sInstance;
+        static {
+            sInstance = new InflateThread();
+            sInstance.start();
+        }
+      //阻塞队列 最多支持10个加载请求
+        private ArrayBlockingQueue<InflateRequest> mQueue = new ArrayBlockingQueue<>(10);
+      //对象池，缓存InflateThread对象
+        private SynchronizedPool<InflateRequest> mRequestPool = new SynchronizedPool<>(10);    
+      //对象池获取缓存对象
+        public InflateRequest obtainRequest() {
+            InflateRequest obj = mRequestPool.acquire();
+            if (obj == null) {
+                obj = new InflateRequest();
+            }
+            return obj;
+        }
+      //对象池回收对象，便于下次复用
+        public void releaseRequest(InflateRequest obj) {
+            obj.callback = null;
+            obj.inflater = null;
+            obj.parent = null;
+            obj.resid = 0;
+            obj.view = null;
+            mRequestPool.release(obj);
+        }      
+      //将inflate请求添加到 阻塞队列中
+        public void enqueue(InflateRequest request) {
+            try {
+                mQueue.put(request);
+            } catch (InterruptedException e) {
+                throw new RuntimeException(
+                        "Failed to enqueue async inflate request", e);
+            }
+        }
+      //需要执行的任务
+        public void runInner() {
+            InflateRequest request;
+            try {
+              //阻塞队列获取 任务，没任务则阻塞
+                request = mQueue.take();
+            } catch (InterruptedException ex) {
+                // Odd, just continue
+                Log.w(TAG, ex);
+                return;
+            }
+
+            try {
+              //调用BasicInflater去加载布局
+                request.view = request.inflater.mInflater.inflate(
+                        request.resid, request.parent, false);
+            } catch (RuntimeException ex) {
+                // Probably a Looper failure, retry on the UI thread
+                Log.w(TAG, "Failed to inflate resource in the background! Retrying on the UI"
+                        + " thread", ex);
+            }
+          //构建消息发送到Handler
+            Message.obtain(request.inflater.mHandler, 0, request)
+                    .sendToTarget();
+        }
+
+        @Override
+        public void run() {
+            while (true) {
+                runInner();
+            }
+        }      
+    }
+```
+
+`InflateThread`不管最后`inflate()`执行成功或失败，都会把结果发回到Handler进行处理。
+
+```java
+    private Handler.Callback mHandlerCallback = new Handler.Callback() {
+        @Override
+        public boolean handleMessage(Message msg) {
+          //获取加载结果
+            InflateRequest request = (InflateRequest) msg.obj;
+            if (request.view == null) {
+              //异步加载失败，在主线程进行加载过程
+                request.view = mInflater.inflate(
+                        request.resid, request.parent, false);
+            }
+          //加载完成回调
+            request.callback.onInflateFinished(
+                    request.view, request.resid, request.parent);
+          //回收加载请求
+            mInflateThread.releaseRequest(request);
+            return true;
+        }
+    };
+```
+
+`Handler`收到消息后，根据`InflateRequest.view`是否为空，判断接下执行步骤：
+
+如果为空，回到主线程进行布局加载任务，加载完成后回调`onInflateFinished()`
+
+不为空，直接回调`onInflateFinished()`
+
+### inflate()
+
+发起异步加载布局请求
+
+```java
+    @UiThread
+    public void inflate(@LayoutRes int resid, @Nullable ViewGroup parent,
+            @NonNull OnInflateFinishedListener callback) {
+        if (callback == null) {
+            throw new NullPointerException("callback argument may not be null!");
+        }
+      //构建InflateRequest对象
+        InflateRequest request = mInflateThread.obtainRequest();
+        request.inflater = this;
+        request.resid = resid;
+        request.parent = parent;
+        request.callback = callback;
+      //插入加载请求到阻塞队列
+        mInflateThread.enqueue(request);
+    }
+```
+
+#### InflateRequest
+
+主线程和子线程之间传递的数据模型，主要封装了`异步加载`需要的参数
+
+```java
+    private static class InflateRequest {
+        AsyncLayoutInflater inflater;//加载器
+        ViewGroup parent;//父布局
+        int resid;//布局id
+        View view;//加载完成的View
+        OnInflateFinishedListener callback;//加载完成回调
+
+        InflateRequest() {
+        }
+    }
+```
+
+#### OnInflateFinishedListener
+
+布局加载完成后回调
+
+```java
+    public interface OnInflateFinishedListener {
+        void onInflateFinished(@NonNull View view, //加载完成的View
+                               @LayoutRes int resid,
+                @Nullable ViewGroup parent);
+    }
+```
+
+
+
+> 使用`AsyncLayoutInflater`加载布局后，将需要加载的`layoutId`以及`OnInflateFinishedListener`构造成`InflateRequest`，插入到`InflateThread`的阻塞队列中，等待执行。任务执行完毕后，返回执行结果(`成功返回加载后的View，失败返回null`)。
+>
+> 通过`Handler`发送结果回到主线程，返回结果为`null`，则在主线程再次执行`布局加载`，得到结果后直接回调`onInflateFinished()`。
+
+## 局限及改进
+
+### 局限
+
+1. `AsyncLayoutInflater`构造的`View`，无法直接使用`handler`或者调用`looper.myLooper`，因为没有进行初始化
+2. `AsyncLayoutInflater`构造的`View`，不会自动加到`parent`中，需要手动加入
+3. `AsyncLayoutInflater`不支持设置`Factory/Factory2`，未设置`mPrivateFactory`所以不支持包含`<fragment>`的布局
+4. 最多支持10个布局加载，超出的布局需要等待。
+
+
+
+### 改进
+
+> `AsyncLayoutInflater`是`final`的，无法被继承。需要`copy`一份代码进行修改。
+
+针对`4`可以内部替换成线程池，将加载布局请求放入线程池管理
+
+针对`3`可以修改`BasicInflater`实现，内部支持`factory`设置
+
+```java
+        BasicInflater(Context context) {
+            super(context);
+            if (context instanceof AppCompatActivity) {
+                // 加上这些可以保证AppCompatActivity的情况下，super.onCreate之前
+                // 使用AsyncLayoutInflater加载的布局也拥有默认的效果
+                AppCompatDelegate appCompatDelegate = ((AppCompatActivity) context).getDelegate();
+                if (appCompatDelegate instanceof LayoutInflater.Factory2) {
+                    LayoutInflaterCompat.setFactory2(this, (LayoutInflater.Factory2) appCompatDelegate);
+                }
+            }
+        }
+```
+
+
+
+## 参考链接
+
+[AsyncLayoutInfalter](https://www.jianshu.com/p/8548db25a475)]]></content>
       <tags>
         <tag>Android</tag>
       </tags>

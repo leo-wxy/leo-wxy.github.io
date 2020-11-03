@@ -1,0 +1,658 @@
+
+
+<!DOCTYPE html>
+<html lang="zh-CN" data-default-color-scheme=&#34;auto&#34;>
+
+
+
+<head><meta name="generator" content="Hexo 3.9.0">
+  <meta charset="UTF-8">
+  <link rel="apple-touch-icon" sizes="76x76" href="/img/apple-touch-icon.png">
+  <link rel="icon" type="image/png" href="/img/favicon.png">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  
+  <meta name="theme-color" content="#9b868d">
+  <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
+  <meta name="author" content="Leo-Wxy">
+  <meta name="keywords" content>
+  <title>Android布局优化-AsyncLayoutInflater简析 - Wxy的个人博客</title>
+
+  <link rel="stylesheet" href="https://cdn.staticfile.org/twitter-bootstrap/4.4.1/css/bootstrap.min.css">
+
+
+  <link rel="stylesheet" href="https://cdn.staticfile.org/github-markdown-css/4.0.0/github-markdown.min.css">
+  <link rel="stylesheet" href="/lib/hint/hint.min.css">
+
+  
+    
+    
+      
+      <link rel="stylesheet" href="https://cdn.staticfile.org/highlight.js/10.0.0/styles/atom-one-light.min.css">
+    
+  
+
+  
+
+
+<!-- 主题依赖的图标库，不要自行修改 -->
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1749284_pf9vaxs7x7b.css">
+
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1736178_kmeydafke9r.css">
+
+<link rel="stylesheet" href="/css/main.css">
+
+<!-- 自定义样式保持在最底部 -->
+
+
+  <script src="/js/utils.js"></script>
+  <script src="/js/color-schema.js"></script>
+</head>
+
+
+<body>
+  <header style="height: 40vh;">
+    <nav id="navbar" class="navbar fixed-top  navbar-expand-lg navbar-dark scrolling-navbar">
+  <div class="container">
+    <a class="navbar-brand"
+       href="/">&nbsp;<strong>Wxy's Blog</strong>&nbsp;</a>
+
+    <button id="navbar-toggler-btn" class="navbar-toggler" type="button" data-toggle="collapse"
+            data-target="#navbarSupportedContent"
+            aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+      <div class="animated-icon"><span></span><span></span><span></span></div>
+    </button>
+
+    <!-- Collapsible content -->
+    <div class="collapse navbar-collapse" id="navbarSupportedContent">
+      <ul class="navbar-nav ml-auto text-center">
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/">
+                <i class="iconfont icon-home-fill"></i>
+                首页
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/archives/">
+                <i class="iconfont icon-archive-fill"></i>
+                归档
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/tags/">
+                <i class="iconfont icon-tags-fill"></i>
+                标签
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/about/">
+                <i class="iconfont icon-user-fill"></i>
+                关于
+              </a>
+            </li>
+          
+        
+        
+          <li class="nav-item" id="search-btn">
+            <a class="nav-link" data-toggle="modal" data-target="#modalSearch">&nbsp;<i
+                class="iconfont icon-search"></i>&nbsp;</a>
+          </li>
+        
+        
+          <li class="nav-item" id="color-toggle-btn">
+            <a class="nav-link" href="javascript:">&nbsp;<i
+                class="iconfont icon-dark" id="color-toggle-icon"></i>&nbsp;</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    <div class="banner intro-2" id="background" parallax=true
+         style="background: url('/img/default.png') no-repeat center center;
+           background-size: cover;">
+      <div class="full-bg-img">
+        <div class="mask flex-center" style="background-color: rgba(0, 0, 0, 0.3)">
+          <div class="container page-header text-center fade-in-up">
+            <span class="h2" id="subtitle">
+              
+                Android布局优化-AsyncLayoutInflater简析
+              
+            </span>
+
+            
+              <div class="mt-3">
+  
+  
+    <span class="post-meta">
+      <i class="iconfont icon-date-fill" aria-hidden="true"></i>
+      <time datetime="2020-11-02 19:46" pubdate>
+        2020年11月2日 晚上
+      </time>
+    </span>
+  
+</div>
+
+<div class="mt-1">
+  
+    
+    <span class="post-meta mr-2">
+      <i class="iconfont icon-chart"></i>
+      1.4k 字
+    </span>
+  
+
+  
+    
+    <span class="post-meta mr-2">
+      <i class="iconfont icon-clock-fill"></i>
+      
+      
+      20
+       分钟
+    </span>
+  
+
+  
+  
+</div>
+
+            
+          </div>
+
+          
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    
+      
+
+<div class="container-fluid">
+  <div class="row">
+    <div class="d-none d-lg-block col-lg-2"></div>
+    <div class="col-lg-8 nopadding-md">
+      <div class="container nopadding-md" id="board-ctn">
+        <div class="py-5" id="board">
+          <article class="post-content mx-auto" id="post">
+            <!-- SEO header -->
+            <h1 style="display: none">Android布局优化-AsyncLayoutInflater简析</h1>
+            
+            <div class="markdown-body" id="post-body">
+              <p><img src="/images/AsyncLayoutInflater.png" srcset="/img/loading.gif" alt="AsyncLayoutInflater"></p>
+<p>布局加载过程中存在两个耗时点：</p>
+<ol>
+<li>布局文件读取慢，涉及IO操作</li>
+<li>根据<code>&lt;tag&gt;</code>创建View慢(<code>createViewFromTag()</code>)，使用反射的方式创建View。<em>布局嵌套层数越多，控件个数越多，反射的次数就会越多</em>。</li>
+</ol>
+<p>当XML文件过大、嵌套过深时，就会导致页面发生卡顿甚至ANR。</p>
+<p>解决方案有两种：</p>
+<ol>
+<li><strong>直接解决</strong>：不使用IO操作以及反射</li>
+<li><strong>侧面缓解</strong>：把耗时操作放到子线程，等待加载完毕返回主线程展示即可。下面提到的<code>AsyncLayoutInflater</code>就是使用这个方案。</li>
+</ol>
+<h2 id="AsyncLayoutInflater"><a href="#AsyncLayoutInflater" class="headerlink" title="AsyncLayoutInflater"></a>AsyncLayoutInflater</h2><p>采用<strong>异步加载</strong>的方式去加载布局，可以节省主线程时间，并且在异步加载完毕后回到主线程。</p>
+<h2 id="使用方法"><a href="#使用方法" class="headerlink" title="使用方法"></a>使用方法</h2><pre><code class="hljs java"><span class="hljs-keyword">new</span> AsyncLayoutInflater(<span class="hljs-keyword">this</span>).inflate(R.layout.XX, <span class="hljs-keyword">null</span>, <span class="hljs-keyword">new</span> AsyncLayoutInflater.OnInflateFinishedListener() &#123;
+    <span class="hljs-meta">@Override</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">onInflateFinished</span><span class="hljs-params">(@NonNull View view, <span class="hljs-keyword">int</span> i, @Nullable ViewGroup viewGroup)</span> </span>&#123;
+        setContentView(view);
+    &#125;
+&#125;);</code></pre>
+<h2 id="基本原理"><a href="#基本原理" class="headerlink" title="基本原理"></a>基本原理</h2><h3 id="构造方法"><a href="#构造方法" class="headerlink" title="构造方法"></a>构造方法</h3><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">AsyncLayoutInflater</span> </span>&#123;
+    LayoutInflater mInflater;<span class="hljs-comment">//布局加载器</span>
+    Handler mHandler;<span class="hljs-comment">//处理加载完成消息</span>
+    InflateThread mInflateThread;<span class="hljs-comment">//执行加载任务</span>
+
+     <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">AsyncLayoutInflater</span><span class="hljs-params">(@NonNull Context context)</span> </span>&#123;
+        mInflater = <span class="hljs-keyword">new</span> BasicInflater(context);
+        mHandler = <span class="hljs-keyword">new</span> Handler(mHandlerCallback);
+        mInflateThread = InflateThread.getInstance();
+    &#125;
+&#125;</code></pre>
+<h4 id="BasicInflater"><a href="#BasicInflater" class="headerlink" title="BasicInflater"></a>BasicInflater</h4><p>自定义加载器。实现类似<code>PhoneLayoutInflater(默认布局加载器)</code></p>
+<pre><code class="hljs java">
+<span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">BasicInflater</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">LayoutInflater</span> </span>&#123;
+  <span class="hljs-comment">//优先在这三个包下加载</span>
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> String[] sClassPrefixList = &#123;
+        <span class="hljs-string">"android.widget."</span>,
+        <span class="hljs-string">"android.webkit."</span>,
+        <span class="hljs-string">"android.app."</span>
+    &#125;;
+
+    BasicInflater(Context context) &#123;
+        <span class="hljs-keyword">super</span>(context);
+    &#125;
+
+    <span class="hljs-meta">@Override</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> LayoutInflater <span class="hljs-title">cloneInContext</span><span class="hljs-params">(Context newContext)</span> </span>&#123;
+        <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> BasicInflater(newContext);
+    &#125;
+
+    <span class="hljs-meta">@Override</span>
+    <span class="hljs-function"><span class="hljs-keyword">protected</span> View <span class="hljs-title">onCreateView</span><span class="hljs-params">(String name, AttributeSet attrs)</span> <span class="hljs-keyword">throws</span> ClassNotFoundException </span>&#123;
+        <span class="hljs-keyword">for</span> (String prefix : sClassPrefixList) &#123;
+            <span class="hljs-keyword">try</span> &#123;
+              <span class="hljs-comment">//加载View</span>
+                View view = createView(name, prefix, attrs);
+                <span class="hljs-keyword">if</span> (view != <span class="hljs-keyword">null</span>) &#123;
+                    <span class="hljs-keyword">return</span> view;
+                &#125;
+            &#125; <span class="hljs-keyword">catch</span> (ClassNotFoundException e) &#123;
+                <span class="hljs-comment">// In this case we want to let the base class take a crack</span>
+                <span class="hljs-comment">// at it.</span>
+            &#125;
+        &#125;
+
+        <span class="hljs-keyword">return</span> <span class="hljs-keyword">super</span>.onCreateView(name, attrs);
+    &#125;
+&#125;</code></pre>
+<h4 id="InflateThread"><a href="#InflateThread" class="headerlink" title="InflateThread"></a>InflateThread</h4><p>创建子线程，将<code>布局加载</code>请求加入<code>阻塞队列</code>中，按照插入顺序执行<code>LayoutInflater.inflate()</code>加载过程</p>
+<pre><code class="hljs java"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">InflateThread</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">Thread</span> </span>&#123;
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> InflateThread sInstance;
+    <span class="hljs-keyword">static</span> &#123;
+        sInstance = <span class="hljs-keyword">new</span> InflateThread();
+        sInstance.start();
+    &#125;
+  <span class="hljs-comment">//阻塞队列 最多支持10个加载请求</span>
+    <span class="hljs-keyword">private</span> ArrayBlockingQueue&lt;InflateRequest&gt; mQueue = <span class="hljs-keyword">new</span> ArrayBlockingQueue&lt;&gt;(<span class="hljs-number">10</span>);
+  <span class="hljs-comment">//对象池，缓存InflateThread对象</span>
+    <span class="hljs-keyword">private</span> SynchronizedPool&lt;InflateRequest&gt; mRequestPool = <span class="hljs-keyword">new</span> SynchronizedPool&lt;&gt;(<span class="hljs-number">10</span>);    
+  <span class="hljs-comment">//对象池获取缓存对象</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> InflateRequest <span class="hljs-title">obtainRequest</span><span class="hljs-params">()</span> </span>&#123;
+        InflateRequest obj = mRequestPool.acquire();
+        <span class="hljs-keyword">if</span> (obj == <span class="hljs-keyword">null</span>) &#123;
+            obj = <span class="hljs-keyword">new</span> InflateRequest();
+        &#125;
+        <span class="hljs-keyword">return</span> obj;
+    &#125;
+  <span class="hljs-comment">//对象池回收对象，便于下次复用</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">releaseRequest</span><span class="hljs-params">(InflateRequest obj)</span> </span>&#123;
+        obj.callback = <span class="hljs-keyword">null</span>;
+        obj.inflater = <span class="hljs-keyword">null</span>;
+        obj.parent = <span class="hljs-keyword">null</span>;
+        obj.resid = <span class="hljs-number">0</span>;
+        obj.view = <span class="hljs-keyword">null</span>;
+        mRequestPool.release(obj);
+    &#125;      
+  <span class="hljs-comment">//将inflate请求添加到 阻塞队列中</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">enqueue</span><span class="hljs-params">(InflateRequest request)</span> </span>&#123;
+        <span class="hljs-keyword">try</span> &#123;
+            mQueue.put(request);
+        &#125; <span class="hljs-keyword">catch</span> (InterruptedException e) &#123;
+            <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> RuntimeException(
+                    <span class="hljs-string">"Failed to enqueue async inflate request"</span>, e);
+        &#125;
+    &#125;
+  <span class="hljs-comment">//需要执行的任务</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">runInner</span><span class="hljs-params">()</span> </span>&#123;
+        InflateRequest request;
+        <span class="hljs-keyword">try</span> &#123;
+          <span class="hljs-comment">//阻塞队列获取 任务，没任务则阻塞</span>
+            request = mQueue.take();
+        &#125; <span class="hljs-keyword">catch</span> (InterruptedException ex) &#123;
+            <span class="hljs-comment">// Odd, just continue</span>
+            Log.w(TAG, ex);
+            <span class="hljs-keyword">return</span>;
+        &#125;
+
+        <span class="hljs-keyword">try</span> &#123;
+          <span class="hljs-comment">//调用BasicInflater去加载布局</span>
+            request.view = request.inflater.mInflater.inflate(
+                    request.resid, request.parent, <span class="hljs-keyword">false</span>);
+        &#125; <span class="hljs-keyword">catch</span> (RuntimeException ex) &#123;
+            <span class="hljs-comment">// Probably a Looper failure, retry on the UI thread</span>
+            Log.w(TAG, <span class="hljs-string">"Failed to inflate resource in the background! Retrying on the UI"</span>
+                    + <span class="hljs-string">" thread"</span>, ex);
+        &#125;
+      <span class="hljs-comment">//构建消息发送到Handler</span>
+        Message.obtain(request.inflater.mHandler, <span class="hljs-number">0</span>, request)
+                .sendToTarget();
+    &#125;
+
+    <span class="hljs-meta">@Override</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">run</span><span class="hljs-params">()</span> </span>&#123;
+        <span class="hljs-keyword">while</span> (<span class="hljs-keyword">true</span>) &#123;
+            runInner();
+        &#125;
+    &#125;      
+&#125;</code></pre>
+<p><code>InflateThread</code>不管最后<code>inflate()</code>执行成功或失败，都会把结果发回到Handler进行处理。</p>
+<pre><code class="hljs java"><span class="hljs-keyword">private</span> Handler.Callback mHandlerCallback = <span class="hljs-keyword">new</span> Handler.Callback() &#123;
+    <span class="hljs-meta">@Override</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">handleMessage</span><span class="hljs-params">(Message msg)</span> </span>&#123;
+      <span class="hljs-comment">//获取加载结果</span>
+        InflateRequest request = (InflateRequest) msg.obj;
+        <span class="hljs-keyword">if</span> (request.view == <span class="hljs-keyword">null</span>) &#123;
+          <span class="hljs-comment">//异步加载失败，在主线程进行加载过程</span>
+            request.view = mInflater.inflate(
+                    request.resid, request.parent, <span class="hljs-keyword">false</span>);
+        &#125;
+      <span class="hljs-comment">//加载完成回调</span>
+        request.callback.onInflateFinished(
+                request.view, request.resid, request.parent);
+      <span class="hljs-comment">//回收加载请求</span>
+        mInflateThread.releaseRequest(request);
+        <span class="hljs-keyword">return</span> <span class="hljs-keyword">true</span>;
+    &#125;
+&#125;;</code></pre>
+<p><code>Handler</code>收到消息后，根据<code>InflateRequest.view</code>是否为空，判断接下执行步骤：</p>
+<p>如果为空，回到主线程进行布局加载任务，加载完成后回调<code>onInflateFinished()</code></p>
+<p>不为空，直接回调<code>onInflateFinished()</code></p>
+<h3 id="inflate"><a href="#inflate" class="headerlink" title="inflate()"></a>inflate()</h3><p>发起异步加载布局请求</p>
+<pre><code class="hljs java"><span class="hljs-meta">@UiThread</span>
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">inflate</span><span class="hljs-params">(@LayoutRes <span class="hljs-keyword">int</span> resid, @Nullable ViewGroup parent,
+        @NonNull OnInflateFinishedListener callback)</span> </span>&#123;
+    <span class="hljs-keyword">if</span> (callback == <span class="hljs-keyword">null</span>) &#123;
+        <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> NullPointerException(<span class="hljs-string">"callback argument may not be null!"</span>);
+    &#125;
+  <span class="hljs-comment">//构建InflateRequest对象</span>
+    InflateRequest request = mInflateThread.obtainRequest();
+    request.inflater = <span class="hljs-keyword">this</span>;
+    request.resid = resid;
+    request.parent = parent;
+    request.callback = callback;
+  <span class="hljs-comment">//插入加载请求到阻塞队列</span>
+    mInflateThread.enqueue(request);
+&#125;</code></pre>
+<h4 id="InflateRequest"><a href="#InflateRequest" class="headerlink" title="InflateRequest"></a>InflateRequest</h4><p>主线程和子线程之间传递的数据模型，主要封装了<code>异步加载</code>需要的参数</p>
+<pre><code class="hljs java"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">InflateRequest</span> </span>&#123;
+    AsyncLayoutInflater inflater;<span class="hljs-comment">//加载器</span>
+    ViewGroup parent;<span class="hljs-comment">//父布局</span>
+    <span class="hljs-keyword">int</span> resid;<span class="hljs-comment">//布局id</span>
+    View view;<span class="hljs-comment">//加载完成的View</span>
+    OnInflateFinishedListener callback;<span class="hljs-comment">//加载完成回调</span>
+
+    InflateRequest() &#123;
+    &#125;
+&#125;</code></pre>
+<h4 id="OnInflateFinishedListener"><a href="#OnInflateFinishedListener" class="headerlink" title="OnInflateFinishedListener"></a>OnInflateFinishedListener</h4><p>布局加载完成后回调</p>
+<pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">interface</span> <span class="hljs-title">OnInflateFinishedListener</span> </span>&#123;
+    <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">onInflateFinished</span><span class="hljs-params">(@NonNull View view, //加载完成的View
+                           @LayoutRes <span class="hljs-keyword">int</span> resid,
+            @Nullable ViewGroup parent)</span></span>;
+&#125;</code></pre>
+<blockquote>
+<p>使用<code>AsyncLayoutInflater</code>加载布局后，将需要加载的<code>layoutId</code>以及<code>OnInflateFinishedListener</code>构造成<code>InflateRequest</code>，插入到<code>InflateThread</code>的阻塞队列中，等待执行。任务执行完毕后，返回执行结果(<code>成功返回加载后的View，失败返回null</code>)。</p>
+<p>通过<code>Handler</code>发送结果回到主线程，返回结果为<code>null</code>，则在主线程再次执行<code>布局加载</code>，得到结果后直接回调<code>onInflateFinished()</code>。</p>
+</blockquote>
+<h2 id="局限及改进"><a href="#局限及改进" class="headerlink" title="局限及改进"></a>局限及改进</h2><h3 id="局限"><a href="#局限" class="headerlink" title="局限"></a>局限</h3><ol>
+<li><code>AsyncLayoutInflater</code>构造的<code>View</code>，无法直接使用<code>handler</code>或者调用<code>looper.myLooper</code>，因为没有进行初始化</li>
+<li><code>AsyncLayoutInflater</code>构造的<code>View</code>，不会自动加到<code>parent</code>中，需要手动加入</li>
+<li><code>AsyncLayoutInflater</code>不支持设置<code>Factory/Factory2</code>，未设置<code>mPrivateFactory</code>所以不支持包含<code>&lt;fragment&gt;</code>的布局</li>
+<li>最多支持10个布局加载，超出的布局需要等待。</li>
+</ol>
+<h3 id="改进"><a href="#改进" class="headerlink" title="改进"></a>改进</h3><blockquote>
+<p><code>AsyncLayoutInflater</code>是<code>final</code>的，无法被继承。需要<code>copy</code>一份代码进行修改。</p>
+</blockquote>
+<p>针对<code>4</code>可以内部替换成线程池，将加载布局请求放入线程池管理</p>
+<p>针对<code>3</code>可以修改<code>BasicInflater</code>实现，内部支持<code>factory</code>设置</p>
+<pre><code class="hljs java">BasicInflater(Context context) &#123;
+    <span class="hljs-keyword">super</span>(context);
+    <span class="hljs-keyword">if</span> (context <span class="hljs-keyword">instanceof</span> AppCompatActivity) &#123;
+        <span class="hljs-comment">// 加上这些可以保证AppCompatActivity的情况下，super.onCreate之前</span>
+        <span class="hljs-comment">// 使用AsyncLayoutInflater加载的布局也拥有默认的效果</span>
+        AppCompatDelegate appCompatDelegate = ((AppCompatActivity) context).getDelegate();
+        <span class="hljs-keyword">if</span> (appCompatDelegate <span class="hljs-keyword">instanceof</span> LayoutInflater.Factory2) &#123;
+            LayoutInflaterCompat.setFactory2(<span class="hljs-keyword">this</span>, (LayoutInflater.Factory2) appCompatDelegate);
+        &#125;
+    &#125;
+&#125;</code></pre>
+<h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="https://www.jianshu.com/p/8548db25a475" target="_blank" rel="noopener">AsyncLayoutInfalter</a></p>
+
+            </div>
+            <hr>
+            <div>
+              <div class="post-metas mb-3">
+                
+                
+                  <div class="post-meta">
+                    <i class="iconfont icon-tags"></i>
+                    
+                      <a class="hover-with-bg" href="/tags/Android/">Android</a>
+                    
+                  </div>
+                
+              </div>
+              
+                <p class="note note-warning">本博客所有文章除特别声明外，均采用 <a href="https://zh.wikipedia.org/wiki/Wikipedia:CC_BY-SA_3.0%E5%8D%8F%E8%AE%AE%E6%96%87%E6%9C%AC" rel="nofollow noopener">CC BY-SA 3.0协议</a> 。转载请注明出处！</p>
+              
+              
+                <div class="post-prevnext row">
+                  <article class="post-prev col-6">
+                    
+                    
+                  </article>
+                  <article class="post-next col-6">
+                    
+                    
+                      <a href="/2020/10/31/Android匿名共享内存-Ashmem/">
+                        <span class="hidden-mobile">Android匿名共享内存-Ashmem</span>
+                        <span class="visible-mobile">下一篇</span>
+                        <i class="iconfont icon-arrowright"></i>
+                      </a>
+                    
+                  </article>
+                </div>
+              
+            </div>
+
+            
+          </article>
+        </div>
+      </div>
+    </div>
+    
+      <div class="d-none d-lg-block col-lg-2 toc-container" id="toc-ctn">
+        <div id="toc">
+  <p class="toc-header"><i class="iconfont icon-list"></i>&nbsp;目录</p>
+  <div id="tocbot"></div>
+</div>
+
+      </div>
+    
+  </div>
+</div>
+
+<!-- Custom -->
+
+
+    
+  </main>
+
+  
+    <a id="scroll-top-button" href="#" role="button">
+      <i class="iconfont icon-arrowup" aria-hidden="true"></i>
+    </a>
+  
+
+  
+    <div class="modal fade" id="modalSearch" tabindex="-1" role="dialog" aria-labelledby="ModalLabel"
+     aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header text-center">
+        <h4 class="modal-title w-100 font-weight-bold">搜索</h4>
+        <button type="button" id="local-search-close" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body mx-3">
+        <div class="md-form mb-5">
+          <input type="text" id="local-search-input" class="form-control validate">
+          <label data-error="x" data-success="v"
+                 for="local-search-input">关键词</label>
+        </div>
+        <div class="list-group" id="local-search-result"></div>
+      </div>
+    </div>
+  </div>
+</div>
+  
+
+  
+
+  
+
+  <footer class="mt-5">
+  <div class="text-center py-3">
+    <div>
+      <a href="https://hexo.io" target="_blank" rel="nofollow noopener"><span>Hexo</span></a>
+      <i class="iconfont icon-love"></i>
+      <a href="https://github.com/fluid-dev/hexo-theme-fluid" target="_blank" rel="nofollow noopener">
+        <span>Fluid</span></a>
+    </div>
+    
+
+    
+
+    
+  </div>
+</footer>
+
+<!-- SCRIPTS -->
+<script  src="https://cdn.staticfile.org/jquery/3.4.1/jquery.min.js" ></script>
+<script  src="https://cdn.staticfile.org/twitter-bootstrap/4.4.1/js/bootstrap.min.js" ></script>
+<script  src="/js/debouncer.js" ></script>
+<script  src="/js/main.js" ></script>
+
+<!-- Plugins -->
+
+
+  
+    <script  src="/js/lazyload.js" ></script>
+  
+
+
+
+  
+
+
+
+  <script defer src="https://cdn.staticfile.org/clipboard.js/2.0.6/clipboard.min.js" ></script>
+  <script  src="/js/clipboard-use.js" ></script>
+
+
+
+
+
+
+
+  <script  src="https://cdn.staticfile.org/tocbot/4.11.1/tocbot.min.js" ></script>
+  <script>
+    $(document).ready(function () {
+      var boardCtn = $('#board-ctn');
+      var boardTop = boardCtn.offset().top;
+
+      tocbot.init({
+        tocSelector: '#tocbot',
+        contentSelector: '#post-body',
+        headingSelector: 'h1,h2,h3,h4,h5,h6',
+        linkClass: 'tocbot-link',
+        activeLinkClass: 'tocbot-active-link',
+        listClass: 'tocbot-list',
+        isCollapsedClass: 'tocbot-is-collapsed',
+        collapsibleClass: 'tocbot-is-collapsible',
+        collapseDepth: 0,
+        scrollSmooth: true,
+        headingsOffset: -boardTop
+      });
+      if ($('.toc-list-item').length > 0) {
+        $('#toc').css('visibility', 'visible');
+      }
+    });
+  </script>
+
+
+
+
+
+  <script  src="https://cdn.staticfile.org/anchor-js/4.2.2/anchor.min.js" ></script>
+  <script>
+    anchors.options = {
+      placement: "right",
+      visible: "hover",
+      
+    };
+    var el = "h1,h2,h3,h4,h5,h6".split(",");
+    var res = [];
+    for (item of el) {
+      res.push(".markdown-body > " + item)
+    }
+    anchors.add(res.join(", "))
+  </script>
+
+
+
+  <script  src="/js/local-search.js" ></script>
+  <script>
+    var path = "/local-search.xml";
+    var inputArea = document.querySelector("#local-search-input");
+    inputArea.onclick = function () {
+      searchFunc(path, 'local-search-input', 'local-search-result');
+      this.onclick = null
+    }
+  </script>
+
+
+
+  <script  src="https://cdn.staticfile.org/fancybox/3.5.7/jquery.fancybox.min.js" ></script>
+  <link  rel="stylesheet" href="https://cdn.staticfile.org/fancybox/3.5.7/jquery.fancybox.min.css" />
+
+  <script>
+    $('#post img:not(.no-zoom img, img[no-zoom]), img[zoom]').each(
+      function () {
+        var element = document.createElement('a');
+        $(element).attr('data-fancybox', 'images');
+        $(element).attr('href', $(this).attr('src'));
+        $(this).wrap(element);
+      }
+    );
+  </script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</body>
+</html>

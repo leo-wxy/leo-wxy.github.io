@@ -162,7 +162,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      12.4k 字
+      12.2k 字
     </span>
   
 
@@ -172,7 +172,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      191
+      187
        分钟
     </span>
   
@@ -771,6 +771,14 @@ registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs
        <span class="hljs-comment">//&lt;fragment&gt;标签直接解析执行 onCreateView</span>
         <span class="hljs-keyword">return</span> mFragments.onCreateView(parent, name, context, attrs);
     &#125;</code></pre>
+<h4 id="拓展使用"><a href="#拓展使用" class="headerlink" title="拓展使用"></a>拓展使用</h4><p>系统通过<code>Factory</code>提供<code>hook</code>方法，方便拦截<code>LayoutInflater</code>创建View的过程。支持以下应用场景：</p>
+<ul>
+<li>支持对自定义标签名称的处理</li>
+<li>全局替换系统控件为自定义View</li>
+<li><strong>替换字体</strong></li>
+<li><strong>全局换肤</strong></li>
+<li><strong>获取控件加载耗时</strong></li>
+</ul>
 <h3 id="View默认创建流程"><a href="#View默认创建流程" class="headerlink" title="View默认创建流程"></a>View默认创建流程</h3><blockquote>
 <p>未设置<code>Factory/Factory2</code>就会执行默认的View创建流程</p>
 </blockquote>
@@ -2063,38 +2071,181 @@ registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs
             mAttachInfo.mViewRequestingLayout = <span class="hljs-keyword">null</span>;
         &#125;
     &#125;</code></pre>
-<h4 id="invalidate"><a href="#invalidate" class="headerlink" title="invalidate"></a>invalidate</h4><h3 id="Invalidate、postInvalidate、requestLayout源码及应用场景"><a href="#Invalidate、postInvalidate、requestLayout源码及应用场景" class="headerlink" title="Invalidate、postInvalidate、requestLayout源码及应用场景"></a>Invalidate、postInvalidate、requestLayout源码及应用场景</h3><h4 id="invalidate-1"><a href="#invalidate-1" class="headerlink" title="invalidate"></a>invalidate</h4><blockquote>
-<p><code>invalidate()</code>必须在主线程调用，用于请求View的重绘，意味着只影响View的<code>draw</code>过程。</p>
+<p><code>mParent</code>对应父节点，一层层向上递归调用父节点<code>requestLayout()。</code>直到调用<code>ViewRootImpl.requestLayout()</code>结束.</p>
+<pre><code class="hljs java"><span class="hljs-comment">//ViewRootImpl.java</span>
+    <span class="hljs-meta">@Override</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">requestLayout</span><span class="hljs-params">()</span> </span>&#123;
+        <span class="hljs-keyword">if</span> (!mHandlingLayoutInLayoutRequest) &#123;
+          <span class="hljs-comment">//检查当前是否主线程</span>
+            checkThread();
+            mLayoutRequested = <span class="hljs-keyword">true</span>;
+            scheduleTraversals();
+        &#125;
+    &#125;</code></pre>
+<p>调用到<code>scheduleTraversals()</code>就是开始了<code>View的绘制流程</code>。</p>
+<p>一开始调用的<code>performMeasure()</code></p>
+<pre><code class="hljs java"><span class="hljs-comment">//ViewRootImpl.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">performMeasure</span><span class="hljs-params">(<span class="hljs-keyword">int</span> childWidthMeasureSpec, <span class="hljs-keyword">int</span> childHeightMeasureSpec)</span> </span>&#123;
+       ...
+        <span class="hljs-keyword">try</span> &#123;
+            mView.measure(childWidthMeasureSpec, childHeightMeasureSpec);
+        &#125; <span class="hljs-keyword">finally</span> &#123;
+            Trace.traceEnd(Trace.TRACE_TAG_VIEW);
+        &#125;
+    &#125;
+
+
+<span class="hljs-comment">//View.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">void</span> <span class="hljs-title">measure</span><span class="hljs-params">(<span class="hljs-keyword">int</span> widthMeasureSpec, <span class="hljs-keyword">int</span> heightMeasureSpec)</span> </span>&#123;
+      ...
+        <span class="hljs-comment">//需要执行onMeasure</span>
+        <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> forceLayout = (mPrivateFlags &amp; PFLAG_FORCE_LAYOUT) == PFLAG_FORCE_LAYOUT;
+      ...
+        <span class="hljs-keyword">if</span> (forceLayout || needsLayout) &#123;
+          ...
+            onMeasure(widthMeasureSpec, heightMeasureSpec);
+          ...
+            <span class="hljs-comment">//添加 PFLAG_LAYOUT_REQUIRED标记，表示需要执行 layout流程</span>
+             mPrivateFlags |= PFLAG_LAYOUT_REQUIRED;
+        &#125;
+    &#125;</code></pre>
+<p>继续向下调用<code>performLayout()</code></p>
+<pre><code class="hljs java"><span class="hljs-comment">//ViewRootImpl.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">performLayout</span><span class="hljs-params">(WindowManager.LayoutParams lp, <span class="hljs-keyword">int</span> desiredWindowWidth,
+            <span class="hljs-keyword">int</span> desiredWindowHeight)</span> </span>&#123;
+       <span class="hljs-comment">//正在执行layout流程</span>
+       mInLayout = <span class="hljs-keyword">true</span>;
+
+       <span class="hljs-keyword">final</span> View host = mView;<span class="hljs-comment">//对应DecorView</span>
+       <span class="hljs-comment">//在layout过程中 尚未执行requestLayout的view</span>
+       <span class="hljs-keyword">int</span> numViewsRequestingLayout = mLayoutRequesters.size();
+       <span class="hljs-keyword">if</span> (numViewsRequestingLayout &gt; <span class="hljs-number">0</span>) &#123;
+          <span class="hljs-comment">//寻找mPrivateFlags为PFLAG_FORCE_LAYOUT的View</span>
+           ArrayList&lt;View&gt; validLayoutRequesters = getValidLayoutRequesters(mLayoutRequesters,
+                        <span class="hljs-keyword">false</span>);
+                <span class="hljs-keyword">if</span> (validLayoutRequesters != <span class="hljs-keyword">null</span>) &#123;
+                  <span class="hljs-comment">//当前View重新measure</span>
+                     measureHierarchy(host, lp, mView.getContext().getResources(),
+                            desiredWindowWidth, desiredWindowHeight);     
+                  <span class="hljs-comment">//重新执行layout</span>
+                     host.layout(<span class="hljs-number">0</span>, <span class="hljs-number">0</span>, host.getMeasuredWidth(), host.getMeasuredHeight());  
+                  ...
+                    <span class="hljs-comment">//寻找尚未设置 PFLAG_FORCE_LAYOUT的View</span>
+                     validLayoutRequesters = getValidLayoutRequesters(mLayoutRequesters, <span class="hljs-keyword">true</span>);                   
+                     <span class="hljs-keyword">if</span> (validLayoutRequesters != <span class="hljs-keyword">null</span>) &#123;
+                        <span class="hljs-keyword">final</span> ArrayList&lt;View&gt; finalRequesters = validLayoutRequesters;
+                        <span class="hljs-comment">// 执行requestLayout在下一帧执行时</span>
+                        getRunQueue().post(<span class="hljs-keyword">new</span> Runnable() &#123;
+                            <span class="hljs-meta">@Override</span>
+                            <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">run</span><span class="hljs-params">()</span> </span>&#123;
+                                <span class="hljs-keyword">int</span> numValidRequests = finalRequesters.size();
+                                <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int</span> i = <span class="hljs-number">0</span>; i &lt; numValidRequests; ++i) &#123;
+                                    <span class="hljs-keyword">final</span> View view = finalRequesters.get(i);
+                                    Log.w(<span class="hljs-string">"View"</span>, <span class="hljs-string">"requestLayout() improperly called by "</span> + view +
+                                            <span class="hljs-string">" during second layout pass: posting in next frame"</span>);
+                                    view.requestLayout();
+                                &#125;
+                            &#125;
+                        &#125;);
+                    &#125;                 
+                &#125;
+       &#125;
+      
+    &#125;</code></pre>
+<p>主要执行了三步：</p>
+<ul>
+<li>执行<code>DecorView</code>的<code>layout</code>过程</li>
+<li>执行调用过<code>requestLayout()</code>的View(包含<code>PFLAG_FORCE_LAYOUT</code>标志)的<code>measure</code>和<code>layout</code></li>
+<li>还没调用过<code>requestLayout()</code>的View加入到队列中，等待下一帧绘制时执行</li>
+</ul>
+<pre><code class="hljs java"><span class="hljs-comment">//View.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">layout</span><span class="hljs-params">(<span class="hljs-keyword">int</span> l, <span class="hljs-keyword">int</span> t, <span class="hljs-keyword">int</span> r, <span class="hljs-keyword">int</span> b)</span> </span>&#123;
+      <span class="hljs-comment">//判断当前位置是否发生变化</span>
+        <span class="hljs-keyword">boolean</span> changed = isLayoutModeOptical(mParent) ?
+                setOpticalFrame(l, t, r, b) : setFrame(l, t, r, b);      
+      <span class="hljs-comment">//位置发生变化。或 需要layout</span>
+        <span class="hljs-keyword">if</span> (changed || (mPrivateFlags &amp; PFLAG_LAYOUT_REQUIRED) == PFLAG_LAYOUT_REQUIRED) &#123;
+          <span class="hljs-comment">//回调onLayout()</span>
+            onLayout(changed, l, t, r, b);
+          ...
+         <span class="hljs-comment">//移除 PFLAG_LAYOUT_REQUIRED标志 在measure过程添加   </span>
+          mPrivateFlags &amp;= ~PFLAG_LAYOUT_REQUIRED;
+          ...
+        &#125;
+      ...
+        <span class="hljs-comment">//layout过程完成后 移除 PFLAG_FORCE_LAYOUT标志</span>
+        mPrivateFlags &amp;= ~PFLAG_FORCE_LAYOUT;        
+      
+    &#125;
+
+    <span class="hljs-function"><span class="hljs-keyword">protected</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">setFrame</span><span class="hljs-params">(<span class="hljs-keyword">int</span> left, <span class="hljs-keyword">int</span> top, <span class="hljs-keyword">int</span> right, <span class="hljs-keyword">int</span> bottom)</span> </span>&#123;
+      <span class="hljs-comment">//位置发生变化时，就需要执行 invalidate()重绘View</span>
+      <span class="hljs-keyword">if</span> (mLeft != left || mRight != right || mTop != top || mBottom != bottom) &#123;
+         <span class="hljs-keyword">boolean</span> sizeChanged = (newWidth != oldWidth) || (newHeight != oldHeight);
+          <span class="hljs-comment">//需要重绘视图</span>
+            invalidate(sizeChanged);
+      &#125;
+    &#125;</code></pre>
+<blockquote>
+<p><code>requestLayout()</code>主要执行了以下几步：</p>
+<ul>
+<li>添加<code>PFLAG_FORCE_LAYOUT</code>和<code>PFLAG_INVALIDATED</code>标记</li>
+<li><code>measure</code>执行需要判断<code>PFLAG_FORCE_LAYOUT</code>标记是否存在</li>
+<li><code>measure</code>执行后，添加<code>PFLAG_LAYOUT_REQUIRED</code>标记，可以去执行<code>onLayout()</code></li>
+<li><code>layout</code>执行后，移除<code>PFLAG_LAYOUT_REQUIRED</code>和<code>PFLAG_FORCE_LAYOUT</code>标记</li>
+<li>在<code>layout</code>过程中，如果位置发生了变化，会执行到<code>invalidate()</code>，可能会执行<code>draw</code>过程；如果未发生变化，就不会执行<code>draw</code>过程</li>
+</ul>
 </blockquote>
-<pre><code class="hljs java"><span class="hljs-comment">// ../android/view/View.java</span>
- <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">invalidate</span><span class="hljs-params">()</span> </span>&#123;
+<h4 id="invalidate-postInvalidate"><a href="#invalidate-postInvalidate" class="headerlink" title="invalidate/postInvalidate"></a>invalidate/postInvalidate</h4><blockquote>
+<p><code>invalidate()</code>必须在主线程调用。<code>postInvalidate()</code>可以在子线程调用(通过handler发送消息到主线程调用)</p>
+<p>主要用于请求View的重绘，只会影响到View的<code>draw</code>过程</p>
+</blockquote>
+<pre><code class="hljs java"><span class="hljs-comment">//View.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">postInvalidate</span><span class="hljs-params">()</span> </span>&#123;
+        postInvalidateDelayed(<span class="hljs-number">0</span>);
+    &#125;
+
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">dispatchInvalidateDelayed</span><span class="hljs-params">(View view, <span class="hljs-keyword">long</span> delayMilliseconds)</span> </span>&#123;
+        Message msg = mHandler.obtainMessage(MSG_INVALIDATE, view);
+        mHandler.sendMessageDelayed(msg, delayMilliseconds);
+    &#125;
+
+    <span class="hljs-meta">@Override</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">handleMessage</span><span class="hljs-params">(Message msg)</span> </span>&#123;
+            <span class="hljs-keyword">switch</span> (msg.what) &#123;
+                <span class="hljs-keyword">case</span> MSG_INVALIDATE:
+                    ((View) msg.obj).invalidate();<span class="hljs-comment">//继续执行到invalidate()</span>
+                    <span class="hljs-keyword">break</span>;
+                ...
+            &#125;
+    &#125;
+
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">invalidate</span><span class="hljs-params">()</span> </span>&#123;
         invalidate(<span class="hljs-keyword">true</span>);
-    &#125;
-
- <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">invalidate</span><span class="hljs-params">(<span class="hljs-keyword">boolean</span> invalidateCache)</span> </span>&#123;
-        invalidateInternal(<span class="hljs-number">0</span>, <span class="hljs-number">0</span>, mRight - mLeft, mBottom - mTop, invalidateCache, <span class="hljs-keyword">true</span>);
-    &#125;
-
- <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">invalidateInternal</span><span class="hljs-params">(<span class="hljs-keyword">int</span> l, <span class="hljs-keyword">int</span> t, <span class="hljs-keyword">int</span> r, <span class="hljs-keyword">int</span> b, <span class="hljs-keyword">boolean</span> invalidateCache,
+    &#125;</code></pre>
+<p>最终执行到<code>invalidateInternal()</code></p>
+<pre><code class="hljs java"><span class="hljs-comment">//View.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">invalidateInternal</span><span class="hljs-params">(<span class="hljs-keyword">int</span> l, <span class="hljs-keyword">int</span> t, <span class="hljs-keyword">int</span> r, <span class="hljs-keyword">int</span> b, <span class="hljs-keyword">boolean</span> invalidateCache,
             <span class="hljs-keyword">boolean</span> fullInvalidate)</span> </span>&#123;
-     <span class="hljs-comment">//View不可见或者在移动中 不进行重绘</span>
-     <span class="hljs-keyword">if</span> (skipInvalidate()) &#123;
+        ...
+        <span class="hljs-comment">//当前View不可见</span>
+        <span class="hljs-keyword">if</span> (skipInvalidate()) &#123;
             <span class="hljs-keyword">return</span>;
         &#125;
-     
-     <span class="hljs-keyword">if</span> ((mPrivateFlags &amp; (PFLAG_DRAWN | PFLAG_HAS_BOUNDS)) == (PFLAG_DRAWN | PFLAG_HAS_BOUNDS)
+
+        <span class="hljs-keyword">if</span> ((mPrivateFlags &amp; (PFLAG_DRAWN | PFLAG_HAS_BOUNDS)) == (PFLAG_DRAWN | PFLAG_HAS_BOUNDS)
                 || (invalidateCache &amp;&amp; (mPrivateFlags &amp; PFLAG_DRAWING_CACHE_VALID) == PFLAG_DRAWING_CACHE_VALID)
-                || (mPrivateFlags &amp; PFLAG_INVALIDATED) != PFLAG_INVALIDATED
+                || (mPrivateFlags &amp; PFLAG_INVALIDATED) != PFLAG_INVALIDATED<span class="hljs-comment">//当前没有执行invalidate</span>
                 || (fullInvalidate &amp;&amp; isOpaque() != mLastIsOpaque)) &#123;
-            <span class="hljs-comment">//需要全部重绘</span>
+          <span class="hljs-comment">//需要全量重绘</span>
             <span class="hljs-keyword">if</span> (fullInvalidate) &#123;
                 mLastIsOpaque = isOpaque();
-                <span class="hljs-comment">//修改绘制完成标记</span>
+              <span class="hljs-comment">//添加重绘标记</span>
                 mPrivateFlags &amp;= ~PFLAG_DRAWN;
             &#125;
-            <span class="hljs-comment">//修改正在绘制标记</span>
+           <span class="hljs-comment">//添加当前View重绘标记</span>
             mPrivateFlags |= PFLAG_DIRTY;
-            <span class="hljs-comment">//清除缓存</span>
+           <span class="hljs-comment">//是否刷新缓存</span>
             <span class="hljs-keyword">if</span> (invalidateCache) &#123;
                 mPrivateFlags |= PFLAG_INVALIDATED;
                 mPrivateFlags &amp;= ~PFLAG_DRAWING_CACHE_VALID;
@@ -2106,47 +2257,36 @@ registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs
             <span class="hljs-keyword">if</span> (p != <span class="hljs-keyword">null</span> &amp;&amp; ai != <span class="hljs-keyword">null</span> &amp;&amp; l &lt; r &amp;&amp; t &lt; b) &#123;
                 <span class="hljs-keyword">final</span> Rect damage = ai.mTmpInvalRect;
                 damage.set(l, t, r, b);
-                <span class="hljs-comment">//设置重绘区域 并把自身传递到父布局</span>
+              <span class="hljs-comment">//设置重绘区域 并把自身传递到父布局</span>
                 p.invalidateChild(<span class="hljs-keyword">this</span>, damage);
             &#125;
-
-            <span class="hljs-comment">// Damage the entire projection receiver, if necessary.</span>
-            <span class="hljs-keyword">if</span> (mBackground != <span class="hljs-keyword">null</span> &amp;&amp; mBackground.isProjected()) &#123;
-                <span class="hljs-keyword">final</span> View receiver = getProjectionReceiver();
-                <span class="hljs-keyword">if</span> (receiver != <span class="hljs-keyword">null</span>) &#123;
-                    receiver.damageInParent();
-                &#125;
-            &#125;
-        &#125;     
-     
- &#125;</code></pre>
+          ...
+        &#125;
+    &#125;</code></pre>
 <p>上述代码修改标记完成后，调用父类的<code>invalidateChild()</code>将需要重绘的区域(<code>脏区域</code>)传入。(<code>ViewGroup以及ViewRootImpl都继承自ViewParent类</code>)</p>
 <blockquote>
 <p>脏区域：<em>为了保证绘制的效率，控件树仅对需要绘制的区域进行重绘，需要重绘的区域成为<code>脏区域</code></em>。</p>
 </blockquote>
-<pre><code class="hljs java"><span class="hljs-comment">//../android/view/VireGroup.java</span>
+<pre><code class="hljs java"><span class="hljs-comment">//ViewGroup.java</span>
     <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">void</span> <span class="hljs-title">invalidateChild</span><span class="hljs-params">(View child, <span class="hljs-keyword">final</span> Rect dirty)</span> </span>&#123;
-        <span class="hljs-keyword">final</span> AttachInfo attachInfo = mAttachInfo;
-        <span class="hljs-comment">//需要在开启硬件加速的情况下 会调用新的重绘方案</span>
+      <span class="hljs-comment">//开启硬件加速</span>
         <span class="hljs-keyword">if</span> (attachInfo != <span class="hljs-keyword">null</span> &amp;&amp; attachInfo.mHardwareAccelerated) &#123;
-            <span class="hljs-comment">// HW accelerated fast path</span>
+            <span class="hljs-comment">// 更新DisplayList</span>
             onDescendantInvalidated(child, child);
             <span class="hljs-keyword">return</span>;
-        &#125;
-
-        ViewParent parent = <span class="hljs-keyword">this</span>;
-        <span class="hljs-keyword">if</span> (attachInfo != <span class="hljs-keyword">null</span>) &#123;
-          ...
-            <span class="hljs-comment">//开始遍历循环 从当前View不断向上调用父布局的绘制方法</span>
-            <span class="hljs-keyword">do</span> &#123;
+        &#125;      
+         <span class="hljs-comment">//当前View是否 不透明</span>
+        <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> isOpaque = child.isOpaque() &amp;&amp; !drawAnimation &amp;&amp;
+                    child.getAnimation() == <span class="hljs-keyword">null</span> &amp;&amp; childMatrix.isIdentity(); 
+        <span class="hljs-comment">//全不透明 标记为 PFLAG_DIRTY_OPAQUE</span>
+        <span class="hljs-comment">//部分透明 标记为 PFLAG_DIRTY</span>
+        <span class="hljs-keyword">int</span> opaqueFlag = isOpaque ? PFLAG_DIRTY_OPAQUE : PFLAG_DIRTY;
+      ...
+        <span class="hljs-keyword">do</span> &#123;
                 View view = <span class="hljs-keyword">null</span>;
-                <span class="hljs-comment">// 当前父布局还为ViewGroup</span>
                 <span class="hljs-keyword">if</span> (parent <span class="hljs-keyword">instanceof</span> View) &#123;
                     view = (View) parent;
-                &#125;<span class="hljs-keyword">else</span> &#123;
-                  <span class="hljs-comment">// 当前父布局到了ViewRootImpl</span>
                 &#125;
-                
 
                 <span class="hljs-keyword">if</span> (drawAnimation) &#123;
                     <span class="hljs-keyword">if</span> (view != <span class="hljs-keyword">null</span>) &#123;
@@ -2158,7 +2298,6 @@ registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs
 
                 <span class="hljs-comment">// If the parent is dirty opaque or not dirty, mark it dirty with the opaque</span>
                 <span class="hljs-comment">// flag coming from the child that initiated the invalidate</span>
-                <span class="hljs-comment">// 父布局为实心 就需要设置 privateFlag标记</span>
                 <span class="hljs-keyword">if</span> (view != <span class="hljs-keyword">null</span>) &#123;
                     <span class="hljs-keyword">if</span> ((view.mViewFlags &amp; FADING_EDGE_MASK) != <span class="hljs-number">0</span> &amp;&amp;
                             view.getSolidColor() == <span class="hljs-number">0</span>) &#123;
@@ -2170,134 +2309,43 @@ registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs
                 &#125;
                 <span class="hljs-comment">//递归调用父布局的重绘方法</span>
                 parent = parent.invalidateChildInParent(location, dirty);
-                <span class="hljs-keyword">if</span> (view != <span class="hljs-keyword">null</span>) &#123;
-                    <span class="hljs-comment">// Account for transform on current parent</span>
-                    Matrix m = view.getMatrix();
-                    <span class="hljs-keyword">if</span> (!m.isIdentity()) &#123;
-                        RectF boundingRect = attachInfo.mTmpTransformRect;
-                        boundingRect.set(dirty);
-                        m.mapRect(boundingRect);
-                       <span class="hljs-comment">//将子View的脏区域 转换 父布局中的一块区域</span>
-                        dirty.set((<span class="hljs-keyword">int</span>) Math.floor(boundingRect.left),
+                <span class="hljs-comment">//计算需要重绘区域</span>
+                dirty.set((<span class="hljs-keyword">int</span>) Math.floor(boundingRect.left),
                                 (<span class="hljs-keyword">int</span>) Math.floor(boundingRect.top),
                                 (<span class="hljs-keyword">int</span>) Math.ceil(boundingRect.right),
-                                (<span class="hljs-keyword">int</span>) Math.ceil(boundingRect.bottom));
-                    &#125;
-                &#125;
+                                (<span class="hljs-keyword">int</span>) Math.ceil(boundingRect.bottom));                
+          ...
             &#125; <span class="hljs-keyword">while</span> (parent != <span class="hljs-keyword">null</span>);
-        &#125;
+      
     &#125;
 
-    <span class="hljs-comment">//将子视图坐标位置转化为当前视图的显示位置 </span>
+<span class="hljs-comment">//ViewGroup.java</span>
     <span class="hljs-function"><span class="hljs-keyword">public</span> ViewParent <span class="hljs-title">invalidateChildInParent</span><span class="hljs-params">(<span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span>[] location, <span class="hljs-keyword">final</span> Rect dirty)</span> </span>&#123;
         <span class="hljs-keyword">if</span> ((mPrivateFlags &amp; (PFLAG_DRAWN | PFLAG_DRAWING_CACHE_VALID)) != <span class="hljs-number">0</span>) &#123;
-            <span class="hljs-comment">// either DRAWN, or DRAWING_CACHE_VALID</span>
-            <span class="hljs-comment">//ViewGroup中没有动画在执行 或者 已完成</span>
-            <span class="hljs-keyword">if</span> ((mGroupFlags &amp; (FLAG_OPTIMIZE_INVALIDATE | FLAG_ANIMATION_DONE))
-                    != FLAG_OPTIMIZE_INVALIDATE) &#123;
-                dirty.offset(location[CHILD_LEFT_INDEX] - mScrollX,
-                        location[CHILD_TOP_INDEX] - mScrollY);
-                <span class="hljs-keyword">if</span> ((mGroupFlags &amp; FLAG_CLIP_CHILDREN) == <span class="hljs-number">0</span>) &#123;
-                    dirty.union(<span class="hljs-number">0</span>, <span class="hljs-number">0</span>, mRight - mLeft, mBottom - mTop);
-                &#125;
-
-                <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> left = mLeft;
-                <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> top = mTop;
-
-                <span class="hljs-keyword">if</span> ((mGroupFlags &amp; FLAG_CLIP_CHILDREN) == FLAG_CLIP_CHILDREN) &#123;
-                    <span class="hljs-keyword">if</span> (!dirty.intersect(<span class="hljs-number">0</span>, <span class="hljs-number">0</span>, mRight - left, mBottom - top)) &#123;
-                        dirty.setEmpty();
-                    &#125;
-                &#125;
-
-                location[CHILD_LEFT_INDEX] = left;
-                location[CHILD_TOP_INDEX] = top;
-            &#125; <span class="hljs-keyword">else</span> &#123;
-                
-                <span class="hljs-keyword">if</span> ((mGroupFlags &amp; FLAG_CLIP_CHILDREN) == FLAG_CLIP_CHILDREN) &#123;
-                    dirty.set(<span class="hljs-number">0</span>, <span class="hljs-number">0</span>, mRight - mLeft, mBottom - mTop);
-                &#125; <span class="hljs-keyword">else</span> &#123;
-                    <span class="hljs-comment">// in case the dirty rect extends outside the bounds of this container</span>
-                    dirty.union(<span class="hljs-number">0</span>, <span class="hljs-number">0</span>, mRight - mLeft, mBottom - mTop);
-                &#125;
-                location[CHILD_LEFT_INDEX] = mLeft;
-                location[CHILD_TOP_INDEX] = mTop;
-
-                mPrivateFlags &amp;= ~PFLAG_DRAWN;
-            &#125;
-            mPrivateFlags &amp;= ~PFLAG_DRAWING_CACHE_VALID;
-            <span class="hljs-keyword">if</span> (mLayerType != LAYER_TYPE_NONE) &#123;
-                mPrivateFlags |= PFLAG_INVALIDATED;
-            &#125;
-
-            <span class="hljs-keyword">return</span> mParent;
+          <span class="hljs-comment">//将子View转换为当前View显示的位置</span>
+          ...
         &#125;
-
-        <span class="hljs-keyword">return</span> <span class="hljs-keyword">null</span>;
     &#125;</code></pre>
-<p>当<code>parent</code>不为View时，说明已经到达了最顶层即<code>ViewRootImpl</code></p>
-<blockquote>
-<p>为什么最顶层会是<code>ViewRootImpl</code>?</p>
-<pre><code class="hljs java">&gt; 在ViewRoot与DecorView关联时讲到最后 WindowManagerGlobal 调用了 ViewRootImpl.setView() 传递进去DecorView
-&gt; <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">setView</span><span class="hljs-params">(View view, WindowManager.LayoutParams attrs, View panelParentView)</span> </span>&#123;
-&gt;    <span class="hljs-comment">//设置当前ViewRootImpl为DecorView的parent</span>
-&gt;    view.assignParent(<span class="hljs-keyword">this</span>);
-&gt; &#125;
-&gt; <span class="hljs-comment">//给当前View设置父布局</span>
-&gt; <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">assignParent</span><span class="hljs-params">(ViewParent parent)</span> </span>&#123;
-&gt;         <span class="hljs-keyword">if</span> (mParent == <span class="hljs-keyword">null</span>) &#123;
-&gt;             mParent = parent;
-&gt;         &#125; <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (parent == <span class="hljs-keyword">null</span>) &#123;
-&gt;             mParent = <span class="hljs-keyword">null</span>;
-&gt;         &#125; <span class="hljs-keyword">else</span> &#123;
-&gt;             <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> RuntimeException(<span class="hljs-string">"view "</span> + <span class="hljs-keyword">this</span> + <span class="hljs-string">" being added, but"</span>
-&gt;                     + <span class="hljs-string">" it already has a parent"</span>);
-&gt;         &#125;
-&gt;     &#125;
-&gt;</code></pre>
-</blockquote>
-<blockquote>
-<p>不断向上回溯的过程中，最终走到DecorView <code>getParent()</code>就为ViewRootImpl</p>
-</blockquote>
-<p>走到最后调用到了ViewRootImpl的<code>invalidateChild</code>方法，内部实现为<code>invalidateChildInParent()</code></p>
-<pre><code class="hljs java"><span class="hljs-comment">// ../android/view/ViewRootImpl.java</span>
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">invalidateChild</span><span class="hljs-params">(View child, Rect dirty)</span> </span>&#123;
-        invalidateChildInParent(<span class="hljs-keyword">null</span>, dirty);
-    &#125;
-
+<p>当<code>parent==null</code>时，表示已经到了最顶层<code>ViewRootImpl</code></p>
+<pre><code class="hljs java"><span class="hljs-comment">//ViewRootImpl.java</span>
     <span class="hljs-function"><span class="hljs-keyword">public</span> ViewParent <span class="hljs-title">invalidateChildInParent</span><span class="hljs-params">(<span class="hljs-keyword">int</span>[] location, Rect dirty)</span> </span>&#123;
-        <span class="hljs-comment">//判断当前线程是否与View线程相同</span>
+      <span class="hljs-comment">//检查当前是否主线程</span>
         checkThread();
         <span class="hljs-keyword">if</span> (DEBUG_DRAW) Log.v(mTag, <span class="hljs-string">"Invalidate child: "</span> + dirty);
 
         <span class="hljs-keyword">if</span> (dirty == <span class="hljs-keyword">null</span>) &#123;
-            <span class="hljs-comment">//整个窗口重绘</span>
             invalidate();
             <span class="hljs-keyword">return</span> <span class="hljs-keyword">null</span>;
         &#125; <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (dirty.isEmpty() &amp;&amp; !mIsAnimating) &#123;
-            <span class="hljs-comment">//需要重绘区域为空 就不管了</span>
             <span class="hljs-keyword">return</span> <span class="hljs-keyword">null</span>;
         &#125;
-        <span class="hljs-comment">//设置 重绘区域偏移</span>
-        <span class="hljs-keyword">if</span> (mCurScrollY != <span class="hljs-number">0</span> || mTranslator != <span class="hljs-keyword">null</span>) &#123;
-            mTempRect.set(dirty);
-            dirty = mTempRect;
-            <span class="hljs-keyword">if</span> (mCurScrollY != <span class="hljs-number">0</span>) &#123;
-                dirty.offset(<span class="hljs-number">0</span>, -mCurScrollY);
-            &#125;
-            <span class="hljs-keyword">if</span> (mTranslator != <span class="hljs-keyword">null</span>) &#123;
-                mTranslator.translateRectInAppWindowToScreen(dirty);
-            &#125;
-            <span class="hljs-keyword">if</span> (mAttachInfo.mScalingRequired) &#123;
-                dirty.inset(-<span class="hljs-number">1</span>, -<span class="hljs-number">1</span>);
-            &#125;
-        &#125;
-
+       ...
+      <span class="hljs-comment">//更新屏幕对应脏区域</span>
         invalidateRectOnScreen(dirty);
 
         <span class="hljs-keyword">return</span> <span class="hljs-keyword">null</span>;
     &#125;
-    <span class="hljs-comment">//在屏幕上找到对应的重绘区域进行重绘</span>
+
     <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">invalidateRectOnScreen</span><span class="hljs-params">(Rect dirty)</span> </span>&#123;
         <span class="hljs-keyword">final</span> Rect localDirty = mDirty;
         <span class="hljs-keyword">if</span> (!localDirty.isEmpty() &amp;&amp; !localDirty.contains(dirty)) &#123;
@@ -2316,149 +2364,82 @@ registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs
             localDirty.setEmpty();
         &#125;
         <span class="hljs-keyword">if</span> (!mWillDrawSoon &amp;&amp; (intersected || mIsAnimating)) &#123;
-            <span class="hljs-comment">//真正执行绘制的地方</span>
+          <span class="hljs-comment">//执行绘制流程</span>
             scheduleTraversals();
         &#125;
     &#125;</code></pre>
-<p>最终调用到了<code>scheduleTraversals()</code>，在上面讲到<code>View的绘制流程</code>时，有提到最初就是从<code>performTraversals()</code>开始，这里的<code>scheduleTraversals()</code>就是去触发一次<code>performTraversals()</code>开始一次绘制流程。</p>
-<blockquote>
-<p>由于<code>scheduleTraversals</code>是在主线程执行的，所以调用<code>invalidate()</code>时由于请求还未处理该消息，当多次调用重绘请求时，重绘也不会发生多次，提升效率。</p>
-<p>调用到<code>performTraversals()</code>按道理会重新走一遍绘制流程即<code>measure-&gt;layout-&gt;draw</code>，由于重绘时，设置<code>layoutRequested为false</code>就不会重新触发<code>measure及layout</code>流程。</p>
-</blockquote>
-<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/View-Invalidate.png" srcset="/img/loading.gif" class="full-image" alt="View的重绘流程" title="View的重绘流程"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
-<p>根据上述流程图，简单总结：</p>
-<ul>
-<li>View调用<code>invalidate()</code>时，会调用父布局的<code>invalidateChild()</code>并传入自身View以及需要重绘区域</li>
-<li>ViewGroup接收到传参时，会开启循环(<code>条件为直到没有父布局为止</code>)，调用自身的<code>invalidateChildInParent()-主要功能为将子布局区域转换成当前布局的区域</code>向父布局层层传递</li>
-<li>当父布局不为ViewGroup时，意味着已经到了最顶层的DecorView(<code>因为它的parent为ViewRootImpl</code>)，所以最终会执行到<code>ViewRootImpl.invalidateChild()</code></li>
-<li>ViewRootImpl执行<code>invalidateChild()</code>最终调用到的就是<code>performTraversals()</code>进行View的绘制流程(<code>draw</code>)，由于设置了<code>mLayoutRequested</code>限制了<code>measure,layout</code>的执行，所以只会发生<code>draw</code></li>
-</ul>
-<h4 id="postInvalidate"><a href="#postInvalidate" class="headerlink" title="postInvalidate"></a>postInvalidate</h4><blockquote>
-<p><code>postInvalidate</code>就是可以在子线程重绘View。实际的实现还是调用<code>invalidate()</code></p>
-</blockquote>
-<pre><code class="hljs java"><span class="hljs-comment">// ../android/view/View.java</span>
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">postInvalidate</span><span class="hljs-params">()</span> </span>&#123;
-        postInvalidateDelayed(<span class="hljs-number">0</span>);
+<p>通过<code>scheduleTraversals()</code>执行绘制流程，由于未设置<code>PFLAG_FORCE_LAYOUT</code>无法执行<code>measure</code>过程，如果位置没有发生变化后续<code>layout</code>也无法执行。</p>
+<p>最后调用<code>performDraw()</code></p>
+<pre><code class="hljs java"><span class="hljs-comment">//ViewRootImpl.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">performDraw</span><span class="hljs-params">()</span> </span>&#123;
+      ...
+        <span class="hljs-keyword">boolean</span> canUseAsync = draw(fullRedrawNeeded);
     &#125;
 
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">postInvalidate</span><span class="hljs-params">(<span class="hljs-keyword">int</span> left, <span class="hljs-keyword">int</span> top, <span class="hljs-keyword">int</span> right, <span class="hljs-keyword">int</span> bottom)</span> </span>&#123;
-        postInvalidateDelayed(<span class="hljs-number">0</span>, left, top, right, bottom);
-    &#125;
-
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">postInvalidateDelayed</span><span class="hljs-params">(<span class="hljs-keyword">long</span> delayMilliseconds, <span class="hljs-keyword">int</span> left, <span class="hljs-keyword">int</span> top,
-            <span class="hljs-keyword">int</span> right, <span class="hljs-keyword">int</span> bottom)</span> </span>&#123;
-
-        <span class="hljs-comment">// We try only with the AttachInfo because there's no point in invalidating</span>
-        <span class="hljs-comment">// if we are not attached to our window</span>
-        <span class="hljs-keyword">final</span> AttachInfo attachInfo = mAttachInfo;
-        <span class="hljs-keyword">if</span> (attachInfo != <span class="hljs-keyword">null</span>) &#123;
-            <span class="hljs-keyword">final</span> AttachInfo.InvalidateInfo info = AttachInfo.InvalidateInfo.obtain();
-            info.target = <span class="hljs-keyword">this</span>;
-            info.left = left;
-            info.top = top;
-            info.right = right;
-            info.bottom = bottom;
-
-            attachInfo.mViewRootImpl.dispatchInvalidateRectDelayed(info, delayMilliseconds);
-        &#125;
-    &#125;
-
-<span class="hljs-comment">// ../android/view/ViewRootImpl.java</span>
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">dispatchInvalidateDelayed</span><span class="hljs-params">(View view, <span class="hljs-keyword">long</span> delayMilliseconds)</span> </span>&#123;
-    Message msg = mHandler.obtainMessage(MSG_INVALIDATE, view);
-    mHandler.sendMessageDelayed(msg, delayMilliseconds);
-&#125;
-
-<span class="hljs-keyword">final</span> ViewRootHandler mHandler = <span class="hljs-keyword">new</span> ViewRootHandler();
-<span class="hljs-keyword">final</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">ViewRootHandler</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">Handler</span> </span>&#123;
-  ..
-     <span class="hljs-meta">@Override</span>
-        <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">handleMessage</span><span class="hljs-params">(Message msg)</span> </span>&#123;
-            <span class="hljs-keyword">switch</span> (msg.what) &#123;
-            <span class="hljs-keyword">case</span> MSG_INVALIDATE:
-                <span class="hljs-comment">//最终调用到了 invalidate </span>
-                ((View) msg.obj).invalidate();
-                <span class="hljs-keyword">break</span>;
-                ...
-            &#125;
-       &#125;
-  ...
-&#125;</code></pre>
-<h4 id="requestLayout-1"><a href="#requestLayout-1" class="headerlink" title="requestLayout"></a>requestLayout</h4><blockquote>
-<p>强制重新布局，重新走一遍View的绘制流程。</p>
-</blockquote>
-<pre><code class="hljs java"><span class="hljs-comment">// ../android/view/View.java</span>
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">requestLayout</span><span class="hljs-params">()</span> </span>&#123;
-        <span class="hljs-keyword">if</span> (mMeasureCache != <span class="hljs-keyword">null</span>) mMeasureCache.clear();
-
-        <span class="hljs-keyword">if</span> (mAttachInfo != <span class="hljs-keyword">null</span> &amp;&amp; mAttachInfo.mViewRequestingLayout == <span class="hljs-keyword">null</span>) &#123;
-            <span class="hljs-comment">// Only trigger request-during-layout logic if this is the view requesting it,</span>
-            <span class="hljs-comment">// not the views in its parent hierarchy</span>
-            ViewRootImpl viewRoot = getViewRootImpl();
-            <span class="hljs-keyword">if</span> (viewRoot != <span class="hljs-keyword">null</span> &amp;&amp; viewRoot.isInLayout()) &#123;
-                <span class="hljs-keyword">if</span> (!viewRoot.requestLayoutDuringLayout(<span class="hljs-keyword">this</span>)) &#123;
-                    <span class="hljs-keyword">return</span>;
+    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">draw</span><span class="hljs-params">(<span class="hljs-keyword">boolean</span> fullRedrawNeeded)</span> </span>&#123;
+        <span class="hljs-keyword">if</span> (!dirty.isEmpty() || mIsAnimating || accessibilityFocusDirty) &#123;
+            <span class="hljs-keyword">if</span> (mAttachInfo.mThreadedRenderer != <span class="hljs-keyword">null</span> &amp;&amp; mAttachInfo.mThreadedRenderer.isEnabled()) &#123;
+              <span class="hljs-comment">//硬件绘制</span>
+              ...
+                mAttachInfo.mThreadedRenderer.draw(mView, mAttachInfo, <span class="hljs-keyword">this</span>, callback);              
+            &#125; <span class="hljs-keyword">else</span> &#123;
+              <span class="hljs-comment">//软件绘制</span>
+              ...
+              <span class="hljs-keyword">if</span> (!drawSoftware(surface, mAttachInfo, xOffset, yOffset,
+                        scalingRequired, dirty, surfaceInsets)) &#123;
+                    <span class="hljs-keyword">return</span> <span class="hljs-keyword">false</span>;
                 &#125;
             &#125;
-            mAttachInfo.mViewRequestingLayout = <span class="hljs-keyword">this</span>;
-        &#125;
-        <span class="hljs-comment">//设置强制刷新标记</span>
-        mPrivateFlags |= PFLAG_FORCE_LAYOUT;
-        mPrivateFlags |= PFLAG_INVALIDATED;
-
-        <span class="hljs-keyword">if</span> (mParent != <span class="hljs-keyword">null</span> &amp;&amp; !mParent.isLayoutRequested()) &#123;
-            <span class="hljs-comment">//向父布局继续请求刷新布局</span>
-            mParent.requestLayout();
-        &#125;
-        <span class="hljs-keyword">if</span> (mAttachInfo != <span class="hljs-keyword">null</span> &amp;&amp; mAttachInfo.mViewRequestingLayout == <span class="hljs-keyword">this</span>) &#123;
-            mAttachInfo.mViewRequestingLayout = <span class="hljs-keyword">null</span>;
-        &#125;
+          ...
     &#125;</code></pre>
-<p>不断向父布局请求重新布局，逐层传递直到ViewRootImpl层。</p>
-<pre><code class="hljs java"><span class="hljs-meta">@Override</span>
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">requestLayout</span><span class="hljs-params">()</span> </span>&#123;
-    <span class="hljs-keyword">if</span> (!mHandlingLayoutInLayoutRequest) &#123;
-        checkThread();
-        <span class="hljs-comment">//设置标记 重新布局</span>
-        mLayoutRequested = <span class="hljs-keyword">true</span>;
-        scheduleTraversals();
-    &#125;
-&#125;</code></pre>
-<p>上文中提到<code>mLayoutRequested</code>就是防止<code>invalidate</code>重新走一遍绘制流程，这里设置为<code>true</code>，意味着需要走一遍<code>measure,layout</code>。</p>
-<p>由于<code>measure</code>过程设置了<code>mPrivateTags PFLAG_LAYOUT_REQUIRED</code>所以会往下继续执行<code>layout</code>过程。</p>
+<p>向下调用到<code>View.draw()</code></p>
+<pre><code class="hljs java"><span class="hljs-comment">//View.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">draw</span><span class="hljs-params">(Canvas canvas)</span> </span>&#123;
+        <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> dirtyOpaque = (privateFlags &amp; PFLAG_DIRTY_MASK) == PFLAG_DIRTY_OPAQUE &amp;&amp;
+                (mAttachInfo == <span class="hljs-keyword">null</span> || !mAttachInfo.mIgnoreDirtyState);
+        <span class="hljs-keyword">if</span> (!dirtyOpaque) &#123;
+            drawBackground(canvas);<span class="hljs-comment">//绘制背景</span>
+        &#125;
+        <span class="hljs-keyword">if</span> (!dirtyOpaque) onDraw(canvas);<span class="hljs-comment">//绘制自身</span>
+        dispatchDraw(canvas); <span class="hljs-comment">//绘制子View </span>
+        onDrawForeground(canvas);<span class="hljs-comment">//绘制前景</span>
+    &#125;</code></pre>
+<p>关键在于是否持有<code>PFLAG_DIRTY_OPAQUE</code>标志，这个标志主要是在<code>invalidate()</code>打上的。</p>
 <blockquote>
-<p><code>requestLayout</code>是否会触发<code>draw</code>过程？</p>
-<p>按照流程来说<code>layout</code>之后就是<code>draw</code>，所以可以从<code>layout</code>过程中查看相关代码</p>
-<pre><code class="hljs java">&gt; 在上文中说到 View的layout过程 会调用到 layout 后续是 setFrame 确定顶点，最后onLayout执行
-&gt; <span class="hljs-function"><span class="hljs-keyword">protected</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">setFrame</span><span class="hljs-params">(<span class="hljs-keyword">int</span> left, <span class="hljs-keyword">int</span> top, <span class="hljs-keyword">int</span> right, <span class="hljs-keyword">int</span> bottom)</span> </span>&#123;
-&gt;    <span class="hljs-comment">//意味着 如果布局的坐标发生了改变 就需要重新绘制</span>
-&gt; 	 <span class="hljs-keyword">if</span> (mLeft != left || mRight != right || mTop != top || mBottom != bottom) &#123;
-&gt;             changed = <span class="hljs-keyword">true</span>;
-&gt; 
-&gt;             <span class="hljs-comment">// Remember our drawn bit</span>
-&gt;             <span class="hljs-keyword">int</span> drawn = mPrivateFlags &amp; PFLAG_DRAWN;
-&gt; 
-&gt;             <span class="hljs-keyword">int</span> oldWidth = mRight - mLeft;
-&gt;             <span class="hljs-keyword">int</span> oldHeight = mBottom - mTop;
-&gt;             <span class="hljs-keyword">int</span> newWidth = right - left;
-&gt;             <span class="hljs-keyword">int</span> newHeight = bottom - top;
-&gt;             <span class="hljs-keyword">boolean</span> sizeChanged = (newWidth != oldWidth) || (newHeight != oldHeight);
-&gt; 
-&gt;             <span class="hljs-comment">// Invalidate our old position</span>
-&gt;             invalidate(sizeChanged);
-&gt;             ...
-&gt;        &#125;
-&gt;    ...
-&gt; &#125;
-&gt;</code></pre>
+<p><code>invalidate()</code>通过设置<code>PFLAG_INVALIDATED</code>和<code>PFLAG_DRAWING_CACHE_VALID</code>标记，然后执行<code>invalidateChild()</code>通过层层向上调用<code>parent.invalidateChildInParent()</code>把需要重新绘制的区域传递上去，直到达到<code>ViewRootImpl</code>为止。最后调用到<code>invalidateRectOnScreen()</code>传入最终需要重新绘制的区域，开始执行绘制流程。</p>
+<p><strong>invalidate()会打上<code>PFLAG_DIRTY_OPAQUE</code>标记，只有这个标记才会执行<code>onDraw()</code>。</strong></p>
 </blockquote>
-<blockquote>
-<p>综上所述，如果layout的布局有变化还是会触发<code>draw</code>过程的</p>
-</blockquote>
+<h4 id="两者区别"><a href="#两者区别" class="headerlink" title="两者区别"></a>两者区别</h4><p><code>rquestLayout()</code>和<code>invalidate()</code>都可以触发整个绘制流程，但是触发<code>measure</code>、<code>layout</code>、<code>draw</code>各条件都不同</p>
+<ul>
+<li><code>measure</code>过程触发：<code>mPrivateFlags</code>包含<code>PFLAG_FORCE_LAYOUT</code></li>
+<li><code>layout</code>过程触发：<code>mPrivateFlags</code>包含<code>PFLAG_LAYOUT_REQUIRED(measure执行后添加)</code>或者<code>位置发生变化</code></li>
+<li><code>draw</code>过程触发：<code>mPrivateFlags</code>包含<code>PFLAG_DIRTY_OPAQUE</code></li>
+</ul>
+<p><code>requestLayout()</code>主要用来设置<code>PFLAG_FORCE_LAYOUT</code>标志，会执行到<code>measure、layout</code>过程，如果位置发生变化则可能执行<code>draw</code>过程</p>
+<p><code>invalidate()</code>主要用来设置<code>PFLAG_DIRTY_OPAQUE</code>标志，若发生位置变化会执行<code>layout</code>过程，继续往后执行<code>draw</code>过程</p>
 <h3 id="include、merge、ViewStub作用以及实现"><a href="#include、merge、ViewStub作用以及实现" class="headerlink" title="include、merge、ViewStub作用以及实现"></a>include、merge、ViewStub作用以及实现</h3><a href="/2019/01/03/include、merge-ViewStub相关/" title="include、merge及ViewStub相关">include、merge及ViewStub相关</a>
-<h3 id="View的层级计算"><a href="#View的层级计算" class="headerlink" title="View的层级计算"></a>View的层级计算</h3><p>//TODO 提供代码</p>
-<p>由于View是树形结构，代码的话可以利用<code>getParent()</code>实现 ，直到返回值为null，说明已经到了最高层。</p>
-<h3 id="AsyncLayoutInflater异步加载"><a href="#AsyncLayoutInflater异步加载" class="headerlink" title="AsyncLayoutInflater异步加载"></a>AsyncLayoutInflater异步加载</h3><p><a href="https://www.jianshu.com/p/8548db25a475" target="_blank" rel="noopener">AsyncLayoutInfalter</a></p>
+<h3 id="View的层级计算"><a href="#View的层级计算" class="headerlink" title="View的层级计算"></a>View的层级计算</h3><pre><code class="hljs java"><span class="hljs-comment">//实际形成一个二叉树 递归计算深度    </span>
+<span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">int</span> <span class="hljs-title">maxViewDeep</span><span class="hljs-params">(View view)</span> </span>&#123;
+        <span class="hljs-keyword">if</span> (!(view <span class="hljs-keyword">instanceof</span> ViewGroup)) &#123;
+            <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+        &#125;
+
+        ViewGroup vp = (ViewGroup) view;
+        <span class="hljs-keyword">if</span> (vp.getChildCount() == <span class="hljs-number">0</span>) &#123;
+            <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+        &#125;
+
+        <span class="hljs-keyword">int</span> max = <span class="hljs-number">0</span>;
+        <span class="hljs-keyword">int</span> count = vp.getChildCount();
+        <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int</span> i = <span class="hljs-number">0</span>; i &lt; count; i++) &#123;
+            <span class="hljs-keyword">int</span> deep = maxViewDeep(vp.getChildAt(i)) + <span class="hljs-number">1</span>;
+            <span class="hljs-keyword">if</span> (deep &gt; max) &#123;
+                max = deep;
+            &#125;
+        &#125;
+        <span class="hljs-keyword">return</span> max;
+    &#125;</code></pre>
+<h3 id="AsyncLayoutInflater异步加载"><a href="#AsyncLayoutInflater异步加载" class="headerlink" title="AsyncLayoutInflater异步加载"></a>AsyncLayoutInflater异步加载</h3><a href="/2020/11/02/Android布局优化-AsyncLayoutInflater简析/" title="AsyncLayoutInflater">AsyncLayoutInflater</a>
 <h3 id="inflate-时，root与attachToRoot的结果源码"><a href="#inflate-时，root与attachToRoot的结果源码" class="headerlink" title="inflate()时，root与attachToRoot的结果源码"></a>inflate()时，<code>root</code>与<code>attachToRoot</code>的结果源码</h3><h3 id="MeasureSpec-UNSPECIFIED使用场景"><a href="#MeasureSpec-UNSPECIFIED使用场景" class="headerlink" title="MeasureSpec.UNSPECIFIED使用场景"></a><code>MeasureSpec.UNSPECIFIED</code>使用场景</h3>
             </div>
             <hr>
