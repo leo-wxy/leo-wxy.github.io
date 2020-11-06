@@ -162,7 +162,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      5k 字
+      5.2k 字
     </span>
   
 
@@ -172,7 +172,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      59
+      64
        分钟
     </span>
   
@@ -641,7 +641,59 @@ World
 </li>
 </ol>
 <ol start="40">
-<li></li>
+<li><p>如何获取当前Activity展示的Dialog？</p>
+<pre><code class="hljs java">    <span class="hljs-meta">@SuppressWarnings</span>(<span class="hljs-string">"unchecked"</span>)
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> List&lt;View&gt; <span class="hljs-title">getViewRoots</span><span class="hljs-params">()</span> </span>&#123;
+
+        List&lt;View&gt; viewRoots = <span class="hljs-keyword">new</span> ArrayList&lt;&gt;();
+
+        <span class="hljs-keyword">try</span> &#123;
+            Object windowManager;
+            windowManager = Class.forName(<span class="hljs-string">"android.view.WindowManagerGlobal"</span>)
+                    .getMethod(<span class="hljs-string">"getInstance"</span>).invoke(<span class="hljs-keyword">null</span>);
+<span class="hljs-comment">//WindowManagerGlobal 内部持有 mRoots(ViewRootImpl列表) mViews(DecorView列表) </span>
+            Field rootsField = windowManager.getClass().getDeclaredField(<span class="hljs-string">"mRoots"</span>);
+            rootsField.setAccessible(<span class="hljs-keyword">true</span>);
+
+            Field stoppedField = Class.forName(<span class="hljs-string">"android.view.ViewRootImpl"</span>)
+                    .getDeclaredField(<span class="hljs-string">"mStopped"</span>);
+            stoppedField.setAccessible(<span class="hljs-keyword">true</span>);
+<span class="hljs-comment">//ViewRootImpl mView对应了 DecorView</span>
+            Field rootViewField = Class.forName(<span class="hljs-string">"android.view.ViewRootImpl"</span>)
+                    .getDeclaredField(<span class="hljs-string">"mView"</span>);
+            rootViewField.setAccessible(<span class="hljs-keyword">true</span>);
+<span class="hljs-comment">//DecorView mWindow对应了 PhoneWindow</span>
+            Field windowField = Class.forName(<span class="hljs-string">"com.android.internal.policy.DecorView"</span>)
+                    .getDeclaredField(<span class="hljs-string">"mWindow"</span>);
+            windowField.setAccessible(<span class="hljs-keyword">true</span>);
+
+            List&lt;ViewParent&gt; viewParents = (List&lt;ViewParent&gt;) rootsField.get(windowManager);
+            <span class="hljs-comment">// Filter out inactive view roots</span>
+            <span class="hljs-keyword">for</span> (ViewParent viewParent : viewParents) &#123;
+                <span class="hljs-keyword">boolean</span> stopped = (<span class="hljs-keyword">boolean</span>) stoppedField.get(viewParent);
+                <span class="hljs-keyword">if</span> (!stopped) &#123;
+                    View view = (View) rootViewField.get(viewParent);
+                    Window w = (Window) windowField.get(view);
+                  <span class="hljs-comment">//Window setCallback 一般对应Window的创建者 </span>
+                    Log.w(<span class="hljs-string">"sss"</span>,w.getCallback().toString());
+                    viewRoots.add(view);
+                &#125;
+            &#125;
+        &#125; <span class="hljs-keyword">catch</span> (Exception e) &#123;
+            e.printStackTrace();
+        &#125;
+
+        <span class="hljs-keyword">return</span> viewRoots;
+    &#125;</code></pre>
+<p>当有dialog弹出时，此时页面就会有两个window对象。通过反射也可以获取两个对象。</p>
+<blockquote>
+<p>一般Activity和Dialog的布局都比较复杂，可能会存在标题栏等信息，需要封装一层DecorView。</p>
+<p>然后通过<code>windowManager</code>管理。</p>
+<p><code>Toast</code>与<code>PopupWindow</code>布局比较简单，直接addView即可。</p>
+</blockquote>
+</li>
+<li><p>ss</p>
+</li>
 </ol>
 
             </div>

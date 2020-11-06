@@ -162,7 +162,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      12.9k 字
+      13.2k 字
     </span>
   
 
@@ -172,7 +172,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      197
+      204
        分钟
     </span>
   
@@ -208,6 +208,46 @@
               <!--MeasureSpec是什么？有什么作用？，自定义View/ViewGroup需要注意什么？invalidate()和postInvalidate()的区别？,invalidate和postInvalidate的区别及使用 Requestlayout，onlayout，onDraw，DrawChild区别与联系  View刷新机制  View绘制流程  计算一个view的嵌套层级（递归）  onMeasure的具体过程，先measure子view还是自己  onDraw的具体过程，先draw子view还是自己  实现一个自定义view，其中含有若干textview，textview文字可换行且自定义- - view的高度可自适应拓展 view的工作原理及measure、layout、draw流程。哪一个流程可以放在子线程中去执行？draw方法中需要注意的问题？Invalidate、postInvalidate、requestLayout应用场景 TextView.setText()调用什么方法去刷新 -->
 <p><img src="/images/View工作原理.png" srcset="/img/loading.gif" alt="View工作原理"></p>
 <a id="more"></a>
+<h2 id="PhoneWindow"><a href="#PhoneWindow" class="headerlink" title="PhoneWindow"></a>PhoneWindow</h2><p><code>Window</code>是一个抽象类，提供了各种窗口操作方法。每个Activity都会持有一个<code>Window</code>。</p>
+<p><code>PhoneWindow</code>是<code>Window</code>唯一实现类，在<code>Activity.attach()</code>进行初始化</p>
+<pre><code class="hljs java"><span class="hljs-comment">//ActivityThread.java</span>
+<span class="hljs-comment">//Activity开始启动</span>
+<span class="hljs-function"><span class="hljs-keyword">public</span> Activity <span class="hljs-title">handleLaunchActivity</span><span class="hljs-params">(ActivityClientRecord r,
+            PendingTransactionActions pendingActions, Intent customIntent)</span> </span>&#123;
+ ... 
+   <span class="hljs-keyword">final</span> Activity a = performLaunchActivity(r, customIntent);
+&#125;
+
+    <span class="hljs-function"><span class="hljs-keyword">private</span> Activity <span class="hljs-title">performLaunchActivity</span><span class="hljs-params">(ActivityClientRecord r, Intent customIntent)</span> </span>&#123;
+      <span class="hljs-comment">//创建Application对象</span>
+            Application app = r.packageInfo.makeApplication(<span class="hljs-keyword">false</span>, mInstrumentation);      
+      <span class="hljs-comment">//Activity初始化</span>
+       activity.attach(appContext, <span class="hljs-keyword">this</span>, getInstrumentation(), r.token,
+                        r.ident, app, r.intent, r.activityInfo, title, r.parent,
+                        r.embeddedID, r.lastNonConfigurationInstances, config,
+                        r.referrer, r.voiceInteractor, window, r.configCallback);
+    &#125;</code></pre>
+<pre><code class="hljs java"><span class="hljs-comment">//Activity.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">final</span> <span class="hljs-keyword">void</span> <span class="hljs-title">attach</span><span class="hljs-params">(Context context, ActivityThread aThread,
+            Instrumentation instr, IBinder token, <span class="hljs-keyword">int</span> ident,
+            Application application, Intent intent, ActivityInfo info,
+            CharSequence title, Activity parent, String id,
+            NonConfigurationInstances lastNonConfigurationInstances,
+            Configuration config, String referrer, IVoiceInteractor voiceInteractor,
+            Window window, ActivityConfigCallback activityConfigCallback)</span> </span>&#123;
+      ...
+        <span class="hljs-comment">//初始化PhoneWindow对象</span>
+        mWindow = <span class="hljs-keyword">new</span> PhoneWindow(<span class="hljs-keyword">this</span>, window, activityConfigCallback);
+        mWindow.setWindowControllerCallback(<span class="hljs-keyword">this</span>);
+      <span class="hljs-comment">//绑定Window对象</span>
+        mWindow.setCallback(<span class="hljs-keyword">this</span>);
+      
+    &#125;</code></pre>
+<pre><code class="hljs java"><span class="hljs-comment">//PhoneWindow.java</span>
+<span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">PhoneWindow</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">Window</span> <span class="hljs-keyword">implements</span> <span class="hljs-title">MenuBuilder</span>.<span class="hljs-title">Callback</span> </span>&#123;
+    <span class="hljs-comment">// This is the top-level view of the window, containing the window decor.</span>
+    <span class="hljs-keyword">private</span> DecorView mDecor;<span class="hljs-comment">//对应DecorView  </span>
+&#125;</code></pre>
 <h2 id="DecorView"><a href="#DecorView" class="headerlink" title="DecorView"></a>DecorView</h2><p><strong>DecorView是整个Window界面的最顶层View。</strong> <em>可以使用Android Studio自带的Layout Inspector查看页面层级</em></p>
 <h3 id="DecorView的布局结构"><a href="#DecorView的布局结构" class="headerlink" title="DecorView的布局结构"></a>DecorView的布局结构</h3><p>一般情况下<code>DecorView</code>会包含一个竖直方向的LinearLayout，该LinearLayout分为上下两个部分，上面是标题栏(<code>titlebar</code>)，下面是内容栏(<code>继承自FrameLayout 且id为content</code>)。因此我们设置Activity的布局方法叫做<code>setContentView()</code>，因为他们都被加进了<code>id为content的FrameLayout</code>中。</p>
 <p>我们可以利用<code>ViewGroup content = findViewById(R.android.id.content)</code>获取conetnt。使用<code>content.getChildAt(0)</code>获取设置的Activity布局。</p>
@@ -413,7 +453,25 @@
                 r.hideForNow = <span class="hljs-keyword">true</span>;
             &#125;    
             &#125;
+        <span class="hljs-keyword">if</span> (!r.activity.mFinished &amp;&amp; willBeVisible &amp;&amp; r.activity.mDecor != <span class="hljs-keyword">null</span> &amp;&amp; !r.hideForNow) &#123;
 ...
+            <span class="hljs-keyword">if</span> (r.activity.mVisibleFromClient) &#123;
+              <span class="hljs-comment">//显示DecorView</span>
+                r.activity.makeVisible();
+            &#125;
+        &#125;
+...
+    &#125;
+
+<span class="hljs-comment">//Activity.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">makeVisible</span><span class="hljs-params">()</span> </span>&#123;
+        <span class="hljs-keyword">if</span> (!mWindowAdded) &#123;
+            ViewManager wm = getWindowManager();
+            wm.addView(mDecor, getWindow().getAttributes());
+            mWindowAdded = <span class="hljs-keyword">true</span>;
+        &#125;
+      <span class="hljs-comment">//显示DecorView及其内容</span>
+        mDecor.setVisibility(View.VISIBLE);
     &#125;</code></pre>
 <p>后续调用到了<code>wm.addView()</code>。将对应的DecorView传递进去。</p>
 <pre><code class="hljs java"><span class="hljs-comment">// ../android/view/WindowManagerImpl.java</span>
@@ -480,7 +538,7 @@
 <blockquote>
 <p><code>Activity</code>、<code>Window(PhoneWindow)</code>、<code>View(DecorView)</code>、<code>ViewRootImpl</code>之间的关系？</p>
 <p><code>PhoneWindow</code>是<code>Window</code>的唯一子类，在<code>Activity.attach()</code>构建的实例，是<strong>Activity与View交互的中间层</strong></p>
-<p><code>DecorView</code>是<code>所有View</code>的最顶层，<code>ViewRootImpl</code>是<code>DecorView</code>的<code>parent</code>，<strong>掌管View的各种事件，例如<code>刷新、点击</code>事件等</strong></p>
+<p><code>DecorView</code>是<code>所有View</code>的最顶层，<code>ViewRootImpl</code>是<code>DecorView</code>的<code>parent</code>，负责<code>WindowManagerService</code>与<code>DecorView</code>的通信。<strong>掌管View的各种事件，例如<code>刷新、点击</code>事件等</strong></p>
 </blockquote>
 <h2 id="LayoutInflater"><a href="#LayoutInflater" class="headerlink" title="LayoutInflater"></a>LayoutInflater</h2><blockquote>
 <p><code>LayoutInflater</code>是一个抽象类，具体实现类为<code>PhoneLayoutInflater</code>。主要用于进行<code>布局加载</code>。</p>
@@ -498,6 +556,7 @@
     <span class="hljs-keyword">return</span> LayoutInflater;
 &#125;
 
+<span class="hljs-comment">//SystemServerRegistry.java</span>
 <span class="hljs-comment">//系统设置 PhoneInflater 为加载类</span>
 registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs-class">.<span class="hljs-keyword">class</span>,
             <span class="hljs-title">new</span> <span class="hljs-title">CachedServiceFetcher</span>&lt;<span class="hljs-title">LayoutInflater</span>&gt;() </span>&#123;
@@ -505,6 +564,22 @@ registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs
         <span class="hljs-function"><span class="hljs-keyword">public</span> LayoutInflater <span class="hljs-title">createService</span><span class="hljs-params">(ContextImpl ctx)</span> </span>&#123;
             <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> PhoneLayoutInflater(ctx.getOuterContext());
         &#125;&#125;);</code></pre>
+<p><code>PhoneLayoutInflater</code>设置的<code>context</code>为<code>ContextImpl.getOuterContext()</code></p>
+<pre><code class="hljs java"><span class="hljs-comment">//ContextImpl.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">final</span> <span class="hljs-keyword">void</span> <span class="hljs-title">setOuterContext</span><span class="hljs-params">(Context context)</span> </span>&#123;
+        mOuterContext = context;
+    &#125;
+
+    <span class="hljs-function"><span class="hljs-keyword">final</span> Context <span class="hljs-title">getOuterContext</span><span class="hljs-params">()</span> </span>&#123;
+        <span class="hljs-keyword">return</span> mOuterContext;
+    &#125;
+
+<span class="hljs-comment">//ActivityThread.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">private</span> Activity <span class="hljs-title">performLaunchActivity</span><span class="hljs-params">(ActivityClientRecord r, Intent customIntent)</span> </span>&#123;
+      ...
+        appContext.setOuterContext(activity);<span class="hljs-comment">//设置外部context为Activity</span>
+    &#125;</code></pre>
+<p><strong>一般从<code>Activity、View、Dialog，Fragment</code>获取的<code>layoutInflater.getContext()</code>为Activity</strong></p>
 <h3 id="inflate-加载布局"><a href="#inflate-加载布局" class="headerlink" title="inflate()-加载布局"></a>inflate()-加载布局</h3><blockquote>
 <p><code>source</code>：需要加载的layout id</p>
 <p><code>root</code>：根布局</p>
@@ -1204,6 +1279,15 @@ registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs
 <h3 id="measure-测量"><a href="#measure-测量" class="headerlink" title="measure-测量"></a>measure-测量</h3><blockquote>
 <p>起点位于<code>performMeasure()</code>。</p>
 </blockquote>
+<pre><code class="hljs java"><span class="hljs-comment">//ViewRootImpl.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">performMeasure</span><span class="hljs-params">(<span class="hljs-keyword">int</span> childWidthMeasureSpec, <span class="hljs-keyword">int</span> childHeightMeasureSpec)</span> </span>&#123;
+       ...
+        <span class="hljs-keyword">try</span> &#123;
+            mView.measure(childWidthMeasureSpec, childHeightMeasureSpec);
+        &#125; <span class="hljs-keyword">finally</span> &#123;
+            Trace.traceEnd(Trace.TRACE_TAG_VIEW);
+        &#125;
+    &#125;</code></pre>
 <h4 id="MeasureSpec"><a href="#MeasureSpec" class="headerlink" title="MeasureSpec"></a>MeasureSpec</h4><blockquote>
 <p>MeasureSpec代表一个32位int值，高2位代表SpecMode(测量模式)，低30位代表SpecSize(某种测量模式下的规格大小)。</p>
 </blockquote>
@@ -1233,7 +1317,7 @@ registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs
        &#125;</code></pre>
 <p><code>SpecMode</code>分为三类：</p>
 <ul>
-<li><code>UNSPECIFIED</code>：<strong>未指定模式</strong>。父控件不对子控件家人和我束缚，子元素可以为任意大小，一般用于系统内部的测量。比如<code>ScrollView</code></li>
+<li><code>UNSPECIFIED</code>：<strong>未指定模式</strong>。父控件不对子控件添加束缚，子元素可以为任意大小，一般用于系统内部的测量。比如<code>ScrollView</code></li>
 <li><code>EXACTLY</code>：<strong>精确模式</strong>。父控件为子View指定精确大小，希望子View完全按照自己给的尺寸处理大小。一般是设置了<code>明确的值</code>或是<code>MATCH_PARENT</code></li>
 <li><code>AT_MOST</code>：<strong>最大模式</strong>。父控件为子View指定最大尺寸，希望子View不要超过这个尺寸。一般对应<code>WRAP_CONTENT</code></li>
 </ul>
@@ -1305,14 +1389,22 @@ registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs
     &#125;</code></pre>
 <h4 id="View的measure过程"><a href="#View的measure过程" class="headerlink" title="View的measure过程"></a>View的measure过程</h4><p>主要是由<code>measure()</code>方法完成</p>
 <pre><code class="hljs java"><span class="hljs-comment">// ../android/view/View.java</span>
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">void</span> <span class="hljs-title">measure</span><span class="hljs-params">(<span class="hljs-keyword">int</span> widthMeasureSpec, <span class="hljs-keyword">int</span> heightMeasureSpec)</span> </span>&#123;
-    <span class="hljs-comment">//这个类是final的，所以子类无法重写该方法</span>
-    ...
-    onMeasure(widthMeasureSpec,heightMeasureSpec);
-    ...
-    mPrivateFlags |= PFLAG_LAYOUT_REQUIRED;<span class="hljs-comment">//不设置该标记会导致 View无法布局</span>
-    ...
-&#125;</code></pre>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">void</span> <span class="hljs-title">measure</span><span class="hljs-params">(<span class="hljs-keyword">int</span> widthMeasureSpec, <span class="hljs-keyword">int</span> heightMeasureSpec)</span> </span>&#123;
+      ...
+        <span class="hljs-comment">//需要执行onMeasure</span>
+        <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> forceLayout = (mPrivateFlags &amp; PFLAG_FORCE_LAYOUT) == PFLAG_FORCE_LAYOUT;
+        <span class="hljs-comment">// 布局发生变化</span>
+        <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> needsLayout = specChanged
+                &amp;&amp; (sAlwaysRemeasureExactly || !isSpecExactly || !matchesSpecSize);      
+      ...
+        <span class="hljs-keyword">if</span> (forceLayout || needsLayout) &#123;
+          ...
+            onMeasure(widthMeasureSpec, heightMeasureSpec);
+          ...
+            <span class="hljs-comment">//添加 PFLAG_LAYOUT_REQUIRED标记，表示需要执行 layout流程</span>
+             mPrivateFlags |= PFLAG_LAYOUT_REQUIRED;
+        &#125;
+    &#125;</code></pre>
 <p>在<code>measure()</code>中调用<code>onMeasure()</code>去进行实际的测量</p>
 <pre><code class="hljs java"><span class="hljs-comment">//../android/view/View.java</span>
 <span class="hljs-function"><span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> <span class="hljs-title">onMeasure</span><span class="hljs-params">(<span class="hljs-keyword">int</span> widthMeasureSpec, <span class="hljs-keyword">int</span> heightMeasureSpec)</span> </span>&#123;
