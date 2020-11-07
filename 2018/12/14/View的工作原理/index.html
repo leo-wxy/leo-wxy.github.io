@@ -162,7 +162,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      13.2k 字
+      14.4k 字
     </span>
   
 
@@ -172,7 +172,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      204
+      221
        分钟
     </span>
   
@@ -209,7 +209,7 @@
 <p><img src="/images/View工作原理.png" srcset="/img/loading.gif" alt="View工作原理"></p>
 <a id="more"></a>
 <h2 id="PhoneWindow"><a href="#PhoneWindow" class="headerlink" title="PhoneWindow"></a>PhoneWindow</h2><p><code>Window</code>是一个抽象类，提供了各种窗口操作方法。每个Activity都会持有一个<code>Window</code>。</p>
-<p><code>PhoneWindow</code>是<code>Window</code>唯一实现类，在<code>Activity.attach()</code>进行初始化</p>
+<p><code>PhoneWindow</code>是<code>Window</code>唯一实现类，在Activity被创建时<code>Activity.attach()</code>进行初始化</p>
 <pre><code class="hljs java"><span class="hljs-comment">//ActivityThread.java</span>
 <span class="hljs-comment">//Activity开始启动</span>
 <span class="hljs-function"><span class="hljs-keyword">public</span> Activity <span class="hljs-title">handleLaunchActivity</span><span class="hljs-params">(ActivityClientRecord r,
@@ -556,6 +556,19 @@
     <span class="hljs-keyword">return</span> LayoutInflater;
 &#125;
 
+<span class="hljs-comment">//ContextThemeWrapper.java</span>
+    <span class="hljs-meta">@Override</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> Object <span class="hljs-title">getSystemService</span><span class="hljs-params">(String name)</span> </span>&#123;
+        <span class="hljs-keyword">if</span> (LAYOUT_INFLATER_SERVICE.equals(name)) &#123;
+          <span class="hljs-comment">//单例获取 LayoutInflater</span>
+            <span class="hljs-keyword">if</span> (mInflater == <span class="hljs-keyword">null</span>) &#123;
+                mInflater = LayoutInflater.from(getBaseContext()).cloneInContext(<span class="hljs-keyword">this</span>);
+            &#125;
+            <span class="hljs-keyword">return</span> mInflater;
+        &#125;
+        <span class="hljs-keyword">return</span> getBaseContext().getSystemService(name);
+    &#125;
+
 <span class="hljs-comment">//SystemServerRegistry.java</span>
 <span class="hljs-comment">//系统设置 PhoneInflater 为加载类</span>
 registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs-class">.<span class="hljs-keyword">class</span>,
@@ -580,9 +593,12 @@ registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs
         appContext.setOuterContext(activity);<span class="hljs-comment">//设置外部context为Activity</span>
     &#125;</code></pre>
 <p><strong>一般从<code>Activity、View、Dialog，Fragment</code>获取的<code>layoutInflater.getContext()</code>为Activity</strong></p>
+<blockquote>
+<p>无论是哪种方式获取<code>LayoutInflater</code>，都是通过<code>ContextImpl.getSystemService()</code>获取的。</p>
+</blockquote>
 <h3 id="inflate-加载布局"><a href="#inflate-加载布局" class="headerlink" title="inflate()-加载布局"></a>inflate()-加载布局</h3><blockquote>
 <p><code>source</code>：需要加载的layout id</p>
-<p><code>root</code>：根布局</p>
+<p><code>root</code>：根布局(<code>为null则表示创建的是最顶层的布局</code>)</p>
 <p>*<code>attachToRoot</code>：是否添加到<code>root</code>中</p>
 </blockquote>
 <pre><code class="hljs java"><span class="hljs-comment">//LayoutInflater.java</span>
@@ -1397,9 +1413,21 @@ registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs
         <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> needsLayout = specChanged
                 &amp;&amp; (sAlwaysRemeasureExactly || !isSpecExactly || !matchesSpecSize);      
       ...
-        <span class="hljs-keyword">if</span> (forceLayout || needsLayout) &#123;
+        <span class="hljs-keyword">if</span> (forceLayout<span class="hljs-comment">/*强制测量*/</span> || needsLayout<span class="hljs-comment">/*需要测量*/</span>) &#123;
           ...
-            onMeasure(widthMeasureSpec, heightMeasureSpec);
+          <span class="hljs-keyword">int</span> cacheIndex = forceLayout ? -<span class="hljs-number">1</span> : mMeasureCache.indexOfKey(key);
+          <span class="hljs-comment">//需要强制测量布局 或者。缓存无效</span>
+            <span class="hljs-keyword">if</span> (cacheIndex &lt; <span class="hljs-number">0</span> || sIgnoreMeasureCache) &#123;
+                <span class="hljs-comment">// measure ourselves, this should set the measured dimension flag back</span>
+                onMeasure(widthMeasureSpec, heightMeasureSpec);
+                mPrivateFlags3 &amp;= ~PFLAG3_MEASURE_NEEDED_BEFORE_LAYOUT;
+            &#125; <span class="hljs-keyword">else</span> &#123;
+                <span class="hljs-keyword">long</span> value = mMeasureCache.valueAt(cacheIndex);
+                <span class="hljs-comment">// Casting a long to int drops the high 32 bits, no mask needed</span>
+                setMeasuredDimensionRaw((<span class="hljs-keyword">int</span>) (value &gt;&gt; <span class="hljs-number">32</span>), (<span class="hljs-keyword">int</span>) value);
+              <span class="hljs-comment">//需要在layout 再次执行 onMeasure</span>
+                mPrivateFlags3 |= PFLAG3_MEASURE_NEEDED_BEFORE_LAYOUT;
+            &#125;
           ...
             <span class="hljs-comment">//添加 PFLAG_LAYOUT_REQUIRED标记，表示需要执行 layout流程</span>
              mPrivateFlags |= PFLAG_LAYOUT_REQUIRED;
@@ -1615,22 +1643,104 @@ registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs
 <li>合并子View的测量值，得到ViewGroup的测量值</li>
 </ul>
 <h4 id="拓展"><a href="#拓展" class="headerlink" title="拓展"></a>拓展</h4><ol>
-<li>在Activity启动时获取View的尺寸？<ul>
+<li><p>在Activity启动时获取View的尺寸？</p>
+<ul>
 <li>在 Activity#onWindowFocusChanged 回调中获取宽高。<br><code>当Activity得到焦点或失去焦点的时候，这个方法都会被频繁调用</code></li>
 <li>view.post(runnable)，在 runnable 中获取宽高。<br><code>利用Handler通信机制，发送一个Runnable在MessageQuene中，当layout处理结束时则会发送一个消息通知UI线程，可以获取到实际宽高。</code></li>
 <li>ViewTreeObserver 添加 OnGlobalLayoutListener，在 onGlobalLayout 回调中获取宽高。<br><code>监听全局View的变化事件，使用后需要注意移除OnGlobalLayoutListener 监听，以免造成内存泄露</code></li>
 <li>调用 view.measure()，再通过 getMeasuredWidth 和 getMeasuredHeight 获取宽高<br><code>手动对view进行measure来得到View的尺寸。</code></li>
 </ul>
 </li>
+<li><p>不同ViewGroup实现的<code>getChildMeasureSpec()</code>可能导致不同结果</p>
+<blockquote>
+<p>每种ViewGroup的子类测量策略(<code>getChildMeasureSpec()</code>)不尽相同，就会导致显示结果不一致。</p>
+</blockquote>
+<pre><code class="hljs xml"><span class="hljs-tag">&lt;<span class="hljs-name">FrameLayout</span>
+    <span class="hljs-attr">android:layout_width</span>=<span class="hljs-string">"match_parent"</span>
+    <span class="hljs-attr">android:layout_height</span>=<span class="hljs-string">"300dp"</span>
+    <span class="hljs-attr">android:background</span>=<span class="hljs-string">"@color/colorAccent"</span>&gt;</span>
+   
+    <span class="hljs-tag">&lt;<span class="hljs-name">Button</span>
+        <span class="hljs-attr">android:layout_width</span>=<span class="hljs-string">"match_parent"</span>
+        <span class="hljs-attr">android:layout_height</span>=<span class="hljs-string">"400dp"</span> /&gt;</span>
+<span class="hljs-tag">&lt;/<span class="hljs-name">FrameLayout</span>&gt;</span>
+   
+<span class="hljs-tag">&lt;<span class="hljs-name">RelativeLayout</span>
+    <span class="hljs-attr">android:layout_width</span>=<span class="hljs-string">"match_parent"</span>
+    <span class="hljs-attr">android:layout_height</span>=<span class="hljs-string">"300dp"</span>&gt;</span>
+   
+    <span class="hljs-tag">&lt;<span class="hljs-name">Button</span>
+        <span class="hljs-attr">android:layout_width</span>=<span class="hljs-string">"match_parent"</span>
+        <span class="hljs-attr">android:layout_height</span>=<span class="hljs-string">"400dp"</span> /&gt;</span>
+<span class="hljs-tag">&lt;/<span class="hljs-name">RelativeLayout</span>&gt;</span></code></pre>
+</li>
 </ol>
+<p>   在<code>FrameLayout</code>和<code>RelativeLayout</code>中，<code>Button</code>显示效果不一致，</p>
+<ul>
+<li><code>FrameLayout</code>中<code>Button</code>高度为<code>400dp</code></li>
+<li><p><code>RelativeLayout</code>中<code>Button</code>高度为<code>300dp</code></p>
+<p><code>FrameLayout</code>遵循默认的<code>ViewGroup.getChildMeasureSpec()</code>，<code>RelativeLayout</code>重写<code>getChildMeasureSpec()</code>。</p>
+</li>
+</ul>
 <h3 id="layout-布局"><a href="#layout-布局" class="headerlink" title="layout-布局"></a>layout-布局</h3><blockquote>
 <p>ViewGroup用来确定子元素的位置，当ViewGroup位置被确定后，在<code>onLayout()</code>中遍历所有子View，并调用其<code>layout()</code>。</p>
 <p><strong>先layout自身后layout子元素。</strong></p>
+<p>起点位于<code>performLayout()</code></p>
 </blockquote>
+<pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">performLayout</span><span class="hljs-params">(WindowManager.LayoutParams lp, <span class="hljs-keyword">int</span> desiredWindowWidth,
+        <span class="hljs-keyword">int</span> desiredWindowHeight)</span> </span>&#123;
+   <span class="hljs-comment">//正在执行layout流程</span>
+   mInLayout = <span class="hljs-keyword">true</span>;
+
+   <span class="hljs-keyword">final</span> View host = mView;<span class="hljs-comment">//对应DecorView</span>
+  <span class="hljs-comment">//执行DecorView的layout过程</span>
+  host.layout(<span class="hljs-number">0</span>, <span class="hljs-number">0</span>, host.getMeasuredWidth(), host.getMeasuredHeight());
+   <span class="hljs-comment">//在layout过程中 尚未执行requestLayout的view</span>
+   <span class="hljs-keyword">int</span> numViewsRequestingLayout = mLayoutRequesters.size();
+   <span class="hljs-keyword">if</span> (numViewsRequestingLayout &gt; <span class="hljs-number">0</span>) &#123;
+      <span class="hljs-comment">//寻找mPrivateFlags为PFLAG_FORCE_LAYOUT的View</span>
+       ArrayList&lt;View&gt; validLayoutRequesters = getValidLayoutRequesters(mLayoutRequesters,
+                    <span class="hljs-keyword">false</span>);
+            <span class="hljs-keyword">if</span> (validLayoutRequesters != <span class="hljs-keyword">null</span>) &#123;
+              <span class="hljs-comment">//当前View重新measure</span>
+                 measureHierarchy(host, lp, mView.getContext().getResources(),
+                        desiredWindowWidth, desiredWindowHeight);     
+              <span class="hljs-comment">//重新执行layout</span>
+                 host.layout(<span class="hljs-number">0</span>, <span class="hljs-number">0</span>, host.getMeasuredWidth(), host.getMeasuredHeight());  
+              ...
+                <span class="hljs-comment">//寻找尚未设置 PFLAG_FORCE_LAYOUT的View</span>
+                 validLayoutRequesters = getValidLayoutRequesters(mLayoutRequesters, <span class="hljs-keyword">true</span>);                   
+                 <span class="hljs-keyword">if</span> (validLayoutRequesters != <span class="hljs-keyword">null</span>) &#123;
+                    <span class="hljs-keyword">final</span> ArrayList&lt;View&gt; finalRequesters = validLayoutRequesters;
+                    <span class="hljs-comment">// 执行requestLayout在下一帧执行时</span>
+                    getRunQueue().post(<span class="hljs-keyword">new</span> Runnable() &#123;
+                        <span class="hljs-meta">@Override</span>
+                        <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">run</span><span class="hljs-params">()</span> </span>&#123;
+                            <span class="hljs-keyword">int</span> numValidRequests = finalRequesters.size();
+                            <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int</span> i = <span class="hljs-number">0</span>; i &lt; numValidRequests; ++i) &#123;
+                                <span class="hljs-keyword">final</span> View view = finalRequesters.get(i);
+                                Log.w(<span class="hljs-string">"View"</span>, <span class="hljs-string">"requestLayout() improperly called by "</span> + view +
+                                        <span class="hljs-string">" during second layout pass: posting in next frame"</span>);
+                                view.requestLayout();
+                            &#125;
+                        &#125;
+                    &#125;);
+                &#125;                 
+            &#125;
+   &#125;
+  
+&#125;</code></pre>
+<p>主要执行了三步：</p>
+<ul>
+<li>执行<code>DecorView</code>的<code>layout</code>过程</li>
+<li>执行调用过<code>requestLayout()</code>的View(包含<code>PFLAG_FORCE_LAYOUT</code>标志)的<code>measure</code>和<code>layout</code></li>
+<li>还没调用过<code>requestLayout()</code>的View加入到队列中，等待下一帧绘制时执行</li>
+</ul>
 <h4 id="View的layout过程"><a href="#View的layout过程" class="headerlink" title="View的layout过程"></a>View的layout过程</h4><p>主要是由View的<code>layout()</code>方法实现</p>
 <pre><code class="hljs java"><span class="hljs-comment">// ../android/view/View.java   </span>
 <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">layout</span><span class="hljs-params">(<span class="hljs-keyword">int</span> l, <span class="hljs-keyword">int</span> t, <span class="hljs-keyword">int</span> r, <span class="hljs-keyword">int</span> b)</span> </span>&#123;
         <span class="hljs-keyword">if</span> ((mPrivateFlags3 &amp; PFLAG3_MEASURE_NEEDED_BEFORE_LAYOUT) != <span class="hljs-number">0</span>) &#123;
+          <span class="hljs-comment">//需要再次测量 可能缓存无效</span>
             onMeasure(mOldWidthMeasureSpec, mOldHeightMeasureSpec);
             mPrivateFlags3 &amp;= ~PFLAG3_MEASURE_NEEDED_BEFORE_LAYOUT;
         &#125;
@@ -1643,13 +1753,16 @@ registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs
         <span class="hljs-keyword">int</span> oldB = mBottom;
         <span class="hljs-comment">//右下角顶点距父容器上边的距离</span>
         <span class="hljs-keyword">int</span> oldR = mRight;
-        <span class="hljs-comment">//</span>
+        <span class="hljs-comment">//判断本次布局流程是否发生了布局的变化</span>
         <span class="hljs-keyword">boolean</span> changed = isLayoutModeOptical(mParent) ?
                 setOpticalFrame(l, t, r, b) : setFrame(l, t, r, b);
 
         <span class="hljs-keyword">if</span> (changed || (mPrivateFlags &amp; PFLAG_LAYOUT_REQUIRED) == PFLAG_LAYOUT_REQUIRED) &#123;
+          <span class="hljs-comment">//通知View进行布局过程</span>
             onLayout(changed, l, t, r, b);
             ...
+              <span class="hljs-comment">//通知View布局发生变化</span>
+            listenersCopy.get(i).onLayoutChange(<span class="hljs-keyword">this</span>, l, t, r, b, oldL, oldT, oldR, oldB);              
         &#125;
         ...
     &#125;
@@ -1671,6 +1784,7 @@ registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs
                 bottom + parentInsets.top  + childInsets.bottom);
     &#125;
 
+<span class="hljs-comment">//保存本次布局信息</span>
 <span class="hljs-function"><span class="hljs-keyword">protected</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">setFrame</span><span class="hljs-params">(<span class="hljs-keyword">int</span> left, <span class="hljs-keyword">int</span> top, <span class="hljs-keyword">int</span> right, <span class="hljs-keyword">int</span> bottom)</span> </span>&#123;
              <span class="hljs-keyword">boolean</span> changed = <span class="hljs-keyword">false</span>;
 
@@ -1686,7 +1800,7 @@ registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs
             <span class="hljs-keyword">int</span> newHeight = bottom - top;
             <span class="hljs-keyword">boolean</span> sizeChanged = (newWidth != oldWidth) || (newHeight != oldHeight);
 
-            <span class="hljs-comment">// Invalidate our old position</span>
+            <span class="hljs-comment">// 布局发生变化 需要执行重绘流程</span>
             invalidate(sizeChanged);
             <span class="hljs-comment">//重新计算View的四个顶点距父布局左上边框的距离</span>
             mLeft = left;
@@ -1715,7 +1829,26 @@ registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs
 <li>最后调用<code>onLayout()</code>最终确立宽高以及四点坐标。</li>
 </ul>
 <h4 id="ViewGroup的layout过程"><a href="#ViewGroup的layout过程" class="headerlink" title="ViewGroup的layout过程"></a>ViewGroup的layout过程</h4><p>当有子View存在的时候，需要遍历子View进行<code>layout</code>过程。即需要在<code>onLayout()</code>方法实现子View的<code>layout</code>。</p>
-<pre><code class="hljs java"><span class="hljs-comment">//源码与上述相同 由于ViewGroup中所有子View的layout都需要实现，所以需要实现 onLayout() 方法</span>
+<pre><code class="hljs java"><span class="hljs-comment">//ViewGroup.java</span>
+    <span class="hljs-meta">@Override</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">void</span> <span class="hljs-title">layout</span><span class="hljs-params">(<span class="hljs-keyword">int</span> l, <span class="hljs-keyword">int</span> t, <span class="hljs-keyword">int</span> r, <span class="hljs-keyword">int</span> b)</span> </span>&#123;
+        <span class="hljs-keyword">if</span> (!mSuppressLayout &amp;&amp; (mTransition == <span class="hljs-keyword">null</span> || !mTransition.isChangingLayout())) &#123;
+            <span class="hljs-keyword">if</span> (mTransition != <span class="hljs-keyword">null</span>) &#123;
+                mTransition.layoutChange(<span class="hljs-keyword">this</span>);
+            &#125;
+          <span class="hljs-comment">//调用View.layout()</span>
+            <span class="hljs-keyword">super</span>.layout(l, t, r, b);
+        &#125; <span class="hljs-keyword">else</span> &#123;
+            <span class="hljs-comment">// record the fact that we noop'd it; request layout when transition finishes</span>
+            mLayoutCalledWhileSuppressed = <span class="hljs-keyword">true</span>;
+        &#125;
+    &#125;
+
+    <span class="hljs-meta">@Override</span>
+    <span class="hljs-function"><span class="hljs-keyword">protected</span> <span class="hljs-keyword">abstract</span> <span class="hljs-keyword">void</span> <span class="hljs-title">onLayout</span><span class="hljs-params">(<span class="hljs-keyword">boolean</span> changed,
+            <span class="hljs-keyword">int</span> l, <span class="hljs-keyword">int</span> t, <span class="hljs-keyword">int</span> r, <span class="hljs-keyword">int</span> b)</span></span>;
+
+<span class="hljs-comment">//源码与上述相同 由于ViewGroup中所有子View的layout都需要实现，所以需要实现 onLayout() 方法</span>
 <span class="hljs-function"><span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> <span class="hljs-title">onLayout</span><span class="hljs-params">(<span class="hljs-keyword">boolean</span> changed,<span class="hljs-keyword">int</span> left,<span class="hljs-keyword">int</span> top,<span class="hljs-keyword">int</span> right,<span class="hljs-keyword">int</span> bottom)</span></span>&#123;
     <span class="hljs-comment">//遍历子View</span>
     <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int</span> i =<span class="hljs-number">0</span> ; i &lt;getChildCount();i++)&#123;
@@ -1768,11 +1901,11 @@ registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs
 <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> <span class="hljs-title">getHeight</span><span class="hljs-params">()</span> </span>&#123;
         <span class="hljs-keyword">return</span> mBottom - mTop;
     &#125;</code></pre>
+</li>
+</ol>
 <blockquote>
 <p>两者的比较</p>
 </blockquote>
-</li>
-</ol>
 <table>
 <thead>
 <tr>
@@ -1805,11 +1938,34 @@ registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs
 <h3 id="draw-绘制"><a href="#draw-绘制" class="headerlink" title="draw-绘制"></a>draw-绘制</h3><blockquote>
 <p>draw作用主要将View绘制在屏幕上面</p>
 <p><strong>draw过程，先draw自身再draw子View</strong></p>
+<p>起点是<code>performDraw()</code></p>
 </blockquote>
+<pre><code class="hljs java"><span class="hljs-comment">//ViewRootImpl.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">performDraw</span><span class="hljs-params">()</span> </span>&#123;
+      ...
+        <span class="hljs-keyword">boolean</span> canUseAsync = draw(fullRedrawNeeded);
+    &#125;
+
+    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">draw</span><span class="hljs-params">(<span class="hljs-keyword">boolean</span> fullRedrawNeeded)</span> </span>&#123;
+        <span class="hljs-keyword">if</span> (!dirty.isEmpty() || mIsAnimating || accessibilityFocusDirty) &#123;
+            <span class="hljs-keyword">if</span> (mAttachInfo.mThreadedRenderer != <span class="hljs-keyword">null</span> &amp;&amp; mAttachInfo.mThreadedRenderer.isEnabled()) &#123;
+              <span class="hljs-comment">//硬件绘制</span>
+              ...
+                mAttachInfo.mThreadedRenderer.draw(mView, mAttachInfo, <span class="hljs-keyword">this</span>, callback);              
+            &#125; <span class="hljs-keyword">else</span> &#123;
+              <span class="hljs-comment">//软件绘制</span>
+              ...
+              <span class="hljs-keyword">if</span> (!drawSoftware(surface, mAttachInfo, xOffset, yOffset,
+                        scalingRequired, dirty, surfaceInsets)) &#123;
+                    <span class="hljs-keyword">return</span> <span class="hljs-keyword">false</span>;
+                &#125;
+            &#125;
+          ...
+    &#125;</code></pre>
 <h4 id="View的draw过程"><a href="#View的draw过程" class="headerlink" title="View的draw过程"></a>View的draw过程</h4><p>View的draw过程，从<code>View.draw()</code>开始</p>
 <pre><code class="hljs java"><span class="hljs-comment">// ../android/view/View.java</span>
 <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">draw</span><span class="hljs-params">(Canvas canvas)</span> </span>&#123;
-    <span class="hljs-comment">//标记当前View是否需要绘制背景</span>
+    <span class="hljs-comment">//标记当前View是否背景透明</span>
     <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> dirtyOpaque = (privateFlags &amp; PFLAG_DIRTY_MASK) == PFLAG_DIRTY_OPAQUE &amp;&amp;
                 (mAttachInfo == <span class="hljs-keyword">null</span> || !mAttachInfo.mIgnoreDirtyState);
     
@@ -2136,7 +2292,7 @@ registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs
 </blockquote>
 <h4 id="2-需要的话，让View支持padding"><a href="#2-需要的话，让View支持padding" class="headerlink" title="2.需要的话，让View支持padding"></a>2.需要的话，让View支持padding</h4><blockquote>
 <p>直接继承View的控件，需要在<code>draw</code>过程处理padding属性，不然padding属性无法起作用。</p>
-<p>直接继承ViewGroup的控件，需要在<code>onMeasure()，onLayout()</code>处理自身的padding以及子View的margin</p>
+<p>直接继承ViewGroup的控件，需要在<code>onMeasure()，onLayout()</code>处理自身的padding以及子View的margin<code>measureChildWithMargin()</code></p>
 </blockquote>
 <h4 id="3-尽量不要在View中使用Handler"><a href="#3-尽量不要在View中使用Handler" class="headerlink" title="3.尽量不要在View中使用Handler"></a>3.尽量不要在View中使用Handler</h4><blockquote>
 <p>View内部提供了<code>post</code>方法，可以替代Handler使用</p>
@@ -2148,7 +2304,19 @@ registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs
 <li>包含View的Activity退出或当前View被移除时，调用<code>View.onDetachedFromWindow()</code>时关闭线程和动画</li>
 </ol>
 </blockquote>
-<h4 id="5-View若有滑动冲突情况，需要处理"><a href="#5-View若有滑动冲突情况，需要处理" class="headerlink" title="5.View若有滑动冲突情况，需要处理"></a>5.View若有滑动冲突情况，需要处理</h4><h3 id="实例"><a href="#实例" class="headerlink" title="实例"></a>实例</h3><a href="/2019/01/02/自定义View实践/" title="自定义View实践">自定义View实践</a>
+<h4 id="5-View若有滑动冲突情况，需要处理"><a href="#5-View若有滑动冲突情况，需要处理" class="headerlink" title="5.View若有滑动冲突情况，需要处理"></a>5.View若有滑动冲突情况，需要处理</h4><blockquote>
+<p>滑动冲突处理方法：</p>
+<ul>
+<li><p><code>外部拦截法</code>：点击事件都先经过<strong>父容器的拦截处理</strong>，如果父容器需要此事件就拦截，不需要就放行</p>
+<p>重写父容器的<code>onInterceptTouchEvent()</code>，在方法内部拦截</p>
+</li>
+<li><p><code>内部拦截法</code>：父容器不拦截任何事件，所有事件交由子容器进行处理，如果子容器需要就消耗事件，不需要就返给父容器处理。</p>
+<p>重写父容器的<code>onInterceptTouchEvent()</code>，以及子容器的<code>dispatchTouchEvent()</code>。关键在于调用<code>requestDisallowInterceptTouchEvent()</code>控制父布局是否进行拦截。</p>
+</li>
+</ul>
+<p>一般推荐使用<code>外部拦截法</code>，符合事件分发流程。</p>
+</blockquote>
+<h3 id="实例"><a href="#实例" class="headerlink" title="实例"></a>实例</h3><a href="/2019/01/02/自定义View实践/" title="自定义View实践">自定义View实践</a>
 <a href="/2019/01/02/自定义ViewGroup实践/" title="自定义ViewGroup实践">自定义ViewGroup实践</a>
 <h2 id="拓展-1"><a href="#拓展-1" class="headerlink" title="拓展"></a>拓展</h2><h3 id="如何触发View的重新绘制？"><a href="#如何触发View的重新绘制？" class="headerlink" title="如何触发View的重新绘制？"></a>如何触发View的重新绘制？</h3><p>通过调用<code>invalidate()/postInvalidate()</code>或<code>requestLayout()</code>实现。</p>
 <h4 id="requestLayout"><a href="#requestLayout" class="headerlink" title="requestLayout"></a>requestLayout</h4><blockquote>
@@ -2191,11 +2359,45 @@ registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs
         <span class="hljs-keyword">if</span> (!mHandlingLayoutInLayoutRequest) &#123;
           <span class="hljs-comment">//检查当前是否主线程</span>
             checkThread();
+          <span class="hljs-comment">//需要执行measure、layout</span>
             mLayoutRequested = <span class="hljs-keyword">true</span>;
             scheduleTraversals();
         &#125;
     &#125;</code></pre>
 <p>调用到<code>scheduleTraversals()</code>就是开始了<code>View的绘制流程</code>。</p>
+<pre><code class="hljs java"><span class="hljs-comment">//ViewRootImpl.java </span>
+<span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">performTraversals</span><span class="hljs-params">()</span> </span>&#123;
+  <span class="hljs-comment">//是否执行measure、layout过程</span>
+   <span class="hljs-keyword">boolean</span> layoutRequested = mLayoutRequested &amp;&amp; (!mStopped || mReportNextDraw);
+  ...
+    <span class="hljs-keyword">if</span> (!mStopped || mReportNextDraw) &#123;
+         <span class="hljs-keyword">if</span> (focusChangedDueToTouchMode || mWidth != host.getMeasuredWidth()
+                  || mHeight != host.getMeasuredHeight() || contentInsetsChanged ||
+                   updatedConfiguration) &#123; 
+                  <span class="hljs-comment">//执行测量流程</span>
+                    performMeasure(childWidthMeasureSpec, childHeightMeasureSpec);
+         &#125;
+    &#125;
+  ...
+    <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> didLayout = layoutRequested &amp;&amp; (!mStopped || mReportNextDraw);
+     <span class="hljs-keyword">if</span> (didLayout) &#123;
+       <span class="hljs-comment">//执行布局流程</span>
+            performLayout(lp, mWidth, mHeight);
+     &#125;
+  ...
+        <span class="hljs-keyword">boolean</span> cancelDraw = mAttachInfo.mTreeObserver.dispatchOnPreDraw() || !isViewVisible;
+
+        <span class="hljs-keyword">if</span> (!cancelDraw &amp;&amp; !newSurface) &#123;
+            <span class="hljs-keyword">if</span> (mPendingTransitions != <span class="hljs-keyword">null</span> &amp;&amp; mPendingTransitions.size() &gt; <span class="hljs-number">0</span>) &#123;
+                <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int</span> i = <span class="hljs-number">0</span>; i &lt; mPendingTransitions.size(); ++i) &#123;
+                    mPendingTransitions.get(i).startChangingAnimations();
+                &#125;
+                mPendingTransitions.clear();
+            &#125;
+          <span class="hljs-comment">//执行绘制流程</span>
+            performDraw();
+        &#125;    
+ &#125;</code></pre>
 <p>一开始调用的<code>performMeasure()</code></p>
 <pre><code class="hljs java"><span class="hljs-comment">//ViewRootImpl.java</span>
     <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">performMeasure</span><span class="hljs-params">(<span class="hljs-keyword">int</span> childWidthMeasureSpec, <span class="hljs-keyword">int</span> childHeightMeasureSpec)</span> </span>&#123;
@@ -2481,8 +2683,7 @@ registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs
             scheduleTraversals();
         &#125;
     &#125;</code></pre>
-<p>通过<code>scheduleTraversals()</code>执行绘制流程，由于未设置<code>PFLAG_FORCE_LAYOUT</code>无法执行<code>measure</code>过程，如果位置没有发生变化后续<code>layout</code>也无法执行。</p>
-<p>最后调用<code>performDraw()</code></p>
+<p>通过<code>scheduleTraversals()</code>执行绘制流程，由于未设置<code>mLayoutRequested = true</code>，所以无法进入<code>performMeasure()</code>和<code>performLayout()</code>只能执行到<code>performDraw()</code>。</p>
 <pre><code class="hljs java"><span class="hljs-comment">//ViewRootImpl.java</span>
     <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">performDraw</span><span class="hljs-params">()</span> </span>&#123;
       ...
@@ -2528,11 +2729,26 @@ registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs
 <li><code>layout</code>过程触发：<code>mPrivateFlags</code>包含<code>PFLAG_LAYOUT_REQUIRED(measure执行后添加)</code>或者<code>位置发生变化</code></li>
 <li><code>draw</code>过程触发：<code>mPrivateFlags</code>包含<code>PFLAG_DIRTY_OPAQUE</code></li>
 </ul>
-<p><code>requestLayout()</code>主要用来设置<code>PFLAG_FORCE_LAYOUT</code>标志，会执行到<code>measure、layout</code>过程，如果位置发生变化则可能执行<code>draw</code>过程</p>
-<p><code>invalidate()</code>主要用来设置<code>PFLAG_DIRTY_OPAQUE</code>标志，若发生位置变化会执行<code>layout</code>过程，继续往后执行<code>draw</code>过程</p>
+<p><code>requestLayout()</code>主要用来设置<code>PFLAG_FORCE_LAYOUT</code>标志以及设置<code>mLayoutRequested=true</code>，会执行到<code>measure、layout</code>过程，如果位置发生变化则可能执行<code>draw</code>过程。</p>
+<p><code>invalidate()</code>主要用来设置<code>PFLAG_DIRTY_OPAQUE</code>标志，可以在执行<code>performTraversal()</code>时，调用到<code>performDraw()</code>后到<code>draw()</code>时，可以进行绘制过程。</p>
+<p><img src="/images/View重绘.png" srcset="/img/loading.gif" alt="区别"></p>
 <h4 id="同时调用"><a href="#同时调用" class="headerlink" title="同时调用"></a>同时调用</h4><blockquote>
-<p>在某些情况下，需要<code>requestLayout</code>和<code>invalidate</code>配合使用，得到最终的结果</p>
+<p>在某些情况下，需要<code>requestLayout</code>和<code>invalidate</code>配合使用，得到最终的结果。</p>
 </blockquote>
+<p>拿<code>TextView</code>举例：</p>
+<pre><code class="hljs java">
+</code></pre>
+<h4 id="拓展-2"><a href="#拓展-2" class="headerlink" title="拓展"></a>拓展</h4><h5 id="forceLayout"><a href="#forceLayout" class="headerlink" title="forceLayout()"></a>forceLayout()</h5><blockquote>
+<p>标记当前View需要重新执行<code>测量-布局-绘制</code>流程。一般父ViewGroup调用<code>requestLayout()</code>，子View不会触发整套流程。</p>
+<p>调用后，子View也可以执行整套流程。</p>
+</blockquote>
+<pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">forceLayout</span><span class="hljs-params">()</span> </span>&#123;
+    <span class="hljs-keyword">if</span> (mMeasureCache != <span class="hljs-keyword">null</span>) mMeasureCache.clear();
+
+    mPrivateFlags |= PFLAG_FORCE_LAYOUT;<span class="hljs-comment">//标记 执行measure</span>
+    mPrivateFlags |= PFLAG_INVALIDATED;
+&#125;</code></pre>
+<p><code>forceLayout</code>若要生效，需要<code>直系父View</code>调用<code>requestLayout</code>。</p>
 <h3 id="include、merge、ViewStub作用以及实现"><a href="#include、merge、ViewStub作用以及实现" class="headerlink" title="include、merge、ViewStub作用以及实现"></a>include、merge、ViewStub作用以及实现</h3><a href="/2019/01/03/include、merge-ViewStub相关/" title="include、merge及ViewStub相关">include、merge及ViewStub相关</a>
 <h3 id="View的层级计算"><a href="#View的层级计算" class="headerlink" title="View的层级计算"></a>View的层级计算</h3><pre><code class="hljs java"><span class="hljs-comment">//实际形成一个二叉树 递归计算深度    </span>
 <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">int</span> <span class="hljs-title">maxViewDeep</span><span class="hljs-params">(View view)</span> </span>&#123;
