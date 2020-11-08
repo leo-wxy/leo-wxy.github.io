@@ -35123,6 +35123,18 @@ public class CustomDrawable extends Drawable {
 
 ## Drawable原理
 
+
+
+
+
+## Drawable动画
+
+
+
+
+
+## 其他API
+
 ]]></content>
       <tags>
         <tag>Android</tag>
@@ -48216,6 +48228,394 @@ boolean draw(Canvas canvas, ViewGroup parent, long drawingTime) {
 
 ![软件绘制流程](/images/软件绘制流程.jpg)
 
+
+
+### Surface绘制流程
+
+执行到`drawSoftware()`时，开始在`Surface`上进行绘制。
+
+#### 申请`GraphicBuffer`
+
+执行的是`mSurface.lockCanvas()`
+
+```java
+//ViewRootImpl.java
+canvas = mSurface.lockCanvas()
+  
+//Surface.java
+    public Canvas lockCanvas(Rect inOutDirty)
+            throws Surface.OutOfResourcesException, IllegalArgumentException {
+        synchronized (mLock) {
+            checkNotReleasedLocked();
+            if (mLockedObject != 0) {
+                // Ideally, nativeLockCanvas() would throw in this situation and prevent the
+                // double-lock, but that won't happen if mNativeObject was updated.  We can't
+                // abandon the old mLockedObject because it might still be in use, so instead
+                // we just refuse to re-lock the Surface.
+                throw new IllegalArgumentException("Surface was already locked");
+            }
+            mLockedObject = nativeLockCanvas(mNativeObject, mCanvas, inOutDirty);
+            return mCanvas;
+        }
+    }
+```
+
+执行到`nativeLockCanvas()`进入JNI代码层
+
+```c++
+// core/jni/android_view_Surface.cpp
+static jlong nativeLockCanvas(JNIEnv* env, jclass clazz,
+        jlong nativeObject, jobject canvasObj, jobject dirtyRectObj) {
+    sp<Surface> surface(reinterpret_cast<Surface *>(nativeObject));
+  ...
+    //申请buffer
+    ANativeWindow_Buffer outBuffer;
+    status_t err = surface->lock(&outBuffer, dirtyRectPtr);
+  ...
+    //构建Bitmap对象
+    SkImageInfo info = SkImageInfo::Make(outBuffer.width, outBuffer.height,
+                                         convertPixelFormat(outBuffer.format),
+                                         outBuffer.format == PIXEL_FORMAT_RGBX_8888
+                                                 ? kOpaque_SkAlphaType : kPremul_SkAlphaType,
+                                         GraphicsJNI::defaultColorSpace());
+
+    SkBitmap bitmap;
+    ssize_t bpr = outBuffer.stride * bytesPerPixel(outBuffer.format);
+    bitmap.setInfo(info, bpr);
+    if (outBuffer.width > 0 && outBuffer.height > 0) {
+        bitmap.setPixels(outBuffer.bits);
+    } else {
+        // be safe with an empty bitmap.
+        bitmap.setPixels(NULL);
+    }
+    //canvas设置bitmap
+    Canvas* nativeCanvas = GraphicsJNI::getNativeCanvas(env, canvasObj);
+    nativeCanvas->setBitmap(bitmap);
+    
+    sp<Surface> lockedSurface(surface);
+    lockedSurface->incStrong(&sRefBaseOwner);
+    return (jlong) lockedSurface.get();
+}
+```
+
+创建完`ANativeWindowBuffer`之后，需要与`surface`进行绑定
+
+```c++
+//native/libs/gui/Surface.cpp
+status_t Surface::lock(
+        ANativeWindow_Buffer* outBuffer, ARect* inOutDirtyBounds)
+{
+  ...
+    ANativeWindowBuffer* out;
+    int fenceFd = -1;
+    status_t err = dequeueBuffer(&out, &fenceFd);  
+  ...
+     if (err == NO_ERROR) {
+        sp<GraphicBuffer> backBuffer(GraphicBuffer::getSelf(out));
+        const Rect bounds(backBuffer->width, backBuffer->height);
+       ...
+     }
+  //返回GraphicBuffer
+     return err;
+}
+```
+
+调用到`lock()`之后，将`ANativeWindowBuffer`转化为`GraphicBuffer`。再通过`dequeueBuffer`分配内存
+
+```c++
+//native/libs/gui/Surface.cpp
+int Surface::dequeueBuffer(android_native_buffer_t** buffer, int* fenceFd) {
+  ...
+    FrameEventHistoryDelta frameTimestamps;
+    status_t result = mGraphicBufferProducer->dequeueBuffer(&buf, &fence, reqWidth, reqHeight,
+                                                            reqFormat, reqUsage, &mBufferAge,
+                                                            enableFrameTimestamps ? &frameTimestamps
+                                                                                  : nullptr);    
+  
+  ...
+    if ((result & IGraphicBufferProducer::BUFFER_NEEDS_REALLOCATION) || gbuf == nullptr) {
+        if (mReportRemovedBuffers && (gbuf != nullptr)) {
+            mRemovedBuffers.push_back(gbuf);
+        }
+      //
+        result = mGraphicBufferProducer->requestBuffer(buf, &gbuf);
+        if (result != NO_ERROR) {
+            ALOGE("dequeueBuffer: IGraphicBufferProducer::requestBuffer failed: %d", result);
+            mGraphicBufferProducer->cancelBuffer(buf, fence);
+            return result;
+        }
+    }
+  //获取buffer
+     *buffer = gbuf.get();
+  ...
+}
+```
+
+```c++
+//native/libs/gui/BufferQueueProducer.cpp
+status_t BufferQueueProducer::dequeueBuffer(int* outSlot, sp<android::Fence>* outFence,
+                                            uint32_t width, uint32_t height, PixelFormat format,
+                                            uint64_t usage, uint64_t* outBufferAge,
+                                            FrameEventHistoryDelta* outTimestamps) {
+ ...
+    while (found == BufferItem::INVALID_BUFFER_SLOT) {
+      //找到可用的slot，并指定状态为FREE slot:BufferSlot——用来存储GraphicBuffer
+            status_t status = waitForFreeSlotThenRelock(FreeSlotCaller::Dequeue,
+                    &found);
+            if (status != NO_ERROR) {
+                return status;
+            }
+      ...
+    }
+          *outSlot = found;
+        ATRACE_BUFFER_INDEX(found);
+
+        attachedByConsumer = mSlots[found].mNeedsReallocation;
+        mSlots[found].mNeedsReallocation = false;
+       //转化可用slot的GraphicBuffer状态为DEQUEUED
+        mSlots[found].mBufferState.dequeue();
+  ...
+      if (returnFlags & BUFFER_NEEDS_REALLOCATION) {
+        BQ_LOGV("dequeueBuffer: allocating a new buffer for slot %d", *outSlot);
+        sp<GraphicBuffer> graphicBuffer = new GraphicBuffer(
+                width, height, format, BQ_LAYER_COUNT, usage,
+                {mConsumerName.string(), mConsumerName.size()});
+
+        status_t error = graphicBuffer->initCheck();
+
+            if (error == NO_ERROR && !mCore->mIsAbandoned) {
+                graphicBuffer->setGenerationNumber(mCore->mGenerationNumber);
+              //对应outSlot申请GraphicBuffer
+                mSlots[*outSlot].mGraphicBuffer = graphicBuffer;
+            }
+  ...
+}
+  
+status_t BufferQueueProducer::waitForFreeSlotThenRelock(FreeSlotCaller caller,
+        int* found) const {
+  ...
+    //当前是否 队列太多
+        bool tooManyBuffers = mCore->mQueue.size()
+                            > static_cast<size_t>(maxBufferCount);
+        if (tooManyBuffers) {
+            BQ_LOGV("%s: queue size is %zu, waiting", callerString,
+                    mCore->mQueue.size());
+        } else {
+            // If in shared buffer mode and a shared buffer exists, always
+            // return it.
+            if (mCore->mSharedBufferMode && mCore->mSharedBufferSlot !=
+                    BufferQueueCore::INVALID_BUFFER_SLOT) {
+                *found = mCore->mSharedBufferSlot;
+            } else {
+                if (caller == FreeSlotCaller::Dequeue) {
+                    // If we're calling this from dequeue, prefer free buffers
+                  //寻找处于 FREE 状态的GraphicBuffer
+                    int slot = getFreeBufferLocked();
+                    if (slot != BufferQueueCore::INVALID_BUFFER_SLOT) {
+                        *found = slot;                      
+                    } else if (mCore->mAllowAllocation) {
+                        *found = getFreeSlotLocked();
+                    }                                    
+                } else {
+                    // If we're calling this from attach, prefer free slots
+                    int slot = getFreeSlotLocked();
+                    if (slot != BufferQueueCore::INVALID_BUFFER_SLOT) {
+                        *found = slot;
+                    } else {
+                        *found = getFreeBufferLocked();
+                    }
+                }
+            }
+        }    
+  ...
+        tryAgain = (*found == BufferQueueCore::INVALID_BUFFER_SLOT) ||
+                   tooManyBuffers;
+         if (tryAgain) {
+           //找不到可用的slot或者buffer太多，需要等待空闲
+         }
+}
+```
+
+`waitForFreeSlotThenRelock()`返回可用的`slot`分为两种：
+
+- `getFreeBufferLocked()`：直接关联了`GraphicBuffer`，直接可用
+- `getFreeSlotLocked()`：找到可用的`BufferSlot`，将申请空间后的`Graphicbuffer`直接与其关联。
+
+`lockCanvas()`最终通过`BufferQueueProducer.dequeueBuffer()`申请用来绘制的`GraphicBuffer`
+
+> 尝试找到一个`BufferSlot`，并完成`GraphicBuffer`与`BufferSlot`的关联，途中切换`BufferSlot`状态`FREE->DEQUEUED`，最后返回对应的`BufferSlot`索引。
+
+
+
+#### `SurfaceFlinger`消费`GraphicBuffer`
+
+当`Cavans`绘制完毕后，调用`surface.unlockAndPostCanvas()`发送`GraphicBuffer`
+
+```java
+//Surface.java
+    public void unlockCanvasAndPost(Canvas canvas) {
+        synchronized (mLock) {
+            checkNotReleasedLocked();
+
+            if (mHwuiContext != null) {
+              //硬件绘制流程
+                mHwuiContext.unlockAndPost(canvas);
+            } else {
+              //软件绘制流程
+                unlockSwCanvasAndPost(canvas);
+            }
+        }
+    }
+
+    private void unlockSwCanvasAndPost(Canvas canvas) {
+      ... 
+        try {
+            nativeUnlockCanvasAndPost(mLockedObject, canvas);
+        } finally {
+            nativeRelease(mLockedObject);
+            mLockedObject = 0;
+        }
+    }
+```
+
+```c++
+// core/jni/android_view_Surface.cpp
+static void nativeUnlockCanvasAndPost(JNIEnv* env, jclass clazz,
+        jlong nativeObject, jobject canvasObj) {
+  ...
+
+    // 绘制完成后，将Canvas从surface上脱离
+    Canvas* nativeCanvas = GraphicsJNI::getNativeCanvas(env, canvasObj);
+    nativeCanvas->setBitmap(SkBitmap());
+
+    // unlock surface
+    status_t err = surface->unlockAndPost();
+    if (err < 0) {
+        doThrowIAE(env);
+    }
+}
+```
+
+```c++
+//native/libs/gui/Surface.cpp
+status_t Surface::unlockAndPost()
+{
+  ...
+    err = queueBuffer(mLockedBuffer.get(), fd);
+    ALOGE_IF(err, "queueBuffer (handle=%p) failed (%s)",
+            mLockedBuffer->handle, strerror(-err));
+
+    mPostedBuffer = mLockedBuffer;
+    mLockedBuffer = 0;
+    return err;
+}
+```
+
+```c++
+//native/libs/gui/Surface.cpp
+int Surface::queueBuffer(android_native_buffer_t* buffer, int fenceFd) {
+  ...
+    //根据Buffer获取slot
+    int i = getSlotFromBufferLocked(buffer);
+  ...
+    //GraphicBufferQueue 插入 GraphicBuffer
+    status_t err = mGraphicBufferProducer->queueBuffer(i, input, &output);
+  ...
+    //插入Buffer后通知
+    mQueueBufferCondition.broadcast();
+} 
+
+//根据传入buffer获取slot
+int Surface::getSlotFromBufferLocked(
+        android_native_buffer_t* buffer) const {
+    for (int i = 0; i < NUM_BUFFER_SLOTS; i++) {
+        if (mSlots[i].buffer != NULL &&
+                mSlots[i].buffer->handle == buffer->handle) {
+            return i;
+        }
+    }
+    ALOGE("getSlotFromBufferLocked: unknown buffer: %p", buffer->handle);
+    return BAD_VALUE;
+}
+```
+
+```java
+//native/libs/gui/BufferQueueProducer.cpp
+status_t BufferQueueProducer::queueBuffer(int slot,
+        const QueueBufferInput &input, QueueBufferOutput *output) {
+  ...
+    //判断slot 以及 buffer状态是否正常
+        if (slot < 0 || slot >= BufferQueueDefs::NUM_BUFFER_SLOTS) {
+            BQ_LOGE("queueBuffer: slot index %d out of range [0, %d)",
+                    slot, BufferQueueDefs::NUM_BUFFER_SLOTS);
+            return BAD_VALUE;
+        } else if (!mSlots[slot].mBufferState.isDequeued()) {
+            BQ_LOGE("queueBuffer: slot %d is not owned by the producer "
+                    "(state = %s)", slot, mSlots[slot].mBufferState.string());
+            return BAD_VALUE;
+        } else if (!mSlots[slot].mRequestBufferCalled) {
+            BQ_LOGE("queueBuffer: slot %d was queued without requesting "
+                    "a buffer", slot);
+            return BAD_VALUE;
+        }
+  ...
+    //切换 BufferSlot状态到 QUEUED
+        mSlots[slot].mFence = acquireFence;
+        mSlots[slot].mBufferState.queue();
+    //将item插入队列
+        if (mCore->mQueue.empty()) {
+            mCore->mQueue.push_back(item);
+            frameAvailableListener = mCore->mConsumerListener;          
+        }else{
+            const BufferItem& last = mCore->mQueue.itemAt(
+                    mCore->mQueue.size() - 1);
+            if (last.mIsDroppable) {
+              ...
+               mCore->mQueue.editItemAt(mCore->mQueue.size() - 1) = item;
+               frameReplacedListener = mCore->mConsumerListener;
+            }else{
+               mCore->mQueue.push_back(item);
+               frameAvailableListener = mCore->mConsumerListener;              
+            }
+        }
+  ...
+    //回调frameAvaliableListener 通知消费者有数据入队了
+        if (frameAvailableListener != NULL) {
+            frameAvailableListener->onFrameAvailable(item);
+        } else if (frameReplacedListener != NULL) {
+            frameReplacedListener->onFrameReplaced(item);
+        }    
+}
+```
+
+//这里有个问题 如何和`BufferQueueLayer`绑定
+
+
+
+```c++
+//native/services/surfaceflinger/BufferQueueLayer.cpp
+void BufferQueueLayer::onFrameAvailable(const BufferItem& item) {
+          mQueueItems.push_back(item);
+        mQueuedFrames++;
+  
+      mFlinger->signalLayerUpdate();
+    mConsumer->onBufferAvailable(item);
+}
+
+
+```
+
+```c++
+//SurfaceFlinger.cpp
+void SurfaceFlinger::signalLayerUpdate() {
+    mScheduler->resetIdleTimer();
+    mPowerAdvisor.notifyDisplayUpdateImminent();
+    mEventQueue->invalidate();
+}
+```
+
+
+
 ## 硬件绘制
 
 
@@ -49022,6 +49422,8 @@ void RecordingCanvas::drawLines(const float* points, int floatCount, const SkPai
 [RenderThread与OpenGL GPU渲染](https://www.jianshu.com/p/dd800800145b)
 
 [Android 中的 Hardware Layer 详解](https://www.androidperformance.com/2019/07/27/Android-Hardware-Layer/)
+
+[深入浅出Android BufferQueue](https://zhuanlan.zhihu.com/p/62813895)
 
 <!-- https://www.jianshu.com/p/abfaea892611 ， https://blog.csdn.net/jinzhuojun/article/details/54234354 https://www.jianshu.com/p/40f660e17a73 -->
 
