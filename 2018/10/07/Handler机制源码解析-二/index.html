@@ -169,7 +169,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      2.9k 字
+      4k 字
     </span>
   
 
@@ -179,7 +179,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      40
+      57
        分钟
     </span>
   
@@ -212,7 +212,7 @@
             <h1 style="display: none">Handler机制源码解析(二)</h1>
             
             <div class="markdown-body">
-              <h1 id="主要包括Handler其他使用知识点"><a href="#主要包括Handler其他使用知识点" class="headerlink" title="主要包括Handler其他使用知识点"></a>主要包括Handler其他使用知识点</h1><span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/Handler拓展知识点.png" srcset="/img/loading.gif" class="full-image" alt="Handler拓展知识点" title="Handler拓展知识点"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+              <h1 id="主要包括Handler其他使用知识点"><a href="#主要包括Handler其他使用知识点" class="headerlink" title="主要包括Handler其他使用知识点"></a>主要包括Handler其他使用知识点</h1><p><img src="/images/Handler拓展知识点.png" srcset="/img/loading.gif" alt="Handler拓展知识"></p>
 <h2 id="1-子线程创建Handler对象"><a href="#1-子线程创建Handler对象" class="headerlink" title="1. 子线程创建Handler对象"></a>1. 子线程创建Handler对象</h2><blockquote>
 <p>不可以直接在子线程创建Handler对象，因为Handler对象必须要绑定一个Looper，才可以使用。</p>
 <p>若在子线程需要使用Handler，则需要先创建一个Looper对象即执行<code>Looper.prepare()</code>然后再创建Handler对象时调用<code>Looper.myLooper()</code>获取Looper对象传入方法，最后调用<code>Looper.loop()</code>开始运行。</p>
@@ -565,7 +565,7 @@ Looper.myQueue().addIdleHandler(ForeverIdleHandler())
 <p>源码中在初始化ActivityThread时也会初始化一个<code>H类型的成员，它继承了Handler</code>。</p>
 <p>源码中调用<code>thread.attach(false)</code>时,<strong>回去创建一个Binder进程（具体代指ApplicationThread,Binder的服务端，用于接收系统AMS发出来的事件），由Handler线程发送Message至主线程。</strong></p>
 <p>所以在主线程开启Looper死循环之前，就已经启动了一个Binder线程并且准备了<code>H 这一个Handler类</code>，就可以用于处理一些死循环之外的事务。<code>仅需通过Binder线程向H发送消息即可</code>。</p>
-<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/activity_binder.png" srcset="/img/loading.gif" class="full-image" alt="App运行过程" title="App运行过程"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<p><img src="/images/activity_binder.png" srcset="/img/loading.gif" alt="App运行过程"></p>
 <p><strong>system_server进程即为系统进程</strong>，里面运行了大量的系统服务，比如上图提供了<code>ApplicationThreadProxy以及ActivityManagerService</code>，这两者都基于IBinder接口，都是Binder线程。</p>
 <p><strong>App进程即为我们常说的应用程序</strong>，主线程主要负责Activity等组件的生命周期以及UI绘制。每个App进程中至少会包括两个binder线程:<code>ApplicationThread和ActivityManagerProxy</code>。</p>
 <p><strong>Binder用于不同进程间的通信，由一个进程的Binder客户端向另一个进程的服务端发送事务。</strong></p>
@@ -585,7 +585,246 @@ Looper.myQueue().addIdleHandler(ForeverIdleHandler())
     <span class="hljs-comment">//x 包含了以下内容  Message.target Message.callback  Message.what</span>
   &#125;
 &#125;)</code></pre>
-<h3 id="5-View-post-和Handler-post-有什么区别？"><a href="#5-View-post-和Handler-post-有什么区别？" class="headerlink" title="5.View.post()和Handler.post()有什么区别？"></a>5.View.post()和Handler.post()有什么区别？</h3>
+<h3 id="5-View-post-和Handler-post-有什么区别？"><a href="#5-View-post-和Handler-post-有什么区别？" class="headerlink" title="5.View.post()和Handler.post()有什么区别？"></a>5.View.post()和Handler.post()有什么区别？</h3><pre><code class="hljs java"><span class="hljs-comment">//View.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">post</span><span class="hljs-params">(Runnable action)</span> </span>&#123;
+        <span class="hljs-keyword">final</span> AttachInfo attachInfo = mAttachInfo;
+        <span class="hljs-keyword">if</span> (attachInfo != <span class="hljs-keyword">null</span>) &#123;
+            <span class="hljs-keyword">return</span> attachInfo.mHandler.post(action);
+        &#125;
+
+        <span class="hljs-comment">// Postpone the runnable until we know on which thread it needs to run.</span>
+        <span class="hljs-comment">// Assume that the runnable will be successfully placed after attach.</span>
+        getRunQueue().post(action);
+        <span class="hljs-keyword">return</span> <span class="hljs-keyword">true</span>;
+    &#125;</code></pre>
+<p>需要判断<code>attachInfo</code>是否为null，不为null直接执行<code>handler.post()</code>去执行任务；否则，插入到<code>getRunQueue()</code>中。</p>
+<p>现在需要分为两部分进行分析：</p>
+<h4 id="AttachInfo"><a href="#AttachInfo" class="headerlink" title="AttachInfo"></a>AttachInfo</h4><pre><code class="hljs java"><span class="hljs-comment">//View.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">dispatchAttachedToWindow</span><span class="hljs-params">(AttachInfo info, <span class="hljs-keyword">int</span> visibility)</span> </span>&#123;
+      <span class="hljs-comment">//在此处进行赋值</span>
+      mAttachInfo = info;
+      ...
+    &#125;</code></pre>
+<p>这时需要知道何时调用了<code>dispatchAttachedToWindow()</code>，需要向上看</p>
+<pre><code class="hljs java"><span class="hljs-comment">//ViewGroup.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">dispatchAttachedToWindow</span><span class="hljs-params">(AttachInfo info, <span class="hljs-keyword">int</span> visibility)</span> </span>&#123;
+       ...
+        <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> count = mChildrenCount;
+        <span class="hljs-keyword">final</span> View[] children = mChildren;
+        <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int</span> i = <span class="hljs-number">0</span>; i &lt; count; i++) &#123;
+            <span class="hljs-keyword">final</span> View child = children[i];
+            child.dispatchAttachedToWindow(info,
+                    combineVisibility(visibility, child.getVisibility()));
+        &#125;
+        <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> transientCount = mTransientIndices == <span class="hljs-keyword">null</span> ? <span class="hljs-number">0</span> : mTransientIndices.size();
+        <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int</span> i = <span class="hljs-number">0</span>; i &lt; transientCount; ++i) &#123;
+            View view = mTransientViews.get(i);
+            view.dispatchAttachedToWindow(info,
+                    combineVisibility(visibility, view.getVisibility()));
+        &#125;
+    &#125;</code></pre>
+<p>再往上就是<code>DecorView</code>，<code>DecorView</code>继承自<code>ViewGroup</code>，所以最终就是到了<code>ViewRootImpl</code></p>
+<pre><code class="hljs java"><span class="hljs-comment">//ViewRootImpl.java</span>
+<span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">performTraversals</span><span class="hljs-params">()</span> </span>&#123;
+   <span class="hljs-comment">//mView 此处指的是 DecorView</span>
+   <span class="hljs-keyword">final</span> View host = mView;
+ ...
+        <span class="hljs-keyword">if</span> (mFirst) &#123;
+            mFullRedrawNeeded = <span class="hljs-keyword">true</span>;
+            mLayoutRequested = <span class="hljs-keyword">true</span>;
+         ...
+            host.dispatchAttachedToWindow(mAttachInfo, <span class="hljs-number">0</span>);           
+        &#125;
+  ...
+    <span class="hljs-comment">//绘制流程</span>
+    performMeasure()
+    
+    performLayout()
+    
+    performDtraw()
+&#125;</code></pre>
+<p>是从<code>ViewRootImpl.performTraversal()</code>向下执行到<code>DecorView.dispatchAttachedToWindow()</code>最后执行到<code>View.dispatchAttachedToWindow()</code></p>
+<pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">ViewRootImpl</span><span class="hljs-params">(Context context, Display display)</span> </span>&#123;
+...
+        mFirst = <span class="hljs-keyword">true</span>; <span class="hljs-comment">// true for the first time the view is added</span>
+        mAdded = <span class="hljs-keyword">false</span>;
+        mAttachInfo = <span class="hljs-keyword">new</span> View.AttachInfo(mWindowSession, mWindow, display, <span class="hljs-keyword">this</span>, mHandler, <span class="hljs-keyword">this</span>,
+                context);
+  ...
+  
+&#125;
+
+<span class="hljs-keyword">final</span> ViewRootHandler mHandler = <span class="hljs-keyword">new</span> ViewRootHandler();</code></pre>
+<p>是在<code>ViewRootImpl</code>初始化的时候构建了<code>AttachInfo</code>对象，其中<code>attachInfo.handler</code>指的就是<code>ViewRootHandler</code></p>
+<p>所以最后通过<code>View.post()</code>执行的任务都会切换到<code>ViewRootHandler</code>上去执行。</p>
+<h4 id="HandlerActionQueue"><a href="#HandlerActionQueue" class="headerlink" title="HandlerActionQueue"></a>HandlerActionQueue</h4><p>当<code>mAttachInfo</code>未赋值时(<code>尚未执行 dispatchAttachedToWindow()</code>)，缓存当前无法执行的Runnable</p>
+<pre><code class="hljs java"><span class="hljs-comment">//HandlerActionQueue.java</span>
+<span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">HandlerActionQueue</span> </span>&#123;
+  <span class="hljs-keyword">private</span> HandlerAction[] mActions;
+  
+  <span class="hljs-comment">//缓存任务</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">post</span><span class="hljs-params">(Runnable action)</span> </span>&#123;
+        postDelayed(action, <span class="hljs-number">0</span>);
+    &#125;
+
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">postDelayed</span><span class="hljs-params">(Runnable action, <span class="hljs-keyword">long</span> delayMillis)</span> </span>&#123;
+        <span class="hljs-keyword">final</span> HandlerAction handlerAction = <span class="hljs-keyword">new</span> HandlerAction(action, delayMillis);
+
+        <span class="hljs-keyword">synchronized</span> (<span class="hljs-keyword">this</span>) &#123;
+            <span class="hljs-keyword">if</span> (mActions == <span class="hljs-keyword">null</span>) &#123;
+                mActions = <span class="hljs-keyword">new</span> HandlerAction[<span class="hljs-number">4</span>];
+            &#125;
+            mActions = GrowingArrayUtils.append(mActions, mCount, handlerAction);
+            mCount++;
+        &#125;
+    &#125;
+  
+  <span class="hljs-comment">//执行缓存的任务</span>
+      <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">executeActions</span><span class="hljs-params">(Handler handler)</span> </span>&#123;
+        <span class="hljs-keyword">synchronized</span> (<span class="hljs-keyword">this</span>) &#123;
+            <span class="hljs-keyword">final</span> HandlerAction[] actions = mActions;
+            <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int</span> i = <span class="hljs-number">0</span>, count = mCount; i &lt; count; i++) &#123;
+                <span class="hljs-keyword">final</span> HandlerAction handlerAction = actions[i];
+                handler.postDelayed(handlerAction.action, handlerAction.delay);
+            &#125;
+
+            mActions = <span class="hljs-keyword">null</span>;
+            mCount = <span class="hljs-number">0</span>;
+        &#125;
+    &#125;
+  
+  <span class="hljs-comment">//缓存runnable和执行时间</span>
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">HandlerAction</span> </span>&#123;
+        <span class="hljs-keyword">final</span> Runnable action;
+        <span class="hljs-keyword">final</span> <span class="hljs-keyword">long</span> delay;
+
+        <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">HandlerAction</span><span class="hljs-params">(Runnable action, <span class="hljs-keyword">long</span> delay)</span> </span>&#123;
+            <span class="hljs-keyword">this</span>.action = action;
+            <span class="hljs-keyword">this</span>.delay = delay;
+        &#125;
+
+        <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">matches</span><span class="hljs-params">(Runnable otherAction)</span> </span>&#123;
+            <span class="hljs-keyword">return</span> otherAction == <span class="hljs-keyword">null</span> &amp;&amp; action == <span class="hljs-keyword">null</span>
+                    || action != <span class="hljs-keyword">null</span> &amp;&amp; action.equals(otherAction);
+        &#125;
+    &#125;  
+&#125;</code></pre>
+<p>当<code>mAttachInfo</code>尚未赋值时，就会缓存<code>View.post()</code>要执行的任务</p>
+<pre><code class="hljs java"><span class="hljs-comment">//View.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">dispatchAttachedToWindow</span><span class="hljs-params">(AttachInfo info, <span class="hljs-keyword">int</span> visibility)</span> </span>&#123;
+      mAttachInfo = info;
+      ...
+        <span class="hljs-keyword">if</span> (mRunQueue != <span class="hljs-keyword">null</span>) &#123;
+            mRunQueue.executeActions(info.mHandler);
+            mRunQueue = <span class="hljs-keyword">null</span>;
+        &#125;     
+      ...
+    &#125;</code></pre>
+<p>在<code>dispatchAttachedToWindow()</code>执行了关键的两步：</p>
+<ol>
+<li>赋值<code>mAttachInfo</code></li>
+<li>执行<code>View.post()</code>未执行的任务</li>
+</ol>
+<h4 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h4><blockquote>
+<p><code>View.post()</code>内部自动分为两种情况：</p>
+<ul>
+<li>尚未执行<code>dispatchAttachedToWindow()</code>：尚未赋值<code>mAttachInfo</code>，将需要执行的任务缓存到<code>HandlerActionQueue</code>，等待<code></code>dispatchAttachedToWindow()<code>之后通过</code>ViewRootHandler`执行。</li>
+<li>已执行<code>dispatchAttachedToWindow()</code>：已赋值<code>mAttachInfo</code>，直接调用<code>ViewRootHandler</code>执行对应任务即可。</li>
+</ul>
+<p><code>ViewRootHandler</code>绑定的Looper为<code>MainLooper</code>，所以通过<code>View.post()</code>的操作都会在主线程执行。</p>
+<p><code>dispatchAttachedToWindow()</code>是在<code>ViewRoootImpl.performTraversals()</code>中执行的。</p>
+</blockquote>
+<h4 id="为什么可以获取宽高"><a href="#为什么可以获取宽高" class="headerlink" title="为什么可以获取宽高"></a>为什么可以获取宽高</h4><p>前面有讲过在<code>onCreate()</code>调用<code>View.post()</code>可以获取View的宽和高，下面简单的分析原因。</p>
+<pre><code class="hljs java"><span class="hljs-comment">//ViewRootImpl.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">performTraversals</span><span class="hljs-params">()</span> </span>&#123;
+      ...
+        host.dispatchAttachedToWindow(mAttachInfo, <span class="hljs-number">0</span>);
+      ...
+        <span class="hljs-comment">// 绘制流程</span>
+    &#125;
+
+    <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">doTraversal</span><span class="hljs-params">()</span> </span>&#123;
+        <span class="hljs-keyword">if</span> (mTraversalScheduled) &#123;
+            mTraversalScheduled = <span class="hljs-keyword">false</span>;
+          ...
+            performTraversals();
+
+        &#125;
+    &#125;
+
+    <span class="hljs-keyword">final</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">TraversalRunnable</span> <span class="hljs-keyword">implements</span> <span class="hljs-title">Runnable</span> </span>&#123;
+        <span class="hljs-meta">@Override</span>
+        <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">run</span><span class="hljs-params">()</span> </span>&#123;
+            doTraversal();
+        &#125;
+    &#125;
+
+    <span class="hljs-keyword">final</span> TraversalRunnable mTraversalRunnable = <span class="hljs-keyword">new</span> TraversalRunnable();
+
+    <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">scheduleTraversals</span><span class="hljs-params">()</span> </span>&#123;
+        <span class="hljs-keyword">if</span> (!mTraversalScheduled) &#123;
+            mTraversalScheduled = <span class="hljs-keyword">true</span>;
+            mTraversalBarrier = mHandler.getLooper().getQueue().postSyncBarrier();
+          <span class="hljs-comment">//交给Chreographer在收到Vsync信号去执行 mTraversalRunnable 也就是 performTraversals()</span>
+            mChoreographer.postCallback(
+                    Choreographer.CALLBACK_TRAVERSAL, mTraversalRunnable, <span class="hljs-keyword">null</span>);
+           ...
+        &#125;
+    &#125;</code></pre>
+<p>这边转到<code>Choreographer</code></p>
+<pre><code class="hljs java"><span class="hljs-comment">//Choreographer.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Choreographer <span class="hljs-title">getInstance</span><span class="hljs-params">()</span> </span>&#123;
+        <span class="hljs-keyword">return</span> sThreadInstance.get();
+    &#125;
+
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> ThreadLocal&lt;Choreographer&gt; sThreadInstance =
+            <span class="hljs-keyword">new</span> ThreadLocal&lt;Choreographer&gt;() &#123;
+        <span class="hljs-meta">@Override</span>
+        <span class="hljs-function"><span class="hljs-keyword">protected</span> Choreographer <span class="hljs-title">initialValue</span><span class="hljs-params">()</span> </span>&#123;
+            Looper looper = Looper.myLooper();<span class="hljs-comment">//此时looper对应的是MainLooper</span>
+            <span class="hljs-keyword">if</span> (looper == <span class="hljs-keyword">null</span>) &#123;
+                <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> IllegalStateException(<span class="hljs-string">"The current thread must have a looper!"</span>);
+            &#125;
+            Choreographer choreographer = <span class="hljs-keyword">new</span> Choreographer(looper, VSYNC_SOURCE_APP);
+            <span class="hljs-keyword">if</span> (looper == Looper.getMainLooper()) &#123;
+                mMainInstance = choreographer;
+            &#125;
+            <span class="hljs-keyword">return</span> choreographer;
+        &#125;
+    &#125;;
+
+    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-title">Choreographer</span><span class="hljs-params">(Looper looper, <span class="hljs-keyword">int</span> vsyncSource)</span> </span>&#123;
+        mLooper = looper;
+        mHandler = <span class="hljs-keyword">new</span> FrameHandler(looper);<span class="hljs-comment">//由MainLooper构建的Handler</span>
+      ...
+    &#125;
+
+    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">postCallbackDelayedInternal</span><span class="hljs-params">(<span class="hljs-keyword">int</span> callbackType,
+            Object action, Object token, <span class="hljs-keyword">long</span> delayMillis)</span> </span>&#123;
+        <span class="hljs-keyword">if</span> (DEBUG_FRAMES) &#123;
+            Log.d(TAG, <span class="hljs-string">"PostCallback: type="</span> + callbackType
+                    + <span class="hljs-string">", action="</span> + action + <span class="hljs-string">", token="</span> + token
+                    + <span class="hljs-string">", delayMillis="</span> + delayMillis);
+        &#125;
+
+        <span class="hljs-keyword">synchronized</span> (mLock) &#123;
+            <span class="hljs-keyword">final</span> <span class="hljs-keyword">long</span> now = SystemClock.uptimeMillis();
+            <span class="hljs-keyword">final</span> <span class="hljs-keyword">long</span> dueTime = now + delayMillis;
+            mCallbackQueues[callbackType].addCallbackLocked(dueTime, action, token);
+
+            <span class="hljs-keyword">if</span> (dueTime &lt;= now) &#123;
+                scheduleFrameLocked(now);
+            &#125; <span class="hljs-keyword">else</span> &#123;
+                Message msg = mHandler.obtainMessage(MSG_DO_SCHEDULE_CALLBACK, action);
+                msg.arg1 = callbackType；
+                msg.setAsynchronous(<span class="hljs-keyword">true</span>);<span class="hljs-comment">//设置异步消息 把TraversalRunnable置于消息里</span>
+                mHandler.sendMessageAtTime(msg, dueTime);
+            &#125;
+        &#125;
+    &#125;</code></pre>
+<p>根据上述源码分析得到结论<code>TraversalRunnable</code>也会运行到FrameHandler上。</p>
+<p>Handler的MessageQueue是按照顺序执行的，就需要等到<code>performTraversals()</code>执行完毕后，才可以执行后续的任务(HandlerActionQueue中缓存的任务。)。</p>
+
             </div>
             <hr>
             <div>

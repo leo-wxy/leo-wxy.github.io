@@ -169,7 +169,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      9.4k 字
+      9.5k 字
     </span>
   
 
@@ -179,7 +179,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      131
+      133
        分钟
     </span>
   
@@ -216,12 +216,13 @@
 <p>主要的内容包括Handler的机制以及四个组成部分和源码的分析</p>
 <p>下面的代码分析都是基于Android8.0 - Oreo的源代码</p>
 </blockquote>
-<p><img src="/images/Android消息机制.png" srcset="/img/loading.gif" alt="Android消息机制"></p>
+<p><img src="/images/Handler机制xmind.png" srcset="/img/loading.gif" alt="Handler机制"></p>
 <a id="more"></a>
 <h2 id="1-消息机制简介"><a href="#1-消息机制简介" class="headerlink" title="1.  消息机制简介"></a>1.  消息机制简介</h2><p>在应用启动时，会执行<code>main()</code>方法，<code>main()</code>会创建一个Looper对象，然后开启一个死循环，目的是<strong>不断从消息队列<code>MessageQueue</code>里面取出<code>Message</code>对象并处理。</strong></p>
 <p>在Android中使用消息机制，会优先想到的是Handler。Handler可以轻松的将一个任务切换到Handler所在的线程去执行。在多线程的应用场景中，<strong>可以将工作线程中需要更新UI的操作信息传递到主线程去执行</strong>，从而实现工作线程更新UI的操作，最终实现异步消息的处理。</p>
 <p><img src="/images/study_plan/handler_process.png" srcset="/img/loading.gif" alt="Handler执行流程"></p>
-<h2 id="2-Handler机制模型"><a href="#2-Handler机制模型" class="headerlink" title="2. Handler机制模型"></a>2. Handler机制模型</h2><p>消息机制主要包含<strong>Handler、Message、MessageQueue，Looper</strong>这四个类。</p>
+<h2 id="2-Handler机制模型"><a href="#2-Handler机制模型" class="headerlink" title="2. Handler机制模型"></a>2. Handler机制模型</h2><p><img src="/images/Handler-机制模型.png" srcset="/img/loading.gif" alt="Handler机制模型"></p>
+<p>消息机制主要包含<strong>Handler、Message、MessageQueue，Looper</strong>这四个类。</p>
 <h3 id="Handler：消息辅助类"><a href="#Handler：消息辅助类" class="headerlink" title="Handler：消息辅助类"></a>Handler：消息辅助类</h3><p>主要功能将<code>Message</code>对象发送到<code>MessageQueue</code>中，同时将自己的引用赋值给<code>Message#target</code>(Handler.sendMessage())。也可以实现<code>handleMessage()</code>方法处理回调。</p>
 <h3 id="Message：消息实体"><a href="#Message：消息实体" class="headerlink" title="Message：消息实体"></a>Message：消息实体</h3><p>需要传递的消息也可以传递数据。</p>
 <p><code>Message</code>分为三种：</p>
@@ -232,7 +233,7 @@
 </ul>
 <h3 id="MessageQueue：消息队列"><a href="#MessageQueue：消息队列" class="headerlink" title="MessageQueue：消息队列"></a>MessageQueue：消息队列</h3><p><strong>内部实现并不是队列，而是利用单链表去实现因为在插入和删除数据有优势。</strong>用于存储Handler发给来的消息(<code>Message</code>)以及取出。<code>内部使用单链表实现</code></p>
 <h3 id="Looper：消息循环"><a href="#Looper：消息循环" class="headerlink" title="Looper：消息循环"></a>Looper：消息循环</h3><p>与线程绑定，不止局限于主线程，绑定的线程来处理<code>Message</code>。不断循环执行<code>Looper.loop()</code>，从<code>MessageQueue</code>中读取<code>Message</code>，按分发机制将消息分发出去给目标处理(将<code>Message</code>发到<code>Handler.dispatchMessage</code>方法去处理)。</p>
-<h2 id="3-Handler运行流程"><a href="#3-Handler运行流程" class="headerlink" title="3. Handler运行流程"></a>3. Handler运行流程</h2><p><img src="/images/Handler基本原理" srcset="/img/loading.gif" alt="handler基本原理"></p>
+<h2 id="3-Handler运行流程"><a href="#3-Handler运行流程" class="headerlink" title="3. Handler运行流程"></a>3. Handler运行流程</h2><p><img src="/images/Handler基本原理" srcset="/img/loading.gif" alt="handler运行流程"> <img src="/images/Handler-运行流程.png" srcset="/img/loading.gif" alt="运行流程"></p>
 <p>工作流程：<strong>异步通信准备 =&gt; 消息入队 =&gt; 消息循环 =&gt; 消息处理</strong></p>
 <ol>
 <li><p><strong>异步通信准备</strong></p>
@@ -268,44 +269,10 @@
 <p>在开发过程中基本不会调用上述方法，因为默认会调用主线程的Looper，然后一个线程中只能有一个Looper对象和一个MessageQueue。</p>
 </blockquote>
 </li>
-<li><p><strong>要注意Handler可能引起的内存泄漏</strong>(在下面会介绍到为何会引发泄漏)。</p>
-<p>错误的写法:</p>
-<pre><code class="hljs java"><span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> Handler mHandler = <span class="hljs-keyword">new</span> Handler()&#123;        
-    <span class="hljs-meta">@Override</span>
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">handleMessage</span><span class="hljs-params">(Message msg)</span> </span>&#123;            
-        <span class="hljs-keyword">super</span>.handleMessage(msg);
-       &#125;
-    &#125;;</code></pre>
-<p><strong>非静态的内部类和匿名内部类都会隐式的持有其外部类的引用，而静态内部类不会持有外部类的引用。</strong></p>
-<p>正确的写法：</p>
-<blockquote>
-<p>继承<code>Handler</code>时候要么放在单独的类文件中，要么直接使用静态内部类。</p>
-</blockquote>
-<pre><code class="hljs java"><span class="hljs-comment">//需要在静态内部类中调用外部类时，可以直接使用  `弱引用`  进行处理</span>
-<span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">MyHandler</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">Handler</span></span>&#123;
-    <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> WeakReference&lt;MyActivity&gt; mWeakReference；
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">MyHandler</span><span class="hljs-params">(MyActivity activity)</span></span>&#123;
-         mWeakReference = <span class="hljs-keyword">new</span> WeakReference&lt;&gt;(activity);
-    &#125;
-    <span class="hljs-meta">@Override</span>
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">handlerMessage</span><span class="hljs-params">(Message msg)</span></span>&#123;
-        <span class="hljs-keyword">super</span>.handlerMessage(msg);
-        MyActivity activity = mWeakReference.get();
-    &#125;
-&#125;
-<span class="hljs-comment">//调用方法</span>
-<span class="hljs-keyword">private</span> MyHandler mHandler = <span class="hljs-keyword">new</span> MyHandler(<span class="hljs-keyword">this</span>);</code></pre>
-</li>
 </ol>
+<h2 id="5-Handler源码解析"><a href="#5-Handler源码解析" class="headerlink" title="5. Handler源码解析"></a>5. Handler源码解析</h2><p><img src="/images/Handler-源码分析.png" srcset="/img/loading.gif" alt="源码分析"></p>
+<h3 id="1-创建循环器对象（Looper）和创建消息队列对象-MessageQueue"><a href="#1-创建循环器对象（Looper）和创建消息队列对象-MessageQueue" class="headerlink" title="1.创建循环器对象（Looper）和创建消息队列对象(MessageQueue)"></a>1.<strong>创建循环器对象（<code>Looper</code>）和创建消息队列对象(<code>MessageQueue</code>)</strong></h3><p><img src="/images/Handler-源码1.png" srcset="/img/loading.gif" alt="创建Looper和MessageQueue"></p>
 <blockquote>
-<p>在<code>Activity.onDestroy()</code>时移除所有消息</p>
-</blockquote>
-   <pre><code class="hljs java"><span class="hljs-meta">@Override</span>
-<span class="hljs-function"><span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> <span class="hljs-title">onDestroy</span><span class="hljs-params">()</span> </span>&#123;
-    <span class="hljs-keyword">super</span>.onDestroy();
-    handler.removeCallbacksAndMessages(<span class="hljs-keyword">null</span>);
-&#125;</code></pre>
-<h2 id="5-Handler源码解析"><a href="#5-Handler源码解析" class="headerlink" title="5. Handler源码解析"></a>5. Handler源码解析</h2><h3 id="1-创建循环器对象（Looper）和创建消息队列对象-MessageQueue"><a href="#1-创建循环器对象（Looper）和创建消息队列对象-MessageQueue" class="headerlink" title="1.创建循环器对象（Looper）和创建消息队列对象(MessageQueue)"></a>1.<strong>创建循环器对象（<code>Looper</code>）和创建消息队列对象(<code>MessageQueue</code>)</strong></h3><blockquote>
 <p>创建Looper对象主要有两个方法：<code>Looper.prepareMainLooper()</code>和<code>Looper.prepare()</code></p>
 <p>创建MessageQueue对象方法：<strong>创建Looper对象时会自动创建MessageQueue</strong></p>
 <p><strong>一个线程最多对应一个Looper、一个MessageQueue，但可以对应多个Handler</strong></p>
@@ -367,7 +334,8 @@
 <li><p>子线程创建Handler对象:无法在子线程直接调用Handler无参构造方法<strong>Handler创建时需要绑定Looper对象</strong> 。需要使用<code>HandlerThread</code>。</p>
 </li>
 </ol>
-<h3 id="2-开启Looper即消息循环"><a href="#2-开启Looper即消息循环" class="headerlink" title="2.开启Looper即消息循环"></a>2.<strong>开启Looper即消息循环</strong></h3><blockquote>
+<h3 id="2-开启Looper即消息循环"><a href="#2-开启Looper即消息循环" class="headerlink" title="2.开启Looper即消息循环"></a>2.<strong>开启Looper即消息循环</strong></h3><p><img src="/images/Handler-源码2.png" srcset="/img/loading.gif" alt="开启消息循环"></p>
+<blockquote>
 <p>创建了<code>Looper和MessageQueue</code>对象后，自动进入消息循环，使用<code>Looper.loop()</code>方法开始消息循环。</p>
 </blockquote>
 <pre><code class="hljs java"><span class="hljs-comment">//源码位置：../core/java/android/os/Looper.java</span>
@@ -403,7 +371,8 @@
      &#125;
 &#125;</code></pre>
 <p><code>loop()</code>方法是一个死循环，唯一跳出循环的方法是从<code>MessageQueue</code>获取的消息对象为空。</p>
-<h3 id="3-创建Handler对象"><a href="#3-创建Handler对象" class="headerlink" title="3.创建Handler对象"></a><strong>3.创建Handler对象</strong></h3><blockquote>
+<h3 id="3-创建Handler对象"><a href="#3-创建Handler对象" class="headerlink" title="3.创建Handler对象"></a><strong>3.创建Handler对象</strong></h3><p><img src="/images/Handler-源码3.png" srcset="/img/loading.gif" alt="创建Handler"></p>
+<blockquote>
 <p>创建Handler对象即可以进行消息的发送与处理</p>
 </blockquote>
 <pre><code class="hljs java"><span class="hljs-comment">//源码位置：.../core/java/android/os/Handler.java </span>
@@ -442,7 +411,8 @@
     &#125;</code></pre>
 <p><code>Handler的无参构造方法会默认关联当前线程的Looper对象和MessageQueue对象，设置callback回调方法为null，且消息处理方式为同步处理。</code></p>
 <p><code>async</code>为true，所有发出的消息都是<code>异步消息</code>。</p>
-<h3 id="4-创建消息对象"><a href="#4-创建消息对象" class="headerlink" title="4.创建消息对象"></a><strong>4.创建消息对象</strong></h3><blockquote>
+<h3 id="4-创建消息对象"><a href="#4-创建消息对象" class="headerlink" title="4.创建消息对象"></a><strong>4.创建消息对象</strong></h3><p><img src="/images/Handler-源码4.png" srcset="/img/loading.gif" alt="创建Message"></p>
+<blockquote>
 <p>Handler发送Message并且进入MessageQueue循环，创建方式分为两种<code>new Message()</code>和<code>Message.obtain()</code>。通常使用<code>Message.obtain()</code>。这种方式<strong>有效避免创建重复Message对象</strong>。</p>
 </blockquote>
 <pre><code class="hljs java"><span class="hljs-comment">//创建消息对象</span>
@@ -488,7 +458,8 @@ msg.obj = <span class="hljs-string">"test"</span>;
         <span class="hljs-keyword">return</span> Message.obtain(<span class="hljs-keyword">this</span>, what);
     &#125;</code></pre>
 <p>实质还是调用了<code>Message.obtain()</code>构建消息实例.</p>
-<h3 id="5-发送消息-Message"><a href="#5-发送消息-Message" class="headerlink" title="5.发送消息(Message)"></a><strong>5.发送消息(Message)</strong></h3><blockquote>
+<h3 id="5-发送消息-Message"><a href="#5-发送消息-Message" class="headerlink" title="5.发送消息(Message)"></a><strong>5.发送消息(Message)</strong></h3><p><img src="/images/Handler-源码5.png" srcset="/img/loading.gif" alt="发送消息"></p>
+<blockquote>
 <p>Handler主要有以下几种发送消息的方式:</p>
 <ul>
 <li><code>sendMessage(Message msg)</code></li>
@@ -571,7 +542,8 @@ msg.obj = <span class="hljs-string">"test"</span>;
 <li><code>Message.when</code>利用时间差来表达期望事件分发的时间，所以使用的是一个相对时间。</li>
 <li>使用<code>sendMessageDelayed()</code>发送消息时，该消息会立即进入<code>MessageQueue</code>中，并标记<code>mBlocked</code>为true，阻塞线程。<code>MessageQueue</code>中是按照希望被分发时间排序的，时间越小排在越前。</li>
 </ul>
-<h3 id="6-消息入队"><a href="#6-消息入队" class="headerlink" title="6.消息入队"></a><strong>6.消息入队</strong></h3><p>发送消息最后调用到的是<code>MessageQueue.enqueueMessage()</code>将发送的消息加入到<code>MessageQueue</code>中</p>
+<h3 id="6-消息入队"><a href="#6-消息入队" class="headerlink" title="6.消息入队"></a><strong>6.消息入队</strong></h3><p><img src="/images/Handler-源码6.png" srcset="/img/loading.gif" alt="消息入队"></p>
+<p>发送消息最后调用到的是<code>MessageQueue.enqueueMessage()</code>将发送的消息加入到<code>MessageQueue</code>中</p>
 <pre><code class="hljs java"><span class="hljs-comment">//源码位置：..core/java/android/os/MessageQueue.java</span>
 <span class="hljs-comment">//内部是一个单链表有序序列，由 Message.when 作为排序依据，该值为一个相对时间。</span>
 <span class="hljs-function"><span class="hljs-keyword">boolean</span> <span class="hljs-title">enqueueMessage</span><span class="hljs-params">(Message msg, <span class="hljs-keyword">long</span> when)</span> </span>&#123;
@@ -638,7 +610,8 @@ msg.obj = <span class="hljs-string">"test"</span>;
 <li>消息进入消息队列后，会唤醒消息队列(<code>nativeWake()</code>)进行等待</li>
 <li>执行到<code>enqueueMessage()</code>时通过添加<code>synchronized</code>保证线程安全</li>
 </ul>
-<h3 id="7-获取消息"><a href="#7-获取消息" class="headerlink" title="7.获取消息"></a><strong>7.获取消息</strong></h3><blockquote>
+<h3 id="7-获取消息"><a href="#7-获取消息" class="headerlink" title="7.获取消息"></a><strong>7.获取消息</strong></h3><p><img src="/images/Handler-源码7.png" srcset="/img/loading.gif" alt="获取消息"></p>
+<blockquote>
 <p>发送了消息后，MessageQueue维护了消息队列，在Looper中通过<code>loop()</code>不断获取Message。通过<code>next()</code>获取Message.</p>
 </blockquote>
 <pre><code class="hljs java"><span class="hljs-comment">//源码位置：..core/java/android/os/MessageQueue.java</span>
@@ -687,7 +660,8 @@ msg.obj = <span class="hljs-string">"test"</span>;
 &#125;</code></pre>
 <p><code>nativePollOnce()</code>：在当前无消息可执行的时候，阻塞等待，直到对应消息的触发时间。</p>
 <p>有可用消息时，直接返回可用消息。</p>
-<h3 id="8-分发消息"><a href="#8-分发消息" class="headerlink" title="8.分发消息"></a><strong>8.分发消息</strong></h3><blockquote>
+<h3 id="8-分发消息"><a href="#8-分发消息" class="headerlink" title="8.分发消息"></a><strong>8.分发消息</strong></h3><p><img src="/images/Handler-源码8.png" srcset="/img/loading.gif" alt="分发消息"></p>
+<blockquote>
 <p>分发消息到对应的Handler实例并根据传入的Message做对应的操作</p>
 </blockquote>
 <pre><code class="hljs java"><span class="hljs-comment">//源码位置：.../core/java/android/os/Handler.java </span>
@@ -717,8 +691,10 @@ msg.obj = <span class="hljs-string">"test"</span>;
     &#125;</code></pre>
 <p>总结：</p>
 <ul>
-<li><code>msg.target.dispatchMessage(msg)</code>中<code>msg.target</code>指向的就是对应Handler实例，</li>
+<li><p><code>msg.target.dispatchMessage(msg)</code>中<code>msg.target</code>指向的就是对应Handler实例，</p>
+</li>
 <li><p>消息分发的优先级：</p>
+<p><img src="/images/Handler-源码9.png" srcset="/img/loading.gif" alt="消息分发"></p>
 <ol>
 <li><p>Message的回调方法<code>message.callback.run()</code></p>
 <pre><code class="hljs java">handler.post(<span class="hljs-keyword">new</span> Runnable() &#123;
@@ -798,7 +774,8 @@ msg.obj = <span class="hljs-string">"test"</span>;
             &#125;
         &#125;
     &#125;</code></pre>
-<h3 id="10-Looper退出"><a href="#10-Looper退出" class="headerlink" title="10.Looper退出"></a><strong>10.Looper退出</strong></h3><blockquote>
+<h3 id="10-Looper退出"><a href="#10-Looper退出" class="headerlink" title="10.Looper退出"></a><strong>10.Looper退出</strong></h3><p><img src="/images/Handler-源码10.png" srcset="/img/loading.gif" alt="Looper退出"></p>
+<blockquote>
 <p><code>Looper.loop()</code>内部由一个无限循环组成，默认情况下不会退出循环。需要退出就需要调用<code>quit()</code>或者<code>quitSafely()</code>。</p>
 </blockquote>
 <pre><code class="hljs java"><span class="hljs-comment">//源码位置 .../core/java/android/os/Looper.java</span>
@@ -877,7 +854,8 @@ msg.obj = <span class="hljs-string">"test"</span>;
             &#125;
         &#125;
     &#125;</code></pre>
-<h2 id="6-Handler异步消息与同步屏障"><a href="#6-Handler异步消息与同步屏障" class="headerlink" title="6. Handler异步消息与同步屏障"></a>6. Handler异步消息与同步屏障</h2><h3 id="异步消息"><a href="#异步消息" class="headerlink" title="异步消息"></a>异步消息</h3><p><code>Handler</code>构造函数</p>
+<h2 id="6-Handler异步消息与同步屏障"><a href="#6-Handler异步消息与同步屏障" class="headerlink" title="6. Handler异步消息与同步屏障"></a>6. Handler异步消息与同步屏障</h2><p><img src="/images/Handler-异步消息.png" srcset="/img/loading.gif" alt="异步消息"></p>
+<h3 id="异步消息"><a href="#异步消息" class="headerlink" title="异步消息"></a>异步消息</h3><p><code>Handler</code>构造函数</p>
 <pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">Handler</span><span class="hljs-params">()</span> </span>&#123;
        <span class="hljs-keyword">this</span>(<span class="hljs-keyword">null</span>, <span class="hljs-keyword">false</span>);
    &#125;   
@@ -918,7 +896,8 @@ msg.obj = <span class="hljs-string">"test"</span>;
 <h4 id="使用场景"><a href="#使用场景" class="headerlink" title="使用场景"></a>使用场景</h4><ul>
 <li>View的刷新(<code>Chorgographer</code>发送的都是异步消息)</li>
 </ul>
-<h3 id="同步屏障"><a href="#同步屏障" class="headerlink" title="同步屏障"></a>同步屏障</h3><blockquote>
+<h3 id="同步屏障"><a href="#同步屏障" class="headerlink" title="同步屏障"></a>同步屏障</h3><p><img src="/images/Handler-同步屏障.png" srcset="/img/loading.gif" alt="同步屏障"></p>
+<blockquote>
 <p><code>同步屏障</code>：挡住普通消息，使得<code>异步消息</code>可以被更快处理</p>
 </blockquote>
 <h4 id="添加同步屏障"><a href="#添加同步屏障" class="headerlink" title="添加同步屏障"></a>添加同步屏障</h4><pre><code class="hljs java"><span class="hljs-comment">//MessageQueue.java</span>
@@ -938,7 +917,7 @@ msg.obj = <span class="hljs-string">"test"</span>;
             msg.arg1 = token;
 
             Message prev = <span class="hljs-keyword">null</span>;
-            Message p = mMessages;
+            Message p = mMessages;<span class="hljs-comment">//mMessages 是 队头消息</span>
             <span class="hljs-keyword">if</span> (when != <span class="hljs-number">0</span>) &#123;
                 <span class="hljs-keyword">while</span> (p != <span class="hljs-keyword">null</span> &amp;&amp; p.when &lt;= when) &#123;
                     prev = p;
@@ -1101,7 +1080,8 @@ msg.obj = <span class="hljs-string">"test"</span>;
 <h3 id="MessageQueue的Native实现"><a href="#MessageQueue的Native实现" class="headerlink" title="MessageQueue的Native实现"></a>MessageQueue的Native实现</h3><p><code>Message(消息)</code>的处理都是位于<code>MessageQueue(消息队列)</code>中。</p>
 <p>Java层的<code>MessageQueue</code>在上面已经分析过了，主要在于<code>enqueueMessage()——添加消息</code>和<code>next()——获取消息</code>。在Native层对应的就是<code>nativeWake()——唤醒</code>和<code>nativePollOnce()——阻塞</code>。</p>
 <p>对应位置为<code>android_os_MessageQueue.cpp</code></p>
-<h4 id="nativeInit-——初始化"><a href="#nativeInit-——初始化" class="headerlink" title="nativeInit()——初始化"></a>nativeInit()——初始化</h4><pre><code class="hljs c++"><span class="hljs-comment">//android_os_MessageQueue.cpp</span>
+<h4 id="nativeInit-——初始化"><a href="#nativeInit-——初始化" class="headerlink" title="nativeInit()——初始化"></a>nativeInit()——初始化</h4><p><img src="/images/Handler-nativeInit.png" srcset="/img/loading.gif" alt="初始化"></p>
+<pre><code class="hljs c++"><span class="hljs-comment">//android_os_MessageQueue.cpp</span>
 <span class="hljs-function"><span class="hljs-keyword">static</span> jlong <span class="hljs-title">android_os_MessageQueue_nativeInit</span><span class="hljs-params">(JNIEnv* env, jclass clazz)</span> </span>&#123;
     NativeMessageQueue* nativeMessageQueue = <span class="hljs-keyword">new</span> NativeMessageQueue();
     <span class="hljs-keyword">if</span> (!nativeMessageQueue) &#123;
@@ -1191,7 +1171,8 @@ Looper::Looper(<span class="hljs-keyword">bool</span> allowNonCallbacks) :
 <p>总结：</p>
 <p>TODO</p>
 </blockquote>
-<h4 id="nativePollOnce-——阻塞"><a href="#nativePollOnce-——阻塞" class="headerlink" title="* nativePollOnce()——阻塞"></a>* nativePollOnce()——阻塞</h4><blockquote>
+<h4 id="nativePollOnce-——阻塞"><a href="#nativePollOnce-——阻塞" class="headerlink" title="* nativePollOnce()——阻塞"></a>* nativePollOnce()——阻塞</h4><p><img src="/images/Handler-nativePollOnce.png" srcset="/img/loading.gif" alt="阻塞"></p>
+<blockquote>
 <p>在<code>MessageQueue.next()</code>中调用</p>
 </blockquote>
 <pre><code class="hljs c++"><span class="hljs-comment">//android_os_MessageQueue.cpp</span>
@@ -1410,7 +1391,8 @@ Done: ;
 <p><code>Java Message</code>：普通的Java层消息，例如<code>Handler发送接收的消息</code></p>
 <p>执行优先级为：<strong>Native Message &gt; Native request &gt; Java Message </strong></p>
 </blockquote>
-<h4 id="nativeWake-——唤醒"><a href="#nativeWake-——唤醒" class="headerlink" title="nativeWake()——唤醒"></a>nativeWake()——唤醒</h4><blockquote>
+<h4 id="nativeWake-——唤醒"><a href="#nativeWake-——唤醒" class="headerlink" title="nativeWake()——唤醒"></a>nativeWake()——唤醒</h4><p><img src="/images/Handler-nativeWake.png" srcset="/img/loading.gif" alt="唤醒"></p>
+<blockquote>
 <p>在<code>MessageQueue.enqueueMessage()</code>调用</p>
 <p>其他执行条件：<code>MessageQueue.quit()</code>和<code>MessageQueue.removeSyncBarrier()</code></p>
 </blockquote>
@@ -1442,7 +1424,8 @@ Done: ;
 </ul>
 <p>在<code>nativeInit()</code>中已经通过<code>epoll</code>监听<code>mWakeEventFd</code>的事件，当<code>mWakeEventFd</code>有事件发生时，就可以在<code>epoll_wait</code>读取事件并返回，返回后可以执行消息处理逻辑。</p>
 <p>主要起到一个<strong>通知唤醒</strong>的作用。</p>
-<h4 id="nativeDestroy-——销毁"><a href="#nativeDestroy-——销毁" class="headerlink" title="nativeDestroy()——销毁"></a>nativeDestroy()——销毁</h4><p>当<code>Looper.quit()</code>时对应的<code>MessageQueue</code>也会退出，执行<code>MessageQueue.quit()</code></p>
+<h4 id="nativeDestroy-——销毁"><a href="#nativeDestroy-——销毁" class="headerlink" title="nativeDestroy()——销毁"></a>nativeDestroy()——销毁</h4><p><img src="/images/Handler-nativeDestroy.png" srcset="/img/loading.gif" alt="销毁"></p>
+<p>当<code>Looper.quit()</code>时对应的<code>MessageQueue</code>也会退出，执行<code>MessageQueue.quit()</code></p>
 <pre><code class="hljs java"><span class="hljs-comment">//Looper.java</span>
     <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">quit</span><span class="hljs-params">()</span> </span>&#123;
         mQueue.quit(<span class="hljs-keyword">false</span>);
@@ -1527,12 +1510,14 @@ Done: ;
 <p>Java层发送消息时，调用到<code>MessageQueue.enqueueMessage()</code>，继续调用到<code>nativeWake()</code>唤醒阻塞线程，此时会通过<code>mWakeEventFd</code>往<code>管道</code>写入<code>1</code>，唤醒阻塞的线程处理消息。</p>
 <p>Java层获取消息时，调用到<code>MessageQueue.next()</code>，继续调用到<code>nativePollOnce()</code>阻塞线程，通过<code>epoll_wait()</code>等待事件发生或超时，当<code>mEpollFd</code>监听的任何fd发生事件时，<code>epoll_wait()</code>就会返回。返回之后按照<code>Native Message -&gt; Native Request -&gt; Java Message</code>的顺序处理消息。</p>
 <p><img src="/images/MessageQueue-Native.jpg" srcset="/img/loading.gif" alt="MessageQueue-Native"></p>
-<h2 id="9-epoll机制"><a href="#9-epoll机制" class="headerlink" title="9. epoll机制"></a>9. epoll机制</h2><blockquote>
+<h2 id="9-epoll机制"><a href="#9-epoll机制" class="headerlink" title="9. epoll机制"></a>9. epoll机制</h2><p><img src="/images/epoll机制.png" srcset="/img/loading.gif" alt="epoll机制"></p>
+<blockquote>
 <p><code>epoll机制</code>是一种高效的<strong>IO多路复用机制</strong>。</p>
 <p>使用<code>一个文件描述符管理多个文件描述符</code>，将用户关系的文件描述符存放到内核的一个事件表中，这样用户空间和内核空间的copy只需一次。</p>
 <p>利用<code>mmap()</code>映射内核空间，加速了用户空间与内核空间的消息传递。</p>
 </blockquote>
-<h3 id="操作过程"><a href="#操作过程" class="headerlink" title="操作过程"></a>操作过程</h3><p><code>epoll_create(int size)</code></p>
+<h3 id="操作过程"><a href="#操作过程" class="headerlink" title="操作过程"></a>操作过程</h3><p><img src="/images/epoll-主要方法.png" srcset="/img/loading.gif" alt="主要方法"></p>
+<p><code>epoll_create(int size)</code></p>
 <ul>
 <li><code>size</code>：需要监听的文件描述符上限。<em>不是能监听的最大值</em></li>
 </ul>
@@ -1556,7 +1541,7 @@ Done: ;
 </li>
 </ul>
 <p>对于需要监听的<code>fd</code>执行<code>op</code>操作</p>
-<p>例如<code>epoll_ctl(epollfd,EPOLL_CTL_ADD,mWakeEventFd,EPOLL_IN)</code>，就表示对<code>mWakeEventFd</code>添加<code>可读</code>事件监听</p>
+<p>例如<code>epoll_ctl(epollfd,EPOLL_CTL_ADD,mWakeEventFd,EPOLLIN)</code>，就表示对<code>mWakeEventFd</code>添加<code>可读</code>事件监听</p>
 <p><code>epoll_wait(int epfd,struct epoll_event *events,int maxevents,int timeout)</code></p>
 <ul>
 <li><code>epfd</code>：<code>epoll_create</code>的返回值</li>
@@ -1569,7 +1554,8 @@ Done: ;
 <blockquote>
 <p>通过<code>epoll_create()</code>创建一个<code>epollFd</code>去监听事件。通过<code>epoll_ctl()</code>注册监听哪些<code>fd</code>以及需要监听的<code>event</code>。一旦<code>fd</code>就绪，内核就会采用类似callback的机制激活<code>fd</code>。最后通过<code>epoll_wait()</code>等待通知。</p>
 </blockquote>
-<h3 id="工作模式"><a href="#工作模式" class="headerlink" title="工作模式"></a>工作模式</h3><h4 id="LT模式-默认"><a href="#LT模式-默认" class="headerlink" title="LT模式(默认)"></a>LT模式(默认)</h4><blockquote>
+<h3 id="工作模式"><a href="#工作模式" class="headerlink" title="工作模式"></a>工作模式</h3><p><img src="/images/epoll-工作模式.png" srcset="/img/loading.gif" alt="工作模式"></p>
+<h4 id="LT模式-默认"><a href="#LT模式-默认" class="headerlink" title="LT模式(默认)"></a>LT模式(默认)</h4><blockquote>
 <p>当<code>epoll_wait()</code>监听到事件时会通知到应用程序，<strong>应用程序不需要立即处理事件</strong>，在下次<code>epoll_wait()</code>监听到事件时，会再次通知应用程序。</p>
 </blockquote>
 <p>同时支持<code>block socket</code>和<code>no-block socket</code>。</p>
@@ -1577,7 +1563,8 @@ Done: ;
 <p>当<code>epoll_wait()</code>监听到事件时会通知到应用程序，<strong>应用程序需要立即处理事件</strong>，否则，在下次<code>epoll_wait()</code>监听到事件时，不会再次通知到应用程序。</p>
 </blockquote>
 <p>虽然<code>减少了epoll事件被重复触发的次数，因此效率要高于LT模式</code>。但是<code>必须使用no-blcok socket</code>。避免因为阻塞读写导致处理多个fd的任务饿死。</p>
-<h3 id="与其他多路复用机制的比较"><a href="#与其他多路复用机制的比较" class="headerlink" title="与其他多路复用机制的比较"></a>与其他多路复用机制的比较</h3><p>除了<code>epoll</code>以外，其他的还有<code>inotify、select,poll</code></p>
+<h3 id="与其他多路复用机制的比较"><a href="#与其他多路复用机制的比较" class="headerlink" title="与其他多路复用机制的比较"></a>与其他多路复用机制的比较</h3><p><img src="/images/epoll-其他多路复用机制.png" srcset="/img/loading.gif" alt="多路复用"></p>
+<p>除了<code>epoll</code>以外，其他的还有<code>inotify、select,poll</code></p>
 <p><code>IO多路复用</code>：内核一旦发现进程指定的一个或多个IO条件准备读取，内核就会通知该进程。</p>
 <h4 id="inotify"><a href="#inotify" class="headerlink" title="inotify"></a>inotify</h4><blockquote>
 <p>允许打开一个独立的文件描述符，可以监控一个或多个文件。例如：打开、创建，删除等事件。</p>
@@ -1613,6 +1600,7 @@ Done: ;
 <h2 id="10-Handler内存泄漏原因"><a href="#10-Handler内存泄漏原因" class="headerlink" title="10. Handler内存泄漏原因"></a>10. Handler内存泄漏原因</h2><blockquote>
 <p>持有类静态对象<code>sThreadLocal</code>导致无法释放。</p>
 </blockquote>
+<p><img src="/images/Handler-内存泄漏分析.png" srcset="/img/loading.gif" alt="Handler-内存泄漏分析"></p>
 <p><strong>匿名内部类默认会持有外部对象</strong></p>
 <pre><code class="hljs java"><span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">MainActivity</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">Activity</span></span>&#123;
   
@@ -1640,10 +1628,63 @@ Done: ;
 <p><code>MessageQueue</code>持有<code>Looper</code>的引用——<code>Looper.myLooper()</code></p>
 <p><code>Looper</code>持有<code>sThreadLocal</code>的引用——<code>sThreadLocal.get()</code></p>
 <p>综上所述，导致内存泄漏的<code>GCRoots</code>对象为<code>sThreadLocal</code>。</p>
+<p>错误的写法:</p>
+<pre><code class="hljs java"><span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> Handler mHandler = <span class="hljs-keyword">new</span> Handler()&#123;        
+    <span class="hljs-meta">@Override</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">handleMessage</span><span class="hljs-params">(Message msg)</span> </span>&#123;            
+        <span class="hljs-keyword">super</span>.handleMessage(msg);
+       &#125;
+    &#125;;</code></pre>
+<p><strong>非静态的内部类和匿名内部类都会隐式的持有其外部类的引用，而静态内部类不会持有外部类的引用。</strong></p>
+<p>正确的写法：</p>
+<blockquote>
+<p>继承<code>Handler</code>时候要么放在单独的类文件中，要么直接使用静态内部类。</p>
+</blockquote>
+<pre><code class="hljs java"><span class="hljs-comment">//需要在静态内部类中调用外部类时，可以直接使用  `弱引用`  进行处理</span>
+<span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">MyHandler</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">Handler</span></span>&#123;
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> WeakReference&lt;MyActivity&gt; mWeakReference；
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">MyHandler</span><span class="hljs-params">(MyActivity activity)</span></span>&#123;
+         mWeakReference = <span class="hljs-keyword">new</span> WeakReference&lt;&gt;(activity);
+    &#125;
+    <span class="hljs-meta">@Override</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">handlerMessage</span><span class="hljs-params">(Message msg)</span></span>&#123;
+        <span class="hljs-keyword">super</span>.handlerMessage(msg);
+        MyActivity activity = mWeakReference.get();
+    &#125;
+&#125;
+<span class="hljs-comment">//调用方法</span>
+<span class="hljs-keyword">private</span> MyHandler mHandler = <span class="hljs-keyword">new</span> MyHandler(<span class="hljs-keyword">this</span>);</code></pre>
+<blockquote>
+<p>在<code>Activity.onDestroy()</code>时移除所有消息</p>
+</blockquote>
+<pre><code class="hljs java"><span class="hljs-meta">@Override</span>
+<span class="hljs-function"><span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> <span class="hljs-title">onDestroy</span><span class="hljs-params">()</span> </span>&#123;
+    <span class="hljs-keyword">super</span>.onDestroy();
+    handler.removeCallbacksAndMessages(<span class="hljs-keyword">null</span>);
+&#125;</code></pre>
+<h2 id="11-其他Tip"><a href="#11-其他Tip" class="headerlink" title="11. 其他Tip"></a>11. 其他Tip</h2><h3 id="Handler的同步方法-runWithScissors"><a href="#Handler的同步方法-runWithScissors" class="headerlink" title="Handler的同步方法(runWithScissors())"></a>Handler的同步方法(<code>runWithScissors()</code>)</h3><pre><code class="hljs java"><span class="hljs-comment">//Handler.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">runWithScissors</span><span class="hljs-params">(<span class="hljs-keyword">final</span> Runnable r, <span class="hljs-keyword">long</span> timeout)</span> </span>&#123;
+        <span class="hljs-keyword">if</span> (r == <span class="hljs-keyword">null</span>) &#123;
+            <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> IllegalArgumentException(<span class="hljs-string">"runnable must not be null"</span>);
+        &#125;
+        <span class="hljs-keyword">if</span> (timeout &lt; <span class="hljs-number">0</span>) &#123;
+            <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> IllegalArgumentException(<span class="hljs-string">"timeout must be non-negative"</span>);
+        &#125;
+
+        <span class="hljs-keyword">if</span> (Looper.myLooper() == mLooper) &#123;
+            r.run();
+            <span class="hljs-keyword">return</span> <span class="hljs-keyword">true</span>;
+        &#125;
+
+      <span class="hljs-comment">//等待任务执行完毕 再返回</span>
+        BlockingRunnable br = <span class="hljs-keyword">new</span> BlockingRunnable(r);
+        <span class="hljs-keyword">return</span> br.postAndWait(<span class="hljs-keyword">this</span>, timeout);
+    &#125;</code></pre>
 <h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><!-- https://www.jianshu.com/p/57a426b8f145 -->
 <p><a href="https://segmentfault.com/a/1190000003063859" target="_blank" rel="noopener">Linux IO模式及 select、poll、epoll详解</a></p>
 <p><a href="https://juejin.im/post/6879376888360501262#heading-0" target="_blank" rel="noopener">Handler 这些知识点你都知道吗</a></p>
 <p><a href="http://gityuan.com/2015/12/27/handler-message-native/" target="_blank" rel="noopener">Handelr(Native)</a></p>
+<p><a href="https://cs.android.com/android/platform/superproject/+/android-9.0.0_r34:system/core/libutils/Looper.cpp" target="_blank" rel="noopener">Android源码</a></p>
 
             </div>
             <hr>
