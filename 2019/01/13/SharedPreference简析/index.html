@@ -16,7 +16,7 @@
   <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
   <meta name="author" content="Leo-Wxy">
   <meta name="keywords" content>
-  <title>SharedPreferences简析 - Wxy的个人博客</title>
+  <title>Wxy的个人博客</title>
 
   <link rel="stylesheet" href="https://cdn.staticfile.org/twitter-bootstrap/4.5.3/css/bootstrap.min.css">
 
@@ -145,9 +145,9 @@
       <div class="full-bg-img">
         <div class="mask flex-center" style="background-color: rgba(0, 0, 0, 0.3)">
           <div class="page-header text-center fade-in-up">
-            <span class="h2" id="subtitle" title="SharedPreferences简析">
+            <span class="h2" id="subtitle" title="">
               
-                SharedPreferences简析
+                
               
             </span>
 
@@ -169,7 +169,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      3k 字
+      3.3k 字
     </span>
   
 
@@ -179,7 +179,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      40
+      45
        分钟
     </span>
   
@@ -209,7 +209,7 @@
         <div class="py-5" id="board">
           <article class="post-content mx-auto">
             <!-- SEO header -->
-            <h1 style="display: none">SharedPreferences简析</h1>
+            <h1 style="display: none"></h1>
             
             <div class="markdown-body">
               <p><img src="/images/SharedPreferences解析.png" srcset="/img/loading.gif" alt="SharedPreferences解析"></p>
@@ -248,7 +248,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="源码解析-1"><a href="#源码解析-1" class="headerlink" title="源码解析"></a>源码解析</h4><p>在使用<code>SharedPreferences</code>时，需要获取到SharedPreferences对象。</p>
+<p>在使用<code>SharedPreferences</code>时，需要获取到SharedPreferences对象。</p>
 <pre><code class="hljs java"><span class="hljs-comment">//ContextImpl.java</span>
 <span class="hljs-function"><span class="hljs-keyword">public</span> SharedPreferences <span class="hljs-title">getSharedPreferences</span><span class="hljs-params">(String name, <span class="hljs-keyword">int</span> mode)</span> </span>&#123;
         <span class="hljs-keyword">if</span> (mPackageInfo.getApplicationInfo().targetSdkVersion &lt;
@@ -319,14 +319,15 @@
 <ol>
 <li>根据传入的<code>name</code>在<code>shared_prefs</code>生成对应name的xml文件，并存入<code>mSharedPrefsPaths</code>中以做缓存。</li>
 <li>创建文件完毕后，再去创建对应的<code>SharedPreferencesImpl</code>对象，创建完毕后一存入<code>ArrayMap&lt;File,SharedPreferencesImpl&gt;</code>中作为缓存</li>
-<li>再次调用相同的参数时，由于缓存的存在，不会重新走一遍上述流程，而是从对应缓存中直接取出结果即可。<strong>缓存机制的存在，不会对性能造成过大影响。</strong></li>
+<li>再次调用相同的参数时，由于缓存的存在，不会重新走一遍上述流程，而是从对应缓存中直接取出结果即可。<strong>缓存机制的存在，不会对性能造成过大影响。</strong>但是数据会一直留在内存中，浪费内存。</li>
 <li>当<code>mode == Context.MODE_MULTI_PROCESS</code>或者 <code>SDK版本小于 2.3</code>会去判断是否有进程对xml文件进行过修改，然后去重新加载xml文件。</li>
 </ol>
 </blockquote>
 <h4 id="SharedPreferencesImpl对象的构建"><a href="#SharedPreferencesImpl对象的构建" class="headerlink" title="SharedPreferencesImpl对象的构建"></a><code>SharedPreferencesImpl</code>对象的构建</h4><blockquote>
 <p>最终得到的<code>SharedPreferences</code>都是由<code>SharedPreferencesImpl</code>创建的。</p>
 </blockquote>
-<pre><code class="hljs java"><span class="hljs-comment">//基本构造方法    </span>
+<pre><code class="hljs java"><span class="hljs-comment">// SharedPreferencesImpl.java</span>
+<span class="hljs-comment">//基本构造方法    </span>
 SharedPreferencesImpl(File file, <span class="hljs-keyword">int</span> mode) &#123;
         mFile = file;
         <span class="hljs-comment">//创建备份文件 当用户写入失败时，会从备份文件中恢复</span>
@@ -337,9 +338,8 @@ SharedPreferencesImpl(File file, <span class="hljs-keyword">int</span> mode) &#1
         <span class="hljs-comment">//存放xml文件数据</span>
         mMap = <span class="hljs-keyword">null</span>;
         startLoadFromDisk();
-    &#125;
-
-<span class="hljs-comment">//从xml文件读取信息</span>
+    &#125;</code></pre>
+<h3 id="加载文件——loadFromDisk"><a href="#加载文件——loadFromDisk" class="headerlink" title="加载文件——loadFromDisk()"></a>加载文件——loadFromDisk()</h3><pre><code class="hljs java"><span class="hljs-comment">//从xml文件读取信息</span>
 <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">startLoadFromDisk</span><span class="hljs-params">()</span> </span>&#123;
         <span class="hljs-keyword">synchronized</span> (mLock) &#123;
             mLoaded = <span class="hljs-keyword">false</span>;
@@ -353,7 +353,7 @@ SharedPreferencesImpl(File file, <span class="hljs-keyword">int</span> mode) &#1
     &#125;
     <span class="hljs-comment">//从xml文件读取信息 文件备份机制</span>
     <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">loadFromDisk</span><span class="hljs-params">()</span> </span>&#123;
-        <span class="hljs-keyword">synchronized</span> (mLock) &#123;
+        <span class="hljs-keyword">synchronized</span> (mLock) &#123;<span class="hljs-comment">//读取过程中进行锁定</span>
             <span class="hljs-keyword">if</span> (mLoaded) &#123;
                 <span class="hljs-keyword">return</span>;
             &#125;
@@ -407,15 +407,14 @@ SharedPreferencesImpl(File file, <span class="hljs-keyword">int</span> mode) &#1
     <span class="hljs-function"><span class="hljs-keyword">static</span> File <span class="hljs-title">makeBackupFile</span><span class="hljs-params">(File prefsFile)</span> </span>&#123;
         <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> File(prefsFile.getPath() + <span class="hljs-string">".bak"</span>);
     &#125;</code></pre>
-<blockquote>
+<p>进程再次启动后，若因异常情况导致写入失败，就会存在备份文件(<code>mBackupFile</code>)，此时需要删除源文件(<code>mFile</code>)，然后备份文件重命名为源文件(<code>mFile</code>)。</p>
 <ol>
 <li>加载xml文件是新开启了一个异步线程操作，根据<code>mLoaded</code>判断是否加载完毕</li>
 <li>解析xml文件得到的结果都会放到<code>mMap</code>中，是HashMap类型</li>
 <li>存储文件的修改时间<code>mStatTimestamp</code>以及文件大小<code>mStatSize</code>是为了判断该文件是否被其他进程所修改，若修改则需重载xml文件</li>
 <li>数据加载完毕后，释放锁通知其他线程可以使用<code>SharedPreferences</code>对象</li>
 </ol>
-</blockquote>
-<h3 id="加载文件——loadFromDisk"><a href="#加载文件——loadFromDisk" class="headerlink" title="加载文件——loadFromDisk()"></a>加载文件——loadFromDisk()</h3><h3 id="插入数据——putXX"><a href="#插入数据——putXX" class="headerlink" title="插入数据——putXX()"></a>插入数据——putXX()</h3><pre><code class="hljs java">SharedPreferences.Editor mEditor = sharedPreferences.edit();
+<h3 id="插入数据——putXX"><a href="#插入数据——putXX" class="headerlink" title="插入数据——putXX()"></a>插入数据——putXX()</h3><pre><code class="hljs java">SharedPreferences.Editor mEditor = sharedPreferences.edit();
 <span class="hljs-comment">//插入数据</span>
 mEditor.putString(<span class="hljs-string">"android"</span>,<span class="hljs-string">"first"</span>);
 <span class="hljs-comment">//更新数据</span>
@@ -451,17 +450,18 @@ mEditor.apply();
 <p><code>mModified</code>用于存放用户新增的数据，调用如<code>putString()</code>后，<code>mModified</code>就会记录修改后的数据，等到调用到<code>commit()/apply()</code>才会写入到磁盘中。</p>
 <p><em>所有的putXX()操作都由<code>synchronized</code>修饰，保证线程安全。</em></p>
 <h3 id="提交数据更新——commit-apply"><a href="#提交数据更新——commit-apply" class="headerlink" title="提交数据更新——commit()/apply()"></a>提交数据更新——commit()/apply()</h3><p>提交的方法有两种<code>commit()</code>、<code>apply()</code>，需要了解他们之间的区别。</p>
-<h5 id="commit-：同步写入数据"><a href="#commit-：同步写入数据" class="headerlink" title="commit()：同步写入数据"></a>commit()：同步写入数据</h5><pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">commit</span><span class="hljs-params">()</span> </span>&#123;
+<h4 id="同步写数据——commit"><a href="#同步写数据——commit" class="headerlink" title="同步写数据——commit()"></a>同步写数据——commit()</h4><pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">commit</span><span class="hljs-params">()</span> </span>&#123;
     <span class="hljs-keyword">long</span> startTime = <span class="hljs-number">0</span>;
 
     <span class="hljs-keyword">if</span> (DEBUG) &#123;
         startTime = System.currentTimeMillis();
     &#125;
 
-    MemoryCommitResult mcr = commitToMemory();①
+    MemoryCommitResult mcr = commitToMemory();<span class="hljs-comment">//将数据写入到内存中</span>
 
-    SharedPreferencesImpl.<span class="hljs-keyword">this</span>.enqueueDiskWrite( mcr, <span class="hljs-keyword">null</span> <span class="hljs-comment">/* sync write on this thread okay */</span>);②
+    SharedPreferencesImpl.<span class="hljs-keyword">this</span>.enqueueDiskWrite( mcr, <span class="hljs-keyword">null</span>);<span class="hljs-comment">//在当前线程执行写入任务</span>
     <span class="hljs-keyword">try</span> &#123;
+      <span class="hljs-comment">//等待写入磁盘任务执行完毕</span>
         mcr.writtenToDiskLatch.await();
     &#125; <span class="hljs-keyword">catch</span> (InterruptedException e) &#123;
         <span class="hljs-keyword">return</span> <span class="hljs-keyword">false</span>;
@@ -475,7 +475,41 @@ mEditor.apply();
     notifyListeners(mcr);
     <span class="hljs-keyword">return</span> mcr.writeToDiskResult;
 &#125;</code></pre>
-<p><code>commitToMemory()</code>：将缓存文件写入内存</p>
+<h4 id="异步写数据——apply"><a href="#异步写数据——apply" class="headerlink" title="异步写数据——apply()"></a>异步写数据——apply()</h4><pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">apply</span><span class="hljs-params">()</span> </span>&#123;
+    <span class="hljs-keyword">final</span> <span class="hljs-keyword">long</span> startTime = System.currentTimeMillis();
+    
+    <span class="hljs-keyword">final</span> MemoryCommitResult mcr = commitToMemory();<span class="hljs-comment">//将数据写入到内存中</span>
+    <span class="hljs-keyword">final</span> Runnable awaitCommit = <span class="hljs-keyword">new</span> Runnable() &#123;
+            <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">run</span><span class="hljs-params">()</span> </span>&#123;
+                <span class="hljs-keyword">try</span> &#123;
+                  <span class="hljs-comment">//等待写入磁盘任务执行完毕</span>
+                    mcr.writtenToDiskLatch.await();
+                &#125; <span class="hljs-keyword">catch</span> (InterruptedException ignored) &#123;
+                &#125;
+
+                <span class="hljs-keyword">if</span> (DEBUG &amp;&amp; mcr.wasWritten) &#123;
+                    Log.d(TAG, mFile.getName() + <span class="hljs-string">":"</span> + mcr.memoryStateGeneration
+                            + <span class="hljs-string">" applied after "</span> + (System.currentTimeMillis() - startTime)
+                            + <span class="hljs-string">" ms"</span>);
+                &#125;
+            &#125;
+        &#125;;
+
+    QueuedWork.addFinisher(awaitCommit);
+
+    Runnable postWriteRunnable = <span class="hljs-keyword">new</span> Runnable() &#123;
+            <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">run</span><span class="hljs-params">()</span> </span>&#123;
+                awaitCommit.run();
+                QueuedWork.removeFinisher(awaitCommit);
+            &#125;
+        &#125;;
+    <span class="hljs-comment">//开启一个异步线程去执行写入任务</span>
+    SharedPreferencesImpl.<span class="hljs-keyword">this</span>.enqueueDiskWrite(mcr, postWriteRunnable);
+
+    <span class="hljs-comment">//通知数据写入完成</span>
+    notifyListeners(mcr);
+&#125;</code></pre>
+<h4 id="缓存写入内存——commitToMemory"><a href="#缓存写入内存——commitToMemory" class="headerlink" title="缓存写入内存——commitToMemory()"></a>缓存写入内存——commitToMemory()</h4><p>将缓存文件写入内存</p>
 <pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">private</span> MemoryCommitResult <span class="hljs-title">commitToMemory</span><span class="hljs-params">()</span> </span>&#123;
             <span class="hljs-keyword">long</span> memoryStateGeneration;
             List&lt;String&gt; keysModified = <span class="hljs-keyword">null</span>;
@@ -539,22 +573,16 @@ mEditor.apply();
 <blockquote>
 <p>调用<code>clear()</code>方法只是清理了<code>mMap</code>里的数据，不影响<code>mModified</code>中的数据。</p>
 </blockquote>
-<p><code>enqueueDiskWrite()</code>：将数据写入到磁盘**.xml文件中</p>
+<h4 id="数据写入硬盘——enqueueDiskWrite"><a href="#数据写入硬盘——enqueueDiskWrite" class="headerlink" title="数据写入硬盘——enqueueDiskWrite()"></a>数据写入硬盘——enqueueDiskWrite()</h4><p>将数据写入到磁盘**.xml文件中</p>
 <pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">enqueueDiskWrite</span><span class="hljs-params">(<span class="hljs-keyword">final</span> MemoryCommitResult mcr,
-                                  <span class="hljs-keyword">final</span> Runnable postWriteRunnable)</span> </span>&#123;
+                                //commit()</span> 传入为<span class="hljs-keyword">null</span> <span class="hljs-title">apply</span><span class="hljs-params">()</span> 传入不为<span class="hljs-keyword">null</span> 
+                                  <span class="hljs-keyword">final</span> Runnable postWriteRunnable) </span>&#123;
         <span class="hljs-comment">//对于commit()而言 isFromSyncCommit = true</span>
         <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> isFromSyncCommit = (postWriteRunnable == <span class="hljs-keyword">null</span>);
         <span class="hljs-comment">//负责将数据写入硬盘的xml文件中</span>
         <span class="hljs-keyword">final</span> Runnable writeToDiskRunnable = <span class="hljs-keyword">new</span> Runnable() &#123;
                 <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">run</span><span class="hljs-params">()</span> </span>&#123;
                     <span class="hljs-keyword">synchronized</span> (mWritingToDiskLock) &#123;
-                        <span class="hljs-comment">/*
-                        *  写入数据到磁盘中
-                        *  把已存在的文件进行重命名 添加.bak后缀，作为备份文件存在。删除源文件
-                        *  新建 源文件，重新写入所有数据，同时记录写入时间
-                        *  如果写入文件失败，删除新建的文件，并返回失败
-                        *  如果写入文件成功，删除备份文件，返回成功
-                        */</span>
                         writeToFile(mcr, isFromSyncCommit);
                     &#125;
                     <span class="hljs-keyword">synchronized</span> (mLock) &#123;
@@ -573,51 +601,49 @@ mEditor.apply();
                 wasEmpty = mDiskWritesInFlight == <span class="hljs-number">1</span>;
             &#125;
             <span class="hljs-keyword">if</span> (wasEmpty) &#123;
-                <span class="hljs-comment">//直接在当前线程开始写入磁盘操作</span>
+                <span class="hljs-comment">//commit() 直接在当前线程开始写入磁盘操作，否则也是通过异步线程执行</span>
                 writeToDiskRunnable.run();
                 <span class="hljs-keyword">return</span>;
             &#125;
         &#125;
         <span class="hljs-comment">//开启线程池执行写入任务</span>
         QueuedWork.queue(writeToDiskRunnable, !isFromSyncCommit);
-    &#125;</code></pre>
-<p><code>commit()</code>先后调用了<code>commitToMemory()/*写入数据到mMap中，等待写入磁盘*/</code>、<code>enqueueDiskWrite()/*将数据写入到磁盘中*/</code>，通过<code>writeToFile()</code>写入到磁盘中并会返回对应写入结果。</p>
+    &#125;
+
+    <span class="hljs-comment">/*
+     *  写入数据到磁盘中
+     *  把已存在的文件进行重命名 添加.bak后缀，作为备份文件存在。删除源文件
+     *  新建 源文件，重新写入所有数据，同时记录写入时间
+     *  如果写入文件失败，删除新建的文件，并返回失败
+     *  如果写入文件成功，删除备份文件，返回成功
+     */</span>
+    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">writeToFile</span><span class="hljs-params">(MemoryCommitResult mcr, <span class="hljs-keyword">boolean</span> isFromSyncCommit)</span> </span>&#123;
+      <span class="hljs-comment">//把当前文件做一份备份文件</span>
+           <span class="hljs-keyword">if</span> (!backupFileExists) &#123;
+                <span class="hljs-keyword">if</span> (!mFile.renameTo(mBackupFile)) &#123;
+                    Log.e(TAG, <span class="hljs-string">"Couldn't rename file "</span> + mFile
+                          + <span class="hljs-string">" to backup file "</span> + mBackupFile);
+                    mcr.setDiskWriteResult(<span class="hljs-keyword">false</span>, <span class="hljs-keyword">false</span>);
+                    <span class="hljs-keyword">return</span>;
+                &#125;
+            &#125; <span class="hljs-keyword">else</span> &#123;
+                mFile.delete();
+            &#125;    
+      ...
+        
+    &#125;
+
+        <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">setDiskWriteResult</span><span class="hljs-params">(<span class="hljs-keyword">boolean</span> wasWritten, <span class="hljs-keyword">boolean</span> result)</span> </span>&#123;
+            <span class="hljs-keyword">this</span>.wasWritten = wasWritten;
+            writeToDiskResult = result;
+          <span class="hljs-comment">//执行完毕一次任务 自动-1</span>
+            writtenToDiskLatch.countDown();
+        &#125;</code></pre>
+<h4 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h4><p><code>commit()</code>先后调用了<code>commitToMemory()/*写入数据到mMap中，等待写入磁盘*/</code>、<code>enqueueDiskWrite()/*将数据写入到磁盘中*/</code>，通过<code>writeToFile()</code>写入到磁盘中并会返回对应写入结果。</p>
+<p><code>commit()</code>如果当前没有线程在写入文件时，就会直接在当前线程开启写入磁盘任务，导致主线程阻塞(<em>可能发生ANR</em>)，等待线程执行完毕。如果在写入文件，就会通过<code>QueuedWork</code>开启异步执行。</p>
 <p><strong><code>commit()</code>执行都是同步的，而且每次都是写入全量的数据，会导致主线程阻塞。</strong></p>
-<h5 id="apply-：异步写入数据"><a href="#apply-：异步写入数据" class="headerlink" title="apply()：异步写入数据"></a>apply()：异步写入数据</h5><pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">apply</span><span class="hljs-params">()</span> </span>&#123;
-    <span class="hljs-keyword">final</span> <span class="hljs-keyword">long</span> startTime = System.currentTimeMillis();
-    <span class="hljs-comment">//将数据写入到内存中</span>
-    <span class="hljs-keyword">final</span> MemoryCommitResult mcr = commitToMemory();
-    <span class="hljs-keyword">final</span> Runnable awaitCommit = <span class="hljs-keyword">new</span> Runnable() &#123;
-            <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">run</span><span class="hljs-params">()</span> </span>&#123;
-                <span class="hljs-keyword">try</span> &#123;
-                    mcr.writtenToDiskLatch.await();
-                &#125; <span class="hljs-keyword">catch</span> (InterruptedException ignored) &#123;
-                &#125;
-
-                <span class="hljs-keyword">if</span> (DEBUG &amp;&amp; mcr.wasWritten) &#123;
-                    Log.d(TAG, mFile.getName() + <span class="hljs-string">":"</span> + mcr.memoryStateGeneration
-                            + <span class="hljs-string">" applied after "</span> + (System.currentTimeMillis() - startTime)
-                            + <span class="hljs-string">" ms"</span>);
-                &#125;
-            &#125;
-        &#125;;
-
-    QueuedWork.addFinisher(awaitCommit);
-
-    Runnable postWriteRunnable = <span class="hljs-keyword">new</span> Runnable() &#123;
-            <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">run</span><span class="hljs-params">()</span> </span>&#123;
-                awaitCommit.run();
-                QueuedWork.removeFinisher(awaitCommit);
-            &#125;
-        &#125;;
-    <span class="hljs-comment">//开启一个异步线程去执行写入任务</span>
-    SharedPreferencesImpl.<span class="hljs-keyword">this</span>.enqueueDiskWrite(mcr, postWriteRunnable);
-
-    <span class="hljs-comment">//通知数据写入完成</span>
-    notifyListeners(mcr);
-&#125;</code></pre>
+<p><img src="/images/SharedPreferences-commit.jpg" srcset="/img/loading.gif" alt="SharedPreferences-commit"></p>
 <p><code>apply()</code>也先调用<code>commitToMemory()</code>将更改提交到内存，之后调用<code>enqueueDiskWriter()</code>开启写入磁盘任务。</p>
-<p>根据上节观察<code>commit()</code>如果当前没有线程在写入文件时，就会直接在当前线程开启写入磁盘任务，导致主线程阻塞(<em>可能发生ANR</em>)，等待线程执行完毕。</p>
 <p><code>apply()</code>是提交任务到线程池后，就直接通知写入成功，不需要等待线程执行完成。</p>
 <blockquote>
 <p><code>apply()</code>也不是绝对安全的，可能在某些情况下也会导致ANR情况发生。</p>
@@ -657,6 +683,38 @@ mEditor.apply();
 <p><code>getXX()</code>是直接去读取<code>mMap</code>，所以<code>apply()</code>写入内存之后就可以直接获取到对应数据</p>
 <p><code>getXX()</code>可能由于<code>awaitLoadedLocked()</code>发生阻塞，需要等到<code>loadFromDisk()</code>执行完毕置<code>mLoaded = true</code>时，调用<code>notifyAll()</code>解除阻塞。</p>
 </blockquote>
+<h3 id="QueuedWork"><a href="#QueuedWork" class="headerlink" title="QueuedWork"></a>QueuedWork</h3><p>系统提供的异步任务工具类，内部通过<code>HandlerThread</code>作为工作线程。用于<strong>跟踪那些未完成或尚未结束的全局任务</strong>。</p>
+<pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">QueuedWork</span> </span>&#123;
+      <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> Handler <span class="hljs-title">getHandler</span><span class="hljs-params">()</span> </span>&#123;
+        <span class="hljs-keyword">synchronized</span> (sLock) &#123;
+            <span class="hljs-keyword">if</span> (sHandler == <span class="hljs-keyword">null</span>) &#123;
+              <span class="hljs-comment">//新建Looper对象</span>
+                HandlerThread handlerThread = <span class="hljs-keyword">new</span> HandlerThread(<span class="hljs-string">"queued-work-looper"</span>,
+                        Process.THREAD_PRIORITY_FOREGROUND);
+                handlerThread.start();
+
+                sHandler = <span class="hljs-keyword">new</span> QueuedWorkHandler(handlerThread.getLooper());
+            &#125;
+            <span class="hljs-keyword">return</span> sHandler;
+        &#125;
+    &#125;
+&#125;</code></pre>
+<pre><code class="hljs java"><span class="hljs-comment">//加入新任务   </span>
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">queue</span><span class="hljs-params">(Runnable work, <span class="hljs-keyword">boolean</span> shouldDelay<span class="hljs-comment">/**/</span>)</span> </span>&#123;
+        Handler handler = getHandler();
+
+        <span class="hljs-keyword">synchronized</span> (sLock) &#123;
+            sWork.add(work);
+
+            <span class="hljs-keyword">if</span> (shouldDelay &amp;&amp; sCanDelay) &#123;
+              <span class="hljs-comment">//apply()调用</span>
+                handler.sendEmptyMessageDelayed(QueuedWorkHandler.MSG_RUN, DELAY);
+            &#125; <span class="hljs-keyword">else</span> &#123;
+              <span class="hljs-comment">//commit()调用</span>
+                handler.sendEmptyMessage(QueuedWorkHandler.MSG_RUN);
+            &#125;
+        &#125;
+    &#125;</code></pre>
 <h2 id="使用注意事项"><a href="#使用注意事项" class="headerlink" title="使用注意事项"></a>使用注意事项</h2><p>根据上述源码分析，在使用<code>SharedPreferences</code>时需要注意以下几项来提高使用效率：</p>
 <ul>
 <li><p><code>SharedPreferences</code>中的文件读取都是一次性加载入内存的，最好不要写入大量的数据以及可以多建几个文件按需加载，减少内存压力以及提高响应时间。</p>
