@@ -2179,110 +2179,110 @@ registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs
 </li>
 <li><p><code>ViewGroup</code>修改子View绘制顺序</p>
 <p><img src="/images/draw-ViewGroup自定义绘制顺序.png" srcset="/img/loading.gif" alt="draw-ViewGroup自定义绘制顺序"></p>
-<pre><code class="hljs java"> <span class="hljs-function"><span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> <span class="hljs-title">dispatchDraw</span><span class="hljs-params">(Canvas canvas)</span></span>&#123;
-   ...
-     <span class="hljs-comment">//设置自定义绘制顺序</span>
-    <span class="hljs-keyword">final</span> ArrayList&lt;View&gt; preorderedList = usingRenderNodeProperties
-                 ? <span class="hljs-keyword">null</span> : buildOrderedChildList();
-         <span class="hljs-comment">//是否允许自定义绘制顺序</span>
-         <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> customOrder = preorderedList == <span class="hljs-keyword">null</span>
-                 &amp;&amp; isChildrenDrawingOrderEnabled();
-         <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int</span> i = <span class="hljs-number">0</span>; i &lt; childrenCount; i++) &#123;
-             <span class="hljs-keyword">while</span> (transientIndex &gt;= <span class="hljs-number">0</span> &amp;&amp; mTransientIndices.get(transientIndex) == i) &#123;
-                 <span class="hljs-keyword">final</span> View transientChild = mTransientViews.get(transientIndex);
-                 <span class="hljs-keyword">if</span> ((transientChild.mViewFlags &amp; VISIBILITY_MASK) == VISIBLE ||
-                         transientChild.getAnimation() != <span class="hljs-keyword">null</span>) &#123;
-                     more |= drawChild(canvas, transientChild, drawingTime);
-                 &#125;
-                 transientIndex++;
-                 <span class="hljs-keyword">if</span> (transientIndex &gt;= transientCount) &#123;
-                     transientIndex = -<span class="hljs-number">1</span>;
-                 &#125;
-             &#125;
- 
-             <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> childIndex = getAndVerifyPreorderedIndex(childrenCount, i, customOrder);
-             <span class="hljs-keyword">final</span> View child = getAndVerifyPreorderedView(preorderedList, children, childIndex);
-             <span class="hljs-keyword">if</span> ((child.mViewFlags &amp; VISIBILITY_MASK) == VISIBLE || child.getAnimation() != <span class="hljs-keyword">null</span>) &#123;
-                 more |= drawChild(canvas, child, drawingTime);
-             &#125;
-         &#125;
-...
- &#125;
- 
-     <span class="hljs-function"><span class="hljs-keyword">protected</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">isChildrenDrawingOrderEnabled</span><span class="hljs-params">()</span> </span>&#123;
-         <span class="hljs-keyword">return</span> (mGroupFlags &amp; FLAG_USE_CHILD_DRAWING_ORDER) == FLAG_USE_CHILD_DRAWING_ORDER;
-     &#125;
- <span class="hljs-comment">//设置是否允许自定义绘制顺序</span>
-     <span class="hljs-function"><span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> <span class="hljs-title">setChildrenDrawingOrderEnabled</span><span class="hljs-params">(<span class="hljs-keyword">boolean</span> enabled)</span> </span>&#123;
-         setBooleanFlag(FLAG_USE_CHILD_DRAWING_ORDER, enabled);
-     &#125;
- 
-  <span class="hljs-comment">//初始子View的绘制顺序 按照z轴的值调整绘制顺序，z轴从大到小绘制</span>
-     <span class="hljs-function">ArrayList&lt;View&gt; <span class="hljs-title">buildOrderedChildList</span><span class="hljs-params">()</span> </span>&#123;
-         <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> childrenCount = mChildrenCount;
-         <span class="hljs-keyword">if</span> (childrenCount &lt;= <span class="hljs-number">1</span> || !hasChildWithZ()) <span class="hljs-keyword">return</span> <span class="hljs-keyword">null</span>;
- 
-         <span class="hljs-keyword">if</span> (mPreSortedChildren == <span class="hljs-keyword">null</span>) &#123;
-             mPreSortedChildren = <span class="hljs-keyword">new</span> ArrayList&lt;&gt;(childrenCount);
-         &#125; <span class="hljs-keyword">else</span> &#123;
-             <span class="hljs-comment">// callers should clear, so clear shouldn't be necessary, but for safety...</span>
-             mPreSortedChildren.clear();
-             mPreSortedChildren.ensureCapacity(childrenCount);
-         &#125;
- 
-         <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> customOrder = isChildrenDrawingOrderEnabled();
-         <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int</span> i = <span class="hljs-number">0</span>; i &lt; childrenCount; i++) &#123;
-             <span class="hljs-comment">// add next child (in child order) to end of list</span>
-             <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> childIndex = getAndVerifyPreorderedIndex(childrenCount, i, customOrder);
-             <span class="hljs-keyword">final</span> View nextChild = mChildren[childIndex];
-             <span class="hljs-keyword">final</span> <span class="hljs-keyword">float</span> currentZ = nextChild.getZ();
- 
-             <span class="hljs-comment">// insert ahead of any Views with greater Z</span>
-             <span class="hljs-keyword">int</span> insertIndex = i;
-             <span class="hljs-keyword">while</span> (insertIndex &gt; <span class="hljs-number">0</span> &amp;&amp; mPreSortedChildren.get(insertIndex - <span class="hljs-number">1</span>).getZ() &gt; currentZ) &#123;
-                 insertIndex--;
-             &#125;
-             mPreSortedChildren.add(insertIndex, nextChild);
-         &#125;
-         <span class="hljs-keyword">return</span> mPreSortedChildren;
-     &#125;
- 
-     <span class="hljs-comment">//确定当前子View的绘制顺序</span>
-     <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">int</span> <span class="hljs-title">getAndVerifyPreorderedIndex</span><span class="hljs-params">(<span class="hljs-keyword">int</span> childrenCount, <span class="hljs-keyword">int</span> i, <span class="hljs-keyword">boolean</span> customOrder)</span> </span>&#123;
-         <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> childIndex;
-         <span class="hljs-keyword">if</span> (customOrder) &#123;
-             <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> childIndex1 = getChildDrawingOrder(childrenCount, i);
-             <span class="hljs-keyword">if</span> (childIndex1 &gt;= childrenCount) &#123;
-                 <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> IndexOutOfBoundsException(<span class="hljs-string">"getChildDrawingOrder() "</span>
-                         + <span class="hljs-string">"returned invalid index "</span> + childIndex1
-                         + <span class="hljs-string">" (child count is "</span> + childrenCount + <span class="hljs-string">")"</span>);
-             &#125;
-             childIndex = childIndex1;
-         &#125; <span class="hljs-keyword">else</span> &#123;
-             childIndex = i;
-         &#125;
-         <span class="hljs-keyword">return</span> childIndex;
-     &#125;
- <span class="hljs-comment">//需要重写该方法，调整绘制顺序</span>
-     <span class="hljs-function"><span class="hljs-keyword">protected</span> <span class="hljs-keyword">int</span> <span class="hljs-title">getChildDrawingOrder</span><span class="hljs-params">(<span class="hljs-keyword">int</span> childCount, <span class="hljs-keyword">int</span> i)</span> </span>&#123;
-         <span class="hljs-keyword">return</span> i;
-     &#125;
- 
- <span class="hljs-comment">//调整当前子View顺序</span>
-     <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> View <span class="hljs-title">getAndVerifyPreorderedView</span><span class="hljs-params">(ArrayList&lt;View&gt; preorderedList, View[] children,
-             <span class="hljs-keyword">int</span> childIndex)</span> </span>&#123;
-         <span class="hljs-keyword">final</span> View child;
-         <span class="hljs-keyword">if</span> (preorderedList != <span class="hljs-keyword">null</span>) &#123;
-             child = preorderedList.get(childIndex);
-             <span class="hljs-keyword">if</span> (child == <span class="hljs-keyword">null</span>) &#123;
-                 <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> RuntimeException(<span class="hljs-string">"Invalid preorderedList contained null child at index "</span>
-                         + childIndex);
-             &#125;
-         &#125; <span class="hljs-keyword">else</span> &#123;
-             child = children[childIndex];
-         &#125;
-         <span class="hljs-keyword">return</span> child;
-     &#125;</code></pre>
+<pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> <span class="hljs-title">dispatchDraw</span><span class="hljs-params">(Canvas canvas)</span></span>&#123;
+  ...
+    <span class="hljs-comment">//设置自定义绘制顺序</span>
+   <span class="hljs-keyword">final</span> ArrayList&lt;View&gt; preorderedList = usingRenderNodeProperties
+                ? <span class="hljs-keyword">null</span> : buildOrderedChildList();
+        <span class="hljs-comment">//是否允许自定义绘制顺序</span>
+        <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> customOrder = preorderedList == <span class="hljs-keyword">null</span>
+                &amp;&amp; isChildrenDrawingOrderEnabled();
+        <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int</span> i = <span class="hljs-number">0</span>; i &lt; childrenCount; i++) &#123;
+            <span class="hljs-keyword">while</span> (transientIndex &gt;= <span class="hljs-number">0</span> &amp;&amp; mTransientIndices.get(transientIndex) == i) &#123;
+                <span class="hljs-keyword">final</span> View transientChild = mTransientViews.get(transientIndex);
+                <span class="hljs-keyword">if</span> ((transientChild.mViewFlags &amp; VISIBILITY_MASK) == VISIBLE ||
+                        transientChild.getAnimation() != <span class="hljs-keyword">null</span>) &#123;
+                    more |= drawChild(canvas, transientChild, drawingTime);
+                &#125;
+                transientIndex++;
+                <span class="hljs-keyword">if</span> (transientIndex &gt;= transientCount) &#123;
+                    transientIndex = -<span class="hljs-number">1</span>;
+                &#125;
+            &#125;
+
+            <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> childIndex = getAndVerifyPreorderedIndex(childrenCount, i, customOrder);
+            <span class="hljs-keyword">final</span> View child = getAndVerifyPreorderedView(preorderedList, children, childIndex);
+            <span class="hljs-keyword">if</span> ((child.mViewFlags &amp; VISIBILITY_MASK) == VISIBLE || child.getAnimation() != <span class="hljs-keyword">null</span>) &#123;
+                more |= drawChild(canvas, child, drawingTime);
+            &#125;
+        &#125;
+ ...
+&#125;
+
+    <span class="hljs-function"><span class="hljs-keyword">protected</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">isChildrenDrawingOrderEnabled</span><span class="hljs-params">()</span> </span>&#123;
+        <span class="hljs-keyword">return</span> (mGroupFlags &amp; FLAG_USE_CHILD_DRAWING_ORDER) == FLAG_USE_CHILD_DRAWING_ORDER;
+    &#125;
+<span class="hljs-comment">//设置是否允许自定义绘制顺序</span>
+    <span class="hljs-function"><span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> <span class="hljs-title">setChildrenDrawingOrderEnabled</span><span class="hljs-params">(<span class="hljs-keyword">boolean</span> enabled)</span> </span>&#123;
+        setBooleanFlag(FLAG_USE_CHILD_DRAWING_ORDER, enabled);
+    &#125;
+
+ <span class="hljs-comment">//初始子View的绘制顺序 按照z轴的值调整绘制顺序，z轴从大到小绘制</span>
+    <span class="hljs-function">ArrayList&lt;View&gt; <span class="hljs-title">buildOrderedChildList</span><span class="hljs-params">()</span> </span>&#123;
+        <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> childrenCount = mChildrenCount;
+        <span class="hljs-keyword">if</span> (childrenCount &lt;= <span class="hljs-number">1</span> || !hasChildWithZ()) <span class="hljs-keyword">return</span> <span class="hljs-keyword">null</span>;
+
+        <span class="hljs-keyword">if</span> (mPreSortedChildren == <span class="hljs-keyword">null</span>) &#123;
+            mPreSortedChildren = <span class="hljs-keyword">new</span> ArrayList&lt;&gt;(childrenCount);
+        &#125; <span class="hljs-keyword">else</span> &#123;
+            <span class="hljs-comment">// callers should clear, so clear shouldn't be necessary, but for safety...</span>
+            mPreSortedChildren.clear();
+            mPreSortedChildren.ensureCapacity(childrenCount);
+        &#125;
+
+        <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> customOrder = isChildrenDrawingOrderEnabled();
+        <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int</span> i = <span class="hljs-number">0</span>; i &lt; childrenCount; i++) &#123;
+            <span class="hljs-comment">// add next child (in child order) to end of list</span>
+            <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> childIndex = getAndVerifyPreorderedIndex(childrenCount, i, customOrder);
+            <span class="hljs-keyword">final</span> View nextChild = mChildren[childIndex];
+            <span class="hljs-keyword">final</span> <span class="hljs-keyword">float</span> currentZ = nextChild.getZ();
+
+            <span class="hljs-comment">// insert ahead of any Views with greater Z</span>
+            <span class="hljs-keyword">int</span> insertIndex = i;
+            <span class="hljs-keyword">while</span> (insertIndex &gt; <span class="hljs-number">0</span> &amp;&amp; mPreSortedChildren.get(insertIndex - <span class="hljs-number">1</span>).getZ() &gt; currentZ) &#123;
+                insertIndex--;
+            &#125;
+            mPreSortedChildren.add(insertIndex, nextChild);
+        &#125;
+        <span class="hljs-keyword">return</span> mPreSortedChildren;
+    &#125;
+
+    <span class="hljs-comment">//确定当前子View的绘制顺序</span>
+    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">int</span> <span class="hljs-title">getAndVerifyPreorderedIndex</span><span class="hljs-params">(<span class="hljs-keyword">int</span> childrenCount, <span class="hljs-keyword">int</span> i, <span class="hljs-keyword">boolean</span> customOrder)</span> </span>&#123;
+        <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> childIndex;
+        <span class="hljs-keyword">if</span> (customOrder) &#123;
+            <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> childIndex1 = getChildDrawingOrder(childrenCount, i);
+            <span class="hljs-keyword">if</span> (childIndex1 &gt;= childrenCount) &#123;
+                <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> IndexOutOfBoundsException(<span class="hljs-string">"getChildDrawingOrder() "</span>
+                        + <span class="hljs-string">"returned invalid index "</span> + childIndex1
+                        + <span class="hljs-string">" (child count is "</span> + childrenCount + <span class="hljs-string">")"</span>);
+            &#125;
+            childIndex = childIndex1;
+        &#125; <span class="hljs-keyword">else</span> &#123;
+            childIndex = i;
+        &#125;
+        <span class="hljs-keyword">return</span> childIndex;
+    &#125;
+<span class="hljs-comment">//需要重写该方法，调整绘制顺序</span>
+    <span class="hljs-function"><span class="hljs-keyword">protected</span> <span class="hljs-keyword">int</span> <span class="hljs-title">getChildDrawingOrder</span><span class="hljs-params">(<span class="hljs-keyword">int</span> childCount, <span class="hljs-keyword">int</span> i)</span> </span>&#123;
+        <span class="hljs-keyword">return</span> i;
+    &#125;
+
+<span class="hljs-comment">//调整当前子View顺序</span>
+    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> View <span class="hljs-title">getAndVerifyPreorderedView</span><span class="hljs-params">(ArrayList&lt;View&gt; preorderedList, View[] children,
+            <span class="hljs-keyword">int</span> childIndex)</span> </span>&#123;
+        <span class="hljs-keyword">final</span> View child;
+        <span class="hljs-keyword">if</span> (preorderedList != <span class="hljs-keyword">null</span>) &#123;
+            child = preorderedList.get(childIndex);
+            <span class="hljs-keyword">if</span> (child == <span class="hljs-keyword">null</span>) &#123;
+                <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> RuntimeException(<span class="hljs-string">"Invalid preorderedList contained null child at index "</span>
+                        + childIndex);
+            &#125;
+        &#125; <span class="hljs-keyword">else</span> &#123;
+            child = children[childIndex];
+        &#125;
+        <span class="hljs-keyword">return</span> child;
+    &#125;</code></pre>
 </li>
 </ol>
 <p>   根据上述源码，默认的绘制<strong>按照z轴从大到小的顺序</strong>进行绘制，如果需要修改绘制顺序的话，需要执行以下两步：</p>
@@ -2292,6 +2292,7 @@ registerService(Context.LAYOUT_INFLATER_SERVICE, LayoutInflater<span class="hljs
 <p>常用的<code>RecyclerView</code>、<code>ViewPager</code>都实现了该方法，其中<code>RecyclerView</code>通过设置<code>ChildDrawingOrderCallback</code>也可以实现这个功能。</p>
 </li>
 </ol>
+<p>如果在<code>addView()</code>的场景下，可通过<code>setElevation()</code>或<code>setTranslationZ()</code>或<code>setZ()</code>去修改Z轴的坐标值。</p>
 <h2 id="自定义View-1"><a href="#自定义View-1" class="headerlink" title="自定义View"></a>自定义View</h2><p><img src="/images/自定义View.png" srcset="/img/loading.gif" alt="自定义View"></p>
 <blockquote>
 <p>自定义View需要了解View的层次、View的事件分发机制以及View的工作流程。</p>

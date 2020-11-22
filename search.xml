@@ -122,13 +122,13 @@ Service工作过程 {% post_link Service工作过程%}
 
 Android补间动画  {% post_link Android-动画分析%}
 
-Android动画-属性动画 {% post_link Android动画-属性动画%}
+Android动画-属性动画 {% post_link Android-动画-属性动画%}
 
 Android-Drawable  {% post_link Android-Drawable相关%}
 
 Android中的线程`AsyncTask、IntentService、HandlerThread` {% post_link Android-线程相关%}
 
-**Android触摸事件** {% post_link Android事件分发%}
+**Android触摸事件** {% post_link Android-事件分发机制%}
 
 **Android中的IPC机制** {% post_link Binder及AIDL%}
 
@@ -204,7 +204,7 @@ Service基本使用 {}
 
 Dalvik&ART {% post_link Android中的GC分析-Dalvik和ART虚拟机%}
 
-**ANR分析** {% post_link ANR分析%}
+**ANR分析** {% post_link Android-ANR分析%}
 
 **Bitmap分析** {%post_link Bitmap分析%}
 
@@ -12101,263 +12101,6 @@ Region不可能是独立的，由于可能会被其他对象引用。在G1中，
 **如果另外一块Survivor空间没有足够的空间存放上一次新生代收集下来的存活对象时，这些对象将直接通过分配担保机制进入老年代。若老年代也满了就会触发一次full GC，也就是新生代和老年代都会进行回收。**
 
 ]]></content>
-      <tags>
-        <tag>JVM</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>JVM相关及其拓展(三) -- 虚拟机类加载器</title>
-    <url>/2018/04/16/JVM%E7%9B%B8%E5%85%B3%E5%8F%8A%E5%85%B6%E6%8B%93%E5%B1%95-%E4%B8%89/</url>
-    <content><![CDATA[
-# 1.虚拟机类加载器
-
-## 定义：
-
-在类加载阶段中的“通过一个类的全限定名来获取描述此类的二进制字节流”这个动作放到Java虚拟机外部去实现，以便让应用程序自己决定如何去获取所需要的类，实现这个动作的代码块称为“类加载器”。
-
-例如：编写的是.java文件，代码运行后变成.class文件，类加载器就是加载.class文件。
-
-**不同的类加载器加载同一个类时，得到的两个类也是不相等的。**
-
-
-
-## Java类加载器分类：
-
-### 1.系统提供的类加载器
-
-{% fullimage /images/类加载器.png,类加载器分类,类加载器分类%}
-
-- **Bootstrap ClassLoader(启动类加载器)**：由C/C++实现的加载器，用于加载虚拟机运行时所需要的系统类，如`java.lang.*、java.uti.*`等系统类。它负责将存放在<JAVA_HOME>\lib目录中的，或者被-Xbootclasspath参数所指定的路径中的，并且是虚拟机识别的类库加载到虚拟机内存中。
-
-  这个加载器由于是C实现的，所以**无法被Java程序直接引用**。并且不继承`java.lang.ClassLoader`。
-
-- **Extension ClassLoader(扩展类加载器)**：这个加载器由sun.misc.Launcher$ExtClassLoader实现，负责加载<JAVA_HOME>\lib\ext目录中的，或者被`javax.ext.dirs`系统变量所指定的路径中的所有类库。
-
-  **开发者可以直接进行引用。**
-
-- **Application ClassLoader(应用程序类加载器)**：这个加载器由sun.misc.Launcher$AppClassLoader实现。可以加载用户类路径上的指定类库，通过`ClassLoader.getSystemClassLoader()`方式获取，没有定义过自己的类加载器，则默认是这个。
-
-- **Custom ClassLoader(自定义加载器)**：通过集成`java.lang.ClassLoader`来实现自己的加载器。
-
-  
-
-### 2.双亲委托模型
-
-{% fullimage /images/jvm/parent_loader.png, alt,双亲委托模型 %}
-
-- 工作流程：如果一个类加载器收到了类加载的请求，不会自己去尝试加载这个类，而把这个请求委派给父类加载器去完成，每一层都是如此，依次向上递归，直到委托到最顶层的`Bootstrap ClassLoader`，若父加载器无法处理加载请求（它的搜索范围内没有找到所需的类时），则交由子加载器去加载。
-
-  > 简单流程介绍
-  >
-  > 1. 自定义类加载器先从缓存中查看Class文件是否被加载，如果加载则返回Class，没有加载则委托给父类加载
-  > 2. 一直委托到`Bootstrap ClassLoader`,在`Bootstrap ClassLoader`没有找到Class文件，则在自己的规定路径<JAVA_HOME>\lib或者-Xbootclasspath选项指定路径的jar包进行查询，找到则返回Class，没有就交由子加载器去加载。
-  > 3. 最后交由我们自定义的类加载器去加载，还找不到则抛出`ClassNotFoundException`异常。
-- 代码模型实现：
-
-
-```java
- protected Class<?> loadClass(String name, boolean resolve)
-        throws ClassNotFoundException
-    {
-        synchronized (getClassLoadingLock(name)) {
-            // 检查请求的类是否已被加载过
-            Class<?> c = findLoadedClass(name);
-            //对应的类已被加载则不会往下进行
-            if (c == null) {
-                long t0 = System.nanoTime();
-                try {
-                    if (parent != null) {
-                    //父加载器不为null，调用父加载器的load方法
-                        c = parent.loadClass(name, false);
-                    } else {
-                    //父加载器为null，则调用系统的BootstrapClassLoader
-                        c = findBootstrapClassOrNull(name);
-                    }
-                } catch (ClassNotFoundException e) {
-                    // ClassNotFoundException thrown if class not found
-                    // from the non-null parent class loader
-                    //父类加载器无法加载则抛出ClassNotFoundException异常
-                }
-
-                if (c == null) {
-                    // If still not found, then invoke findClass in order
-                    // to find the class.
-                    //父类加载器无法加载则调用本身的findClass()方法去加载
-                    long t1 = System.nanoTime();
-                    c = findClass(name);
-
-                    // this is the defining class loader; record the stats
-                    sun.misc.PerfCounter.getParentDelegationTime().addTime(t1 - t0);
-                    sun.misc.PerfCounter.getFindClassTime().addElapsedTimeFrom(t1);
-                    sun.misc.PerfCounter.getFindClasses().increment();
-                }
-            }
-            if (resolve) {
-                resolveClass(c);
-            }
-            return c;
-        }
-    }
-```
-
-- 好处：
-  - 避免重复加载，若该Class已加载则从缓存中直接读取
-  - 更加安全，例如`java.lang.Object`，无论哪一个类加载器去加载这个类，最终都会委派给Bootstrap ClassLoader去进行加载，所以我们自定义的Object类并不会被加载而导致系统中出现多个Object类。
-
-###  3.破坏双亲委托模型
-
-双亲委派模型并不是一个强制性的约束模型，而是Java设计者推荐给开发者的类加载实现方式。
-
-- 在JDK1.2发布之前，还没有双亲委托机制
-- 由模型自身缺陷所导致的
-- 用户对于程序动态性导致的，例如代码热替换，模块热部署
-
-
-
-### 4.自定义ClassLoader
-- 自定义需要加载的类
-
-  ```java
-  public class Jobs {
-          public void say() {
-          System.err.println("自定义加载器加载");
-      }
-  }
-  ```
-
-  自定义完成后需调用`javac Jobs.java`去生成对应的`Jobs.class`文件以用来加载。
-
-- 实现自定义的ClassLoader
-
-  ```java
-  import java.io.*;
-
-  public class DiskClassLoader extends ClassLoader {
-      private String path;
-
-      public DiskClassLoader(String path) {
-          this.path = path;
-      }
-
-      @Override
-      protected Class<?> findClass(String name) throws ClassNotFoundException {
-          Class clazz = null;
-          byte[] classData = loadClassData(name);
-          if (classData == null) {
-              throw new ClassNotFoundException();
-          } else {
-              //用来将获取的字节码数组转为class的实例
-              clazz = defineClass(name, classData, 0, classData.length);
-          }
-          return clazz;
-      }
-
-      /**
-       * 获得class文件的字节码数组
-       * @param name
-       * @return
-       */
-      private byte[] loadClassData(String name) {
-          String fileName = getFileName(name);
-          File file = new File(path, fileName);
-          System.err.println(fileName);
-          InputStream inputStream = null;
-          ByteArrayOutputStream byteArrayOutputStream = null;
-          try {
-              inputStream = new FileInputStream(file);
-              byteArrayOutputStream = new ByteArrayOutputStream();
-              byte[] buffer = new byte[1024];
-              int length = 0;
-              while ((length = inputStream.read(buffer)) != -1) {
-                  byteArrayOutputStream.write(buffer, 0, length);
-              }
-              return byteArrayOutputStream.toByteArray();
-          } catch (IOException e) {
-              e.printStackTrace();
-          } finally {
-              //读取流后需要关闭，以免造成内存泄露
-              try {
-                  if (inputStream != null) {
-                      inputStream.close();
-                  }
-              } catch (IOException e) {
-                  e.printStackTrace();
-              }
-              try {
-                  if (byteArrayOutputStream != null) {
-                      byteArrayOutputStream.close();
-                  }
-              } catch (IOException e) {
-                  e.printStackTrace();
-              }
-          }
-          return null;
-      }
-
-      private String getFileName(String name) {
-          int index = name.indexOf('.');
-          if (index == -1) {
-              return name + ".class";
-          } else {
-              return name.substring(index + 1) + ".class";
-          }
-      }
-  }
-
-  ```
-
-  自定义的ClassLoader需要读取对应Class的字节流数组，以便产生实例。注意不要忘记对流的关闭。
-
-- 使用自定义的ClassLoader去加载类
-
-  ```java
-  import java.lang.reflect.InvocationTargetException;
-  import java.lang.reflect.Method;
-
-  public class CustomClassLoaderTest{
-       public static void main(String[] args) {
-        DiskClassLoader diskClassLoader = new DiskClassLoader("需要加载的class的地址");
-          try {
-              //对class文件进行加载
-              Class c = diskClassLoader.loadClass("Jobs");
-              if (c != null) {
-                  try {
-                      Object object = c.newInstance();
-                      System.err.println(object.getClass().getClassLoader());
-                      Method method = c.getDeclaredMethod("say", null);
-                      method.invoke(object, null);
-                  } catch (IllegalAccessException e) {
-                      e.printStackTrace();
-                  } catch (InstantiationException e) {
-                      e.printStackTrace();
-                  } catch (NoSuchMethodException e) {
-                      e.printStackTrace();
-                  } catch (InvocationTargetException e) {
-                      e.printStackTrace();
-                  }
-              }
-          } catch (ClassNotFoundException e) {
-              e.printStackTrace();
-          }
-       }
-  }
-  ```
-
-  在对应的文件夹下是否已存在Jobs.java文件：
-
-  - ```java
-    //存在要加载的Java文件
-    sun.misc.Launcher$AppClassLoader@18b4aac2
-    自定义加载器加载
-    ```
-
-  - ```java
-    //不存在对应的Java文件
-    DiskClassLoader@d716361
-    自定义加载器加载
-    ```
-
-​          以上就为自定义ClassLoader的基本步骤，也是热修复框架中ClassLoader的雏形。]]></content>
       <tags>
         <tag>JVM</tag>
       </tags>
@@ -28037,441 +27780,6 @@ static class ObserverWithState {
       </tags>
   </entry>
   <entry>
-    <title>Jetpack-ViewModel简析</title>
-    <url>/2019/02/15/Jetpack-ViewModel%E7%AE%80%E6%9E%90/</url>
-    <content><![CDATA[
-## ViewModel简介
-
-> ViewModel是用来存储和管理Lifecycle创建数据的组件，在配置发生改变或者屏幕旋转时数据仍然不会丢失。**ViewModel可以负责组件间的通信，可以高效解决Activity与Fragment的通信问题。**
-
-主要的功能还是在非手动关闭以及系统回收条件下进行 Activity/Fragment的数据保存。
-
-## ViewModel使用示例
-> 代码中提供了`ViewModel`以及`AndroidViewModel`，这两者的区别在于`AndroidViewModel`多提供了`application`入参，可以调用它去获取资源或者其他信息。
-
-添加VIewModel的第三方引用
-
-```groovy
- dependencies {
-    def lifecycle_version = "2.0.0"
-    implementation "androidx.lifecycle:lifecycle-viewmodel:$lifecycle_version"
-    implementation "androidx.lifecycle:lifecycle-extensions:$lifecycle_version"
- }
-```
-
-
-
-先创建一个类继承ViewModel
-```java 
-  public class CustomViewModel extends ViewModel{
-     private String text = "text";
-     public String getText(){
-        return text;
-     }
-  }
-```
-创建完毕后，需要在Activity/Fragment中进行调用
-```java
-public class MainActivity extends AppCompatActivity {
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        //获取自定义的ViewModel对象
-        CustomViewModel vm = ViewModelProviders.of(this)
-                .get(CustomViewModel.class);
-        //直接调用内部方法
-        vm.getText();
-    }
-}
-```
-上述为最简单的示例，更高级的可以参考[ViewModel 官方示例](https://developer.android.google.cn/topic/libraries/architecture/viewmodel)
-
-## 源码分析
-根据上节的使用示例分析ViewModel中的源码实现。
-### ViewModel
-需要先新建ViewModel实例，等待调用
-```java ViewModel.java
-public abstract class ViewModel {
-    //当ViewModel实例被销毁时调用
-    @SuppressWarnings("WeakerAccess")
-    protected void onCleared() {
-      //做清空操作
-    }
-}
-```
-还提供了AndroidViewModel，可以支持传入Application
-```java AndroidViewModel.java
-public class AndroidViewModel extends ViewModel {
-    private Application mApplication;
-    //传入Application
-    public AndroidViewModel(@NonNull Application application) {
-        mApplication = application;
-    }
-
-    @NonNull
-    public <T extends Application> T getApplication() {
-        return (T) mApplication;
-    }
-}
-```
-### ViewModelProvider
-创建实例完毕后，需要获取对应实例
-```java ViewModelProviders.java
-public class ViewModelProviders {
-   ...
-    @NonNull
-    @MainThread
-    public static ViewModelProvider of(@NonNull Fragment fragment) {
-        return of(fragment, null);
-    }
-    
-    @NonNull
-    @MainThread
-    public static ViewModelProvider of(@NonNull FragmentActivity activity) {
-        return of(activity, null);
-    }
-    
-    @NonNull
-    @MainThread
-    public static ViewModelProvider of(@NonNull Fragment fragment, @Nullable Factory factory) {
-        Application application = checkApplication(checkActivity(fragment));
-        if (factory == null) {
-            factory = ViewModelProvider.AndroidViewModelFactory.getInstance(application);
-        }
-        return new ViewModelProvider(ViewModelStores.of(fragment), factory);
-    }
-    
-    @NonNull
-    @MainThread
-    public static ViewModelProvider of(@NonNull FragmentActivity activity,
-            @Nullable Factory factory) {
-        Application application = checkApplication(activity);
-        //默认构造器为AndroidViewModel
-        if (factory == null) {
-            factory = ViewModelProvider.AndroidViewModelFactory.getInstance(application);
-        }
-        return new ViewModelProvider(ViewModelStores.of(activity), factory);
-    }
-}
-```
-*观察源码可知ViewModel支持的类型为`FragmentActivity`以及`support.Fragment。`*
-经过`ViewModelProviders.of(FragmentActivity/Fragment)`最终得到一个`ViewModelProvider`实例。
-```java ViewModelProvider.java
-public class ViewModelProvider {
-    //获取对应ViewModle实例
-    @NonNull
-    @MainThread
-    public <T extends ViewModel> T get(@NonNull Class<T> modelClass) {
-        String canonicalName = modelClass.getCanonicalName();
-        if (canonicalName == null) {
-            throw new IllegalArgumentException("Local and anonymous classes can not be ViewModels");
-        }
-        return get(DEFAULT_KEY + ":" + canonicalName, modelClass);
-    }
-    
-    @NonNull
-    @MainThread
-    public <T extends ViewModel> T get(@NonNull String key, @NonNull Class<T> modelClass) {
-        //从ViewModelStore缓存中获取对应ViewModel实例
-        ViewModel viewModel = mViewModelStore.get(key);
-        //如果相同就直接返回缓存中实例
-        if (modelClass.isInstance(viewModel)) {
-            return (T) viewModel;
-        } else {
-            //noinspection StatementWithEmptyBody
-            if (viewModel != null) {
-                // TODO: log a warning.
-            }
-        }
-        //不存在，则创建新实例
-        viewModel = mFactory.create(modelClass);
-        //创建完毕后放入缓存中
-        mViewModelStore.put(key, viewModel);
-        return (T) viewModel;
-    }
-}
-```
-`ViewModelStore`负责存放`ViewModel`的缓存数据，可以保证不会重复创建新实例。
-源码中提供了两种Factory类：`AndroidViewModelFactory(默认使用)`及`NewInstanceFactory`。
-```java ViewModelProvider.java
-    //创建对应实例
-    public interface Factory {
-        @NonNull
-        <T extends ViewModel> T create(@NonNull Class<T> modelClass);
-    }
-
-    public static class NewInstanceFactory implements Factory {
-        @SuppressWarnings("ClassNewInstance")
-        @NonNull
-        @Override
-        public <T extends ViewModel> T create(@NonNull Class<T> modelClass) {
-            try {
-                //创建ViewModel新实例
-                return modelClass.newInstance();
-            } catch (InstantiationException e) {
-                throw new RuntimeException("Cannot create an instance of " + modelClass, e);
-            } catch (IllegalAccessException e) {
-                throw new RuntimeException("Cannot create an instance of " + modelClass, e);
-            }
-        }
-    }
-    
-    public static class AndroidViewModelFactory extends ViewModelProvider.NewInstanceFactory {
-
-        private static AndroidViewModelFactory sInstance;
-
-        //单例模式
-        @NonNull
-        public static AndroidViewModelFactory getInstance(@NonNull Application application) {
-            if (sInstance == null) {
-                sInstance = new AndroidViewModelFactory(application);
-            }
-            return sInstance;
-        }
-
-        private Application mApplication;
-
-        public AndroidViewModelFactory(@NonNull Application application) {
-            mApplication = application;
-        }
-
-        @NonNull
-        @Override
-        public <T extends ViewModel> T create(@NonNull Class<T> modelClass) {
-            //判断传入的ViewModel是否继承自AndroidViewModel
-            if (AndroidViewModel.class.isAssignableFrom(modelClass)) {
-                try {
-                    //创建一个AndroidViewModel实例
-                    return modelClass.getConstructor(Application.class).newInstance(mApplication);
-                } catch (NoSuchMethodException e) {
-                    throw new RuntimeException("Cannot create an instance of " + modelClass, e);
-                } catch (IllegalAccessException e) {
-                    throw new RuntimeException("Cannot create an instance of " + modelClass, e);
-                } catch (InstantiationException e) {
-                    throw new RuntimeException("Cannot create an instance of " + modelClass, e);
-                } catch (InvocationTargetException e) {
-                    throw new RuntimeException("Cannot create an instance of " + modelClass, e);
-                }
-            }
-            //否则向上调用父类 NewInstanceFactory的创建方法
-            return super.create(modelClass);
-        }
-    }
-```
-默认使用`AndroidViewModelFactory`，需要传入`Application`参数构建一个`ViewModel`类型，否则需要调用到`NewInstanceFactory`去构建，创造出一个无参构造的ViewModel类。
-
-构建完成后，将其放到`ViewModelStore`中进行缓存，以便下次调用。
-### ViewModelStore
-通过`ViewModelStores.of()`获取到ViewModelStore这一缓存对象。
-```java ViewModelStores.java
-public class ViewModelStores{
-    @NonNull
-    @MainThread
-    public static ViewModelStore of(@NonNull FragmentActivity activity) {
-        if (activity instanceof ViewModelStoreOwner) {
-            return ((ViewModelStoreOwner) activity).getViewModelStore();
-        }
-        return holderFragmentFor(activity).getViewModelStore();
-    }
-    
-    @NonNull
-    @MainThread
-    public static ViewModelStore of(@NonNull Fragment fragment) {
-        if (fragment instanceof ViewModelStoreOwner) {
-            return ((ViewModelStoreOwner) fragment).getViewModelStore();
-        }
-        return holderFragmentFor(fragment).getViewModelStore();
-    }
-}
-```
-> 在这里有个注意点：`activity instanceof ViewModelStoreOwner`在support 27.1.0以上这个判断是成立的，因为`FragmentActivity以及Fragment`都已经实现了`ViewModelStoreOwner`接口，就直接调用系统内实现好的`ViewModelStore`即可。
-> 在support 27.1.0以下的还未实现，依然需要开发者自己去实现，或者直接调用`HolderFragment`的系统实现。
-
-
-与`ViewModelProvides`类似，通过`of()`去获取到实例。
-```java ViewModelStore.java
-public class ViewModelStore {
-    private final HashMap<String, ViewModel> mMap = new HashMap<>();
-    //放入ViewModel实例
-    final void put(String key, ViewModel viewModel) {
-        ViewModel oldViewModel = mMap.put(key, viewModel);
-        if (oldViewModel != null) {
-            oldViewModel.onCleared();
-        }
-    }
-    //获取ViewModel实例
-    final ViewModel get(String key) {
-        return mMap.get(key);
-    }
-
-    public final void clear() {
-        for (ViewModel vm : mMap.values()) {
-            vm.onCleared();
-        }
-        mMap.clear();
-    }
-}
-```
-
-### HolderFragment
-`HolderFragment`是一个Fragment组件，没有UI界面，唯一的作用就是**存储数据(ViewModelStore)**。
-对于每一个使用了`ViewModel`的Activity/Fragment都会动态的为其添加一个`HolderFragment`，其实现了`ViewModelStoreOwner`接口，可以直接获取到内部存储的`ViewModelStore`数据。
-`HolderFragment`是整个ViewModel源码实现的核心，由它进行数据存储且保证发生屏幕旋转等配置改变时存储的数据不会丢失。
-```java HoldFragment.java
-public class HolderFragment extends Fragment implements ViewModelStoreOwner {
-    ...
-	private ViewModelStore mViewModelStore = new ViewModelStore();
-
-    public HolderFragment() {
-        setRetainInstance(true);①
-    }
-
-    @Override
-    public void onCreate(@Nullable Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        sHolderFragmentManager.holderFragmentCreated(this);
-    }
-    
-    @Override
-    public void onDestroy() {
-        super.onDestroy();
-        //Fragment销毁时，清空自身存储的ViewModel
-        mViewModelStore.clear();
-    }
-    
-     @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-    public static HolderFragment holderFragmentFor(FragmentActivity activity) {
-        return sHolderFragmentManager.holderFragmentFor(activity);
-    }
-
-    @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-    public static HolderFragment holderFragmentFor(Fragment fragment) {
-        return sHolderFragmentManager.holderFragmentFor(fragment);
-    }
-    
-     static class HolderFragmentManager {
-        //储存那些已调用commit()但是还没有被添加进宿主Activity的HolderFragment，在真正创建完毕
-        //即调用到 onCreate()时才算添加进入。 
-        private Map<Activity, HolderFragment> mNotCommittedActivityHolders = new HashMap<>();
-        private Map<Fragment, HolderFragment> mNotCommittedFragmentHolders = new HashMap<>();
-         
-         
-        ...
-        //HoldFragment添加至宿主Activity完毕
-        void holderFragmentCreated(Fragment holderFragment) {
-            Fragment parentFragment = holderFragment.getParentFragment();
-            if (parentFragment != null) {
-                mNotCommittedFragmentHolders.remove(parentFragment);
-                parentFragment.getFragmentManager().unregisterFragmentLifecycleCallbacks(
-                        mParentDestroyedCallback);
-            } else {
-                mNotCommittedActivityHolders.remove(holderFragment.getActivity());
-            }
-        }
-        //根据HOLDER_TAG寻找对应的HolderFragment
-        private static HolderFragment findHolderFragment(FragmentManager manager) {
-            if (manager.isDestroyed()) {
-                throw new IllegalStateException("Can't access ViewModels from onDestroy");
-            }
-            Fragment fragmentByTag = manager.findFragmentByTag(HOLDER_TAG);
-            if (fragmentByTag != null && !(fragmentByTag instanceof HolderFragment)) {
-                throw new IllegalStateException("Unexpected "
-                        + "fragment instance was returned by HOLDER_TAG");
-            }
-            return (HolderFragment) fragmentByTag;
-        }
-         
-        private static HolderFragment createHolderFragment(FragmentManager fragmentManager) {
-            HolderFragment holder = new HolderFragment();
-            fragmentManager.beginTransaction().add(holder, HOLDER_TAG).commitAllowingStateLoss();
-            return holder;
-        }
-         
-         HolderFragment holderFragmentFor(FragmentActivity activity) {
-            FragmentManager fm = activity.getSupportFragmentManager();
-            HolderFragment holder = findHolderFragment(fm);
-            if (holder != null) {
-                return holder;
-            
-            //获取对应HolderFragment实例
-            holder = mNotCommittedActivityHolders.get(activity);
-            if (holder != null) {
-                return holder;
-            }
-
-            if (!mActivityCallbacksIsAdded) {
-                //添加Activity生命周期监听
-                mActivityCallbacksIsAdded = true;
-                activity.getApplication().registerActivityLifecycleCallbacks(mActivityCallbacks);
-            }
-            //创建一个HolderFragment对象
-            holder = createHolderFragment(fm);
-            mNotCommittedActivityHolders.put(activity, holder);
-            return holder;
-        }
-
-        HolderFragment holderFragmentFor(Fragment parentFragment) {
-            FragmentManager fm = parentFragment.getChildFragmentManager();
-            HolderFragment holder = findHolderFragment(fm);
-            if (holder != null) {
-                return holder;
-            }
-            
-            holder = mNotCommittedFragmentHolders.get(parentFragment);
-            if (holder != null) {
-                return holder;
-            }
-
-            parentFragment.getFragmentManager()
-                    .registerFragmentLifecycleCallbacks(mParentDestroyedCallback, false);
-            holder = createHolderFragment(fm);
-            mNotCommittedFragmentHolders.put(parentFragment, holder);
-            return holder;
-        }
-     }
-}
-```
-
-`HolderFragment`通过调用`HolderFragmentManager.holderFragmentFor()`获取最终的`HolderFragment`。
-
-主要有以下几步：
-
-1. 根据HOLDER_TAG，从宿主的`FragmentManager`中查询对应Tag的HolderFragment，找到则返回
-2. 再从`mNotCommitedActivityHolder`中查找`HolderFragment`实例，找到则返回
-3. 为宿主添加生命周期监听，可以在销毁时及时移除数据
-4. 使用HOLDER_TAG创建一个`HolderFragment`，并添加到宿主上
-5. 再添加至`mNotCommitedActivityHolder`缓存中，等待`HolderFragment.onCreate()`执行时移除。
-
-①`setRetainInstance(true)`：不会销毁Fragment实例
-
-### 整体流程
-
-源码分析完毕后，对总流程进行总结：
-
-- `ViewModelProviders`创建对应的`ViewModelProvider`对象
-- `ViewModelStores`获取`ViewModelStore`对象
-- 创建`HolderFragment`添加至宿主Activity或Fragment上，并返回ViewModelStore对象
-- `ViewModelProvider`创建`ViewModel`对象，并配合`ViewModelStore`进行缓存
-
-
-
-## ViewModel拓展知识
-
-### ViewModel与`onSaveInstanceState()`区别
-
-- 两者都可以进行保存数据，但是`ViewModel`可以支持保存更多数据
-- 当Activity因为系统内存紧张被回收时，`onSaveInstanceState()`可以恢复数据，而`ViewModel`因为`HolderFragment`被销毁数据也随之丢失。
-- 两者都只是临时性存储
-
-## 内容引用
-
-[ViewModel源码分析](<https://blog.csdn.net/hyc1988107/article/details/81456460>)
-
-[Jekton-ViewModel](<https://jekton.github.io/2018/06/30/android-arch-ViewModel/>)]]></content>
-      <tags>
-        <tag>源码解析</tag>
-      </tags>
-  </entry>
-  <entry>
     <title>Jetpack-LiveData简析</title>
     <url>/2019/02/15/Jetpack-LiveData%E7%AE%80%E6%9E%90/</url>
     <content><![CDATA[
@@ -30050,7 +29358,7 @@ imageView.setImageBitmap(bitmap);
   </entry>
   <entry>
     <title>ANR分析</title>
-    <url>/2019/01/28/ANR%E5%88%86%E6%9E%90/</url>
+    <url>/2019/01/28/Android-ANR%E5%88%86%E6%9E%90/</url>
     <content><![CDATA[
 <!--简要解释一下 ANR？为什么会发生 ANR？如何避免发生 ANR？如何定位 ANR？ANR发生条件？如何分析ANR-->
 
@@ -40756,7 +40064,7 @@ protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
                    more |= drawChild(canvas, child, drawingTime);
                }
            }
-  ...
+    ...
    }
    
        protected boolean isChildrenDrawingOrderEnabled() {
@@ -40841,6 +40149,10 @@ protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
    2. 继承`ViewGroup`后，重写`getChildDrawingOrder()`方法，设置对应的绘制顺序
    
    常用的`RecyclerView`、`ViewPager`都实现了该方法，其中`RecyclerView`通过设置`ChildDrawingOrderCallback`也可以实现这个功能。
+
+如果在`addView()`的场景下，可通过`setElevation()`或`setTranslationZ()`或`setZ()`去修改Z轴的坐标值。
+
+
 
 ## 自定义View
 
@@ -44865,7 +44177,7 @@ public void onActivityResult(int requestCode,int resultCode,Intent data){
 > 2. 输入系统取出内核事件，封装成为KeyEvent或MotionEvent
 > 3. 交付给对应的Window消费该事件。
 
-
+![input](/images/真·事件分发)
 
 ## 硬件中断
 
@@ -45061,11 +44373,6 @@ InputDispatcher::InputDispatcher(const sp<InputDispatcherPolicyInterface>& polic
 }
 ```
 
-主要执行了以下两步：
-
-1. 新建Looper对象
-2. 
-
 
 
 ##### InputReader
@@ -45162,6 +44469,21 @@ status_t InputManager::start() {
 
 
 #### 总结
+
+IMS启动过程重点在于Native的初始化，分别创建以下对象：
+
+- **EventHub**
+
+  监听并记录`/dev/input`的变化
+
+- **InputManager**
+
+  创建`InputReader`和`InputDispatcher`对象
+
+初始化完毕上述对象后，然后启动以下线程：
+
+- **InputReaderThread**：从`EventHub`取出事件并处理，再转发给`InputDispatcher`
+- **InputDispatcherThread**：接收来自`InputReader`的事件，并派发事件到合适的窗口(window)去处理
 
 ![img](/images/event1_4.png)
 
@@ -45648,7 +44970,7 @@ bool InputDispatcher::enqueueInboundEventLocked(EventEntry* entry) {
 
 
 
-//TODO 流程图
+![InputReaderThread](/images/InputReaderThread.jpg)
 
 #### InputDispatcherThread
 
@@ -45978,7 +45300,7 @@ status_t InputChannel::sendMessage(const InputMessage* msg) {
 
 `InputReader`发送触摸事件到`InputDispatcher`，通过`findFocusedWindowTargetsLocked()`寻找触摸事件对应的窗口，如果没有找到就使用第一个`Window`。把结果写入`inputTargets`中，然后通过`publishMotionEvent`分发触摸事件，再通过`InputChannel`发送消息到UI线程。
 
-//TOOD 流程图
+![InputDispatche](/images/InputDispatcherThread.jpg)
 
 ### 触摸事件发送至Activity
 
@@ -46120,6 +45442,8 @@ status_t InputChannel::sendMessage(const InputMessage* msg) {
 
 **点到为止**
 
+![InputChannel对应关系](/images/v2-1e1273f15cfdd7b81aa7a2cb819d8890_1440w.jpg)
+
 
 
 `addToDisplay()`主要处理两部分内容
@@ -46130,7 +45454,7 @@ status_t InputChannel::sendMessage(const InputMessage* msg) {
 
   `socket客户端`通过`binder`传到`ViewRootImpl`中的`mInputChannel`
 
-- 通过`IMS.registerInputChannel()`注册`InputChannel`，监听socket服务端
+- 通过`IMS.registerInputChannel()`注册`InputChannel`，监听socket服务端，收到消息后回调`InputDispatcher::handleReceiveCallback()`
 
 ##### WindowInputEventReceiver
 
@@ -46266,6 +45590,9 @@ int NativeInputEventReceiver::handleEvent(int receiveFd, int events, void* data)
 status_t NativeInputEventReceiver::consumeEvents(JNIEnv* env,
         bool consumeBatches, nsecs_t frameTime, bool* outConsumedBatch) {
   for (;;) {
+        status_t status = mInputConsumer.consume(&mInputEventFactory,
+                consumeBatches, frameTime, &seq, &inputEvent, &displayId);
+    ...
         if (!skipCallbacks) {
 
             jobject inputEventObj;
@@ -46314,6 +45641,34 @@ status_t NativeInputEventReceiver::consumeEvents(JNIEnv* env,
 }
 ```
 
+```c++
+//frameworks/native/libs/input/InputTransport.cpp
+status_t InputConsumer::consume(InputEventFactoryInterface* factory,
+        bool consumeBatches, nsecs_t frameTime, uint32_t* outSeq, InputEvent** outEvent,
+        int32_t* displayId) {
+    while (!*outEvent) {
+            mMsgDeferred = false;
+        } else {
+            // 收到新消息
+            status_t result = mChannel->receiveMessage(&mMsg);
+            if (result) {
+                if (consumeBatches || result != WOULD_BLOCK) {
+                    result = consumeBatch(factory, frameTime, outSeq, outEvent, displayId);
+                    if (*outEvent) {
+                        break;
+                    }
+                }
+                return result;
+            }
+        }  
+  
+}
+```
+
+
+
+
+
 `WindowInputEventReceiver`主要执行了以下几步：
 
 - 初始化了`NativeInputReceiver`，调用了`sendFdEvents()`发出了消息
@@ -46322,6 +45677,10 @@ status_t NativeInputEventReceiver::consumeEvents(JNIEnv* env,
 - `NativeInputReceiver::handleEvent()`主要回调到Java层的`dispatchInputEvent()`且携带`InputEvent`回去(在触摸场景下，实际为`MotionEvent`)。
 
 
+
+//TODO 流程图
+
+#### 回调到Activity
 
 ```java
 //InputEventReceiver.java
@@ -46384,6 +45743,7 @@ private void dispatchInputEvent(int seq, InputEvent event, int displayId) {
             handleWindowFocusChanged();
             stage.deliver(q);
         } else {
+          //事件分发完成后 执行
             finishInputEvent(q);
         }
     }
@@ -46469,13 +45829,653 @@ public final boolean dispatchPointerEvent(MotionEvent event) {
 
 所以经过一系列操作 让用户的屏幕触摸操作，最终走到了`Activity.dispatchTouchEvent()`
 
-
-
-
+![img](/images/触发Activity触摸事件)
 
 
 
 ## 事件分发
+
+### MotionEvent
+
+> 当用户点击View或ViewGroup的时候，将会产生一个事件对象，就是`MotionEvent`。
+
+`MotionEvent`记录了`事件的类型(action)、触摸的位置(x,y)以及触摸的时间等`。
+
+事件的类型主要分为以下几种：
+
+- `ACTION_DOWN`：监听用户手指按下的操作，一次按下标志触摸事件的开始。
+- `ACTION_MOVE`：用户按压屏幕后，在抬起之前，如果移动的距离超过一定数值，就判定为移动事件。
+- `ACTION_UP`：监听用户手指离开屏幕的操作，一次抬起标志触摸事件的结束。
+- `ACTION_CANCEL`：当用户保持按下操作，并把手指移动到了控件外部区域时且父View处理事件触发。
+
+
+
+用户手指触摸到屏幕到离开屏幕可能产生的事件序列如下：
+
+`ACTION_DOWN` -> `ACTION_MOVE` -> `ACTION_MOVE` -> ... `ACTION_MOVE` -> `ACTION_UP`
+
+![事件分发顺序](/images/事件分发顺序.jpg)
+
+### MotionEvent产生时机
+
+在`ViewRootImpl,setView()`时，创建了`WindowInputReceiver`，当IMS写入事件(通过EventHub监听到`/dev/input/`)，通过一系列的操作回调到`dispatchInputEvent()`，最后走到了`processPointerEvent()`，此时把从Native层传递过来的`InputEvent`强转成`MotionEvent`，然后继续向下传递。
+
+### MotionEvent传递顺序-事件分发顺序
+
+事件分发本质就是`MotionEvent`的传递过程。
+
+```java
+//ViewRootImpl.java
+        private int processPointerEvent(QueuedInputEvent q) {
+            final MotionEvent event = (MotionEvent)q.mEvent;
+
+            mAttachInfo.mUnbufferedDispatchRequested = false;
+            mAttachInfo.mHandlingPointerEvent = true;
+          //向下分发到View
+            boolean handled = mView.dispatchPointerEvent(event);
+  
+            return handled ? FINISH_HANDLED : FORWARD;
+        }      
+      
+
+```
+
+`mView`就是`DecorView`
+
+```java
+//DecorView.java
+没有实现对应方法。。。
+向上寻找父类
+  
+//View.java
+    public final boolean dispatchPointerEvent(MotionEvent event) {
+        if (event.isTouchEvent()) {
+            return dispatchTouchEvent(event);
+        } else {
+            return dispatchGenericMotionEvent(event);
+        }
+    }
+  
+
+//DecorView.java
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent ev) {
+        final Window.Callback cb = mWindow.getCallback();
+        return cb != null && !mWindow.isDestroyed() && mFeatureId < 0
+                ? cb.dispatchTouchEvent(ev) : super.dispatchTouchEvent(ev);
+    }
+```
+
+此时`mWindow.getCallback()`指的就是`Activity`
+
+#### Activity事件分发
+
+```java
+    public boolean dispatchTouchEvent(MotionEvent ev) {
+        if (ev.getAction() == MotionEvent.ACTION_DOWN) {
+          //在此处可以监听到 用户触摸屏幕的操作
+            onUserInteraction();
+        }
+       //若dispatchTouchEvent返回true，事件到此结束，返回false，继续向下传递
+      //对应PhoneWindow
+        if (getWindow().superDispatchTouchEvent(ev)) {
+            return true;
+        }
+      //没有任何View去处理，交给Activity自身的onTouchEvent处理
+        return onTouchEvent(ev);
+    }
+```
+
+`getWindow()`对应唯一实现类`PhoneWindow`
+
+```java
+//PhoneWindow.java
+    @Override
+    public boolean superDispatchTouchEvent(MotionEvent event) {
+      //mDecor 是DecorView的一个实例，DecoeView就是顶层View中的实例对象
+        return mDecor.superDispatchTouchEvent(event);
+    }
+```
+
+`mDecor`指的就是`DecorView`
+
+```java
+//DecorView.java
+    public boolean superDispatchTouchEvent(MotionEvent event) {
+      //调用父类的方法即FrameLayout.dispatchTouchEvent = ViewGroup.dispatchTouchEvent()，由父类去处理事件分发
+        return super.dispatchTouchEvent(event);//指向了 ViewGroup
+    }
+```
+
+![Activity事件分发](/images/Activity-Dispatch.png)
+
+总结一下：按照上述流程图，当一个点击事件进来时，Activity上的事件流程如下：
+
+- 调用`Activity.dispatchTouchEvent()`，然后调用`onUserInteraction()`
+- 调用`getWindow()即PhoneWindow.superDispatchTouchEvent()`
+- 调用`mDecor即DecorView.superDispatchTouchEvent()`
+- 调用DecorView父类即**`ViewGroup.dispatchTouchEvent()`** 在这里实现了事件从Activity传递至ViewGroup
+
+
+
+#### ViewGroup事件分发
+
+上述Activity分发后，执行到`ViewGroup.dispatchTouchEvent()`
+
+```java
+//ViewGroup.java
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent ev) {
+      ...
+        
+            if (actionMasked == MotionEvent.ACTION_DOWN) {
+              //发生ACTION_DOWN事件，取消并清除之前的触摸
+                cancelAndClearTouchTargets(ev);
+                resetTouchState();
+            }        
+      ...
+          //判定当前事件是否需要拦截
+            final boolean intercepted;
+            if (actionMasked == MotionEvent.ACTION_DOWN
+                    || mFirstTouchTarget != null) {//只有ACTION_DOWN才可以触发拦截
+                //FLAG_DISALLOW_INTERCEPT：禁止ViewGroup拦截除了DOWN以外的事件
+                //可由View调用requestDisallowInterceptTouchEvent设置标记
+                final boolean disallowIntercept = (mGroupFlags & FLAG_DISALLOW_INTERCEPT) != 0;
+                if (!disallowIntercept) {
+                  //调用拦截方法
+                    intercepted = onInterceptTouchEvent(ev);
+                    ev.setAction(action); // restore action in case it was changed
+                } else {
+                    intercepted = false;
+                }
+            } else {
+               //没有触摸targets 且 非ACTION_DOWN 需要拦截
+                intercepted = true;
+            }   
+      ...
+           //非取消事件 且 没被拦截
+            if (!canceled && !intercepted) {
+                if (actionMasked == MotionEvent.ACTION_DOWN
+                        || (split && actionMasked == MotionEvent.ACTION_POINTER_DOWN)
+                        || actionMasked == MotionEvent.ACTION_HOVER_MOVE) {//当前为 DOWN 事件
+                    final int actionIndex = ev.getActionIndex(); // always 0 for down
+                   //存在子View
+                    if (newTouchTarget == null && childrenCount != 0) {
+                        final float x = ev.getX(actionIndex);
+                        final float y = ev.getY(actionIndex);
+                      //从上往下 寻找能处理触摸事件的子View
+                        final ArrayList<View> preorderedList = buildTouchDispatchChildList();
+                        final boolean customOrder = preorderedList == null
+                                && isChildrenDrawingOrderEnabled();
+                        final View[] children = mChildren;
+                        for (int i = childrenCount - 1; i >= 0; i--) {
+                            final int childIndex = getAndVerifyPreorderedIndex(
+                                    childrenCount, i, customOrder);
+                            final View child = getAndVerifyPreorderedView(
+                                    preorderedList, children, childIndex);
+                           //无法获取焦点，跳过循环
+                            if (childWithAccessibilityFocus != null) {
+                                if (childWithAccessibilityFocus != child) {
+                                    continue;
+                                }
+                                childWithAccessibilityFocus = null;
+                                i = childrenCount - 1;
+                            }
+                          //View不可见 或者 触摸的坐标点不在View的范围内，跳过循环
+                            if (!canViewReceivePointerEvents(child)
+                                    || !isTransformedTouchPointInView(x, y, child, null)) {
+                                ev.setTargetAccessibilityFocus(false);
+                                continue;
+                            }
+
+                            newTouchTarget = getTouchTarget(child);
+                          //当前正在循环 ，退出当前循环
+                            if (newTouchTarget != null) {
+                                // Child is already receiving touch within its bounds.
+                                // Give it the new pointer in addition to the ones it is handling.
+                                newTouchTarget.pointerIdBits |= idBitsToAssign;
+                                break;
+                            }
+
+                            resetCancelNextUpFlag(child);
+                          ////事件传递下来后，调用dispatchTransformedTouchEvent，事件就会传递到View/ViewGroup中       
+                            if (dispatchTransformedTouchEvent(ev, false, child, idBitsToAssign)) {
+                                // Child wants to receive touch within its bounds.
+                                mLastTouchDownTime = ev.getDownTime();
+                                if (preorderedList != null) {
+                                    // childIndex points into presorted list, find original index
+                                    for (int j = 0; j < childrenCount; j++) {
+                                        if (children[childIndex] == mChildren[j]) {
+                                            mLastTouchDownIndex = j;
+                                            break;
+                                        }
+                                    }
+                                } else {
+                                    mLastTouchDownIndex = childIndex;
+                                }
+                                mLastTouchDownX = ev.getX();
+                                mLastTouchDownY = ev.getY();
+                              //添加新的 touchtarget
+                                newTouchTarget = addTouchTarget(child, idBitsToAssign);
+                                alreadyDispatchedToNewTouchTarget = true;
+                                break;
+                            }
+                            ev.setTargetAccessibilityFocus(false);
+                        }
+                        if (preorderedList != null) preorderedList.clear();
+                    }
+
+                    if (newTouchTarget == null && mFirstTouchTarget != null) {
+                        newTouchTarget = mFirstTouchTarget;
+                        while (newTouchTarget.next != null) {
+                            newTouchTarget = newTouchTarget.next;
+                        }
+                        newTouchTarget.pointerIdBits |= idBitsToAssign;
+                    }                  
+                }
+            }
+      
+            // mFirstTouchTarget赋值是在通过addTouchTarget方法获取的；
+            // 只有处理ACTION_DOWN事件，才会进入addTouchTarget方法。
+            // 这也正是当View没有消费ACTION_DOWN事件，则不会接收其他MOVE,UP等事件的原因
+            if (mFirstTouchTarget == null) {
+                // ViewGroup处理事件 当无人可以响应触摸事件
+                handled = dispatchTransformedTouchEvent(ev, canceled, null,
+                        TouchTarget.ALL_POINTER_IDS);
+            } else {
+               //如果View消费ACTION_DOWN事件，那么MOVE,UP等事件相继开始执行
+                TouchTarget predecessor = null;
+                TouchTarget target = mFirstTouchTarget;
+                while (target != null) {
+                    final TouchTarget next = target.next;
+                    if (alreadyDispatchedToNewTouchTarget && target == newTouchTarget) {
+                        handled = true;
+                    } else {
+                        final boolean cancelChild = resetCancelNextUpFlag(target.child)
+                                || intercepted;
+                      //子View/ViewGroup 处理触摸事件
+                        if (dispatchTransformedTouchEvent(ev, cancelChild,
+                                target.child, target.pointerIdBits)) {
+                            handled = true;
+                        }
+                        if (cancelChild) {
+                            if (predecessor == null) {
+                                mFirstTouchTarget = next;
+                            } else {
+                                predecessor.next = next;
+                            }
+                            target.recycle();
+                            target = next;
+                            continue;
+                        }
+                    }
+                    predecessor = target;
+                    target = next;
+                }
+            }    
+              ...
+        }
+        return handled;
+      
+    }
+```
+
+##### onInterceptTouchEvent()
+
+```java
+    public boolean onInterceptTouchEvent(MotionEvent ev) {
+        if (ev.isFromSource(InputDevice.SOURCE_MOUSE)
+                && ev.getAction() == MotionEvent.ACTION_DOWN
+                && ev.isButtonPressed(MotionEvent.BUTTON_PRIMARY)
+                && isOnScrollbarThumb(ev.getX(), ev.getY())) {
+            return true;
+        }
+        return false;
+    }
+```
+
+可以通过重写该方法，进行事件分发的拦截。
+
+- 返回true，事件被拦截，执行当前View的`onTouchEvent()`
+- 返回false，事件继续向下分发
+
+##### buildTouchDispatchChildList()
+
+```java
+    public ArrayList<View> buildTouchDispatchChildList() {
+        return buildOrderedChildList();
+    }
+
+    ArrayList<View> buildOrderedChildList() {
+        final int childrenCount = mChildrenCount;
+        if (childrenCount <= 1 || !hasChildWithZ()) return null;
+
+      //z
+        final boolean customOrder = isChildrenDrawingOrderEnabled();
+        for (int i = 0; i < childrenCount; i++) {
+            // add next child (in child order) to end of list
+            final int childIndex = getAndVerifyPreorderedIndex(childrenCount, i, customOrder);
+            final View nextChild = mChildren[childIndex];
+            final float currentZ = nextChild.getZ();
+
+            // 按z轴，从小到大排序所有的子视图，即z轴大的View先响应事件
+            int insertIndex = i;
+            while (insertIndex > 0 && mPreSortedChildren.get(insertIndex - 1).getZ() > currentZ) {
+                insertIndex--;
+            }
+            mPreSortedChildren.add(insertIndex, nextChild);
+        }
+        return mPreSortedChildren;
+    }
+
+//View.java
+    public float getZ() {
+        return getElevation() + getTranslationZ();
+    }
+```
+
+默认的事件分发顺序与绘制顺序一致，按照`view.getZ()`从大到小排序，Z值大的先绘制且先响应事件。
+
+当然，这个事件分发的顺序也可以修改，只需要实现两个方法：
+
+- `isChildDrawingOrder()`：允许自定义顺序
+- `getChildDrawingOrder()`：自定义当前View的顺序
+
+也可以通过`setElevation()`、`setTranslationZ()`或者`setZ()`去修改Z轴的坐标值。
+
+##### dispatchTransformedTouchEvent()
+
+```java
+    private boolean dispatchTransformedTouchEvent(MotionEvent event, boolean cancel,
+            View child, int desiredPointerIdBits) {
+        final boolean handled;
+
+       //发生取消事件后，不再执行后续的任何操作
+        final int oldAction = event.getAction();
+        if (cancel || oldAction == MotionEvent.ACTION_CANCEL) {
+            event.setAction(MotionEvent.ACTION_CANCEL);
+            if (child == null) {
+                handled = super.dispatchTouchEvent(event);
+            } else {
+                handled = child.dispatchTouchEvent(event);
+            }
+            event.setAction(oldAction);
+            return handled;
+        }
+
+        final MotionEvent transformedEvent;
+        if (newPointerIdBits == oldPointerIdBits) {
+            if (child == null || child.hasIdentityMatrix()) {
+                if (child == null) {
+                  //不存在子视图，调用View.dispatchTouchEvent()
+                    handled = super.dispatchTouchEvent(event);
+                } else {
+                    final float offsetX = mScrollX - child.mLeft;
+                    final float offsetY = mScrollY - child.mTop;
+                    event.offsetLocation(offsetX, offsetY);
+                   //调用子View/ViewGroup的 dispatchTouchEvent()
+                    handled = child.dispatchTouchEvent(event);
+
+                    event.offsetLocation(-offsetX, -offsetY);
+                }
+                return handled;
+            }
+            transformedEvent = MotionEvent.obtain(event);
+        } else {
+            transformedEvent = event.split(newPointerIdBits);
+        }
+
+        // Done.
+        transformedEvent.recycle();
+        return handled;
+    }
+```
+
+`dispatchTransformedTouchEvent()`分为两套处理方式：
+
+- `child==null`：发生的情况：`事件被拦截`或`真的没有可执行触摸事件的子View`。执行`View.dispatchTouchEvent()`
+- `child!=null`：向下执行子View/ViewGroup的`dispatchTouchEvent()`
+
+![ViewGroup事件分发](/images/ViewGroup-Dispatch.png)
+
+根据上述流程图，总结一下：
+
+- 点击事件从上层传递到ViewGroup，先调用`ViewGroup.dispatchTouchEvent()`
+- 判断`ViewGroup.onInterceptTouchEvent()`是否拦截点击事件
+  - 默认不拦截，则将事件继续向子View传递，然后调用`View.dispatchTouchEvent()`
+  - 被拦截返回`true`，调用`super.dispatchTouchEvent()`返给父布局处理，并且ViewGroup自身也处理事件，比如`onTouch(),onClick(),onTouchEvent()`等事件
+
+> 通常情况下ViewGroup的`onInterceptTouchEvent()`返回false，不会拦截用户操作。
+>
+> 不过要注意的是 拦截的是 一个用户的操作序列：*从用户手指按下到手指抬起为止。*
+>
+> - 拦截了Down事件，后续的事件都会交由`ViewGroup.onTouchEvent()`处理
+> - 拦截了其他事件，会给之前序列头部的`ACTION_DOWN`事件发送一个`ACTION_CANCEL`类型事件，通知子View无法执行后续事件，回归初始状态。(**例如点击ListView中的一个Item的Button，再滑动ListView，Button就会恢复初始状态。**)
+
+#### View事件分发
+
+ViewGroup事件分发完毕后，由子View继续执行事件分发
+
+```java
+//View.java    
+public boolean dispatchTouchEvent(MotionEvent event) {
+
+        boolean result = false;
+
+        if (onFilterTouchEventForSecurity(event)) {
+            if ((mViewFlags & ENABLED_MASK) == ENABLED && handleScrollBarDragging(event)) {
+                result = true;
+            }
+            //noinspection SimplifiableIfStatement
+            ListenerInfo li = mListenerInfo;
+            if (li != null && li.mOnTouchListener != null //View设置了touch事件
+                    && (mViewFlags & ENABLED_MASK) == ENABLED //View是可以操作的
+                    && li.mOnTouchListener.onTouch(this, event)) { //View.onTouch返回true
+                result = true;
+            }
+
+          //上述任一条件不满足，就会执行 onTouchEvent()
+            if (!result && onTouchEvent(event)) {
+                result = true;
+            }
+        }
+
+        return result;
+    }
+```
+
+`dispatchTouchEvent()`按照如下顺序执行：
+
+1. `onTouchListener.ouTouch()`开始执行，返回`true`表示当前事件已被消费，不需要向上执行。否则继续向下执行
+2. `onTouchEvent()`返回`true`表示消费事件。
+
+
+
+```java
+//View.java
+    public boolean onTouchEvent(MotionEvent event) {
+        final boolean clickable = ((viewFlags & CLICKABLE) == CLICKABLE //有点击事件 调用setOnClickListener()
+                || (viewFlags & LONG_CLICKABLE) == LONG_CLICKABLE) //有长按事件 调用setOnLongClickListener()
+                || (viewFlags & CONTEXT_CLICKABLE) == CONTEXT_CLICKABLE;
+      
+        if ((viewFlags & ENABLED_MASK) == DISABLED) {
+            if (action == MotionEvent.ACTION_UP && (mPrivateFlags & PFLAG_PRESSED) != 0) {
+                setPressed(false);
+            }
+            mPrivateFlags3 &= ~PFLAG3_FINGER_DOWN;
+          //当View不可用时 直接消费事件
+            return clickable;
+        }
+      
+      if (clickable || (viewFlags & TOOLTIP) == TOOLTIP) {
+            switch (action) {
+                case MotionEvent.ACTION_UP:
+                        if (!mHasPerformedLongPress && !mIgnoreNextUpEvent) {
+                            // This is a tap, so remove the longpress check
+                            removeLongPressCallback();
+
+                            if (!focusTaken) {
+                                if (mPerformClick == null) {
+                                    mPerformClick = new PerformClick();
+                                }
+                                if (!post(mPerformClick)) {
+                                  //调用View.onClckListener
+                                    performClickInternal();
+                                }
+                            }
+                        }                
+            }
+      }
+    }
+
+    private boolean performClickInternal() {
+
+        return performClick();
+    }
+
+    public boolean performClick() {
+
+        final boolean result;
+        final ListenerInfo li = mListenerInfo;
+        if (li != null && li.mOnClickListener != null) {
+            playSoundEffect(SoundEffectConstants.CLICK);
+            li.mOnClickListener.onClick(this);
+            result = true;
+        } else {
+            result = false;
+        }
+
+        return result;
+    }
+```
+
+
+
+![View事件分发](/images/View-Dispatch.png)
+
+
+
+根据上述流程图，总结一下：
+
+- 点击事件从ViewGroup传递到View，调用`View.dispatchTouchEvent()`
+- 判断当前View是否设置`OnTouchListener`，并且设置了`onTouch()`返回值，默认返回false
+  - 返回`true`，代表事件被`onTouch()`消费，不会继续往下传递
+  - 返回`false`，事件继续向下传递，调用`View.onTouchEvent()`，后续若设置点击事件，则继续调用`performClick()`，最后执行`onClick()`事件
+
+拓展：
+
+> 1. 如果有一个控件是`DISABLED`，注册的`onTouch()`事件不会被执行。若要监听点击事件，只能实现它的`onTouchEvent()`
+> 2. 点击事件优先级： `onTouch()` > `onTouchEvent()` > `performClick()` > `onClick()` 
+
+### 总结
+
+根据前几节分析得出完整的事件分发顺序：
+
+**IMS -> WindowInputREceiver(ViewRootImpl) -> DecorView -> Activity -> DecorView -> viewGroup -> View**
+
+
+
+#### 事件分发核心方法
+
+`boolean dispatchTouchEvent()`
+
+用来进行事件的分发。
+
+- 返回`true`：事件被当前View所消费，不会向下传递
+- 返回`false`：交由上一层的View的`onTouchEvent()`处理
+- 返回`super.dispatchTouchEvent()`：继续向下分发事件
+
+
+
+`boolean onInterceptTouchEvent()`
+
+用来进行事件的拦截，在`dispatchOnTouchEvent()`中调用。**只有ViewGroup才可以调用**
+
+- 返回`true`：拦截当前事件，并交由`onTouchEvent()`去处理
+
+- 返回`false`：不拦截当前事件，继续向下传递
+
+- 返回`super.onInterceptTouchEvent()`：调用父类的`onInterceptTouchEvent()`，大部分情况下是`false`。
+
+  如果点击了子View区域，可以继续分发到`child.dispatchTouchEvent()`
+
+  没有子View可以响应事件，执行`onTouchEvent()`
+
+  
+
+`boolean onTouchEvent()`
+
+用来处理点击事件，在`dispatchOnTouchEvent()`中调用。
+
+- 返回`true`：当前View处理当前事件
+
+- 返回`false`：当前View无法处理事件，交由上一层View的`onTouchEvent()`处理
+
+- 返回`super.onTouchEvent()`
+
+  当前View设置了`clickable/longclickable`，等价于返回true，当前View处理事件
+
+  当前View未设置`clickable/longclickable`，等价于返回false,交由上一层的`onTouchEvent()`处理。
+
+
+
+上述三个核心方法，可以用如下伪代码代替
+
+```java
+public boolean dispatchTouchEvent() {
+    boolean res = false;
+
+    // 是否不允许拦截事件
+    // 如果设置了 FLAG_DISALLOW_INTERCEPT，不会拦截事件，所以在 child 里可以通过 requestDisallowInterceptTouchEvent 控制父 View 是否来拦截事件
+    final boolean disallowIntercept = (mGroupFlags & FLAG_DISALLOW_INTERCEPT) != 0;
+
+    if (!disallowIntercept && onInterceptTouchEvent()) { // View 不调用这里，直接执行下面的 touchlistener 判断
+        if (touchlistener && touchlistener.onTouch()) {
+            return true;
+        }
+        res = onTouchEvent(); // 里面会处理点击事件 -> performClick() -> clicklistener.onClick()
+    } else if (DOWN) { // 如果是 DOWN 事件，则遍历子 View 进行事件分发
+        // 循环子 View 处理事件
+        for (childs) {
+            res = child.dispatchTouchEvent();
+        }
+    } else {
+        // 事件分发给 target 去处理，这里的 target 就是上一步处理 DOWN 事件的 View
+        target.child.dispatchTouchEvent();
+    }
+    return res;
+}
+```
+
+
+
+![事件分发](/images/TouchEvent-Transmit.png)
+
+
+
+1. 点击事件传递从`dispatchTouchEvent()`开始，在不修改默认返回值时，事件会按照嵌套层次由外向内传递，到达最内层View时，由最内层View`onTouchEvent()`处理
+2. View的点击事件触发顺序为  `onTouch()` > `onTouchEvent()` > `performClick()` > `onClick()` 
+3. *Touch事件的后续(例如`ACTION_MOVE`,`ACTION_UP`)层级传递*
+   - 若`dispatchTouchEvent()`返回true，那么能收到`ACTION_DOWN`的函数也可以收到后续事件
+   - 若`onTouchEvent()`返回true，那么其他事件不再往下传递，而是直接传给自己的`onTouchEvent()`并结束本次事件传递
+
+#### 事件分发特殊情况
+
+##### `ACTIOIN_CANCEL`产生场景
+
+1. 子View处理了Down事件，按照设定Move与Up的事件也会交给他处理。若此时，父View拦截了事件，此时子View就会收到一个Cancel事件，并且无法接收到后续的Move与Up事件。
+
+   常见场景：ListView有一个Item带有Button，此时点击按钮(触发ACTION_DOWN)，再进行上下滑动，ListView就会拦截掉后续的Move事件，此时Button就会收到ACTION_CANCEL
+
+2. 子View收到ACTION_DOWN，但是上一个事件还没有结束(因为APP切换、ANR导致后续事件丢失)，此时也会执行ACTION_CANCEL
+
+
+
+## 事件分发完成
+
+//android_view_InputEventReceiver finishInputEvent
+
+//InputTransport.cpp sendFinishedSignal() sendUnchainedFinishedSignal() channel->sendMessage
 
 
 
@@ -46485,7 +46485,9 @@ public final boolean dispatchPointerEvent(MotionEvent event) {
 
 [InputReaderThread](http://gityuan.com/2016/12/11/input-reader/)
 
-]]></content>
+[Android相关源码](https://cs.android.com)
+
+[一次触摸，Android 到底干了啥](https://zhuanlan.zhihu.com/p/31210271)]]></content>
       <tags>
         <tag>Android</tag>
       </tags>
@@ -49490,449 +49492,6 @@ void RecordingCanvas::drawLines(const float* points, int floatCount, const SkPai
 <!-- https://www.jianshu.com/p/abfaea892611 ， https://blog.csdn.net/jinzhuojun/article/details/54234354 https://www.jianshu.com/p/40f660e17a73 -->
 
 ]]></content>
-      <tags>
-        <tag>Android</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>Android事件分发</title>
-    <url>/2020/10/21/Android-%E4%BA%8B%E4%BB%B6%E5%88%86%E5%8F%91/</url>
-    <content><![CDATA[
-> Android的事件分发本质就是**[MotionEvent](#1-MotionEvent)事件的分发过程**。当一个MotionEvent产生后，系统需要把该事件传递给一个具体的View.
-
-
-
-
-
-## 点击事件传递规则
-
-点击事件的传递顺序为：**Activity(Window) --> ViewGroup --> View**
-
-事件分发过程中有3个重要的方法:
-
-- `dispathTouchEvent(MotionEvent event)`
-
-  用来进行事件的分发。
-
-- `onInterceptTouchEvent(MotionEvent event)`
-
-  用来进行事件的拦截，在`dispatchOnTouchEvent()`内部中调用，返回结果表明是否拦截事件，*View中是没有该方法的*
-
-- `onTouchEvent(MotionEvent event)`
-
-  用来处理点击事件，在`dispatchOnTouchEvent()`内部中调用，返回结果表明是否消耗当前事件
-
-> 在Android系统中，可以处理事件传递的类有以下三种：
->
-> - **Activity**：包含`dispatchTouchEvent`，`onTouchEvent`方法
-> - **ViewGroup**：包含`dispatchTouchEvent`，`onInterceptTouchEvent`，`onTouchEvent`
-> - **View**：包含`dispatchTouchEvent`，`onTouchEvent`方法
-
-可以用如下伪代码体现：
-
-```java
-public boolean dispatchTouchEvent(MotionEvent event){
-    boolean consume = false;
-    if(onInterceptTouchEvent(ev)){
-        //被拦截调用自身的onTouchEvent()处理点击事件
-        consume = onTouchEvent(event);
-    }else{
-        //没有拦截继续放行，执行子View的dispatchTouchEvent()
-        consume = child.dispatchTouchEvent(event);
-    }
-    return consume;
-}
-```
-
-{% fullimage /images/TouchEvent-Transmit.png,事件分发,事件分发%}
-
-
-
-- `super`：调用父类方法
-- `true`：消费事件，即事件不会往下传递
-- `false`：不消费事件，事件继续往下传递(`onInterceptTouchEvent()`)/交由父布局处理事件(`onTouchEvent`，`dispatchTouchEvent`)
-
-简单的总结一下流程：**Activity.dispatchTouchEvent() -> ViewGroup.dispatchTouchEvent() -> ViewGroup.onInterceptTouchEvent() -> View.dispatchTouchEvent() ->  View.onTouch() -> View.onTouchEvent() -> View.onClick()**
-
-## 事件分发的源码解析
-
-### Activity的事件分发机制
-
-当一个点击事件发生时，事件最先传递到的就是`Activity.dispatchTouchEvent(MotionEvent ev)`中进行事件分发。*具体工作是由Activity的Window来完成的。*
-
-```java
-// ..android/app/Activity.java
-    public boolean dispatchTouchEvent(MotionEvent ev) {
-        if (ev.getAction() == MotionEvent.ACTION_DOWN) {
-            onUserInteraction();
-        }
-        //若dispatchTouchEvent返回true，事件到此结束，返回false，继续向下传递
-        if (getWindow().superDispatchTouchEvent(ev)) {
-            return true;
-        }
-        return onTouchEvent(ev);
-    }
-
-//当activity在栈顶时，点击，触摸或者点击通知栏都会触发 
-    public void onUserInteraction() {
-    }
-
-// ../com/android/internal/policy/PhoneWindow.java
-/**
-* getWindow().superDispatchTouchEvent(ev)
-* getWindow()指向的是Window对象的一个实例，在Android中Window的唯一实现就是PhoneWindow
-*/
-    @Override
-    public boolean superDispatchTouchEvent(MotionEvent event) {
-        //mDecor 是DecorView的一个实例，DecoeView就是顶层View中的实例对象
-        return mDecor.superDispatchTouchEvent(event);
-    }
-
-//../com/android/internal/policy/DecorView.java
-/**
-*  mDecor.superDispatchTouchEvent(event)
-*  mDecor 是DecorView的一个实例对象，DecorView是PhoneView的一个内部类，并且继承自FrameLayout
-*/
-    public boolean superDispatchTouchEvent(MotionEvent event) {
-        //调用父类的方法即FrameLayout.dispatchTouchEvent = ViewGroup.dispatchTouchEvent()，由父类去处理事件分发
-        return super.dispatchTouchEvent(event);
-    }
-
-
-```
-
-`onUserInteraction()`用户点击屏幕时最先被触发。
-
-{% fullimage /images/Activity-Dispatch.png,Activity事件分发,Activity事件分发%}
-
-总结一下：按照上述流程图，当一个点击事件进来时，Activity上的事件流程如下：
-
-- 调用`Activity.dispatchTouchEvent()`，然后调用`onUserInteraction()`
-- 调用`getWindow()即PhoneWindow.superDispatchTouchEvent()`
-- 调用`mDecor即DecorView.superDispatchTouchEvent()`
-- 调用DecorView父类即**`ViewGroup.dispatchTouchEvent()`** 在这里实现了事件从Activity传递至ViewGroup
-
-### ViewGroup事件分发机制
-
-上述Activity事件分发，后面会走到`ViewGroup.dispatchTouchEvent()`
-
-```java
-@Override
-public boolean dispatchTouchEvent(MotionEvent event){
-    ...
-        
-//---- ViewGroup会在ACTION_DOWN时重置GroupFlags以免影响后续对ACTION_DOWN事件的处理----
-     if (actionMasked == MotionEvent.ACTION_DOWN) {
-                cancelAndClearTouchTargets(ev);
-                resetTouchState();
-      }
-//--------
-    
-//----判断当前事件是否需要拦截----   
-      final boolean intercepted;
-      if (actionMasked == MotionEvent.ACTION_DOWN  //必须是ACTION_DOWN事件，若为其他UP或MOVE事件不触发拦截机制
-                    || mFirstTouchTarget != null) { //mFirstTouchTarget 若当前事件被拦截，则该值为null 反之不会空
-                //FLAG_DISALLOW_INTERCEPT：禁止ViewGroup拦截除了DOWN以外的事件
-                //可由View调用requestDisallowInterceptTouchEvent设置标记
-                final boolean disallowIntercept = (mGroupFlags & FLAG_DISALLOW_INTERCEPT) != 0;
-                if (!disallowIntercept) {
-                    intercepted = onInterceptTouchEvent(ev);
-                    ev.setAction(action); // restore action in case it was changed
-                } else {
-                    intercepted = false;
-                }
-       } else {
-                // There are no touch targets and this action is not an initial down
-                // so this view group continues to intercept touches.
-                intercepted = true;
-       }
-//--------    
-    ...
-//----ViewGroup不拦截分发事件，事件向下分发交由子View进行处理----        
-                           final View[] children = mChildren;
-                        //遍历当前ViewGroup下的所有子View 遍历为倒序，意味着从外到内遍历
-                        for (int i = childrenCount - 1; i >= 0; i--) {
-                            final int childIndex = getAndVerifyPreorderedIndex(
-                                    childrenCount, i, customOrder);
-                            final View child = getAndVerifyPreorderedView(
-                                    preorderedList, children, childIndex);
-
-                            // If there is a view that has accessibility focus we want it
-                            // to get the event first and if not handled we will perform a
-                            // normal dispatch. We may do a double iteration but this is
-                            // safer given the timeframe.
-                            if (childWithAccessibilityFocus != null) {
-                                if (childWithAccessibilityFocus != child) {
-                                    continue;
-                                }
-                                childWithAccessibilityFocus = null;
-                                i = childrenCount - 1;
-                            }
-//如果View不可见或触摸点的坐标不在子View范围内，跳过本次循环
-                            if (!canViewReceivePointerEvents(child)
-                                    || !isTransformedTouchPointInView(x, y, child, null)) {
-                                ev.setTargetAccessibilityFocus(false);
-                                continue;
-                            }
-
-                            newTouchTarget = getTouchTarget(child);
-                            if (newTouchTarget != null) {
-                                // Child is already receiving touch within its bounds.
-                                // Give it the new pointer in addition to the ones it is handling.
-                                newTouchTarget.pointerIdBits |= idBitsToAssign;
-                                break;
-                            }
-
-                            resetCancelNextUpFlag(child);
-//事件传递下来后，调用dispatchTransformedTouchEvent，事件就会传递到View中                     
-                            if (dispatchTransformedTouchEvent(ev, false, child, idBitsToAssign)) {
-                                // Child wants to receive touch within its bounds.
-                                mLastTouchDownTime = ev.getDownTime();
-                                if (preorderedList != null) {
-                                    // childIndex points into presorted list, find original index
-                                    for (int j = 0; j < childrenCount; j++) {
-                                        if (children[childIndex] == mChildren[j]) {
-                                            mLastTouchDownIndex = j;
-                                            break;
-                                        }
-                                    }
-                                } else {
-                                    mLastTouchDownIndex = childIndex;
-                                }
-                                mLastTouchDownX = ev.getX();
-                                mLastTouchDownY = ev.getY();
-//返回true的话                                
-                                newTouchTarget = addTouchTarget(child, idBitsToAssign);
-                                alreadyDispatchedToNewTouchTarget = true;
-                                break;
-                            }
-
-                            // The accessibility focus didn't handle the event, so clear
-                            // the flag and do a normal dispatch to all children.
-                            ev.setTargetAccessibilityFocus(false);
-                        }
-    
-    ...
-//如果 mfirstTouchTarget为空，ViewGroup默认拦截同一时间序列中的所有事件        
-        if (mFirstTouchTarget == null) {
-                // No touch targets so treat this as an ordinary view.
-            //child默认为空，直接调用父类的 dispatchTouchEvent()
-                handled = dispatchTransformedTouchEvent(ev, canceled, null,
-                        TouchTarget.ALL_POINTER_IDS);
-            } else {
-        ...
-        }
-    ...
-    
-}
-
-//是否拦截事件分发
-public boolean onInterceptTouchEvent(MotionEvent ev) {
-        //触发条件需要有 鼠标输入触发 正常操作都是触摸方式 所以可以看做默认false
-        if (ev.isFromSource(InputDevice.SOURCE_MOUSE)
-                && ev.getAction() == MotionEvent.ACTION_DOWN
-                && ev.isButtonPressed(MotionEvent.BUTTON_PRIMARY)
-                && isOnScrollbarThumb(ev.getX(), ev.getY())) {
-            return true;
-        }
-        return false;
-    }
-
-//事件向下分发 子View或者子ViewGroup
-private boolean dispatchTransformedTouchEvent(MotionEvent event, boolean cancel,
-            View child, int desiredPointerIdBits) {
-        final boolean handled;
-
-        // Canceling motions is a special case.  We don't need to perform any transformations
-        // or filtering.  The important part is the action, not the contents.
-        final int oldAction = event.getAction();
-        if (cancel || oldAction == MotionEvent.ACTION_CANCEL) {
-            event.setAction(MotionEvent.ACTION_CANCEL);
-            if (child == null) {
-                //如果没有子View，向上回溯调用父类的dispatchTouchEvent
-                handled = super.dispatchTouchEvent(event);
-            } else {
-                //包含子View，调用子类的dispatchTouchEvent
-                handled = child.dispatchTouchEvent(event);
-            }
-            event.setAction(oldAction);
-            return handled;
-        }
-    ...
-}
-
-//mFirstTouchTarget其实是一种单链表结构
-private TouchTarget addTouchTarget(@NonNull View child, int pointerIdBits) {
-        final TouchTarget target = TouchTarget.obtain(child, pointerIdBits);
-        target.next = mFirstTouchTarget;
-        mFirstTouchTarget = target;
-        return target;
-}
-```
-
-{% fullimage /images/ViewGroup-Dispatch.png,ViewGroup事件分发,ViewGroup事件分发%}
-
-根据上述流程图，总结一下：
-
-- 点击事件从上层传递到ViewGroup，先调用`ViewGroup.dispatchTouchEvent()`
-- 判断`ViewGroup.onInterceptTouchEvent()`是否拦截点击事件
-  - 默认不拦截，则将事件继续向子View传递，然后调用`View.dispatchTouchEvent()`
-  - 被拦截返回`true`，调用`super.dispatchTouchEvent()`返给父布局处理，并且ViewGroup自身也处理事件，比如`onTouch(),onClick(),onTouchEvent()`等事件
-
-> 通常情况下ViewGroup的`onInterceptTouchEvent()`返回false，不会拦截用户操作。
->
-> 不过要注意的是 拦截的是 一个用户的操作序列：*从用户手指按下到手指抬起为止。*
->
-> - 拦截了Down事件，后续的事件都会交由`ViewGroup.onTouchEvent()`处理
-> - 拦截了其他事件，会给之前序列头部的`ACTION_DOWN`事件发送一个`ACTION_CANCEL`类型事件，通知子View无法执行后续事件，回归初始状态。(**例如点击ListView中的一个Item的Button，再滑动ListView，Button就会恢复初始状态。**)
-
-### View事件分发机制
-
-上述ViewGroup事件分发后，就会调用到`View.dispatchTouchEvent()`
-
-```java
-// ../android/view/View.java
-public boolean dispatchTouchEvent(MotionEvent event) {
- ...
-    boolean result = false;
-    
-     if (onFilterTouchEventForSecurity(event)) {
-            if ((mViewFlags & ENABLED_MASK) == ENABLED && handleScrollBarDragging(event)) {
-                result = true;
-            }
-            //noinspection SimplifiableIfStatement
-            ListenerInfo li = mListenerInfo;
-            if (li != null 
-                && li.mOnTouchListener != null //View设置了onTouch事件
-                && (mViewFlags & ENABLED_MASK) == ENABLED //View是可操作状态的 isEnable=true
-                && li.mOnTouchListener.onTouch(this, event)//View的onTouch返回为true
-               ){
-                result = true;
-            }
-            //如果result为true即上述条件通过 这个if条件就不会向下执行意味着onTouchEvent()不会被调用
-            if (!result && onTouchEvent(event)) {
-                result = true;
-            }
-        }
-    ...
-        return result;
-}
-
-
- public boolean onTouchEvent(MotionEvent event) {
-     final int action = event.getAction();
-     //只要设置了点击事件 clickable = true
-     final boolean clickable = ((viewFlags & CLICKABLE) == CLICKABLE
-                || (viewFlags & LONG_CLICKABLE) == LONG_CLICKABLE)
-                || (viewFlags & CONTEXT_CLICKABLE) == CONTEXT_CLICKABLE;
-     //当View点击事件被禁止时，直接消耗点击事件
-     if ((viewFlags & ENABLED_MASK) == DISABLED) {
-            if (action == MotionEvent.ACTION_UP && (mPrivateFlags & PFLAG_PRESSED) != 0) {
-                setPressed(false);
-            }
-            mPrivateFlags3 &= ~PFLAG3_FINGER_DOWN;
-            // A disabled view that is clickable still consumes the touch
-            // events, it just doesn't respond to them.
-            return clickable;
-        }
-     ...
-      //监听点击事件，并且需要配置Click事件才可以触发
-      if (clickable || (viewFlags & TOOLTIP) == TOOLTIP) {
-          switch (action) {
-                  //当手指从屏幕离开时，触发对应的点击事件
-              case MotionEvent.ACTION_UP:
-                  //没有配置点击事件的话 直接返回
-                  if (!clickable) {
-                        removeTapCallback();
-                        removeLongPressCallback();
-                        mInContextButtonPress = false;
-                        mHasPerformedLongPress = false;
-                        mIgnoreNextUpEvent = false;
-                        break;
-                    }
-                  boolean prepressed = (mPrivateFlags & PFLAG_PREPRESSED) != 0;
-                    if ((mPrivateFlags & PFLAG_PRESSED) != 0 || prepressed) {
-                        // take focus if we don't have it already and we should in
-                        // touch mode.
-                        boolean focusTaken = false;
-                        if (isFocusable() && isFocusableInTouchMode() && !isFocused()) {
-                            focusTaken = requestFocus();
-                        }
-                        ...
-                        if (!mHasPerformedLongPress && !mIgnoreNextUpEvent) {
-                            // This is a tap, so remove the longpress check
-                            removeLongPressCallback();
-
-                            // Only perform take click actions if we were in the pressed state
-                            if (!focusTaken) {
-                                // Use a Runnable and post this rather than calling
-                                // performClick directly. This lets other visual state
-                                // of the view update before click actions start.
-                                if (mPerformClick == null) {
-                                    mPerformClick = new PerformClick();
-                                }
-                                if (!post(mPerformClick)) {
-                                    performClick();
-                                }
-                            }
-                        }
-                        ...
-                    }
-                  break;
-          ...
-          }
-      }
- }
-
-//实际点击事件的触发位置
-public boolean performClick() {
-        final boolean result;
-        final ListenerInfo li = mListenerInfo;
-        if (li != null && li.mOnClickListener != null) {
-            playSoundEffect(SoundEffectConstants.CLICK);
-            //调用对应的点击事件
-            li.mOnClickListener.onClick(this);
-            result = true;
-        } else {
-            result = false;
-        }
-        sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_CLICKED);
-        notifyEnterOrExitForAutoFillIfNeeded(true);
-        return result;
-    }
-```
-
-{% fullimage /images/View-Dispatch.png,View事件分发,View事件分发%}
-
-
-
-根据上述流程图，总结一下：
-
-- 点击事件从ViewGroup传递到View，调用`View.dispatchTouchEvent()`
-- 判断当前View是否设置`OnTouchListener`，并且设置了`onTouch()`返回值，默认返回false
-  - 返回`true`，代表事件被`onTouch()`消费，不会继续往下传递
-  - 返回`false`，事件继续向下传递，调用`View.onTouchEvent()`，后续若设置点击事件，则继续调用`performClick()`，最后执行`onClick()`事件
-
-拓展：
-
-> 1. 如果有一个控件是`DISABLED`，注册的`onTouch()`事件不会被执行。若要监听点击事件，只能实现它的`onTouchEvent()`
-> 2. 点击事件优先级： `onTouch()` > `onTouchEvent()` > `performClick()` > `onClick()` 
-
-
-
-### 总结
-
-1. 点击事件传递从`dispatchTouchEvent()`开始，在不修改默认返回值时，事件会按照嵌套层次由外向内传递，到达最内层View时，由最内层View`onTouchEvent()`处理
-2. 事件在传递过程中，返回参数设为`true`，事件会被提前消费，不向下继续传递
-3. View的点击事件触发顺序为  `onTouch()` > `onTouchEvent()` > `performClick()` > `onClick()` 
-
-## 拓展
-
-1. *Touch事件的后续(例如`ACTION_MOVE`,`ACTION_UP`)层级传递*
-   - 若`dispatchTouchEvent()`返回true，那么能收到`ACTION_DOWN`的函数也可以收到后续事件
-   - 若`onTouchEvent()`返回true，那么其他事件不再往下传递，而是直接传给自己的`onTouchEvent()`并结束本次事件传递
-
-## ]]></content>
       <tags>
         <tag>Android</tag>
       </tags>
@@ -54222,6 +53781,441 @@ public void execute(Runnable command) {
 ]]></content>
       <tags>
         <tag>Java</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>Jetpack-ViewModel简析</title>
+    <url>/2019/02/15/Jetpack-ViewModel%E7%AE%80%E6%9E%90/</url>
+    <content><![CDATA[
+## ViewModel简介
+
+> ViewModel是用来存储和管理Lifecycle创建数据的组件，在配置发生改变或者屏幕旋转时数据仍然不会丢失。**ViewModel可以负责组件间的通信，可以高效解决Activity与Fragment的通信问题。**
+
+主要的功能还是在非手动关闭以及系统回收条件下进行 Activity/Fragment的数据保存。
+
+## ViewModel使用示例
+> 代码中提供了`ViewModel`以及`AndroidViewModel`，这两者的区别在于`AndroidViewModel`多提供了`application`入参，可以调用它去获取资源或者其他信息。
+
+添加VIewModel的第三方引用
+
+```groovy
+ dependencies {
+    def lifecycle_version = "2.0.0"
+    implementation "androidx.lifecycle:lifecycle-viewmodel:$lifecycle_version"
+    implementation "androidx.lifecycle:lifecycle-extensions:$lifecycle_version"
+ }
+```
+
+
+
+先创建一个类继承ViewModel
+```java 
+  public class CustomViewModel extends ViewModel{
+     private String text = "text";
+     public String getText(){
+        return text;
+     }
+  }
+```
+创建完毕后，需要在Activity/Fragment中进行调用
+```java
+public class MainActivity extends AppCompatActivity {
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        //获取自定义的ViewModel对象
+        CustomViewModel vm = ViewModelProviders.of(this)
+                .get(CustomViewModel.class);
+        //直接调用内部方法
+        vm.getText();
+    }
+}
+```
+上述为最简单的示例，更高级的可以参考[ViewModel 官方示例](https://developer.android.google.cn/topic/libraries/architecture/viewmodel)
+
+## 源码分析
+根据上节的使用示例分析ViewModel中的源码实现。
+### ViewModel
+需要先新建ViewModel实例，等待调用
+```java ViewModel.java
+public abstract class ViewModel {
+    //当ViewModel实例被销毁时调用
+    @SuppressWarnings("WeakerAccess")
+    protected void onCleared() {
+      //做清空操作
+    }
+}
+```
+还提供了AndroidViewModel，可以支持传入Application
+```java AndroidViewModel.java
+public class AndroidViewModel extends ViewModel {
+    private Application mApplication;
+    //传入Application
+    public AndroidViewModel(@NonNull Application application) {
+        mApplication = application;
+    }
+
+    @NonNull
+    public <T extends Application> T getApplication() {
+        return (T) mApplication;
+    }
+}
+```
+### ViewModelProvider
+创建实例完毕后，需要获取对应实例
+```java ViewModelProviders.java
+public class ViewModelProviders {
+   ...
+    @NonNull
+    @MainThread
+    public static ViewModelProvider of(@NonNull Fragment fragment) {
+        return of(fragment, null);
+    }
+    
+    @NonNull
+    @MainThread
+    public static ViewModelProvider of(@NonNull FragmentActivity activity) {
+        return of(activity, null);
+    }
+    
+    @NonNull
+    @MainThread
+    public static ViewModelProvider of(@NonNull Fragment fragment, @Nullable Factory factory) {
+        Application application = checkApplication(checkActivity(fragment));
+        if (factory == null) {
+            factory = ViewModelProvider.AndroidViewModelFactory.getInstance(application);
+        }
+        return new ViewModelProvider(ViewModelStores.of(fragment), factory);
+    }
+    
+    @NonNull
+    @MainThread
+    public static ViewModelProvider of(@NonNull FragmentActivity activity,
+            @Nullable Factory factory) {
+        Application application = checkApplication(activity);
+        //默认构造器为AndroidViewModel
+        if (factory == null) {
+            factory = ViewModelProvider.AndroidViewModelFactory.getInstance(application);
+        }
+        return new ViewModelProvider(ViewModelStores.of(activity), factory);
+    }
+}
+```
+*观察源码可知ViewModel支持的类型为`FragmentActivity`以及`support.Fragment。`*
+经过`ViewModelProviders.of(FragmentActivity/Fragment)`最终得到一个`ViewModelProvider`实例。
+```java ViewModelProvider.java
+public class ViewModelProvider {
+    //获取对应ViewModle实例
+    @NonNull
+    @MainThread
+    public <T extends ViewModel> T get(@NonNull Class<T> modelClass) {
+        String canonicalName = modelClass.getCanonicalName();
+        if (canonicalName == null) {
+            throw new IllegalArgumentException("Local and anonymous classes can not be ViewModels");
+        }
+        return get(DEFAULT_KEY + ":" + canonicalName, modelClass);
+    }
+    
+    @NonNull
+    @MainThread
+    public <T extends ViewModel> T get(@NonNull String key, @NonNull Class<T> modelClass) {
+        //从ViewModelStore缓存中获取对应ViewModel实例
+        ViewModel viewModel = mViewModelStore.get(key);
+        //如果相同就直接返回缓存中实例
+        if (modelClass.isInstance(viewModel)) {
+            return (T) viewModel;
+        } else {
+            //noinspection StatementWithEmptyBody
+            if (viewModel != null) {
+                // TODO: log a warning.
+            }
+        }
+        //不存在，则创建新实例
+        viewModel = mFactory.create(modelClass);
+        //创建完毕后放入缓存中
+        mViewModelStore.put(key, viewModel);
+        return (T) viewModel;
+    }
+}
+```
+`ViewModelStore`负责存放`ViewModel`的缓存数据，可以保证不会重复创建新实例。
+源码中提供了两种Factory类：`AndroidViewModelFactory(默认使用)`及`NewInstanceFactory`。
+```java ViewModelProvider.java
+    //创建对应实例
+    public interface Factory {
+        @NonNull
+        <T extends ViewModel> T create(@NonNull Class<T> modelClass);
+    }
+
+    public static class NewInstanceFactory implements Factory {
+        @SuppressWarnings("ClassNewInstance")
+        @NonNull
+        @Override
+        public <T extends ViewModel> T create(@NonNull Class<T> modelClass) {
+            try {
+                //创建ViewModel新实例
+                return modelClass.newInstance();
+            } catch (InstantiationException e) {
+                throw new RuntimeException("Cannot create an instance of " + modelClass, e);
+            } catch (IllegalAccessException e) {
+                throw new RuntimeException("Cannot create an instance of " + modelClass, e);
+            }
+        }
+    }
+    
+    public static class AndroidViewModelFactory extends ViewModelProvider.NewInstanceFactory {
+
+        private static AndroidViewModelFactory sInstance;
+
+        //单例模式
+        @NonNull
+        public static AndroidViewModelFactory getInstance(@NonNull Application application) {
+            if (sInstance == null) {
+                sInstance = new AndroidViewModelFactory(application);
+            }
+            return sInstance;
+        }
+
+        private Application mApplication;
+
+        public AndroidViewModelFactory(@NonNull Application application) {
+            mApplication = application;
+        }
+
+        @NonNull
+        @Override
+        public <T extends ViewModel> T create(@NonNull Class<T> modelClass) {
+            //判断传入的ViewModel是否继承自AndroidViewModel
+            if (AndroidViewModel.class.isAssignableFrom(modelClass)) {
+                try {
+                    //创建一个AndroidViewModel实例
+                    return modelClass.getConstructor(Application.class).newInstance(mApplication);
+                } catch (NoSuchMethodException e) {
+                    throw new RuntimeException("Cannot create an instance of " + modelClass, e);
+                } catch (IllegalAccessException e) {
+                    throw new RuntimeException("Cannot create an instance of " + modelClass, e);
+                } catch (InstantiationException e) {
+                    throw new RuntimeException("Cannot create an instance of " + modelClass, e);
+                } catch (InvocationTargetException e) {
+                    throw new RuntimeException("Cannot create an instance of " + modelClass, e);
+                }
+            }
+            //否则向上调用父类 NewInstanceFactory的创建方法
+            return super.create(modelClass);
+        }
+    }
+```
+默认使用`AndroidViewModelFactory`，需要传入`Application`参数构建一个`ViewModel`类型，否则需要调用到`NewInstanceFactory`去构建，创造出一个无参构造的ViewModel类。
+
+构建完成后，将其放到`ViewModelStore`中进行缓存，以便下次调用。
+### ViewModelStore
+通过`ViewModelStores.of()`获取到ViewModelStore这一缓存对象。
+```java ViewModelStores.java
+public class ViewModelStores{
+    @NonNull
+    @MainThread
+    public static ViewModelStore of(@NonNull FragmentActivity activity) {
+        if (activity instanceof ViewModelStoreOwner) {
+            return ((ViewModelStoreOwner) activity).getViewModelStore();
+        }
+        return holderFragmentFor(activity).getViewModelStore();
+    }
+    
+    @NonNull
+    @MainThread
+    public static ViewModelStore of(@NonNull Fragment fragment) {
+        if (fragment instanceof ViewModelStoreOwner) {
+            return ((ViewModelStoreOwner) fragment).getViewModelStore();
+        }
+        return holderFragmentFor(fragment).getViewModelStore();
+    }
+}
+```
+> 在这里有个注意点：`activity instanceof ViewModelStoreOwner`在support 27.1.0以上这个判断是成立的，因为`FragmentActivity以及Fragment`都已经实现了`ViewModelStoreOwner`接口，就直接调用系统内实现好的`ViewModelStore`即可。
+> 在support 27.1.0以下的还未实现，依然需要开发者自己去实现，或者直接调用`HolderFragment`的系统实现。
+
+
+与`ViewModelProvides`类似，通过`of()`去获取到实例。
+```java ViewModelStore.java
+public class ViewModelStore {
+    private final HashMap<String, ViewModel> mMap = new HashMap<>();
+    //放入ViewModel实例
+    final void put(String key, ViewModel viewModel) {
+        ViewModel oldViewModel = mMap.put(key, viewModel);
+        if (oldViewModel != null) {
+            oldViewModel.onCleared();
+        }
+    }
+    //获取ViewModel实例
+    final ViewModel get(String key) {
+        return mMap.get(key);
+    }
+
+    public final void clear() {
+        for (ViewModel vm : mMap.values()) {
+            vm.onCleared();
+        }
+        mMap.clear();
+    }
+}
+```
+
+### HolderFragment
+`HolderFragment`是一个Fragment组件，没有UI界面，唯一的作用就是**存储数据(ViewModelStore)**。
+对于每一个使用了`ViewModel`的Activity/Fragment都会动态的为其添加一个`HolderFragment`，其实现了`ViewModelStoreOwner`接口，可以直接获取到内部存储的`ViewModelStore`数据。
+`HolderFragment`是整个ViewModel源码实现的核心，由它进行数据存储且保证发生屏幕旋转等配置改变时存储的数据不会丢失。
+```java HoldFragment.java
+public class HolderFragment extends Fragment implements ViewModelStoreOwner {
+    ...
+	private ViewModelStore mViewModelStore = new ViewModelStore();
+
+    public HolderFragment() {
+        setRetainInstance(true);①
+    }
+
+    @Override
+    public void onCreate(@Nullable Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        sHolderFragmentManager.holderFragmentCreated(this);
+    }
+    
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        //Fragment销毁时，清空自身存储的ViewModel
+        mViewModelStore.clear();
+    }
+    
+     @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+    public static HolderFragment holderFragmentFor(FragmentActivity activity) {
+        return sHolderFragmentManager.holderFragmentFor(activity);
+    }
+
+    @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+    public static HolderFragment holderFragmentFor(Fragment fragment) {
+        return sHolderFragmentManager.holderFragmentFor(fragment);
+    }
+    
+     static class HolderFragmentManager {
+        //储存那些已调用commit()但是还没有被添加进宿主Activity的HolderFragment，在真正创建完毕
+        //即调用到 onCreate()时才算添加进入。 
+        private Map<Activity, HolderFragment> mNotCommittedActivityHolders = new HashMap<>();
+        private Map<Fragment, HolderFragment> mNotCommittedFragmentHolders = new HashMap<>();
+         
+         
+        ...
+        //HoldFragment添加至宿主Activity完毕
+        void holderFragmentCreated(Fragment holderFragment) {
+            Fragment parentFragment = holderFragment.getParentFragment();
+            if (parentFragment != null) {
+                mNotCommittedFragmentHolders.remove(parentFragment);
+                parentFragment.getFragmentManager().unregisterFragmentLifecycleCallbacks(
+                        mParentDestroyedCallback);
+            } else {
+                mNotCommittedActivityHolders.remove(holderFragment.getActivity());
+            }
+        }
+        //根据HOLDER_TAG寻找对应的HolderFragment
+        private static HolderFragment findHolderFragment(FragmentManager manager) {
+            if (manager.isDestroyed()) {
+                throw new IllegalStateException("Can't access ViewModels from onDestroy");
+            }
+            Fragment fragmentByTag = manager.findFragmentByTag(HOLDER_TAG);
+            if (fragmentByTag != null && !(fragmentByTag instanceof HolderFragment)) {
+                throw new IllegalStateException("Unexpected "
+                        + "fragment instance was returned by HOLDER_TAG");
+            }
+            return (HolderFragment) fragmentByTag;
+        }
+         
+        private static HolderFragment createHolderFragment(FragmentManager fragmentManager) {
+            HolderFragment holder = new HolderFragment();
+            fragmentManager.beginTransaction().add(holder, HOLDER_TAG).commitAllowingStateLoss();
+            return holder;
+        }
+         
+         HolderFragment holderFragmentFor(FragmentActivity activity) {
+            FragmentManager fm = activity.getSupportFragmentManager();
+            HolderFragment holder = findHolderFragment(fm);
+            if (holder != null) {
+                return holder;
+            
+            //获取对应HolderFragment实例
+            holder = mNotCommittedActivityHolders.get(activity);
+            if (holder != null) {
+                return holder;
+            }
+
+            if (!mActivityCallbacksIsAdded) {
+                //添加Activity生命周期监听
+                mActivityCallbacksIsAdded = true;
+                activity.getApplication().registerActivityLifecycleCallbacks(mActivityCallbacks);
+            }
+            //创建一个HolderFragment对象
+            holder = createHolderFragment(fm);
+            mNotCommittedActivityHolders.put(activity, holder);
+            return holder;
+        }
+
+        HolderFragment holderFragmentFor(Fragment parentFragment) {
+            FragmentManager fm = parentFragment.getChildFragmentManager();
+            HolderFragment holder = findHolderFragment(fm);
+            if (holder != null) {
+                return holder;
+            }
+            
+            holder = mNotCommittedFragmentHolders.get(parentFragment);
+            if (holder != null) {
+                return holder;
+            }
+
+            parentFragment.getFragmentManager()
+                    .registerFragmentLifecycleCallbacks(mParentDestroyedCallback, false);
+            holder = createHolderFragment(fm);
+            mNotCommittedFragmentHolders.put(parentFragment, holder);
+            return holder;
+        }
+     }
+}
+```
+
+`HolderFragment`通过调用`HolderFragmentManager.holderFragmentFor()`获取最终的`HolderFragment`。
+
+主要有以下几步：
+
+1. 根据HOLDER_TAG，从宿主的`FragmentManager`中查询对应Tag的HolderFragment，找到则返回
+2. 再从`mNotCommitedActivityHolder`中查找`HolderFragment`实例，找到则返回
+3. 为宿主添加生命周期监听，可以在销毁时及时移除数据
+4. 使用HOLDER_TAG创建一个`HolderFragment`，并添加到宿主上
+5. 再添加至`mNotCommitedActivityHolder`缓存中，等待`HolderFragment.onCreate()`执行时移除。
+
+①`setRetainInstance(true)`：不会销毁Fragment实例
+
+### 整体流程
+
+源码分析完毕后，对总流程进行总结：
+
+- `ViewModelProviders`创建对应的`ViewModelProvider`对象
+- `ViewModelStores`获取`ViewModelStore`对象
+- 创建`HolderFragment`添加至宿主Activity或Fragment上，并返回ViewModelStore对象
+- `ViewModelProvider`创建`ViewModel`对象，并配合`ViewModelStore`进行缓存
+
+
+
+## ViewModel拓展知识
+
+### ViewModel与`onSaveInstanceState()`区别
+
+- 两者都可以进行保存数据，但是`ViewModel`可以支持保存更多数据
+- 当Activity因为系统内存紧张被回收时，`onSaveInstanceState()`可以恢复数据，而`ViewModel`因为`HolderFragment`被销毁数据也随之丢失。
+- 两者都只是临时性存储
+
+## 内容引用
+
+[ViewModel源码分析](<https://blog.csdn.net/hyc1988107/article/details/81456460>)
+
+[Jekton-ViewModel](<https://jekton.github.io/2018/06/30/android-arch-ViewModel/>)]]></content>
+      <tags>
+        <tag>源码解析</tag>
       </tags>
   </entry>
   <entry>
@@ -60911,6 +60905,263 @@ private MyHandler mHandler = new MyHandler(this);
       </tags>
   </entry>
   <entry>
+    <title>JVM相关及其拓展(三) -- 虚拟机类加载器</title>
+    <url>/2018/04/16/JVM%E7%9B%B8%E5%85%B3%E5%8F%8A%E5%85%B6%E6%8B%93%E5%B1%95-%E4%B8%89/</url>
+    <content><![CDATA[
+# 虚拟机类加载器
+
+## 定义：
+
+在类加载阶段中的“通过一个类的全限定名来获取描述此类的二进制字节流”这个动作放到Java虚拟机外部去实现，以便让应用程序自己决定如何去获取所需要的类，实现这个动作的代码块称为“类加载器”。
+
+例如：编写的是.java文件，代码运行后变成.class文件，类加载器就是加载.class文件。
+
+**不同的类加载器加载同一个类时，得到的两个类也是不相等的。**
+
+
+
+## Java类加载器分类：
+
+### 1.系统提供的类加载器
+
+{% fullimage /images/类加载器.png,类加载器分类,类加载器分类%}
+
+- **Bootstrap ClassLoader(启动类加载器)**：由C/C++实现的加载器，用于加载虚拟机运行时所需要的系统类，如`java.lang.*、java.uti.*`等系统类。它负责将存放在`<JAVA_HOME>\lib`目录中的，或者被-Xbootclasspath参数所指定的路径中的，并且是虚拟机识别的类库加载到虚拟机内存中。
+
+  这个加载器由于是C实现的，所以**无法被Java程序直接引用**。并且不继承`java.lang.ClassLoader`。
+
+- **Extension ClassLoader(扩展类加载器)**：这个加载器由sun.misc.Launcher$ExtClassLoader实现，负责加载<JAVA_HOME>\lib\ext目录中的，或者被`javax.ext.dirs`系统变量所指定的路径中的所有类库。
+
+  **开发者可以直接进行引用。**
+
+- **Application ClassLoader(应用程序类加载器)**：这个加载器由sun.misc.Launcher$AppClassLoader实现。可以加载用户类路径上的指定类库，通过`ClassLoader.getSystemClassLoader()`方式获取，没有定义过自己的类加载器，则默认是这个。
+
+- **Custom ClassLoader(自定义加载器)**：通过集成`java.lang.ClassLoader`来实现自己的加载器。
+
+  
+
+### 2.双亲委托模型
+
+{% fullimage /images/jvm/parent_loader.png, alt,双亲委托模型 %}
+
+- 工作流程：如果一个类加载器收到了类加载的请求，不会自己去尝试加载这个类，而把这个请求委派给父类加载器去完成，每一层都是如此，依次向上递归，直到委托到最顶层的`Bootstrap ClassLoader`，若父加载器无法处理加载请求（它的搜索范围内没有找到所需的类时），则交由子加载器去加载。
+
+  > 简单流程介绍
+  >
+  > 1. 自定义类加载器先从缓存中查看Class文件是否被加载，如果加载则返回Class，没有加载则委托给父类加载
+  > 2. 一直委托到`Bootstrap ClassLoader`,在`Bootstrap ClassLoader`没有找到Class文件，则在自己的规定路径<JAVA_HOME>\lib或者-Xbootclasspath选项指定路径的jar包进行查询，找到则返回Class，没有就交由子加载器去加载。
+  > 3. 最后交由我们自定义的类加载器去加载，还找不到则抛出`ClassNotFoundException`异常。
+- 代码模型实现：
+
+
+```java
+ protected Class<?> loadClass(String name, boolean resolve)
+        throws ClassNotFoundException
+    {
+        synchronized (getClassLoadingLock(name)) {
+            // 检查请求的类是否已被加载过
+            Class<?> c = findLoadedClass(name);
+            //对应的类已被加载则不会往下进行
+            if (c == null) {
+                long t0 = System.nanoTime();
+                try {
+                    if (parent != null) {
+                    //父加载器不为null，调用父加载器的load方法
+                        c = parent.loadClass(name, false);
+                    } else {
+                    //父加载器为null，则调用系统的BootstrapClassLoader
+                        c = findBootstrapClassOrNull(name);
+                    }
+                } catch (ClassNotFoundException e) {
+                    // ClassNotFoundException thrown if class not found
+                    // from the non-null parent class loader
+                    //父类加载器无法加载则抛出ClassNotFoundException异常
+                }
+
+                if (c == null) {
+                    // If still not found, then invoke findClass in order
+                    // to find the class.
+                    //父类加载器无法加载则调用本身的findClass()方法去加载
+                    long t1 = System.nanoTime();
+                    c = findClass(name);
+
+                    // this is the defining class loader; record the stats
+                    sun.misc.PerfCounter.getParentDelegationTime().addTime(t1 - t0);
+                    sun.misc.PerfCounter.getFindClassTime().addElapsedTimeFrom(t1);
+                    sun.misc.PerfCounter.getFindClasses().increment();
+                }
+            }
+            if (resolve) {
+                resolveClass(c);
+            }
+            return c;
+        }
+    }
+```
+
+- 好处：
+  - 避免重复加载，若该Class已加载则从缓存中直接读取
+  - 更加安全，例如`java.lang.Object`，无论哪一个类加载器去加载这个类，最终都会委派给Bootstrap ClassLoader去进行加载，所以我们自定义的Object类并不会被加载而导致系统中出现多个Object类。
+
+###  3.破坏双亲委托模型
+
+双亲委派模型并不是一个强制性的约束模型，而是Java设计者推荐给开发者的类加载实现方式。
+
+- 在JDK1.2发布之前，还没有双亲委托机制
+- 由模型自身缺陷所导致的
+- 用户对于程序动态性导致的，例如代码热替换，模块热部署
+
+
+
+### 4.自定义ClassLoader
+- 自定义需要加载的类
+
+  ```java
+  public class Jobs {
+          public void say() {
+          System.err.println("自定义加载器加载");
+      }
+  }
+  ```
+
+  自定义完成后需调用`javac Jobs.java`去生成对应的`Jobs.class`文件以用来加载。
+
+- 实现自定义的ClassLoader
+
+  ```java
+  import java.io.*;
+
+  public class DiskClassLoader extends ClassLoader {
+      private String path;
+
+      public DiskClassLoader(String path) {
+          this.path = path;
+      }
+
+      @Override
+      protected Class<?> findClass(String name) throws ClassNotFoundException {
+          Class clazz = null;
+          byte[] classData = loadClassData(name);
+          if (classData == null) {
+              throw new ClassNotFoundException();
+          } else {
+              //用来将获取的字节码数组转为class的实例
+              clazz = defineClass(name, classData, 0, classData.length);
+          }
+          return clazz;
+      }
+
+      /**
+       * 获得class文件的字节码数组
+       * @param name
+       * @return
+       */
+      private byte[] loadClassData(String name) {
+          String fileName = getFileName(name);
+          File file = new File(path, fileName);
+          System.err.println(fileName);
+          InputStream inputStream = null;
+          ByteArrayOutputStream byteArrayOutputStream = null;
+          try {
+              inputStream = new FileInputStream(file);
+              byteArrayOutputStream = new ByteArrayOutputStream();
+              byte[] buffer = new byte[1024];
+              int length = 0;
+              while ((length = inputStream.read(buffer)) != -1) {
+                  byteArrayOutputStream.write(buffer, 0, length);
+              }
+              return byteArrayOutputStream.toByteArray();
+          } catch (IOException e) {
+              e.printStackTrace();
+          } finally {
+              //读取流后需要关闭，以免造成内存泄露
+              try {
+                  if (inputStream != null) {
+                      inputStream.close();
+                  }
+              } catch (IOException e) {
+                  e.printStackTrace();
+              }
+              try {
+                  if (byteArrayOutputStream != null) {
+                      byteArrayOutputStream.close();
+                  }
+              } catch (IOException e) {
+                  e.printStackTrace();
+              }
+          }
+          return null;
+      }
+
+      private String getFileName(String name) {
+          int index = name.indexOf('.');
+          if (index == -1) {
+              return name + ".class";
+          } else {
+              return name.substring(index + 1) + ".class";
+          }
+      }
+  }
+
+  ```
+
+  自定义的ClassLoader需要读取对应Class的字节流数组，以便产生实例。注意不要忘记对流的关闭。
+
+- 使用自定义的ClassLoader去加载类
+
+  ```java
+  import java.lang.reflect.InvocationTargetException;
+  import java.lang.reflect.Method;
+
+  public class CustomClassLoaderTest{
+       public static void main(String[] args) {
+        DiskClassLoader diskClassLoader = new DiskClassLoader("需要加载的class的地址");
+          try {
+              //对class文件进行加载
+              Class c = diskClassLoader.loadClass("Jobs");
+              if (c != null) {
+                  try {
+                      Object object = c.newInstance();
+                      System.err.println(object.getClass().getClassLoader());
+                      Method method = c.getDeclaredMethod("say", null);
+                      method.invoke(object, null);
+                  } catch (IllegalAccessException e) {
+                      e.printStackTrace();
+                  } catch (InstantiationException e) {
+                      e.printStackTrace();
+                  } catch (NoSuchMethodException e) {
+                      e.printStackTrace();
+                  } catch (InvocationTargetException e) {
+                      e.printStackTrace();
+                  }
+              }
+          } catch (ClassNotFoundException e) {
+              e.printStackTrace();
+          }
+       }
+  }
+  ```
+
+  在对应的文件夹下是否已存在Jobs.java文件：
+
+  - ```java
+    //存在要加载的Java文件
+    sun.misc.Launcher$AppClassLoader@18b4aac2
+    自定义加载器加载
+    ```
+
+  - ```java
+    //不存在对应的Java文件
+    DiskClassLoader@d716361
+    自定义加载器加载
+    ```
+
+​          以上就为自定义ClassLoader的基本步骤，也是热修复框架中ClassLoader的雏形。]]></content>
+      <tags>
+        <tag>JVM</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>Android Dex文件学习</title>
     <url>/2019/09/24/Android-Dex%E6%96%87%E4%BB%B6%E5%AD%A6%E4%B9%A0/</url>
     <content><![CDATA[
@@ -62983,441 +63234,6 @@ public class Node {
     <url>/2018/04/16/Android-Study-Plan-XIV/</url>
     <content><![CDATA[# Android学习计划
 ##用过RxJava和RxAndroid吗？RxAndroid切换线程是怎么实现的？]]></content>
-      <tags>
-        <tag>Android</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>Android触摸事件分发</title>
-    <url>/2018/04/09/Android-%E8%A7%A6%E6%91%B8%E4%BA%8B%E4%BB%B6%E5%88%86%E5%8F%91/</url>
-    <content><![CDATA[
-# 1.触摸事件的类型
-
-对应的类是`MotionEvent`，主要有以下三个类型：
-
-- **ACTION_DOWN**：监听用户手指按下的操作，一次按下标志触摸事件的开始。
-- **ACTION_MOVE**：用户按压屏幕后，在抬起之前，如果移动的距离超过一定数值，就判定为移动事件。
-- **ACTION_UP**：监听用户手指离开屏幕的操作，一次抬起标志触摸事件的结束。
-- **ACTION_CANCEL**：当用户保持按下操作，并把手指移动到了控件外部局域时且父View处理事件触发。
-
-# 2.事件传递的三个阶段
-
-- **分发（Dispatch）**：事件的分发对应着`dispatchTouchEvent`方法，所有触摸事件由这个方法进行分发
-
-  ```java
-  public boolean dispatchTouchEvent(MotionEvent ev)
-  ```
-
-  在这个方法中，根据当前视图的需求来进行事件的分发给子视图还是直接消费不往下传递，返回`true`表示事件被消费，不往下传递。返回值为`super.dispatchTouchEvent`表示继续往下传递。
-
-- **拦截（Intercept）**:事件的拦截对应着`onInterceptTouchEvent`方法，这个事件只在ViewGroup及其子类中存在。
-
-  ```java
-  public boolean onInterceptTouchEvent(MotionEvent ev)
-  ```
-
-  根据具体的逻辑，返回`true`表示拦截该事件，不继续把事件分发给子视图，交由自身的`onTouchEvent`进行处理，返回值为`false或super.onInterceptTouchEvent`表示继续往下传递。
-
-- **消费（Consume）**：事件的消费对应着`onTouchEvent`方法
-
-  ```java
-  public boolean onTouchEvent(MotionEvent ev)
-  ```
-
-  返回值为`true`时，表示当前视图可以处理事件，不会向上传递给父视图；返回值为`false`表示当前视图不处理这个事件，事件传递给父视图的`onTouchevent`进行处理。
-
-> 在Android系统中，可以处理事件传递的类有以下三种：
->
-> - **Activity**：包含`dispatchTouchEvent`，`onTouchEvent`方法
-> - **ViewGroup**：包含`dispatchTouchEvent`，`onInterceptTouchEvent`，`onTouchEvent`
-> - **View**：包含`dispatchTouchEvent`，`onTouchEvent`方法
-
-# 3.View的事件传递机制
-
-View包括TextView，ImageView等子类，不包括ViewGroup。
-
-```java
-/**
-* Custom TextView with touchevent
-*/
-public class MyTextView extends AppCompatTextView {
-    public static final String TAG="MyTextView";
-    ...
-     @Override
-    public boolean dispatchTouchEvent(MotionEvent event) {
-        switch (event.getAction()) {
-            case MotionEvent.ACTION_DOWN:
-                Log.e(TAG,"dispatchTouchEvent_ACTION_DOWN");
-                break;
-            case MotionEvent.ACTION_UP:
-                Log.e(TAG,"dispatchTouchEvent_ACTION_UP");
-                break;
-            case MotionEvent.ACTION_MOVE:
-                Log.e(TAG,"dispatchTouchEvent_ACTION_MOVE");
-                break;
-            case MotionEvent.ACTION_CANCEL:
-                Log.e(TAG,"dispatchTouchEvent_ACTION_CANCEL");
-                break;
-        }
-        return super.dispatchTouchEvent(event);②
-    }
-
-    @Override
-    public boolean onTouchEvent(MotionEvent event) {
-        switch (event.getAction()) {
-            case MotionEvent.ACTION_DOWN:
-                Log.e(TAG,"onTouchEvent_ACTION_DOWN");
-                break;
-            case MotionEvent.ACTION_UP:
-                Log.e(TAG,"onTouchEvent_ACTION_UP");
-                break;
-            case MotionEvent.ACTION_MOVE:
-                Log.e(TAG,"onTouchEvent_ACTION_MOVE");
-                break;
-            case MotionEvent.ACTION_CANCEL:
-                Log.e(TAG,"onTouchEvent_ACTION_CANCEL");
-                break;
-        }
-        return super.onTouchEvent(event);④
-    }    
-}
-```
-
-```java
-public class MainActivity extends AppCompatActivity {
-    public static final String TAG="MainActivity";
-    MyTextView mtv;
-     @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
-        mtv= (MyTextView) findViewById(R.id.mtv);
-        mtv.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                Log.e(TAG,"MyTextView_onclick");
-            }
-        });
-
-        mtv.setOnTouchListener(new View.OnTouchListener() {
-            @Override
-            public boolean onTouch(View view, MotionEvent event) {
-                switch (event.getAction()) {
-                    case MotionEvent.ACTION_DOWN:
-                        Log.e(TAG,"MyTextView_onTouch_ACTION_DOWN");
-                        break;
-                    case MotionEvent.ACTION_UP:
-                        Log.e(TAG,"MyTextView_onTouch_ACTION_UP");
-                        break;
-                    case MotionEvent.ACTION_MOVE:
-                        Log.e(TAG,"MyTextView_onTouch_ACTION_MOVE");
-                        break;
-                    case MotionEvent.ACTION_CANCEL:
-                        Log.e(TAG,"MyTextView_onTouch_ACTION_CANCEL");
-                        break;
-                }
-                return false;③
-            }
-        });
-    }
- @Override
-    public void onUserInteraction() {
-        super.onUserInteraction();
-        Log.e(TAG,"onUserInteraction");
-    }
-
-    @Override
-    public boolean dispatchTouchEvent(MotionEvent event) {
-        switch (event.getAction()) {
-            case MotionEvent.ACTION_DOWN:
-                Log.e(TAG,"dispatchTouchEvent_ACTION_DOWN");
-                break;
-            case MotionEvent.ACTION_UP:
-                Log.e(TAG,"dispatchTouchEvent_ACTION_UP");
-                break;
-            case MotionEvent.ACTION_MOVE:
-                Log.e(TAG,"dispatchTouchEvent_ACTION_MOVE");
-                break;
-            case MotionEvent.ACTION_CANCEL:
-                Log.e(TAG,"dispatchTouchEvent_ACTION_CANCEL");
-                break;
-        }
-        return super.dispatchTouchEvent(event);①
-    }
-
-    @Override
-    public boolean onTouchEvent(MotionEvent event) {
-        switch (event.getAction()) {
-            case MotionEvent.ACTION_DOWN:
-                Log.e(TAG,"onTouchEvent_ACTION_DOWN");
-                break;
-            case MotionEvent.ACTION_UP:
-                Log.e(TAG,"onTouchEvent_ACTION_UP");
-                break;
-            case MotionEvent.ACTION_MOVE:
-                Log.e(TAG,"onTouchEvent_ACTION_MOVE");
-                break;
-            case MotionEvent.ACTION_CANCEL:
-                Log.e(TAG,"onTouchEvent_ACTION_CANCEL");
-                break;
-        }
-        return super.onTouchEvent(event);
-    }
-}
-```
-
-- 常规输出：(返回的都为默认值)
-
-  - 点击MyTextView区域
-
-  ```java
-   E/MainActivity: dispatchTouchEvent_ACTION_DOWN
-   E/MyTextView: dispatchTouchEvent_ACTION_DOWN
-   E/MainActivity: MyTextView_onTouch_ACTION_DOWN
-   E/MyTextView: onTouchEvent_ACTION_DOWN
-   E/MainActivity: dispatchTouchEvent_ACTION_UP
-   E/MyTextView: dispatchTouchEvent_ACTION_UP
-   E/MainActivity: MyTextView_onTouch_ACTION_UP
-   E/MyTextView: onTouchEvent_ACTION_UP
-   E/MainActivity: MyTextView_onclick
-  ```
-
-  - 点击MyTextView外部区域
-
-  ```java
-   E/MainActivity: dispatchTouchEvent_ACTION_DOWN
-   E/MainActivity: onTouchEvent_ACTION_DOWN
-   E/MainActivity: dispatchTouchEvent_ACTION_MOVE
-   E/MainActivity: onTouchEvent_ACTION_MOVE
-   E/MainActivity: dispatchTouchEvent_ACTION_UP
-   E/MainActivity: onTouchEvent_ACTION_UP
-  ```
-
-- ① **Activity的dispatchTouchEvent()**`return true;或return false;`
-
-  ```java
-   E/MainActivity: dispatchTouchEvent_ACTION_DOWN
-   E/MainActivity: dispatchTouchEvent_ACTION_MOVE
-   E/MainActivity: dispatchTouchEvent_ACTION_MOVE
-   E/MainActivity: dispatchTouchEvent_ACTION_UP
-  ```
-
-  > 不会再继续分发触摸事件，及后续控件的触摸事件都不会响应。
-
-- ② **View的dispatchTouchEvent()**`return true;`不会调用MyTextView的`onClick`事件
-
-  ```java
-   E/MainActivity: dispatchTouchEvent_ACTION_DOWN
-   E/MyTextView: dispatchTouchEvent_ACTION_DOWN
-   E/MainActivity: MyTextView_onTouch_ACTION_DOWN
-   E/MyTextView: onTouchEvent_ACTION_DOWN
-   E/MainActivity: dispatchTouchEvent_ACTION_UP
-   E/MyTextView: dispatchTouchEvent_ACTION_UP
-   E/MainActivity: MyTextView_onTouch_ACTION_UP
-   E/MyTextView: onTouchEvent_ACTION_UP
-  ```
-
-  **View的dispatchTouchEvent()**`return false;`只响应MyTextView的`ACTION_DOWN`事件，后续的处理由MainActivity的`onTouchEvent`执行
-
-  ```java
-   E/MainActivity: dispatchTouchEvent_ACTION_DOWN
-   E/MyTextView: dispatchTouchEvent_ACTION_DOWN
-   E/MainActivity: onTouchEvent_ACTION_DOWN
-   E/MainActivity: dispatchTouchEvent_ACTION_MOVE
-   E/MainActivity: onTouchEvent_ACTION_MOVE
-   E/MainActivity: dispatchTouchEvent_ACTION_UP
-   E/MainActivity: onTouchEvent_ACTION_UP
-  ```
-
-- ③**Activity中View的onTouch()**`return true;`不往下分发事件及不会调用到`onClick`事件
-
-  ```java
-   E/MainActivity: dispatchTouchEvent_ACTION_DOWN
-   E/MyTextView: dispatchTouchEvent_ACTION_DOWN
-   E/MainActivity: MyTextView_onTouch_ACTION_DOWN
-   E/MainActivity: dispatchTouchEvent_ACTION_UP
-   E/MyTextView: dispatchTouchEvent_ACTION_UP
-   E/MainActivity: MyTextView_onTouch_ACTION_UP
-  ```
-
-- ④ **View的onTouchEvent()**`return true;`不触发`onClick`事件
-
-  ```java
-   E/MainActivity: dispatchTouchEvent_ACTION_DOWN
-   E/MyTextView: dispatchTouchEvent_ACTION_DOWN
-   E/MainActivity: MyTextView_onTouch_ACTION_DOWN
-   E/MyTextView: onTouchEvent_ACTION_DOWN
-   E/MainActivity: dispatchTouchEvent_ACTION_UP
-   E/MyTextView: dispatchTouchEvent_ACTION_UP
-   E/MainActivity: MyTextView_onTouch_ACTION_UP
-   E/MyTextView: onTouchEvent_ACTION_UP
-  ```
-
-  **View的onTouchEvent()**`return false;`只响应MyTextView的`ACTION_DOWN`事件，后续的处理由MainActivity的`onTouchEvent`执行
-
-  ```java
-   E/MainActivity: dispatchTouchEvent_ACTION_DOWN
-   E/MyTextView: dispatchTouchEvent_ACTION_DOWN
-   E/MainActivity: MyTextView_onTouch_ACTION_DOWN
-   E/MyTextView: onTouchEvent_ACTION_DOWN
-   E/MainActivity: onTouchEvent_ACTION_DOWN
-   E/MainActivity: dispatchTouchEvent_ACTION_UP
-   E/MainActivity: onTouchEvent_ACTION_UP
-  ```
-
-{% fullimage /images/study_plan/Activity-View dispatch.png, View的事件传递,View的事件传递 %}
-
-> 总结：
->
-> - 触摸事件传递从dispatchTouchEvent开始，在不修改默认返回的数值时，事件会按照嵌套层次由外向内传递，到达最内层的View时，就由它的onTouchEvent处理。
->
-> - 若事件在传递过程中，返回参数设为true，则导致事件提前被消费，内层View无法处理事件
->
-> - View的事件触发顺序为先执行onTouch方法，最后执行onClick方法。onTouch返回false，则会响应onClick，否则事件不会继续传递。
->
-> - View的点击事件流程：
->
->   **Activity.dispatchTouchEvent() -> View.dispatchTouchEvent()->View.onTouch()->View.onTouchEvent()->View.onClick()**
-
-# 4.ViewGroup事件传递机制
-
-ViewGroup作为View的容器存在，ViewGroup包括LinearLayout，RelativeLayout等。
-
-```java
-/**
-* Custom ViewGroup with touchEvent
-*/
-public class MyRelativeLayout extends RelativeLayout {
-    public static final String TAG="MyRelativeLayout";
-    public MyRelativeLayout(Context context) {
-        super(context);
-    }
-
-    public MyRelativeLayout(Context context, AttributeSet attrs) {
-        super(context, attrs);
-    }
-
-    @Override
-    public boolean dispatchTouchEvent(MotionEvent event) {
-        switch (event.getAction()) {
-            case MotionEvent.ACTION_DOWN:
-                Log.e(TAG,"dispatchTouchEvent_ACTION_DOWN");
-                break;
-            case MotionEvent.ACTION_UP:
-                Log.e(TAG,"dispatchTouchEvent_ACTION_UP");
-                break;
-            case MotionEvent.ACTION_MOVE:
-                Log.e(TAG,"dispatchTouchEvent_ACTION_MOVE");
-                break;
-            case MotionEvent.ACTION_CANCEL:
-                Log.e(TAG,"dispatchTouchEvent_ACTION_CANCEL");
-                break;
-        }
-        return super.dispatchTouchEvent(event);
-    }
-
-    @Override
-    public boolean onInterceptTouchEvent(MotionEvent event) {
-        switch (event.getAction()) {
-            case MotionEvent.ACTION_DOWN:
-                Log.e(TAG,"onInterceptTouchEvent_ACTION_DOWN");
-                break;
-            case MotionEvent.ACTION_UP:
-                Log.e(TAG,"onInterceptTouchEvent_ACTION_UP");
-                break;
-            case MotionEvent.ACTION_MOVE:
-                Log.e(TAG,"onInterceptTouchEvent_ACTION_MOVE");
-                break;
-            case MotionEvent.ACTION_CANCEL:
-                Log.e(TAG,"onInterceptTouchEvent_ACTION_CANCEL");
-                break;
-        }
-        return super.onInterceptTouchEvent(event);⑥
-    }
-
-    @Override
-    public boolean onTouchEvent(MotionEvent event) {
-        switch (event.getAction()) {
-            case MotionEvent.ACTION_DOWN:
-                Log.e(TAG,"onTouchEvent_ACTION_DOWN");
-                break;
-            case MotionEvent.ACTION_UP:
-                Log.e(TAG,"onTouchEvent_ACTION_UP");
-                break;
-            case MotionEvent.ACTION_MOVE:
-                Log.e(TAG,"onTouchEvent_ACTION_MOVE");
-                break;
-            case MotionEvent.ACTION_CANCEL:
-                Log.e(TAG,"onTouchEvent_ACTION_CANCEL");
-                break;
-        }
-        return super.onTouchEvent(event);
-    }
-}
-```
-
-- 常规模式（全为默认值）
-
-  ```log
-   E/MainActivity: dispatchTouchEvent_ACTION_DOWN
-   E/MyRelativeLayout: dispatchTouchEvent_ACTION_DOWN
-   E/MyRelativeLayout: onInterceptTouchEvent_ACTION_DOWN
-   E/MyTextView: dispatchTouchEvent_ACTION_DOWN
-   E/MainActivity: MyTextView_onTouch_ACTION_DOWN
-   E/MyTextView: onTouchEvent_ACTION_DOWN
-   E/MainActivity: dispatchTouchEvent_ACTION_UP
-   E/MyRelativeLayout: dispatchTouchEvent_ACTION_UP
-   E/MyRelativeLayout: onInterceptTouchEvent_ACTION_UP
-   E/MyTextView: dispatchTouchEvent_ACTION_UP
-   E/MainActivity: MyTextView_onTouch_ACTION_UP
-   E/MyTextView: onTouchEvent_ACTION_UP
-   E/MainActivity: MyTextView_onclick
-  ```
-
-- ViewGroup.onInterceptTouchEvent()返回true
-
-  ```java
-   E/MainActivity: dispatchTouchEvent_ACTION_DOWN
-   E/MyRelativeLayout: dispatchTouchEvent_ACTION_DOWN
-   E/MyRelativeLayout: onInterceptTouchEvent_ACTION_DOWN
-   E/MainActivity: MyRelativeLayoutonTouch_ACTION_DOWN
-   E/MyRelativeLayout: onTouchEvent_ACTION_DOWN
-   E/MainActivity: dispatchTouchEvent_ACTION_UP
-   E/MyRelativeLayout: dispatchTouchEvent_ACTION_UP
-   E/MainActivity: MyRelativeLayout_onTouch_ACTION_UP
-   E/MyRelativeLayout: onTouchEvent_ACTION_UP
-  ```
-
-{% fullimage /images/study_plan/Activity-ViewGroup-View dispatch.png, View的事件传递,View的事件传递 %}
-
-> 总结:
->
-> - 对于一个包裹在ViewGroup中的View，点击发生的触摸流程为：
->
->   **Activity.dispatchTouchEvent()->ViewGroup.dispatchTouchEvent()->ViewGroup.onInterceptTouchEvent()->View.dispatchTouchEvent()->View.onTouch()->View.onTouchEvent()->View.onClick()**
->
-> - dispatchTouchEvent事件分发逻辑如下：
->
->  如果 return true，事件会分发给当前 View 并由 dispatchTouchEvent 方法进行消费，同时事件会停止向下传递；
->  如果 return false，事件分发分为两种情况：
->  1.如果当前 View 获取的事件直接来自 Activity，则会将事件返回给 Activity 的 onTouchEvent 进行消费；
->  2.如果当前 View 获取的事件来自外层父控件，则会将事件返回给父 View 的  onTouchEvent 进行消费。
->
-> - onInterceptTouchEvent 的事件拦截逻辑如下：
->    如果 onInterceptTouchEvent 返回 true，则表示将事件进行拦截，并将拦截到的事件交由当前 View 的 onTouchEvent 进行处理；
->     如果 onInterceptTouchEvent 返回 false或super.onInterceptTouchEvent(ev)，则表示将事件放行，当前 View 上的事件会被传递到子 View 上，再由子 View 的 dispatchTouchEvent 来开始这个事件的分发；
-> - onTouchEvent 的事件响应逻辑如下：
->      如果事件传递到当前 View 的 onTouchEvent 方法，而该方法返回了 false，那么这个事件会从当前 View 向上传递，并且都是由上层 View 的 onTouchEvent 来接收，如果传递到上面的 onTouchEvent 也返回 false，这个事件就会“消失”，而且接收不到下一次事件。
->      如果返回了 true 则会接收并消费该事件。
->      如果返回 super.onTouchEvent(ev) 默认处理事件的逻辑和返回 false 时相同。
-
-# 5.源码分析
-
-//TODO
-
-# 6.实例分析
-
-]]></content>
       <tags>
         <tag>Android</tag>
       </tags>

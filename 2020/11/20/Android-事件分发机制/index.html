@@ -169,7 +169,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      5.8k 字
+      9.4k 字
     </span>
   
 
@@ -179,7 +179,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      101
+      152
        分钟
     </span>
   
@@ -220,6 +220,7 @@
 <li>交付给对应的Window消费该事件。</li>
 </ol>
 </blockquote>
+<p><img src="/images/真·事件分发" srcset="/img/loading.gif" alt="input"></p>
 <h2 id="硬件中断"><a href="#硬件中断" class="headerlink" title="硬件中断"></a>硬件中断</h2><p>物理设备将数据发送给内核是通过<code>设备驱动</code>传输的，在<code>dev/input/</code>目录下有几个设备文件<code>eventX</code>。</p>
 <p>其中<code>event0</code>对应的就是触摸屏，当触摸屏的驱动被挂载后，驱动程序就会进行初始化。</p>
 <p>当触发对应的硬件中断后，就会调用对应的处理方法，把对应事件写到<code>设备节点(/dev/input/event0)</code>中.</p>
@@ -366,11 +367,6 @@ InputDispatcher::InputDispatcher(<span class="hljs-keyword">const</span> sp&lt;I
 
     policy-&gt;getDispatcherConfiguration(&amp;mConfig);
 &#125;</code></pre>
-<p>主要执行了以下两步：</p>
-<ol>
-<li>新建Looper对象</li>
-<li></li>
-</ol>
 <h5 id="InputReader"><a href="#InputReader" class="headerlink" title="InputReader"></a>InputReader</h5><pre><code class="hljs c++"><span class="hljs-comment">//frameworks/native/services/inputflinger/InputReader.cpp</span>
 InputReader::InputReader(<span class="hljs-keyword">const</span> sp&lt;EventHubInterface&gt;&amp; eventHub,
         <span class="hljs-keyword">const</span> sp&lt;InputReaderPolicyInterface&gt;&amp; policy,
@@ -426,14 +422,28 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
 <pre><code class="hljs c++"><span class="hljs-comment">//frameworks/native/services/inputflinger/InputManager.cpp</span>
 <span class="hljs-function"><span class="hljs-keyword">status_t</span> <span class="hljs-title">InputManager::start</span><span class="hljs-params">()</span> </span>&#123;
   <span class="hljs-comment">//启动InputDispatcherThread</span>
-    <span class="hljs-keyword">status_t</span> result = mDispatcherThread-&gt;run(<span class="hljs-string">"InputDispatcher"</span>, PRIORITY_URGENT_DISPLAY)
+    <span class="hljs-keyword">status_t</span> result = mDispatcherThread-&gt;<span class="hljs-built_in">run</span>(<span class="hljs-string">"InputDispatcher"</span>, PRIORITY_URGENT_DISPLAY)
   <span class="hljs-comment">//启动InputReaderThread</span>
-    result = mReaderThread-&gt;run(<span class="hljs-string">"InputReader"</span>, PRIORITY_URGENT_DISPLAY);
+    result = mReaderThread-&gt;<span class="hljs-built_in">run</span>(<span class="hljs-string">"InputReader"</span>, PRIORITY_URGENT_DISPLAY);
 
     <span class="hljs-keyword">return</span> OK;
 &#125;</code></pre>
 <p><code>IMS</code>启动，会带着<code>InputDispatcherThread</code>和<code>InputReaderThread</code>一起启动。</p>
-<h4 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h4><p><img src="/images/event1_4.png" srcset="/img/loading.gif" alt="img"></p>
+<h4 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h4><p>IMS启动过程重点在于Native的初始化，分别创建以下对象：</p>
+<ul>
+<li><p><strong>EventHub</strong></p>
+<p>监听并记录<code>/dev/input</code>的变化</p>
+</li>
+<li><p><strong>InputManager</strong></p>
+<p>创建<code>InputReader</code>和<code>InputDispatcher</code>对象</p>
+</li>
+</ul>
+<p>初始化完毕上述对象后，然后启动以下线程：</p>
+<ul>
+<li><strong>InputReaderThread</strong>：从<code>EventHub</code>取出事件并处理，再转发给<code>InputDispatcher</code></li>
+<li><strong>InputDispatcherThread</strong>：接收来自<code>InputReader</code>的事件，并派发事件到合适的窗口(window)去处理</li>
+</ul>
+<p><img src="/images/event1_4.png" srcset="/img/loading.gif" alt="img"></p>
 <h3 id="内核事件转发APP进程过程"><a href="#内核事件转发APP进程过程" class="headerlink" title="内核事件转发APP进程过程"></a>内核事件转发APP进程过程</h3><p><code>IMS</code>启动之后，<code>InputDispatcherThread</code>与<code>InputReaderThread</code>随之启动。</p>
 <h4 id="InputReaderThread"><a href="#InputReaderThread" class="headerlink" title="InputReaderThread"></a>InputReaderThread</h4><pre><code class="hljs c++"><span class="hljs-comment">//frameworks/native/services/inputflinger/InputReader.cpp</span>
 <span class="hljs-function"><span class="hljs-keyword">bool</span> <span class="hljs-title">InputReaderThread::threadLoop</span><span class="hljs-params">()</span> </span>&#123;
@@ -458,12 +468,12 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
     &#125; <span class="hljs-comment">// release lock</span>
     ...
    <span class="hljs-comment">//处理完毕后发送到 InputDispatcher</span>
-    mQueuedListener-&gt;flush();
+    mQueuedListener-&gt;<span class="hljs-built_in">flush</span>();
 &#125;</code></pre>
 <h5 id="EventHub-gt-getEvents-获取事件"><a href="#EventHub-gt-getEvents-获取事件" class="headerlink" title="EventHub-&gt;getEvents() 获取事件"></a>EventHub-&gt;getEvents() 获取事件</h5><pre><code class="hljs c++"><span class="hljs-comment">//frameworks/native/services/inputflinger/EventHub.cpp</span>
-<span class="hljs-function"><span class="hljs-keyword">size_t</span> <span class="hljs-title">EventHub::getEvents</span><span class="hljs-params">(<span class="hljs-keyword">int</span> timeoutMillis, RawEvent* buffer, <span class="hljs-keyword">size_t</span> bufferSize)</span> </span>&#123;
+<span class="hljs-function"><span class="hljs-keyword">size_t</span> <span class="hljs-title">EventHub::getEvents</span><span class="hljs-params">(<span class="hljs-keyword">int</span> timeoutMillis, RawEvent* <span class="hljs-built_in">buffer</span>, <span class="hljs-keyword">size_t</span> bufferSize)</span> </span>&#123;
   <span class="hljs-comment">//原始事件构造</span>
-    RawEvent* event = buffer;
+    RawEvent* event = <span class="hljs-built_in">buffer</span>;
     <span class="hljs-keyword">size_t</span> capacity = bufferSize;  
   <span class="hljs-keyword">for</span> (;;) &#123;<span class="hljs-comment">//开启循环</span>
     ...
@@ -519,7 +529,7 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
   &#125;
   ...
       <span class="hljs-comment">// 返回读取的事件个数</span>
-    <span class="hljs-keyword">return</span> event - buffer;
+    <span class="hljs-keyword">return</span> event - <span class="hljs-built_in">buffer</span>;
 &#125;</code></pre>
 <p><code>getEvents()</code>采用<code>INotify + epoll</code>监听<code>/dev/input/</code>目录下的设备节点，再转换<code>deviceId + input_event</code>为<code>RawEvent</code></p>
 <pre><code class="hljs c++"><span class="hljs-comment">// frameworks/native/services/inputflinger/EventHub.h</span>
@@ -629,12 +639,12 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
 <span class="hljs-comment">//获取输入设备</span>
     InputDevice* device = mDevices.valueAt(deviceIndex);
 
-    device-&gt;process(rawEvents, count);
+    device-&gt;<span class="hljs-built_in">process</span>(rawEvents, count);
 &#125;</code></pre>
 <pre><code class="hljs c++"><span class="hljs-comment">//frameworks/native/services/inputflinger/InputReader.cpp</span>
 <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">InputDevice::process</span><span class="hljs-params">(<span class="hljs-keyword">const</span> RawEvent* rawEvents, <span class="hljs-keyword">size_t</span> count)</span> </span>&#123;
 
-    <span class="hljs-keyword">size_t</span> numMappers = mMappers.size();
+    <span class="hljs-keyword">size_t</span> numMappers = mMappers.<span class="hljs-built_in">size</span>();
     <span class="hljs-keyword">for</span> (<span class="hljs-keyword">const</span> RawEvent* rawEvent = rawEvents; count != <span class="hljs-number">0</span>; rawEvent++) &#123;
 
         <span class="hljs-keyword">if</span> (mDropUntilNextSync) &#123;
@@ -645,7 +655,7 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
             <span class="hljs-keyword">for</span> (<span class="hljs-keyword">size_t</span> i = <span class="hljs-number">0</span>; i &lt; numMappers; i++) &#123;
                 InputMapper* mapper = mMappers[i];
               <span class="hljs-comment">//获取mapper继续执行process任务</span>
-                mapper-&gt;process(rawEvent);
+                mapper-&gt;<span class="hljs-built_in">process</span>(rawEvent);
             &#125;
         &#125;
         --count;
@@ -653,15 +663,15 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
 &#125;</code></pre>
 <p>以触摸屏为例，<code>mapper</code>指向<code>MultiTouchInputMapper</code></p>
 <pre><code class="hljs c++"><span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">MultiTouchInputMapper::process</span><span class="hljs-params">(<span class="hljs-keyword">const</span> RawEvent* rawEvent)</span> </span>&#123;
-    TouchInputMapper::process(rawEvent);
+    TouchInputMapper::<span class="hljs-built_in">process</span>(rawEvent);
 
-    mMultiTouchMotionAccumulator.process(rawEvent);
+    mMultiTouchMotionAccumulator.<span class="hljs-built_in">process</span>(rawEvent);
 &#125;
 
 <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">TouchInputMapper::process</span><span class="hljs-params">(<span class="hljs-keyword">const</span> RawEvent* rawEvent)</span> </span>&#123;
-    mCursorButtonAccumulator.process(rawEvent);
-    mCursorScrollAccumulator.process(rawEvent);
-    mTouchButtonAccumulator.process(rawEvent);
+    mCursorButtonAccumulator.<span class="hljs-built_in">process</span>(rawEvent);
+    mCursorScrollAccumulator.<span class="hljs-built_in">process</span>(rawEvent);
+    mTouchButtonAccumulator.<span class="hljs-built_in">process</span>(rawEvent);
 
     <span class="hljs-keyword">if</span> (rawEvent-&gt;type == EV_SYN &amp;&amp; rawEvent-&gt;code == SYN_REPORT) &#123;
         sync(rawEvent-&gt;when);
@@ -718,13 +728,13 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
 <p>将触摸事件放入<code>mArgsQueue</code>，此时事件加工完成。</p>
 <h5 id="QueuedInputListener-flush-发送事件"><a href="#QueuedInputListener-flush-发送事件" class="headerlink" title="QueuedInputListener.flush() 发送事件"></a>QueuedInputListener.flush() 发送事件</h5><pre><code class="hljs c++"><span class="hljs-comment">//frameworks/native/services/inputflinger/InputListener.cpp</span>
 <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">QueuedInputListener::flush</span><span class="hljs-params">()</span> </span>&#123;
-    <span class="hljs-keyword">size_t</span> count = mArgsQueue.size();
+    <span class="hljs-keyword">size_t</span> count = mArgsQueue.<span class="hljs-built_in">size</span>();
     <span class="hljs-keyword">for</span> (<span class="hljs-keyword">size_t</span> i = <span class="hljs-number">0</span>; i &lt; count; i++) &#123;
         NotifyArgs* args = mArgsQueue[i];
         args-&gt;notify(mInnerListener);
         <span class="hljs-keyword">delete</span> args;
     &#125;
-    mArgsQueue.clear();
+    mArgsQueue.<span class="hljs-built_in">clear</span>();
 &#125;</code></pre>
 <p><code>NotifyArgs</code>主要有以下几类：</p>
 <ul>
@@ -836,7 +846,7 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
 <li><code>processEventsLocked()</code>：对<code>RawEvent</code>进行加工，转换成<code>NotifyMotionArgs</code></li>
 <li><code>flush()</code>：将事件<code>NotifyMotionArgs</code>发送到<code>InputDispatcher</code>进行处理，最后转换成<code>MotionEntry</code>并写入到<code>InputDispatcher.mInBoundQueue</code></li>
 </ul>
-<p>//TODO 流程图</p>
+<p><img src="/images/InputReaderThread.jpg" srcset="/img/loading.gif" alt="InputReaderThread"></p>
 <h4 id="InputDispatcherThread"><a href="#InputDispatcherThread" class="headerlink" title="InputDispatcherThread"></a>InputDispatcherThread</h4><pre><code class="hljs c++"><span class="hljs-comment">// frameworks/native/services/inputflinger/InputDispatcher.cpp</span>
 <span class="hljs-function"><span class="hljs-keyword">bool</span> <span class="hljs-title">InputDispatcherThread::threadLoop</span><span class="hljs-params">()</span> </span>&#123;
     mDispatcher-&gt;dispatchOnce();
@@ -976,7 +986,7 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
 
     pokeUserActivityLocked(eventEntry);
 
-    <span class="hljs-keyword">for</span> (<span class="hljs-keyword">size_t</span> i = <span class="hljs-number">0</span>; i &lt; inputTargets.size(); i++) &#123;
+    <span class="hljs-keyword">for</span> (<span class="hljs-keyword">size_t</span> i = <span class="hljs-number">0</span>; i &lt; inputTargets.<span class="hljs-built_in">size</span>(); i++) &#123;
         <span class="hljs-keyword">const</span> InputTarget&amp; inputTarget = inputTargets.itemAt(i);
 
         <span class="hljs-keyword">ssize_t</span> connectionIndex = getConnectionIndexLocked(inputTarget.inputChannel);
@@ -1054,7 +1064,7 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
                 <span class="hljs-comment">// We don't want the dispatch target to know.</span>
                 <span class="hljs-keyword">if</span> (dispatchEntry-&gt;targetFlags &amp; InputTarget::FLAG_ZERO_COORDS) &#123;
                     <span class="hljs-keyword">for</span> (<span class="hljs-keyword">uint32_t</span> i = <span class="hljs-number">0</span>; i &lt; motionEntry-&gt;pointerCount; i++) &#123;
-                        scaledCoords[i].clear();
+                        scaledCoords[i].<span class="hljs-built_in">clear</span>();
                     &#125;
                     usingCoords = scaledCoords;
                 &#125;
@@ -1135,11 +1145,11 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
 <p>最终通过<code>InputChannel</code>发送包装好的触摸事件</p>
 <h5 id="总结-2"><a href="#总结-2" class="headerlink" title="总结"></a>总结</h5><p><img src="/images/event1_5.png" srcset="/img/loading.gif" alt="img"></p>
 <p><code>InputReader</code>发送触摸事件到<code>InputDispatcher</code>，通过<code>findFocusedWindowTargetsLocked()</code>寻找触摸事件对应的窗口，如果没有找到就使用第一个<code>Window</code>。把结果写入<code>inputTargets</code>中，然后通过<code>publishMotionEvent</code>分发触摸事件，再通过<code>InputChannel</code>发送消息到UI线程。</p>
-<p>//TOOD 流程图</p>
+<p><img src="/images/InputDispatcherThread.jpg" srcset="/img/loading.gif" alt="InputDispatche"></p>
 <h3 id="触摸事件发送至Activity"><a href="#触摸事件发送至Activity" class="headerlink" title="触摸事件发送至Activity"></a>触摸事件发送至Activity</h3><p><code>InputDispatcher</code>负责分发触摸事件，最后通过<code>InputChannel-&gt;sendMessage()</code>发出消息</p>
 <pre><code class="hljs c++"><span class="hljs-comment">//</span>
 <span class="hljs-function"><span class="hljs-keyword">status_t</span> <span class="hljs-title">InputChannel::sendMessage</span><span class="hljs-params">(<span class="hljs-keyword">const</span> InputMessage* msg)</span> </span>&#123;
-    <span class="hljs-keyword">const</span> <span class="hljs-keyword">size_t</span> msgLength = msg-&gt;size();
+    <span class="hljs-keyword">const</span> <span class="hljs-keyword">size_t</span> msgLength = msg-&gt;<span class="hljs-built_in">size</span>();
     InputMessage cleanMsg;
     msg-&gt;getSanitizedCopy(&amp;cleanMsg);
     <span class="hljs-keyword">ssize_t</span> nWrite;
@@ -1244,13 +1254,14 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
         mService.mInputManager.registerInputChannel(mInputChannel, mInputWindowHandle);
     &#125;</code></pre>
 <p><strong>点到为止</strong></p>
+<p><img src="/images/v2-1e1273f15cfdd7b81aa7a2cb819d8890_1440w.jpg" srcset="/img/loading.gif" alt="InputChannel对应关系"></p>
 <p><code>addToDisplay()</code>主要处理两部分内容</p>
 <ul>
 <li><p>创建Socket pair，作为<code>InputChannel</code></p>
 <p><code>socket服务端</code>保存在<code>WidnowState</code>中的<code>mInputChannel</code>中</p>
 <p><code>socket客户端</code>通过<code>binder</code>传到<code>ViewRootImpl</code>中的<code>mInputChannel</code></p>
 </li>
-<li><p>通过<code>IMS.registerInputChannel()</code>注册<code>InputChannel</code>，监听socket服务端</p>
+<li><p>通过<code>IMS.registerInputChannel()</code>注册<code>InputChannel</code>，监听socket服务端，收到消息后回调<code>InputDispatcher::handleReceiveCallback()</code></p>
 </li>
 </ul>
 <h5 id="WindowInputEventReceiver"><a href="#WindowInputEventReceiver" class="headerlink" title="WindowInputEventReceiver"></a>WindowInputEventReceiver</h5><pre><code class="hljs java"><span class="hljs-comment">//ViewRootImpl.java</span>
@@ -1305,7 +1316,7 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
     <span class="hljs-keyword">status_t</span> status = receiver-&gt;initialize();
 
     receiver-&gt;incStrong(gInputEventReceiverClassInfo.clazz); <span class="hljs-comment">// retain a reference for the object</span>
-    <span class="hljs-keyword">return</span> <span class="hljs-keyword">reinterpret_cast</span>&lt;jlong&gt;(receiver.get());
+    <span class="hljs-keyword">return</span> <span class="hljs-keyword">reinterpret_cast</span>&lt;jlong&gt;(receiver.<span class="hljs-built_in">get</span>());
 &#125;</code></pre>
 <pre><code class="hljs c++"><span class="hljs-function"><span class="hljs-keyword">status_t</span> <span class="hljs-title">NativeInputEventReceiver::initialize</span><span class="hljs-params">()</span> </span>&#123;
     setFdEvents(ALOOPER_EVENT_INPUT);
@@ -1367,6 +1378,9 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
 <span class="hljs-function"><span class="hljs-keyword">status_t</span> <span class="hljs-title">NativeInputEventReceiver::consumeEvents</span><span class="hljs-params">(JNIEnv* env,
         <span class="hljs-keyword">bool</span> consumeBatches, <span class="hljs-keyword">nsecs_t</span> frameTime, <span class="hljs-keyword">bool</span>* outConsumedBatch)</span> </span>&#123;
   <span class="hljs-keyword">for</span> (;;) &#123;
+        <span class="hljs-keyword">status_t</span> status = mInputConsumer.consume(&amp;mInputEventFactory,
+                consumeBatches, frameTime, &amp;seq, &amp;inputEvent, &amp;displayId);
+    ...
         <span class="hljs-keyword">if</span> (!skipCallbacks) &#123;
 
             jobject inputEventObj;
@@ -1395,7 +1409,7 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
                     ALOGD(<span class="hljs-string">"channel '%s' ~ Dispatching input event."</span>, getInputChannelName().c_str());
                 &#125;
               <span class="hljs-comment">//回调到Java层的 dispatchInputEvent() </span>
-                env-&gt;CallVoidMethod(receiverObj.get(),
+                env-&gt;CallVoidMethod(receiverObj.<span class="hljs-built_in">get</span>(),
                         gInputEventReceiverClassInfo.dispatchInputEvent, seq, inputEventObj,
                         displayId);
                 <span class="hljs-keyword">if</span> (env-&gt;ExceptionCheck()) &#123;
@@ -1413,6 +1427,27 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
   &#125;
   
 &#125;</code></pre>
+<pre><code class="hljs c++"><span class="hljs-comment">//frameworks/native/libs/input/InputTransport.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">status_t</span> <span class="hljs-title">InputConsumer::consume</span><span class="hljs-params">(InputEventFactoryInterface* factory,
+        <span class="hljs-keyword">bool</span> consumeBatches, <span class="hljs-keyword">nsecs_t</span> frameTime, <span class="hljs-keyword">uint32_t</span>* outSeq, InputEvent** outEvent,
+        <span class="hljs-keyword">int32_t</span>* displayId)</span> </span>&#123;
+    <span class="hljs-keyword">while</span> (!*outEvent) &#123;
+            mMsgDeferred = <span class="hljs-literal">false</span>;
+        &#125; <span class="hljs-keyword">else</span> &#123;
+            <span class="hljs-comment">// 收到新消息</span>
+            <span class="hljs-keyword">status_t</span> result = mChannel-&gt;receiveMessage(&amp;mMsg);
+            <span class="hljs-keyword">if</span> (result) &#123;
+                <span class="hljs-keyword">if</span> (consumeBatches || result != WOULD_BLOCK) &#123;
+                    result = consumeBatch(factory, frameTime, outSeq, outEvent, displayId);
+                    <span class="hljs-keyword">if</span> (*outEvent) &#123;
+                        <span class="hljs-keyword">break</span>;
+                    &#125;
+                &#125;
+                <span class="hljs-keyword">return</span> result;
+            &#125;
+        &#125;  
+  
+&#125;</code></pre>
 <p><code>WindowInputEventReceiver</code>主要执行了以下几步：</p>
 <ul>
 <li>初始化了<code>NativeInputReceiver</code>，调用了<code>sendFdEvents()</code>发出了消息</li>
@@ -1420,7 +1455,8 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
 <li>向Looper的<code>mEpollFd</code>添加了监听，只要收到触摸事件的消息就会调用到<code>callback-&gt;handleEvent()</code></li>
 <li><code>NativeInputReceiver::handleEvent()</code>主要回调到Java层的<code>dispatchInputEvent()</code>且携带<code>InputEvent</code>回去(在触摸场景下，实际为<code>MotionEvent</code>)。</li>
 </ul>
-<pre><code class="hljs java"><span class="hljs-comment">//InputEventReceiver.java</span>
+<p>//TODO 流程图</p>
+<h4 id="回调到Activity"><a href="#回调到Activity" class="headerlink" title="回调到Activity"></a>回调到Activity</h4><pre><code class="hljs java"><span class="hljs-comment">//InputEventReceiver.java</span>
 <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">dispatchInputEvent</span><span class="hljs-params">(<span class="hljs-keyword">int</span> seq, InputEvent event, <span class="hljs-keyword">int</span> displayId)</span> </span>&#123;
         mSeqMap.put(event.getSequenceNumber(), seq);
         onInputEvent(event, displayId);
@@ -1480,6 +1516,7 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
             handleWindowFocusChanged();
             stage.deliver(q);
         &#125; <span class="hljs-keyword">else</span> &#123;
+          <span class="hljs-comment">//事件分发完成后 执行</span>
             finishInputEvent(q);
         &#125;
     &#125;
@@ -1549,7 +1586,546 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
         <span class="hljs-keyword">return</span> onTouchEvent(ev);
     &#125;</code></pre>
 <p>所以经过一系列操作 让用户的屏幕触摸操作，最终走到了<code>Activity.dispatchTouchEvent()</code></p>
-<h2 id="事件分发"><a href="#事件分发" class="headerlink" title="事件分发"></a>事件分发</h2><h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="http://gityuan.com/2016/12/11/input-reader/" target="_blank" rel="noopener">InputReaderThread</a></p>
+<p><img src="/images/触发Activity触摸事件" srcset="/img/loading.gif" alt="img"></p>
+<h2 id="事件分发"><a href="#事件分发" class="headerlink" title="事件分发"></a>事件分发</h2><h3 id="MotionEvent"><a href="#MotionEvent" class="headerlink" title="MotionEvent"></a>MotionEvent</h3><blockquote>
+<p>当用户点击View或ViewGroup的时候，将会产生一个事件对象，就是<code>MotionEvent</code>。</p>
+</blockquote>
+<p><code>MotionEvent</code>记录了<code>事件的类型(action)、触摸的位置(x,y)以及触摸的时间等</code>。</p>
+<p>事件的类型主要分为以下几种：</p>
+<ul>
+<li><code>ACTION_DOWN</code>：监听用户手指按下的操作，一次按下标志触摸事件的开始。</li>
+<li><code>ACTION_MOVE</code>：用户按压屏幕后，在抬起之前，如果移动的距离超过一定数值，就判定为移动事件。</li>
+<li><code>ACTION_UP</code>：监听用户手指离开屏幕的操作，一次抬起标志触摸事件的结束。</li>
+<li><code>ACTION_CANCEL</code>：当用户保持按下操作，并把手指移动到了控件外部区域时且父View处理事件触发。</li>
+</ul>
+<p>用户手指触摸到屏幕到离开屏幕可能产生的事件序列如下：</p>
+<p><code>ACTION_DOWN</code> -&gt; <code>ACTION_MOVE</code> -&gt; <code>ACTION_MOVE</code> -&gt; … <code>ACTION_MOVE</code> -&gt; <code>ACTION_UP</code></p>
+<p><img src="/images/事件分发顺序.jpg" srcset="/img/loading.gif" alt="事件分发顺序"></p>
+<h3 id="MotionEvent产生时机"><a href="#MotionEvent产生时机" class="headerlink" title="MotionEvent产生时机"></a>MotionEvent产生时机</h3><p>在<code>ViewRootImpl,setView()</code>时，创建了<code>WindowInputReceiver</code>，当IMS写入事件(通过EventHub监听到<code>/dev/input/</code>)，通过一系列的操作回调到<code>dispatchInputEvent()</code>，最后走到了<code>processPointerEvent()</code>，此时把从Native层传递过来的<code>InputEvent</code>强转成<code>MotionEvent</code>，然后继续向下传递。</p>
+<h3 id="MotionEvent传递顺序-事件分发顺序"><a href="#MotionEvent传递顺序-事件分发顺序" class="headerlink" title="MotionEvent传递顺序-事件分发顺序"></a>MotionEvent传递顺序-事件分发顺序</h3><p>事件分发本质就是<code>MotionEvent</code>的传递过程。</p>
+<pre><code class="hljs java"><span class="hljs-comment">//ViewRootImpl.java</span>
+        <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">int</span> <span class="hljs-title">processPointerEvent</span><span class="hljs-params">(QueuedInputEvent q)</span> </span>&#123;
+            <span class="hljs-keyword">final</span> MotionEvent event = (MotionEvent)q.mEvent;
+
+            mAttachInfo.mUnbufferedDispatchRequested = <span class="hljs-keyword">false</span>;
+            mAttachInfo.mHandlingPointerEvent = <span class="hljs-keyword">true</span>;
+          <span class="hljs-comment">//向下分发到View</span>
+            <span class="hljs-keyword">boolean</span> handled = mView.dispatchPointerEvent(event);
+  
+            <span class="hljs-keyword">return</span> handled ? FINISH_HANDLED : FORWARD;
+        &#125;</code></pre>
+<p><code>mView</code>就是<code>DecorView</code></p>
+<pre><code class="hljs java"><span class="hljs-comment">//DecorView.java</span>
+没有实现对应方法。。。
+向上寻找父类
+  
+<span class="hljs-comment">//View.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">dispatchPointerEvent</span><span class="hljs-params">(MotionEvent event)</span> </span>&#123;
+        <span class="hljs-keyword">if</span> (event.isTouchEvent()) &#123;
+            <span class="hljs-keyword">return</span> dispatchTouchEvent(event);
+        &#125; <span class="hljs-keyword">else</span> &#123;
+            <span class="hljs-keyword">return</span> dispatchGenericMotionEvent(event);
+        &#125;
+    &#125;
+  
+
+<span class="hljs-comment">//DecorView.java</span>
+    <span class="hljs-meta">@Override</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">dispatchTouchEvent</span><span class="hljs-params">(MotionEvent ev)</span> </span>&#123;
+        <span class="hljs-keyword">final</span> Window.Callback cb = mWindow.getCallback();
+        <span class="hljs-keyword">return</span> cb != <span class="hljs-keyword">null</span> &amp;&amp; !mWindow.isDestroyed() &amp;&amp; mFeatureId &lt; <span class="hljs-number">0</span>
+                ? cb.dispatchTouchEvent(ev) : <span class="hljs-keyword">super</span>.dispatchTouchEvent(ev);
+    &#125;</code></pre>
+<p>此时<code>mWindow.getCallback()</code>指的就是<code>Activity</code></p>
+<h4 id="Activity事件分发"><a href="#Activity事件分发" class="headerlink" title="Activity事件分发"></a>Activity事件分发</h4><pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">dispatchTouchEvent</span><span class="hljs-params">(MotionEvent ev)</span> </span>&#123;
+    <span class="hljs-keyword">if</span> (ev.getAction() == MotionEvent.ACTION_DOWN) &#123;
+      <span class="hljs-comment">//在此处可以监听到 用户触摸屏幕的操作</span>
+        onUserInteraction();
+    &#125;
+   <span class="hljs-comment">//若dispatchTouchEvent返回true，事件到此结束，返回false，继续向下传递</span>
+  <span class="hljs-comment">//对应PhoneWindow</span>
+    <span class="hljs-keyword">if</span> (getWindow().superDispatchTouchEvent(ev)) &#123;
+        <span class="hljs-keyword">return</span> <span class="hljs-keyword">true</span>;
+    &#125;
+  <span class="hljs-comment">//没有任何View去处理，交给Activity自身的onTouchEvent处理</span>
+    <span class="hljs-keyword">return</span> onTouchEvent(ev);
+&#125;</code></pre>
+<p><code>getWindow()</code>对应唯一实现类<code>PhoneWindow</code></p>
+<pre><code class="hljs java"><span class="hljs-comment">//PhoneWindow.java</span>
+    <span class="hljs-meta">@Override</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">superDispatchTouchEvent</span><span class="hljs-params">(MotionEvent event)</span> </span>&#123;
+      <span class="hljs-comment">//mDecor 是DecorView的一个实例，DecoeView就是顶层View中的实例对象</span>
+        <span class="hljs-keyword">return</span> mDecor.superDispatchTouchEvent(event);
+    &#125;</code></pre>
+<p><code>mDecor</code>指的就是<code>DecorView</code></p>
+<pre><code class="hljs java"><span class="hljs-comment">//DecorView.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">superDispatchTouchEvent</span><span class="hljs-params">(MotionEvent event)</span> </span>&#123;
+      <span class="hljs-comment">//调用父类的方法即FrameLayout.dispatchTouchEvent = ViewGroup.dispatchTouchEvent()，由父类去处理事件分发</span>
+        <span class="hljs-keyword">return</span> <span class="hljs-keyword">super</span>.dispatchTouchEvent(event);<span class="hljs-comment">//指向了 ViewGroup</span>
+    &#125;</code></pre>
+<p><img src="/images/Activity-Dispatch.png" srcset="/img/loading.gif" alt="Activity事件分发"></p>
+<p>总结一下：按照上述流程图，当一个点击事件进来时，Activity上的事件流程如下：</p>
+<ul>
+<li>调用<code>Activity.dispatchTouchEvent()</code>，然后调用<code>onUserInteraction()</code></li>
+<li>调用<code>getWindow()即PhoneWindow.superDispatchTouchEvent()</code></li>
+<li>调用<code>mDecor即DecorView.superDispatchTouchEvent()</code></li>
+<li>调用DecorView父类即<strong><code>ViewGroup.dispatchTouchEvent()</code></strong> 在这里实现了事件从Activity传递至ViewGroup</li>
+</ul>
+<h4 id="ViewGroup事件分发"><a href="#ViewGroup事件分发" class="headerlink" title="ViewGroup事件分发"></a>ViewGroup事件分发</h4><p>上述Activity分发后，执行到<code>ViewGroup.dispatchTouchEvent()</code></p>
+<pre><code class="hljs java"><span class="hljs-comment">//ViewGroup.java</span>
+    <span class="hljs-meta">@Override</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">dispatchTouchEvent</span><span class="hljs-params">(MotionEvent ev)</span> </span>&#123;
+      ...
+        
+            <span class="hljs-keyword">if</span> (actionMasked == MotionEvent.ACTION_DOWN) &#123;
+              <span class="hljs-comment">//发生ACTION_DOWN事件，取消并清除之前的触摸</span>
+                cancelAndClearTouchTargets(ev);
+                resetTouchState();
+            &#125;        
+      ...
+          <span class="hljs-comment">//判定当前事件是否需要拦截</span>
+            <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> intercepted;
+            <span class="hljs-keyword">if</span> (actionMasked == MotionEvent.ACTION_DOWN
+                    || mFirstTouchTarget != <span class="hljs-keyword">null</span>) &#123;<span class="hljs-comment">//只有ACTION_DOWN才可以触发拦截</span>
+                <span class="hljs-comment">//FLAG_DISALLOW_INTERCEPT：禁止ViewGroup拦截除了DOWN以外的事件</span>
+                <span class="hljs-comment">//可由View调用requestDisallowInterceptTouchEvent设置标记</span>
+                <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> disallowIntercept = (mGroupFlags &amp; FLAG_DISALLOW_INTERCEPT) != <span class="hljs-number">0</span>;
+                <span class="hljs-keyword">if</span> (!disallowIntercept) &#123;
+                  <span class="hljs-comment">//调用拦截方法</span>
+                    intercepted = onInterceptTouchEvent(ev);
+                    ev.setAction(action); <span class="hljs-comment">// restore action in case it was changed</span>
+                &#125; <span class="hljs-keyword">else</span> &#123;
+                    intercepted = <span class="hljs-keyword">false</span>;
+                &#125;
+            &#125; <span class="hljs-keyword">else</span> &#123;
+               <span class="hljs-comment">//没有触摸targets 且 非ACTION_DOWN 需要拦截</span>
+                intercepted = <span class="hljs-keyword">true</span>;
+            &#125;   
+      ...
+           <span class="hljs-comment">//非取消事件 且 没被拦截</span>
+            <span class="hljs-keyword">if</span> (!canceled &amp;&amp; !intercepted) &#123;
+                <span class="hljs-keyword">if</span> (actionMasked == MotionEvent.ACTION_DOWN
+                        || (split &amp;&amp; actionMasked == MotionEvent.ACTION_POINTER_DOWN)
+                        || actionMasked == MotionEvent.ACTION_HOVER_MOVE) &#123;<span class="hljs-comment">//当前为 DOWN 事件</span>
+                    <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> actionIndex = ev.getActionIndex(); <span class="hljs-comment">// always 0 for down</span>
+                   <span class="hljs-comment">//存在子View</span>
+                    <span class="hljs-keyword">if</span> (newTouchTarget == <span class="hljs-keyword">null</span> &amp;&amp; childrenCount != <span class="hljs-number">0</span>) &#123;
+                        <span class="hljs-keyword">final</span> <span class="hljs-keyword">float</span> x = ev.getX(actionIndex);
+                        <span class="hljs-keyword">final</span> <span class="hljs-keyword">float</span> y = ev.getY(actionIndex);
+                      <span class="hljs-comment">//从上往下 寻找能处理触摸事件的子View</span>
+                        <span class="hljs-keyword">final</span> ArrayList&lt;View&gt; preorderedList = buildTouchDispatchChildList();
+                        <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> customOrder = preorderedList == <span class="hljs-keyword">null</span>
+                                &amp;&amp; isChildrenDrawingOrderEnabled();
+                        <span class="hljs-keyword">final</span> View[] children = mChildren;
+                        <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int</span> i = childrenCount - <span class="hljs-number">1</span>; i &gt;= <span class="hljs-number">0</span>; i--) &#123;
+                            <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> childIndex = getAndVerifyPreorderedIndex(
+                                    childrenCount, i, customOrder);
+                            <span class="hljs-keyword">final</span> View child = getAndVerifyPreorderedView(
+                                    preorderedList, children, childIndex);
+                           <span class="hljs-comment">//无法获取焦点，跳过循环</span>
+                            <span class="hljs-keyword">if</span> (childWithAccessibilityFocus != <span class="hljs-keyword">null</span>) &#123;
+                                <span class="hljs-keyword">if</span> (childWithAccessibilityFocus != child) &#123;
+                                    <span class="hljs-keyword">continue</span>;
+                                &#125;
+                                childWithAccessibilityFocus = <span class="hljs-keyword">null</span>;
+                                i = childrenCount - <span class="hljs-number">1</span>;
+                            &#125;
+                          <span class="hljs-comment">//View不可见 或者 触摸的坐标点不在View的范围内，跳过循环</span>
+                            <span class="hljs-keyword">if</span> (!canViewReceivePointerEvents(child)
+                                    || !isTransformedTouchPointInView(x, y, child, <span class="hljs-keyword">null</span>)) &#123;
+                                ev.setTargetAccessibilityFocus(<span class="hljs-keyword">false</span>);
+                                <span class="hljs-keyword">continue</span>;
+                            &#125;
+
+                            newTouchTarget = getTouchTarget(child);
+                          <span class="hljs-comment">//当前正在循环 ，退出当前循环</span>
+                            <span class="hljs-keyword">if</span> (newTouchTarget != <span class="hljs-keyword">null</span>) &#123;
+                                <span class="hljs-comment">// Child is already receiving touch within its bounds.</span>
+                                <span class="hljs-comment">// Give it the new pointer in addition to the ones it is handling.</span>
+                                newTouchTarget.pointerIdBits |= idBitsToAssign;
+                                <span class="hljs-keyword">break</span>;
+                            &#125;
+
+                            resetCancelNextUpFlag(child);
+                          <span class="hljs-comment">////事件传递下来后，调用dispatchTransformedTouchEvent，事件就会传递到View/ViewGroup中       </span>
+                            <span class="hljs-keyword">if</span> (dispatchTransformedTouchEvent(ev, <span class="hljs-keyword">false</span>, child, idBitsToAssign)) &#123;
+                                <span class="hljs-comment">// Child wants to receive touch within its bounds.</span>
+                                mLastTouchDownTime = ev.getDownTime();
+                                <span class="hljs-keyword">if</span> (preorderedList != <span class="hljs-keyword">null</span>) &#123;
+                                    <span class="hljs-comment">// childIndex points into presorted list, find original index</span>
+                                    <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int</span> j = <span class="hljs-number">0</span>; j &lt; childrenCount; j++) &#123;
+                                        <span class="hljs-keyword">if</span> (children[childIndex] == mChildren[j]) &#123;
+                                            mLastTouchDownIndex = j;
+                                            <span class="hljs-keyword">break</span>;
+                                        &#125;
+                                    &#125;
+                                &#125; <span class="hljs-keyword">else</span> &#123;
+                                    mLastTouchDownIndex = childIndex;
+                                &#125;
+                                mLastTouchDownX = ev.getX();
+                                mLastTouchDownY = ev.getY();
+                              <span class="hljs-comment">//添加新的 touchtarget</span>
+                                newTouchTarget = addTouchTarget(child, idBitsToAssign);
+                                alreadyDispatchedToNewTouchTarget = <span class="hljs-keyword">true</span>;
+                                <span class="hljs-keyword">break</span>;
+                            &#125;
+                            ev.setTargetAccessibilityFocus(<span class="hljs-keyword">false</span>);
+                        &#125;
+                        <span class="hljs-keyword">if</span> (preorderedList != <span class="hljs-keyword">null</span>) preorderedList.clear();
+                    &#125;
+
+                    <span class="hljs-keyword">if</span> (newTouchTarget == <span class="hljs-keyword">null</span> &amp;&amp; mFirstTouchTarget != <span class="hljs-keyword">null</span>) &#123;
+                        newTouchTarget = mFirstTouchTarget;
+                        <span class="hljs-keyword">while</span> (newTouchTarget.next != <span class="hljs-keyword">null</span>) &#123;
+                            newTouchTarget = newTouchTarget.next;
+                        &#125;
+                        newTouchTarget.pointerIdBits |= idBitsToAssign;
+                    &#125;                  
+                &#125;
+            &#125;
+      
+            <span class="hljs-comment">// mFirstTouchTarget赋值是在通过addTouchTarget方法获取的；</span>
+            <span class="hljs-comment">// 只有处理ACTION_DOWN事件，才会进入addTouchTarget方法。</span>
+            <span class="hljs-comment">// 这也正是当View没有消费ACTION_DOWN事件，则不会接收其他MOVE,UP等事件的原因</span>
+            <span class="hljs-keyword">if</span> (mFirstTouchTarget == <span class="hljs-keyword">null</span>) &#123;
+                <span class="hljs-comment">// ViewGroup处理事件 当无人可以响应触摸事件</span>
+                handled = dispatchTransformedTouchEvent(ev, canceled, <span class="hljs-keyword">null</span>,
+                        TouchTarget.ALL_POINTER_IDS);
+            &#125; <span class="hljs-keyword">else</span> &#123;
+               <span class="hljs-comment">//如果View消费ACTION_DOWN事件，那么MOVE,UP等事件相继开始执行</span>
+                TouchTarget predecessor = <span class="hljs-keyword">null</span>;
+                TouchTarget target = mFirstTouchTarget;
+                <span class="hljs-keyword">while</span> (target != <span class="hljs-keyword">null</span>) &#123;
+                    <span class="hljs-keyword">final</span> TouchTarget next = target.next;
+                    <span class="hljs-keyword">if</span> (alreadyDispatchedToNewTouchTarget &amp;&amp; target == newTouchTarget) &#123;
+                        handled = <span class="hljs-keyword">true</span>;
+                    &#125; <span class="hljs-keyword">else</span> &#123;
+                        <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> cancelChild = resetCancelNextUpFlag(target.child)
+                                || intercepted;
+                      <span class="hljs-comment">//子View/ViewGroup 处理触摸事件</span>
+                        <span class="hljs-keyword">if</span> (dispatchTransformedTouchEvent(ev, cancelChild,
+                                target.child, target.pointerIdBits)) &#123;
+                            handled = <span class="hljs-keyword">true</span>;
+                        &#125;
+                        <span class="hljs-keyword">if</span> (cancelChild) &#123;
+                            <span class="hljs-keyword">if</span> (predecessor == <span class="hljs-keyword">null</span>) &#123;
+                                mFirstTouchTarget = next;
+                            &#125; <span class="hljs-keyword">else</span> &#123;
+                                predecessor.next = next;
+                            &#125;
+                            target.recycle();
+                            target = next;
+                            <span class="hljs-keyword">continue</span>;
+                        &#125;
+                    &#125;
+                    predecessor = target;
+                    target = next;
+                &#125;
+            &#125;    
+              ...
+        &#125;
+        <span class="hljs-keyword">return</span> handled;
+      
+    &#125;</code></pre>
+<h5 id="onInterceptTouchEvent"><a href="#onInterceptTouchEvent" class="headerlink" title="onInterceptTouchEvent()"></a>onInterceptTouchEvent()</h5><pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">onInterceptTouchEvent</span><span class="hljs-params">(MotionEvent ev)</span> </span>&#123;
+    <span class="hljs-keyword">if</span> (ev.isFromSource(InputDevice.SOURCE_MOUSE)
+            &amp;&amp; ev.getAction() == MotionEvent.ACTION_DOWN
+            &amp;&amp; ev.isButtonPressed(MotionEvent.BUTTON_PRIMARY)
+            &amp;&amp; isOnScrollbarThumb(ev.getX(), ev.getY())) &#123;
+        <span class="hljs-keyword">return</span> <span class="hljs-keyword">true</span>;
+    &#125;
+    <span class="hljs-keyword">return</span> <span class="hljs-keyword">false</span>;
+&#125;</code></pre>
+<p>可以通过重写该方法，进行事件分发的拦截。</p>
+<ul>
+<li>返回true，事件被拦截，执行当前View的<code>onTouchEvent()</code></li>
+<li>返回false，事件继续向下分发</li>
+</ul>
+<h5 id="buildTouchDispatchChildList"><a href="#buildTouchDispatchChildList" class="headerlink" title="buildTouchDispatchChildList()"></a>buildTouchDispatchChildList()</h5><pre><code class="hljs java">    <span class="hljs-function"><span class="hljs-keyword">public</span> ArrayList&lt;View&gt; <span class="hljs-title">buildTouchDispatchChildList</span><span class="hljs-params">()</span> </span>&#123;
+        <span class="hljs-keyword">return</span> buildOrderedChildList();
+    &#125;
+
+    <span class="hljs-function">ArrayList&lt;View&gt; <span class="hljs-title">buildOrderedChildList</span><span class="hljs-params">()</span> </span>&#123;
+        <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> childrenCount = mChildrenCount;
+        <span class="hljs-keyword">if</span> (childrenCount &lt;= <span class="hljs-number">1</span> || !hasChildWithZ()) <span class="hljs-keyword">return</span> <span class="hljs-keyword">null</span>;
+
+      <span class="hljs-comment">//z</span>
+        <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> customOrder = isChildrenDrawingOrderEnabled();
+        <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int</span> i = <span class="hljs-number">0</span>; i &lt; childrenCount; i++) &#123;
+            <span class="hljs-comment">// add next child (in child order) to end of list</span>
+            <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> childIndex = getAndVerifyPreorderedIndex(childrenCount, i, customOrder);
+            <span class="hljs-keyword">final</span> View nextChild = mChildren[childIndex];
+            <span class="hljs-keyword">final</span> <span class="hljs-keyword">float</span> currentZ = nextChild.getZ();
+
+            <span class="hljs-comment">// 按z轴，从小到大排序所有的子视图，即z轴大的View先响应事件</span>
+            <span class="hljs-keyword">int</span> insertIndex = i;
+            <span class="hljs-keyword">while</span> (insertIndex &gt; <span class="hljs-number">0</span> &amp;&amp; mPreSortedChildren.get(insertIndex - <span class="hljs-number">1</span>).getZ() &gt; currentZ) &#123;
+                insertIndex--;
+            &#125;
+            mPreSortedChildren.add(insertIndex, nextChild);
+        &#125;
+        <span class="hljs-keyword">return</span> mPreSortedChildren;
+    &#125;
+
+<span class="hljs-comment">//View.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">float</span> <span class="hljs-title">getZ</span><span class="hljs-params">()</span> </span>&#123;
+        <span class="hljs-keyword">return</span> getElevation() + getTranslationZ();
+    &#125;</code></pre>
+<p>默认的事件分发顺序与绘制顺序一致，按照<code>view.getZ()</code>从大到小排序，Z值大的先绘制且先响应事件。</p>
+<p>当然，这个事件分发的顺序也可以修改，只需要实现两个方法：</p>
+<ul>
+<li><code>isChildDrawingOrder()</code>：允许自定义顺序</li>
+<li><code>getChildDrawingOrder()</code>：自定义当前View的顺序</li>
+</ul>
+<p>也可以通过<code>setElevation()</code>、<code>setTranslationZ()</code>或者<code>setZ()</code>去修改Z轴的坐标值。</p>
+<h5 id="dispatchTransformedTouchEvent"><a href="#dispatchTransformedTouchEvent" class="headerlink" title="dispatchTransformedTouchEvent()"></a>dispatchTransformedTouchEvent()</h5><pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">dispatchTransformedTouchEvent</span><span class="hljs-params">(MotionEvent event, <span class="hljs-keyword">boolean</span> cancel,
+        View child, <span class="hljs-keyword">int</span> desiredPointerIdBits)</span> </span>&#123;
+    <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> handled;
+
+   <span class="hljs-comment">//发生取消事件后，不再执行后续的任何操作</span>
+    <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> oldAction = event.getAction();
+    <span class="hljs-keyword">if</span> (cancel || oldAction == MotionEvent.ACTION_CANCEL) &#123;
+        event.setAction(MotionEvent.ACTION_CANCEL);
+        <span class="hljs-keyword">if</span> (child == <span class="hljs-keyword">null</span>) &#123;
+            handled = <span class="hljs-keyword">super</span>.dispatchTouchEvent(event);
+        &#125; <span class="hljs-keyword">else</span> &#123;
+            handled = child.dispatchTouchEvent(event);
+        &#125;
+        event.setAction(oldAction);
+        <span class="hljs-keyword">return</span> handled;
+    &#125;
+
+    <span class="hljs-keyword">final</span> MotionEvent transformedEvent;
+    <span class="hljs-keyword">if</span> (newPointerIdBits == oldPointerIdBits) &#123;
+        <span class="hljs-keyword">if</span> (child == <span class="hljs-keyword">null</span> || child.hasIdentityMatrix()) &#123;
+            <span class="hljs-keyword">if</span> (child == <span class="hljs-keyword">null</span>) &#123;
+              <span class="hljs-comment">//不存在子视图，调用View.dispatchTouchEvent()</span>
+                handled = <span class="hljs-keyword">super</span>.dispatchTouchEvent(event);
+            &#125; <span class="hljs-keyword">else</span> &#123;
+                <span class="hljs-keyword">final</span> <span class="hljs-keyword">float</span> offsetX = mScrollX - child.mLeft;
+                <span class="hljs-keyword">final</span> <span class="hljs-keyword">float</span> offsetY = mScrollY - child.mTop;
+                event.offsetLocation(offsetX, offsetY);
+               <span class="hljs-comment">//调用子View/ViewGroup的 dispatchTouchEvent()</span>
+                handled = child.dispatchTouchEvent(event);
+
+                event.offsetLocation(-offsetX, -offsetY);
+            &#125;
+            <span class="hljs-keyword">return</span> handled;
+        &#125;
+        transformedEvent = MotionEvent.obtain(event);
+    &#125; <span class="hljs-keyword">else</span> &#123;
+        transformedEvent = event.split(newPointerIdBits);
+    &#125;
+
+    <span class="hljs-comment">// Done.</span>
+    transformedEvent.recycle();
+    <span class="hljs-keyword">return</span> handled;
+&#125;</code></pre>
+<p><code>dispatchTransformedTouchEvent()</code>分为两套处理方式：</p>
+<ul>
+<li><code>child==null</code>：发生的情况：<code>事件被拦截</code>或<code>真的没有可执行触摸事件的子View</code>。执行<code>View.dispatchTouchEvent()</code></li>
+<li><code>child!=null</code>：向下执行子View/ViewGroup的<code>dispatchTouchEvent()</code></li>
+</ul>
+<p><img src="/images/ViewGroup-Dispatch.png" srcset="/img/loading.gif" alt="ViewGroup事件分发"></p>
+<p>根据上述流程图，总结一下：</p>
+<ul>
+<li>点击事件从上层传递到ViewGroup，先调用<code>ViewGroup.dispatchTouchEvent()</code></li>
+<li>判断<code>ViewGroup.onInterceptTouchEvent()</code>是否拦截点击事件<ul>
+<li>默认不拦截，则将事件继续向子View传递，然后调用<code>View.dispatchTouchEvent()</code></li>
+<li>被拦截返回<code>true</code>，调用<code>super.dispatchTouchEvent()</code>返给父布局处理，并且ViewGroup自身也处理事件，比如<code>onTouch(),onClick(),onTouchEvent()</code>等事件</li>
+</ul>
+</li>
+</ul>
+<blockquote>
+<p>通常情况下ViewGroup的<code>onInterceptTouchEvent()</code>返回false，不会拦截用户操作。</p>
+<p>不过要注意的是 拦截的是 一个用户的操作序列：<em>从用户手指按下到手指抬起为止。</em></p>
+<ul>
+<li>拦截了Down事件，后续的事件都会交由<code>ViewGroup.onTouchEvent()</code>处理</li>
+<li>拦截了其他事件，会给之前序列头部的<code>ACTION_DOWN</code>事件发送一个<code>ACTION_CANCEL</code>类型事件，通知子View无法执行后续事件，回归初始状态。(<strong>例如点击ListView中的一个Item的Button，再滑动ListView，Button就会恢复初始状态。</strong>)</li>
+</ul>
+</blockquote>
+<h4 id="View事件分发"><a href="#View事件分发" class="headerlink" title="View事件分发"></a>View事件分发</h4><p>ViewGroup事件分发完毕后，由子View继续执行事件分发</p>
+<pre><code class="hljs java"><span class="hljs-comment">//View.java    </span>
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">dispatchTouchEvent</span><span class="hljs-params">(MotionEvent event)</span> </span>&#123;
+
+        <span class="hljs-keyword">boolean</span> result = <span class="hljs-keyword">false</span>;
+
+        <span class="hljs-keyword">if</span> (onFilterTouchEventForSecurity(event)) &#123;
+            <span class="hljs-keyword">if</span> ((mViewFlags &amp; ENABLED_MASK) == ENABLED &amp;&amp; handleScrollBarDragging(event)) &#123;
+                result = <span class="hljs-keyword">true</span>;
+            &#125;
+            <span class="hljs-comment">//noinspection SimplifiableIfStatement</span>
+            ListenerInfo li = mListenerInfo;
+            <span class="hljs-keyword">if</span> (li != <span class="hljs-keyword">null</span> &amp;&amp; li.mOnTouchListener != <span class="hljs-keyword">null</span> <span class="hljs-comment">//View设置了touch事件</span>
+                    &amp;&amp; (mViewFlags &amp; ENABLED_MASK) == ENABLED <span class="hljs-comment">//View是可以操作的</span>
+                    &amp;&amp; li.mOnTouchListener.onTouch(<span class="hljs-keyword">this</span>, event)) &#123; <span class="hljs-comment">//View.onTouch返回true</span>
+                result = <span class="hljs-keyword">true</span>;
+            &#125;
+
+          <span class="hljs-comment">//上述任一条件不满足，就会执行 onTouchEvent()</span>
+            <span class="hljs-keyword">if</span> (!result &amp;&amp; onTouchEvent(event)) &#123;
+                result = <span class="hljs-keyword">true</span>;
+            &#125;
+        &#125;
+
+        <span class="hljs-keyword">return</span> result;
+    &#125;</code></pre>
+<p><code>dispatchTouchEvent()</code>按照如下顺序执行：</p>
+<ol>
+<li><code>onTouchListener.ouTouch()</code>开始执行，返回<code>true</code>表示当前事件已被消费，不需要向上执行。否则继续向下执行</li>
+<li><code>onTouchEvent()</code>返回<code>true</code>表示消费事件。</li>
+</ol>
+<pre><code class="hljs java"><span class="hljs-comment">//View.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">onTouchEvent</span><span class="hljs-params">(MotionEvent event)</span> </span>&#123;
+        <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> clickable = ((viewFlags &amp; CLICKABLE) == CLICKABLE <span class="hljs-comment">//有点击事件 调用setOnClickListener()</span>
+                || (viewFlags &amp; LONG_CLICKABLE) == LONG_CLICKABLE) <span class="hljs-comment">//有长按事件 调用setOnLongClickListener()</span>
+                || (viewFlags &amp; CONTEXT_CLICKABLE) == CONTEXT_CLICKABLE;
+      
+        <span class="hljs-keyword">if</span> ((viewFlags &amp; ENABLED_MASK) == DISABLED) &#123;
+            <span class="hljs-keyword">if</span> (action == MotionEvent.ACTION_UP &amp;&amp; (mPrivateFlags &amp; PFLAG_PRESSED) != <span class="hljs-number">0</span>) &#123;
+                setPressed(<span class="hljs-keyword">false</span>);
+            &#125;
+            mPrivateFlags3 &amp;= ~PFLAG3_FINGER_DOWN;
+          <span class="hljs-comment">//当View不可用时 直接消费事件</span>
+            <span class="hljs-keyword">return</span> clickable;
+        &#125;
+      
+      <span class="hljs-keyword">if</span> (clickable || (viewFlags &amp; TOOLTIP) == TOOLTIP) &#123;
+            <span class="hljs-keyword">switch</span> (action) &#123;
+                <span class="hljs-keyword">case</span> MotionEvent.ACTION_UP:
+                        <span class="hljs-keyword">if</span> (!mHasPerformedLongPress &amp;&amp; !mIgnoreNextUpEvent) &#123;
+                            <span class="hljs-comment">// This is a tap, so remove the longpress check</span>
+                            removeLongPressCallback();
+
+                            <span class="hljs-keyword">if</span> (!focusTaken) &#123;
+                                <span class="hljs-keyword">if</span> (mPerformClick == <span class="hljs-keyword">null</span>) &#123;
+                                    mPerformClick = <span class="hljs-keyword">new</span> PerformClick();
+                                &#125;
+                                <span class="hljs-keyword">if</span> (!post(mPerformClick)) &#123;
+                                  <span class="hljs-comment">//调用View.onClckListener</span>
+                                    performClickInternal();
+                                &#125;
+                            &#125;
+                        &#125;                
+            &#125;
+      &#125;
+    &#125;
+
+    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">performClickInternal</span><span class="hljs-params">()</span> </span>&#123;
+
+        <span class="hljs-keyword">return</span> performClick();
+    &#125;
+
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">performClick</span><span class="hljs-params">()</span> </span>&#123;
+
+        <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> result;
+        <span class="hljs-keyword">final</span> ListenerInfo li = mListenerInfo;
+        <span class="hljs-keyword">if</span> (li != <span class="hljs-keyword">null</span> &amp;&amp; li.mOnClickListener != <span class="hljs-keyword">null</span>) &#123;
+            playSoundEffect(SoundEffectConstants.CLICK);
+            li.mOnClickListener.onClick(<span class="hljs-keyword">this</span>);
+            result = <span class="hljs-keyword">true</span>;
+        &#125; <span class="hljs-keyword">else</span> &#123;
+            result = <span class="hljs-keyword">false</span>;
+        &#125;
+
+        <span class="hljs-keyword">return</span> result;
+    &#125;</code></pre>
+<p><img src="/images/View-Dispatch.png" srcset="/img/loading.gif" alt="View事件分发"></p>
+<p>根据上述流程图，总结一下：</p>
+<ul>
+<li>点击事件从ViewGroup传递到View，调用<code>View.dispatchTouchEvent()</code></li>
+<li>判断当前View是否设置<code>OnTouchListener</code>，并且设置了<code>onTouch()</code>返回值，默认返回false<ul>
+<li>返回<code>true</code>，代表事件被<code>onTouch()</code>消费，不会继续往下传递</li>
+<li>返回<code>false</code>，事件继续向下传递，调用<code>View.onTouchEvent()</code>，后续若设置点击事件，则继续调用<code>performClick()</code>，最后执行<code>onClick()</code>事件</li>
+</ul>
+</li>
+</ul>
+<p>拓展：</p>
+<blockquote>
+<ol>
+<li>如果有一个控件是<code>DISABLED</code>，注册的<code>onTouch()</code>事件不会被执行。若要监听点击事件，只能实现它的<code>onTouchEvent()</code></li>
+<li>点击事件优先级： <code>onTouch()</code> &gt; <code>onTouchEvent()</code> &gt; <code>performClick()</code> &gt; <code>onClick()</code> </li>
+</ol>
+</blockquote>
+<h3 id="总结-3"><a href="#总结-3" class="headerlink" title="总结"></a>总结</h3><p>根据前几节分析得出完整的事件分发顺序：</p>
+<p><strong>IMS -&gt; WindowInputREceiver(ViewRootImpl) -&gt; DecorView -&gt; Activity -&gt; DecorView -&gt; viewGroup -&gt; View</strong></p>
+<h4 id="事件分发核心方法"><a href="#事件分发核心方法" class="headerlink" title="事件分发核心方法"></a>事件分发核心方法</h4><p><code>boolean dispatchTouchEvent()</code></p>
+<p>用来进行事件的分发。</p>
+<ul>
+<li>返回<code>true</code>：事件被当前View所消费，不会向下传递</li>
+<li>返回<code>false</code>：交由上一层的View的<code>onTouchEvent()</code>处理</li>
+<li>返回<code>super.dispatchTouchEvent()</code>：继续向下分发事件</li>
+</ul>
+<p><code>boolean onInterceptTouchEvent()</code></p>
+<p>用来进行事件的拦截，在<code>dispatchOnTouchEvent()</code>中调用。<strong>只有ViewGroup才可以调用</strong></p>
+<ul>
+<li><p>返回<code>true</code>：拦截当前事件，并交由<code>onTouchEvent()</code>去处理</p>
+</li>
+<li><p>返回<code>false</code>：不拦截当前事件，继续向下传递</p>
+</li>
+<li><p>返回<code>super.onInterceptTouchEvent()</code>：调用父类的<code>onInterceptTouchEvent()</code>，大部分情况下是<code>false</code>。</p>
+<p>如果点击了子View区域，可以继续分发到<code>child.dispatchTouchEvent()</code></p>
+<p>没有子View可以响应事件，执行<code>onTouchEvent()</code></p>
+</li>
+</ul>
+<p><code>boolean onTouchEvent()</code></p>
+<p>用来处理点击事件，在<code>dispatchOnTouchEvent()</code>中调用。</p>
+<ul>
+<li><p>返回<code>true</code>：当前View处理当前事件</p>
+</li>
+<li><p>返回<code>false</code>：当前View无法处理事件，交由上一层View的<code>onTouchEvent()</code>处理</p>
+</li>
+<li><p>返回<code>super.onTouchEvent()</code></p>
+<p>当前View设置了<code>clickable/longclickable</code>，等价于返回true，当前View处理事件</p>
+<p>当前View未设置<code>clickable/longclickable</code>，等价于返回false,交由上一层的<code>onTouchEvent()</code>处理。</p>
+</li>
+</ul>
+<p>上述三个核心方法，可以用如下伪代码代替</p>
+<pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">dispatchTouchEvent</span><span class="hljs-params">()</span> </span>&#123;
+    <span class="hljs-keyword">boolean</span> res = <span class="hljs-keyword">false</span>;
+
+    <span class="hljs-comment">// 是否不允许拦截事件</span>
+    <span class="hljs-comment">// 如果设置了 FLAG_DISALLOW_INTERCEPT，不会拦截事件，所以在 child 里可以通过 requestDisallowInterceptTouchEvent 控制父 View 是否来拦截事件</span>
+    <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> disallowIntercept = (mGroupFlags &amp; FLAG_DISALLOW_INTERCEPT) != <span class="hljs-number">0</span>;
+
+    <span class="hljs-keyword">if</span> (!disallowIntercept &amp;&amp; onInterceptTouchEvent()) &#123; <span class="hljs-comment">// View 不调用这里，直接执行下面的 touchlistener 判断</span>
+        <span class="hljs-keyword">if</span> (touchlistener &amp;&amp; touchlistener.onTouch()) &#123;
+            <span class="hljs-keyword">return</span> <span class="hljs-keyword">true</span>;
+        &#125;
+        res = onTouchEvent(); <span class="hljs-comment">// 里面会处理点击事件 -&gt; performClick() -&gt; clicklistener.onClick()</span>
+    &#125; <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (DOWN) &#123; <span class="hljs-comment">// 如果是 DOWN 事件，则遍历子 View 进行事件分发</span>
+        <span class="hljs-comment">// 循环子 View 处理事件</span>
+        <span class="hljs-keyword">for</span> (childs) &#123;
+            res = child.dispatchTouchEvent();
+        &#125;
+    &#125; <span class="hljs-keyword">else</span> &#123;
+        <span class="hljs-comment">// 事件分发给 target 去处理，这里的 target 就是上一步处理 DOWN 事件的 View</span>
+        target.child.dispatchTouchEvent();
+    &#125;
+    <span class="hljs-keyword">return</span> res;
+&#125;</code></pre>
+<p><img src="/images/TouchEvent-Transmit.png" srcset="/img/loading.gif" alt="事件分发"></p>
+<ol>
+<li>点击事件传递从<code>dispatchTouchEvent()</code>开始，在不修改默认返回值时，事件会按照嵌套层次由外向内传递，到达最内层View时，由最内层View<code>onTouchEvent()</code>处理</li>
+<li>View的点击事件触发顺序为  <code>onTouch()</code> &gt; <code>onTouchEvent()</code> &gt; <code>performClick()</code> &gt; <code>onClick()</code> </li>
+<li><em>Touch事件的后续(例如<code>ACTION_MOVE</code>,<code>ACTION_UP</code>)层级传递</em><ul>
+<li>若<code>dispatchTouchEvent()</code>返回true，那么能收到<code>ACTION_DOWN</code>的函数也可以收到后续事件</li>
+<li>若<code>onTouchEvent()</code>返回true，那么其他事件不再往下传递，而是直接传给自己的<code>onTouchEvent()</code>并结束本次事件传递</li>
+</ul>
+</li>
+</ol>
+<h4 id="事件分发特殊情况"><a href="#事件分发特殊情况" class="headerlink" title="事件分发特殊情况"></a>事件分发特殊情况</h4><h5 id="ACTIOIN-CANCEL产生场景"><a href="#ACTIOIN-CANCEL产生场景" class="headerlink" title="ACTIOIN_CANCEL产生场景"></a><code>ACTIOIN_CANCEL</code>产生场景</h5><ol>
+<li><p>子View处理了Down事件，按照设定Move与Up的事件也会交给他处理。若此时，父View拦截了事件，此时子View就会收到一个Cancel事件，并且无法接收到后续的Move与Up事件。</p>
+<p>常见场景：ListView有一个Item带有Button，此时点击按钮(触发ACTION_DOWN)，再进行上下滑动，ListView就会拦截掉后续的Move事件，此时Button就会收到ACTION_CANCEL</p>
+</li>
+<li><p>子View收到ACTION_DOWN，但是上一个事件还没有结束(因为APP切换、ANR导致后续事件丢失)，此时也会执行ACTION_CANCEL</p>
+</li>
+</ol>
+<h2 id="事件分发完成"><a href="#事件分发完成" class="headerlink" title="事件分发完成"></a>事件分发完成</h2><p>//android_view_InputEventReceiver finishInputEvent</p>
+<p>//InputTransport.cpp sendFinishedSignal() sendUnchainedFinishedSignal() channel-&gt;sendMessage</p>
+<h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="http://gityuan.com/2016/12/11/input-reader/" target="_blank" rel="noopener">InputReaderThread</a></p>
+<p><a href="https://cs.android.com" target="_blank" rel="noopener">Android相关源码</a></p>
+<p><a href="https://zhuanlan.zhihu.com/p/31210271" target="_blank" rel="noopener">一次触摸，Android 到底干了啥</a></p>
 
             </div>
             <hr>
