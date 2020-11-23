@@ -169,7 +169,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      9.5k 字
+      9.6k 字
     </span>
   
 
@@ -179,7 +179,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      133
+      135
        分钟
     </span>
   
@@ -1336,6 +1336,27 @@ Done: ;
     mLock.unlock();
 
     ... <span class="hljs-comment">//处理带有callback的response事件</span>
+          <span class="hljs-keyword">for</span> (<span class="hljs-keyword">size_t</span> i = <span class="hljs-number">0</span>; i &lt; mResponses.<span class="hljs-built_in">size</span>(); i++) &#123;
+        Response&amp; response = mResponses.editItemAt(i);
+        <span class="hljs-keyword">if</span> (response.request.ident == POLL_CALLBACK) &#123;
+            <span class="hljs-keyword">int</span> fd = response.request.fd;
+            <span class="hljs-keyword">int</span> events = response.events;
+            <span class="hljs-keyword">void</span>* data = response.request.data;
+
+            <span class="hljs-comment">// Invoke the callback.  Note that the file descriptor may be closed by</span>
+            <span class="hljs-comment">// the callback (and potentially even reused) before the function returns so</span>
+            <span class="hljs-comment">// we need to be a little careful when removing the file descriptor afterwards.</span>
+            <span class="hljs-keyword">int</span> callbackResult = response.request.callback-&gt;handleEvent(fd, events, data);
+            <span class="hljs-keyword">if</span> (callbackResult == <span class="hljs-number">0</span>) &#123;
+                removeFd(fd, response.request.seq);
+            &#125;
+
+            <span class="hljs-comment">// Clear the callback reference in the response structure promptly because we</span>
+            <span class="hljs-comment">// will not clear the response vector itself until the next poll.</span>
+            response.request.callback.<span class="hljs-built_in">clear</span>();
+            result = POLL_CALLBACK;
+        &#125;
+    &#125;
     
     <span class="hljs-keyword">return</span> result;
 &#125;

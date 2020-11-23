@@ -45592,6 +45592,40 @@ status_t NativeInputEventReceiver::consumeEvents(JNIEnv* env,
   for (;;) {
         status_t status = mInputConsumer.consume(&mInputEventFactory,
                 consumeBatches, frameTime, &seq, &inputEvent, &displayId);
+    //将事件进行打包，避免量过大
+        if (status) {
+            if (status == WOULD_BLOCK) {
+                if (!skipCallbacks && !mBatchedInputEventPending
+                        && mInputConsumer.hasPendingBatch()) {
+                    // There is a pending batch.  Come back later.
+                    if (!receiverObj.get()) {
+                        receiverObj.reset(jniGetReferent(env, mReceiverWeakGlobal));
+                        if (!receiverObj.get()) {
+                            ALOGW("channel '%s' ~ Receiver object was finalized "
+                                    "without being disposed.", getInputChannelName().c_str());
+                            return DEAD_OBJECT;
+                        }
+                    }
+
+                    mBatchedInputEventPending = true;
+                    if (kDebugDispatchCycle) {
+                        ALOGD("channel '%s' ~ Dispatching batched input event pending notification.",
+                                getInputChannelName().c_str());
+                    }
+                  //调用 InputReceiver.dispatchBatchedInputEventPending()
+                    env->CallVoidMethod(receiverObj.get(),
+                            gInputEventReceiverClassInfo.dispatchBatchedInputEventPending);
+                    if (env->ExceptionCheck()) {
+                        ALOGE("Exception dispatching batched input events.");
+                        mBatchedInputEventPending = false; // try again later
+                    }
+                }
+                return OK;
+            }
+            ALOGE("channel '%s' ~ Failed to consume input event.  status=%d",
+                    getInputChannelName().c_str(), status);
+            return status;
+        }    
     ...
         if (!skipCallbacks) {
 
@@ -45689,12 +45723,39 @@ private void dispatchInputEvent(int seq, InputEvent event, int displayId) {
         onInputEvent(event, displayId);
     }
 
+    private void dispatchBatchedInputEventPending() {
+        onBatchedInputEventPending();
+    }
+
 
 //ViewRootImpl.java
+
+    final class WindowInputEventReceiver extends InputEventReceiver {
         @Override
         public void onInputEvent(InputEvent event, int displayId) {
             enqueueInputEvent(event, this, 0, true);
         }
+      
+        @Override
+        public void onBatchedInputEventPending() {
+            if (mUnbufferedInputDispatch) {
+                super.onBatchedInputEventPending();
+            } else {
+                scheduleConsumeBatchedInput();//按照Vsync信号进行分发
+            }
+        }
+      
+    }
+
+//事件
+    void scheduleConsumeBatchedInput() {
+        if (!mConsumeBatchedInputScheduled) {
+            mConsumeBatchedInputScheduled = true;
+          //根据Vsync信号 进行触摸事件的回调
+            mChoreographer.postCallback(Choreographer.CALLBACK_INPUT,
+                    mConsumedBatchedInputRunnable, null);
+        }
+    }
 
     void enqueueInputEvent(InputEvent event,
             InputEventReceiver receiver, int flags, boolean processImmediately) {
@@ -45764,13 +45825,17 @@ private void dispatchInputEvent(int seq, InputEvent event, int displayId) {
 
 此处`stage`是`ViewPostImeInputStage`，向下继续调用到`onProcess()`
 
+`ViewPostImeInputStage`：**视图处理阶段**，主要处理按键、手指触摸等事件，分发的对象是View。
+
 ```java
 //viewRootImpl.java
     final class ViewPostImeInputStage extends InputStage {
         protected int onProcess(QueuedInputEvent q) {
+          //按键事件
             if (q.mEvent instanceof KeyEvent) {
                 return processKeyEvent(q);
             } else {
+              //触摸事件
                 final int source = q.mEvent.getSource();
                 if ((source & InputDevice.SOURCE_CLASS_POINTER) != 0) {
                     return processPointerEvent(q);
@@ -45829,7 +45894,7 @@ public final boolean dispatchPointerEvent(MotionEvent event) {
 
 所以经过一系列操作 让用户的屏幕触摸操作，最终走到了`Activity.dispatchTouchEvent()`
 
-![img](/images/触发Activity触摸事件)
+![img](/images/触摸事件真实顺序.jpg)
 
 
 
@@ -45858,7 +45923,7 @@ public final boolean dispatchPointerEvent(MotionEvent event) {
 
 ### MotionEvent产生时机
 
-在`ViewRootImpl,setView()`时，创建了`WindowInputReceiver`，当IMS写入事件(通过EventHub监听到`/dev/input/`)，通过一系列的操作回调到`dispatchInputEvent()`，最后走到了`processPointerEvent()`，此时把从Native层传递过来的`InputEvent`强转成`MotionEvent`，然后继续向下传递。
+在`ViewRootImpl.setView()`时，创建了`WindowInputReceiver`，当IMS写入事件(通过EventHub监听到`/dev/input/`)，通过一系列的操作回调到`dispatchInputEvent()`，最后走到了`processPointerEvent()`，此时把从Native层传递过来的`InputEvent`强转成`MotionEvent`，然后继续向下传递。
 
 ### MotionEvent传递顺序-事件分发顺序
 
@@ -46471,11 +46536,126 @@ public boolean dispatchTouchEvent() {
 
 
 
+##### 子View拦截父View事件
+
+子View通过使用`requestDisallowInterceptTouchEvent(true)`命令**指定ViewGroup不再针对事件序列进行拦截**，将事件交由子View去处理。
+
+*设置`requestDisallowInterceptTouchEvent(true)`后，父类会在每次`ACTION_DOWN`的时候进行重置，避免影响其他子View的事件处理。*
+
+上述方法也是解决`滑动冲突`的一种方法：
+
+`内部拦截法`：通过在子类中调用`parent.requestDisallowInterceptTouchEvent()`来控制父类是否拦截事件。
+
+还有一个是
+
+`外部拦截法`：通过重写父类的`onInterceptTouchEvent()`拦截冲突的事件。
+
+
+
 ## 事件分发完成
 
-//android_view_InputEventReceiver finishInputEvent
+事件分发完毕后，执行到`finishInputEvent()`
 
-//InputTransport.cpp sendFinishedSignal() sendUnchainedFinishedSignal() channel->sendMessage
+```java
+//ViewRootImpl.java
+        protected void onDeliverToNext(QueuedInputEvent q) {
+            if (DEBUG_INPUT_STAGES) {
+                Log.v(mTag, "Done with " + getClass().getSimpleName() + ". " + q);
+            }
+            if (mNext != null) {
+              //有任务继续执行
+                mNext.deliver(q);
+            } else {
+              //无任务时 通知结束
+                finishInputEvent(q);
+            }
+        }
+
+    private void finishInputEvent(QueuedInputEvent q) {
+        Trace.asyncTraceEnd(Trace.TRACE_TAG_VIEW, "deliverInputEvent",
+                q.mEvent.getSequenceNumber());
+
+        if (q.mReceiver != null) {
+            boolean handled = (q.mFlags & QueuedInputEvent.FLAG_FINISHED_HANDLED) != 0;
+            q.mReceiver.finishInputEvent(q.mEvent, handled);
+        } else {
+            q.mEvent.recycleIfNeededAfterDispatch();
+        }
+
+        recycleQueuedInputEvent(q);
+    }
+```
+
+```java
+//InputEventReceiver.java
+    public final void finishInputEvent(InputEvent event, boolean handled) {
+     ...
+      nativeFinishInputEvent(mReceiverPtr, seq, handled);
+     ...
+    }
+```
+
+`nativeFinishInputEvent()`通知事件结束到Native层
+
+```c++
+//frameworks/base/core/jni/android_view_InputEventReceiver.cpp
+static void nativeFinishInputEvent(JNIEnv* env, jclass clazz, jlong receiverPtr,
+        jint seq, jboolean handled) {
+    sp<NativeInputEventReceiver> receiver =
+            reinterpret_cast<NativeInputEventReceiver*>(receiverPtr);
+  ...
+    status_t status = receiver->finishInputEvent(seq, handled);
+}
+
+status_t NativeInputEventReceiver::finishInputEvent(uint32_t seq, bool handled) {
+  ...
+    status_t status = mInputConsumer.sendFinishedSignal(seq, handled);
+    if (status) {
+        if (status == WOULD_BLOCK) {
+          ...
+            if (mFinishQueue.size() == 1) {
+                setFdEvents(ALOOPER_EVENT_INPUT | ALOOPER_EVENT_OUTPUT);
+            }
+            return OK;
+        }
+    }
+    return status;
+}
+```
+
+```c++
+//frameworks/native/libs/input/InputTransport.cpp
+status_t InputConsumer::sendFinishedSignal(uint32_t seq, bool handled) {
+    ...
+    // Send finished signals for the batch sequence chain first.
+    size_t seqChainCount = mSeqChains.size();
+    if (seqChainCount) {
+       ...
+        status_t status = OK;
+        while (!status && chainIndex > 0) {
+            chainIndex--;
+          
+            status = sendUnchainedFinishedSignal(chainSeqs[chainIndex], handled);
+        }
+
+    }
+
+    // Send finished signal for the last message in the batch.
+    return sendUnchainedFinishedSignal(seq, handled);
+}
+
+```
+
+```c++
+status_t InputConsumer::sendUnchainedFinishedSignal(uint32_t seq, bool handled) {
+    InputMessage msg;
+    msg.header.type = InputMessage::TYPE_FINISHED;
+    msg.body.finished.seq = seq;
+    msg.body.finished.handled = handled;
+  //通过 InputChannel.sendMessage()发送消息通知
+     return mChannel->sendMessage(&msg);
+}
+```
 
 
 
@@ -46487,7 +46667,9 @@ public boolean dispatchTouchEvent() {
 
 [Android相关源码](https://cs.android.com)
 
-[一次触摸，Android 到底干了啥](https://zhuanlan.zhihu.com/p/31210271)]]></content>
+[一次触摸，Android 到底干了啥](https://zhuanlan.zhihu.com/p/31210271)
+
+[反思|Android 事件分发机制的设计与实现](https://juejin.cn/post/6844903926446161927#heading-14)]]></content>
       <tags>
         <tag>Android</tag>
       </tags>
@@ -47601,6 +47783,14 @@ SharedPreferences 本质是对xml文件的读写，可以通过对xml文件添�
 [Android 源码仓库](https://cs.android.com/)
 
 ]]></content>
+      <tags>
+        <tag>Android</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>Android系统启动过程</title>
+    <url>/2020/11/12/Android-%E7%B3%BB%E7%BB%9F%E5%90%AF%E5%8A%A8%E8%BF%87%E7%A8%8B/</url>
+    <content><![CDATA[]]></content>
       <tags>
         <tag>Android</tag>
       </tags>
@@ -60408,6 +60598,27 @@ Done: ;
     mLock.unlock();
 
     ... //处理带有callback的response事件
+          for (size_t i = 0; i < mResponses.size(); i++) {
+        Response& response = mResponses.editItemAt(i);
+        if (response.request.ident == POLL_CALLBACK) {
+            int fd = response.request.fd;
+            int events = response.events;
+            void* data = response.request.data;
+
+            // Invoke the callback.  Note that the file descriptor may be closed by
+            // the callback (and potentially even reused) before the function returns so
+            // we need to be a little careful when removing the file descriptor afterwards.
+            int callbackResult = response.request.callback->handleEvent(fd, events, data);
+            if (callbackResult == 0) {
+                removeFd(fd, response.request.seq);
+            }
+
+            // Clear the callback reference in the response structure promptly because we
+            // will not clear the response vector itself until the next poll.
+            response.request.callback.clear();
+            result = POLL_CALLBACK;
+        }
+    }
     
     return result;
 }
@@ -61880,11 +62091,6 @@ class Solution {
   <entry>
     <title>Android-性能监控</title>
     <url>/2020/11/20/Android-%E6%80%A7%E8%83%BD%E7%9B%91%E6%8E%A7/</url>
-    <content><![CDATA[]]></content>
-  </entry>
-  <entry>
-    <title>Android系统启动过程</title>
-    <url>/2020/11/12/Android-%E7%B3%BB%E7%BB%9F%E5%90%AF%E5%8A%A8%E8%BF%87%E7%A8%8B/</url>
     <content><![CDATA[]]></content>
   </entry>
   <entry>

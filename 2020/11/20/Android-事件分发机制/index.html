@@ -169,7 +169,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      9.4k 字
+      10.1k 字
     </span>
   
 
@@ -179,7 +179,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      152
+      164
        分钟
     </span>
   
@@ -1380,6 +1380,40 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
   <span class="hljs-keyword">for</span> (;;) &#123;
         <span class="hljs-keyword">status_t</span> status = mInputConsumer.consume(&amp;mInputEventFactory,
                 consumeBatches, frameTime, &amp;seq, &amp;inputEvent, &amp;displayId);
+    <span class="hljs-comment">//将事件进行打包，避免量过大</span>
+        <span class="hljs-keyword">if</span> (status) &#123;
+            <span class="hljs-keyword">if</span> (status == WOULD_BLOCK) &#123;
+                <span class="hljs-keyword">if</span> (!skipCallbacks &amp;&amp; !mBatchedInputEventPending
+                        &amp;&amp; mInputConsumer.hasPendingBatch()) &#123;
+                    <span class="hljs-comment">// There is a pending batch.  Come back later.</span>
+                    <span class="hljs-keyword">if</span> (!receiverObj.<span class="hljs-built_in">get</span>()) &#123;
+                        receiverObj.reset(jniGetReferent(env, mReceiverWeakGlobal));
+                        <span class="hljs-keyword">if</span> (!receiverObj.<span class="hljs-built_in">get</span>()) &#123;
+                            ALOGW(<span class="hljs-string">"channel '%s' ~ Receiver object was finalized "</span>
+                                    <span class="hljs-string">"without being disposed."</span>, getInputChannelName().c_str());
+                            <span class="hljs-keyword">return</span> DEAD_OBJECT;
+                        &#125;
+                    &#125;
+
+                    mBatchedInputEventPending = <span class="hljs-literal">true</span>;
+                    <span class="hljs-keyword">if</span> (kDebugDispatchCycle) &#123;
+                        ALOGD(<span class="hljs-string">"channel '%s' ~ Dispatching batched input event pending notification."</span>,
+                                getInputChannelName().c_str());
+                    &#125;
+                  <span class="hljs-comment">//调用 InputReceiver.dispatchBatchedInputEventPending()</span>
+                    env-&gt;CallVoidMethod(receiverObj.<span class="hljs-built_in">get</span>(),
+                            gInputEventReceiverClassInfo.dispatchBatchedInputEventPending);
+                    <span class="hljs-keyword">if</span> (env-&gt;ExceptionCheck()) &#123;
+                        ALOGE(<span class="hljs-string">"Exception dispatching batched input events."</span>);
+                        mBatchedInputEventPending = <span class="hljs-literal">false</span>; <span class="hljs-comment">// try again later</span>
+                    &#125;
+                &#125;
+                <span class="hljs-keyword">return</span> OK;
+            &#125;
+            ALOGE(<span class="hljs-string">"channel '%s' ~ Failed to consume input event.  status=%d"</span>,
+                    getInputChannelName().c_str(), status);
+            <span class="hljs-keyword">return</span> status;
+        &#125;    
     ...
         <span class="hljs-keyword">if</span> (!skipCallbacks) &#123;
 
@@ -1462,12 +1496,39 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
         onInputEvent(event, displayId);
     &#125;
 
+    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">dispatchBatchedInputEventPending</span><span class="hljs-params">()</span> </span>&#123;
+        onBatchedInputEventPending();
+    &#125;
+
 
 <span class="hljs-comment">//ViewRootImpl.java</span>
+
+    <span class="hljs-keyword">final</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">WindowInputEventReceiver</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">InputEventReceiver</span> </span>&#123;
         <span class="hljs-meta">@Override</span>
         <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">onInputEvent</span><span class="hljs-params">(InputEvent event, <span class="hljs-keyword">int</span> displayId)</span> </span>&#123;
             enqueueInputEvent(event, <span class="hljs-keyword">this</span>, <span class="hljs-number">0</span>, <span class="hljs-keyword">true</span>);
         &#125;
+      
+        <span class="hljs-meta">@Override</span>
+        <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">onBatchedInputEventPending</span><span class="hljs-params">()</span> </span>&#123;
+            <span class="hljs-keyword">if</span> (mUnbufferedInputDispatch) &#123;
+                <span class="hljs-keyword">super</span>.onBatchedInputEventPending();
+            &#125; <span class="hljs-keyword">else</span> &#123;
+                scheduleConsumeBatchedInput();<span class="hljs-comment">//按照Vsync信号进行分发</span>
+            &#125;
+        &#125;
+      
+    &#125;
+
+<span class="hljs-comment">//事件</span>
+    <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">scheduleConsumeBatchedInput</span><span class="hljs-params">()</span> </span>&#123;
+        <span class="hljs-keyword">if</span> (!mConsumeBatchedInputScheduled) &#123;
+            mConsumeBatchedInputScheduled = <span class="hljs-keyword">true</span>;
+          <span class="hljs-comment">//根据Vsync信号 进行触摸事件的回调</span>
+            mChoreographer.postCallback(Choreographer.CALLBACK_INPUT,
+                    mConsumedBatchedInputRunnable, <span class="hljs-keyword">null</span>);
+        &#125;
+    &#125;
 
     <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">enqueueInputEvent</span><span class="hljs-params">(InputEvent event,
             InputEventReceiver receiver, <span class="hljs-keyword">int</span> flags, <span class="hljs-keyword">boolean</span> processImmediately)</span> </span>&#123;
@@ -1533,12 +1594,15 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
         &#125;      
     &#125;</code></pre>
 <p>此处<code>stage</code>是<code>ViewPostImeInputStage</code>，向下继续调用到<code>onProcess()</code></p>
+<p><code>ViewPostImeInputStage</code>：<strong>视图处理阶段</strong>，主要处理按键、手指触摸等事件，分发的对象是View。</p>
 <pre><code class="hljs java"><span class="hljs-comment">//viewRootImpl.java</span>
     <span class="hljs-keyword">final</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">ViewPostImeInputStage</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">InputStage</span> </span>&#123;
         <span class="hljs-function"><span class="hljs-keyword">protected</span> <span class="hljs-keyword">int</span> <span class="hljs-title">onProcess</span><span class="hljs-params">(QueuedInputEvent q)</span> </span>&#123;
+          <span class="hljs-comment">//按键事件</span>
             <span class="hljs-keyword">if</span> (q.mEvent <span class="hljs-keyword">instanceof</span> KeyEvent) &#123;
                 <span class="hljs-keyword">return</span> processKeyEvent(q);
             &#125; <span class="hljs-keyword">else</span> &#123;
+              <span class="hljs-comment">//触摸事件</span>
                 <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> source = q.mEvent.getSource();
                 <span class="hljs-keyword">if</span> ((source &amp; InputDevice.SOURCE_CLASS_POINTER) != <span class="hljs-number">0</span>) &#123;
                     <span class="hljs-keyword">return</span> processPointerEvent(q);
@@ -1586,7 +1650,7 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
         <span class="hljs-keyword">return</span> onTouchEvent(ev);
     &#125;</code></pre>
 <p>所以经过一系列操作 让用户的屏幕触摸操作，最终走到了<code>Activity.dispatchTouchEvent()</code></p>
-<p><img src="/images/触发Activity触摸事件" srcset="/img/loading.gif" alt="img"></p>
+<p><img src="/images/触摸事件真实顺序.jpg" srcset="/img/loading.gif" alt="img"></p>
 <h2 id="事件分发"><a href="#事件分发" class="headerlink" title="事件分发"></a>事件分发</h2><h3 id="MotionEvent"><a href="#MotionEvent" class="headerlink" title="MotionEvent"></a>MotionEvent</h3><blockquote>
 <p>当用户点击View或ViewGroup的时候，将会产生一个事件对象，就是<code>MotionEvent</code>。</p>
 </blockquote>
@@ -1601,7 +1665,7 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
 <p>用户手指触摸到屏幕到离开屏幕可能产生的事件序列如下：</p>
 <p><code>ACTION_DOWN</code> -&gt; <code>ACTION_MOVE</code> -&gt; <code>ACTION_MOVE</code> -&gt; … <code>ACTION_MOVE</code> -&gt; <code>ACTION_UP</code></p>
 <p><img src="/images/事件分发顺序.jpg" srcset="/img/loading.gif" alt="事件分发顺序"></p>
-<h3 id="MotionEvent产生时机"><a href="#MotionEvent产生时机" class="headerlink" title="MotionEvent产生时机"></a>MotionEvent产生时机</h3><p>在<code>ViewRootImpl,setView()</code>时，创建了<code>WindowInputReceiver</code>，当IMS写入事件(通过EventHub监听到<code>/dev/input/</code>)，通过一系列的操作回调到<code>dispatchInputEvent()</code>，最后走到了<code>processPointerEvent()</code>，此时把从Native层传递过来的<code>InputEvent</code>强转成<code>MotionEvent</code>，然后继续向下传递。</p>
+<h3 id="MotionEvent产生时机"><a href="#MotionEvent产生时机" class="headerlink" title="MotionEvent产生时机"></a>MotionEvent产生时机</h3><p>在<code>ViewRootImpl.setView()</code>时，创建了<code>WindowInputReceiver</code>，当IMS写入事件(通过EventHub监听到<code>/dev/input/</code>)，通过一系列的操作回调到<code>dispatchInputEvent()</code>，最后走到了<code>processPointerEvent()</code>，此时把从Native层传递过来的<code>InputEvent</code>强转成<code>MotionEvent</code>，然后继续向下传递。</p>
 <h3 id="MotionEvent传递顺序-事件分发顺序"><a href="#MotionEvent传递顺序-事件分发顺序" class="headerlink" title="MotionEvent传递顺序-事件分发顺序"></a>MotionEvent传递顺序-事件分发顺序</h3><p>事件分发本质就是<code>MotionEvent</code>的传递过程。</p>
 <pre><code class="hljs java"><span class="hljs-comment">//ViewRootImpl.java</span>
         <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">int</span> <span class="hljs-title">processPointerEvent</span><span class="hljs-params">(QueuedInputEvent q)</span> </span>&#123;
@@ -2121,11 +2185,101 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
 <li><p>子View收到ACTION_DOWN，但是上一个事件还没有结束(因为APP切换、ANR导致后续事件丢失)，此时也会执行ACTION_CANCEL</p>
 </li>
 </ol>
-<h2 id="事件分发完成"><a href="#事件分发完成" class="headerlink" title="事件分发完成"></a>事件分发完成</h2><p>//android_view_InputEventReceiver finishInputEvent</p>
-<p>//InputTransport.cpp sendFinishedSignal() sendUnchainedFinishedSignal() channel-&gt;sendMessage</p>
+<h5 id="子View拦截父View事件"><a href="#子View拦截父View事件" class="headerlink" title="子View拦截父View事件"></a>子View拦截父View事件</h5><p>子View通过使用<code>requestDisallowInterceptTouchEvent(true)</code>命令<strong>指定ViewGroup不再针对事件序列进行拦截</strong>，将事件交由子View去处理。</p>
+<p><em>设置<code>requestDisallowInterceptTouchEvent(true)</code>后，父类会在每次<code>ACTION_DOWN</code>的时候进行重置，避免影响其他子View的事件处理。</em></p>
+<p>上述方法也是解决<code>滑动冲突</code>的一种方法：</p>
+<p><code>内部拦截法</code>：通过在子类中调用<code>parent.requestDisallowInterceptTouchEvent()</code>来控制父类是否拦截事件。</p>
+<p>还有一个是</p>
+<p><code>外部拦截法</code>：通过重写父类的<code>onInterceptTouchEvent()</code>拦截冲突的事件。</p>
+<h2 id="事件分发完成"><a href="#事件分发完成" class="headerlink" title="事件分发完成"></a>事件分发完成</h2><p>事件分发完毕后，执行到<code>finishInputEvent()</code></p>
+<pre><code class="hljs java"><span class="hljs-comment">//ViewRootImpl.java</span>
+        <span class="hljs-function"><span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> <span class="hljs-title">onDeliverToNext</span><span class="hljs-params">(QueuedInputEvent q)</span> </span>&#123;
+            <span class="hljs-keyword">if</span> (DEBUG_INPUT_STAGES) &#123;
+                Log.v(mTag, <span class="hljs-string">"Done with "</span> + getClass().getSimpleName() + <span class="hljs-string">". "</span> + q);
+            &#125;
+            <span class="hljs-keyword">if</span> (mNext != <span class="hljs-keyword">null</span>) &#123;
+              <span class="hljs-comment">//有任务继续执行</span>
+                mNext.deliver(q);
+            &#125; <span class="hljs-keyword">else</span> &#123;
+              <span class="hljs-comment">//无任务时 通知结束</span>
+                finishInputEvent(q);
+            &#125;
+        &#125;
+
+    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">finishInputEvent</span><span class="hljs-params">(QueuedInputEvent q)</span> </span>&#123;
+        Trace.asyncTraceEnd(Trace.TRACE_TAG_VIEW, <span class="hljs-string">"deliverInputEvent"</span>,
+                q.mEvent.getSequenceNumber());
+
+        <span class="hljs-keyword">if</span> (q.mReceiver != <span class="hljs-keyword">null</span>) &#123;
+            <span class="hljs-keyword">boolean</span> handled = (q.mFlags &amp; QueuedInputEvent.FLAG_FINISHED_HANDLED) != <span class="hljs-number">0</span>;
+            q.mReceiver.finishInputEvent(q.mEvent, handled);
+        &#125; <span class="hljs-keyword">else</span> &#123;
+            q.mEvent.recycleIfNeededAfterDispatch();
+        &#125;
+
+        recycleQueuedInputEvent(q);
+    &#125;</code></pre>
+<pre><code class="hljs java"><span class="hljs-comment">//InputEventReceiver.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">void</span> <span class="hljs-title">finishInputEvent</span><span class="hljs-params">(InputEvent event, <span class="hljs-keyword">boolean</span> handled)</span> </span>&#123;
+     ...
+      nativeFinishInputEvent(mReceiverPtr, seq, handled);
+     ...
+    &#125;</code></pre>
+<p><code>nativeFinishInputEvent()</code>通知事件结束到Native层</p>
+<pre><code class="hljs c++"><span class="hljs-comment">//frameworks/base/core/jni/android_view_InputEventReceiver.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">nativeFinishInputEvent</span><span class="hljs-params">(JNIEnv* env, jclass clazz, jlong receiverPtr,
+        jint seq, jboolean handled)</span> </span>&#123;
+    sp&lt;NativeInputEventReceiver&gt; receiver =
+            <span class="hljs-keyword">reinterpret_cast</span>&lt;NativeInputEventReceiver*&gt;(receiverPtr);
+  ...
+    <span class="hljs-keyword">status_t</span> status = receiver-&gt;finishInputEvent(seq, handled);
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">status_t</span> <span class="hljs-title">NativeInputEventReceiver::finishInputEvent</span><span class="hljs-params">(<span class="hljs-keyword">uint32_t</span> seq, <span class="hljs-keyword">bool</span> handled)</span> </span>&#123;
+  ...
+    <span class="hljs-keyword">status_t</span> status = mInputConsumer.sendFinishedSignal(seq, handled);
+    <span class="hljs-keyword">if</span> (status) &#123;
+        <span class="hljs-keyword">if</span> (status == WOULD_BLOCK) &#123;
+          ...
+            <span class="hljs-keyword">if</span> (mFinishQueue.<span class="hljs-built_in">size</span>() == <span class="hljs-number">1</span>) &#123;
+                setFdEvents(ALOOPER_EVENT_INPUT | ALOOPER_EVENT_OUTPUT);
+            &#125;
+            <span class="hljs-keyword">return</span> OK;
+        &#125;
+    &#125;
+    <span class="hljs-keyword">return</span> status;
+&#125;</code></pre>
+<pre><code class="hljs c++"><span class="hljs-comment">//frameworks/native/libs/input/InputTransport.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">status_t</span> <span class="hljs-title">InputConsumer::sendFinishedSignal</span><span class="hljs-params">(<span class="hljs-keyword">uint32_t</span> seq, <span class="hljs-keyword">bool</span> handled)</span> </span>&#123;
+    ...
+    <span class="hljs-comment">// Send finished signals for the batch sequence chain first.</span>
+    <span class="hljs-keyword">size_t</span> seqChainCount = mSeqChains.<span class="hljs-built_in">size</span>();
+    <span class="hljs-keyword">if</span> (seqChainCount) &#123;
+       ...
+        <span class="hljs-keyword">status_t</span> status = OK;
+        <span class="hljs-keyword">while</span> (!status &amp;&amp; chainIndex &gt; <span class="hljs-number">0</span>) &#123;
+            chainIndex--;
+          
+            status = sendUnchainedFinishedSignal(chainSeqs[chainIndex], handled);
+        &#125;
+
+    &#125;
+
+    <span class="hljs-comment">// Send finished signal for the last message in the batch.</span>
+    <span class="hljs-keyword">return</span> sendUnchainedFinishedSignal(seq, handled);
+&#125;</code></pre>
+<pre><code class="hljs c++"><span class="hljs-function"><span class="hljs-keyword">status_t</span> <span class="hljs-title">InputConsumer::sendUnchainedFinishedSignal</span><span class="hljs-params">(<span class="hljs-keyword">uint32_t</span> seq, <span class="hljs-keyword">bool</span> handled)</span> </span>&#123;
+    InputMessage msg;
+    msg.header.type = InputMessage::TYPE_FINISHED;
+    msg.body.finished.seq = seq;
+    msg.body.finished.handled = handled;
+  <span class="hljs-comment">//通过 InputChannel.sendMessage()发送消息通知</span>
+     <span class="hljs-keyword">return</span> mChannel-&gt;sendMessage(&amp;msg);
+&#125;</code></pre>
 <h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="http://gityuan.com/2016/12/11/input-reader/" target="_blank" rel="noopener">InputReaderThread</a></p>
 <p><a href="https://cs.android.com" target="_blank" rel="noopener">Android相关源码</a></p>
 <p><a href="https://zhuanlan.zhihu.com/p/31210271" target="_blank" rel="noopener">一次触摸，Android 到底干了啥</a></p>
+<p><a href="https://juejin.cn/post/6844903926446161927#heading-14" target="_blank" rel="noopener">反思|Android 事件分发机制的设计与实现</a></p>
 
             </div>
             <hr>
