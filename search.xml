@@ -40723,7 +40723,7 @@ private void performTraversals() {
 
 拿`TextView`举例：
 
-![TextView.setText()](/images/TextView.setText().png)
+![TextView.setText()](/images/TextView.setText.png)
 
 当`TextView`执行`setText()`后，TextView可能布局发生改变，也可能需要进行重绘。需要区分不同情况实现对应功能。
 
@@ -41541,7 +41541,7 @@ public class GenerateArray {
 
 #### 实例分析
 
-```
+```java
 public class GenerateArray {
     //使用泛型类型的Map
     private Map<String, Integer> map = new HashMap<>();
@@ -41585,6 +41585,10 @@ public class GenerateArray {
 由于反射会额外的消耗一定的系统资源，如果不需要动态的创建一个对象，那么就不需要用到反射。
 
 另外反射调用方法时会忽略权限检查，因此可能会破坏封装性导致安全问题。
+
+
+
+只有在 `初始化直接赋值且非new(eg: final String aa = "123")`不能被反射修改`final值`。
 
 ## 反射优化
 
@@ -44177,6 +44181,8 @@ public void onActivityResult(int requestCode,int resultCode,Intent data){
 > 2. 输入系统取出内核事件，封装成为KeyEvent或MotionEvent
 > 3. 交付给对应的Window消费该事件。
 
+![事件分发机制xmind](/images/Android事件分发机制xmind.png)
+
 ![input](/images/真·事件分发)
 
 ## 硬件中断
@@ -44331,7 +44337,7 @@ EventHub::EventHub(void) :
 
 1. 初始化`epoll`实例
 2. 初始化`iNotify`实例，用于监控`/dev/input`目录的变化。若发生变化，意味设备发生变化，需要处理。`epoll`添加`iNotify实例`监听
-3. 创建非阻塞模式的管道(`pipe`)，epoll监听管道的内容
+3. 创建非阻塞模式的管道(`pipe`)，epoll监听管道的内容。(主要用于 唤醒InputReader线程)
 
 
 
@@ -44470,6 +44476,8 @@ status_t InputManager::start() {
 
 #### 总结
 
+![IMS结构体系](/images/IMS结构体系.png)
+
 IMS启动过程重点在于Native的初始化，分别创建以下对象：
 
 - **EventHub**
@@ -44504,7 +44512,7 @@ bool InputReaderThread::threadLoop() {
 
 void InputReader::loopOnce() {
   ...
-    //从EventHub获取事件
+    //从EventHub获取事件列表，返回的是 事件的个数。无事件时将阻塞 
     size_t count = mEventHub->getEvents(timeoutMillis, mEventBuffer, EVENT_BUFFER_SIZE);
 
     { // acquire lock
@@ -44582,6 +44590,16 @@ size_t EventHub::getEvents(int timeoutMillis, RawEvent* buffer, size_t bufferSiz
             //等待input事件
            int pollResult = epoll_wait(mEpollFd, mPendingEventItems, EPOLL_MAX_EVENTS, timeoutMillis);
     
+    ...
+        // readNotify() will modify the list of devices so this must be done after
+        // processing all other events to ensure that we read all remaining events
+        // before closing the devices.
+        if (mPendingINotify && mPendingEventIndex >= mPendingEventCount) {
+            mPendingINotify = false;
+          //从INotify事件 读取发生的事件
+            readNotifyLocked();
+            deviceChanged = true;
+        }
   }
   ...
       // 返回读取的事件个数
@@ -44608,6 +44626,12 @@ struct RawEvent {
 - `DEVICE_REMOVED`：移除设备
 - `FINISHED_DEVICE_SCAN`：扫描完成
 - `type < FIRST_SYNTHETIC_EVENT`：其他事件
+
+
+
+`getEvents()`大概执行流程：
+
+当`设备节点(/dev/input)`发生变化时，`epoll_wait()`会响应到对应的变化，然后`getEvents()`可以知道对应的变化。继续从`mINotifyFd`读取`iNotify事件`，进行输入设备的操作，最后生成相应的`RawEvent`
 
 
 
@@ -44712,6 +44736,8 @@ InputDevice* InputReader::createDeviceLocked(int32_t deviceId, int32_t controlle
 - `Keyboard-like`：键盘类设备 --> KeyboardInputMapper
 - `Cursor-like`：鼠标类设备 --> CursorInputMapper
 - `TouchScreens`：触摸屏设备 --> MultiTouchInputMapper(多点触控) / SingleTouchInputMapper(单点触控)
+
+![InputMapper对应关系](/images/InputMapper对应关系.png)
 
 ###### processEventsForDeviceLocked() 处理设备事件
 
@@ -44988,8 +45014,7 @@ void InputDispatcher::dispatchOnce() {
       //唤醒等待线程，监听当前是否发生死锁
         mDispatcherIsAliveCondition.broadcast();
 
-        // Run a dispatch loop if there are no pending commands.
-        // The dispatch loop might enqueue commands to run afterwards.
+       //派发输入事件，`nextWakeUpTime`决定下次派发线程执行时间
         if (!haveCommandsLocked()) {
             dispatchOnceInnerLocked(&nextWakeupTime);
         }
@@ -45001,7 +45026,7 @@ void InputDispatcher::dispatchOnce() {
         }
     } // release lock
 
-    // Wait for callback or timeout or wake.  (make sure we round up, not down)
+   //派发线程进入休眠状态
     nsecs_t currentTime = now();
     int timeoutMillis = toMillisecondTimeoutDelay(currentTime, nextWakeupTime);
     mLooper->pollOnce(timeoutMillis);
@@ -45018,6 +45043,7 @@ void InputDispatcher::dispatchOnceInnerLocked(nsecs_t* nextWakeupTime) {
     // If we don't already have a pending event, go grab one.
     if (! mPendingEvent) {
         if (mInboundQueue.isEmpty()) {
+          //派发队列为空，进入线程休眠状态
           ...
             // Nothing to do if there is no pending event.
             if (!mPendingEvent) {
@@ -45038,6 +45064,7 @@ void InputDispatcher::dispatchOnceInnerLocked(nsecs_t* nextWakeupTime) {
     ALOG_ASSERT(mPendingEvent != NULL);
     bool done = false;
     DropReason dropReason = DROP_REASON_NOT_DROPPED;
+  //检查事件是否需要丢弃
     if (!(mPendingEvent->policyFlags & POLICY_FLAG_PASS_TO_USER)) {
         dropReason = DROP_REASON_POLICY;
     } else if (!mDispatchEnabled) {
@@ -45079,6 +45106,7 @@ void InputDispatcher::dispatchOnceInnerLocked(nsecs_t* nextWakeupTime) {
     }
 
 
+        //准备派发下一个事件
     if (done) {
         if (dropReason != DROP_REASON_NOT_DROPPED) {
             dropInboundEventLocked(mPendingEvent, dropReason);
@@ -45098,17 +45126,17 @@ bool InputDispatcher::dispatchMotionLocked(
 
     bool isPointerEvent = entry->source & AINPUT_SOURCE_CLASS_POINTER;
 
-    // Identify targets.
+    // 保存触摸事件的发送目标
     Vector<InputTarget> inputTargets;
 
     bool conflictingPointerActions = false;
     int32_t injectionResult;
     if (isPointerEvent) {
-        // 寻找有 焦点的 window。并记录在inputTargets中
+        // 基于坐标点的形式，如触屏，根据坐标点获取目标窗口
         injectionResult = findTouchedWindowTargetsLocked(currentTime,
                 entry, inputTargets, nextWakeupTime, &conflictingPointerActions);
     } else {
-        // Non touch event.  (eg. trackball)
+        // 无坐标点的触摸事件，例如 轨迹球
         injectionResult = findFocusedWindowTargetsLocked(currentTime,
                 entry, inputTargets, nextWakeupTime);
     }
@@ -45120,6 +45148,33 @@ bool InputDispatcher::dispatchMotionLocked(
 }
 ```
 
+`InputTarget`的结构
+
+```c++
+//frameworks/native/services/inputflinger/InputDispatcher.h
+struct InputTarget {
+    // 连接InputDispatcher与Window的通信管道
+    sp<InputChannel> inputChannel;
+
+    // Flags for the input target.
+    int32_t flags;
+
+    // The x and y offset to add to a MotionEvent as it is delivered.
+    // (ignored for KeyEvents)
+    float xOffset, yOffset;
+
+    // Scaling factor to apply to MotionEvent as it is delivered.
+    // (ignored for KeyEvents)
+    float scaleFactor;
+
+    // The subset of pointer ids to include in motion events dispatched to this input target
+    // if FLAG_SPLIT is set.
+    BitSet32 pointerIds;  
+}
+```
+
+##### dispatchEventLocked() 发送事件
+
 ```c++
 void InputDispatcher::dispatchEventLocked(nsecs_t currentTime,
         EventEntry* eventEntry, const Vector<InputTarget>& inputTargets) {
@@ -45128,7 +45183,7 @@ void InputDispatcher::dispatchEventLocked(nsecs_t currentTime,
 
     for (size_t i = 0; i < inputTargets.size(); i++) {
         const InputTarget& inputTarget = inputTargets.itemAt(i);
-
+       //根据InputTarget的InputChannel 获取 connection
         ssize_t connectionIndex = getConnectionIndexLocked(inputTarget.inputChannel);
         if (connectionIndex >= 0) {
             sp<Connection> connection = mConnectionsByFd.valueAt(connectionIndex);
@@ -45143,7 +45198,7 @@ void InputDispatcher::prepareDispatchCycleLocked(nsecs_t currentTime,
         const sp<Connection>& connection, EventEntry* eventEntry, const InputTarget* inputTarget) {
      ...
 
-    // Not splitting.  Enqueue dispatch entries for the event as is.
+    // 将事件添加到Connections的发送队列
     enqueueDispatchEntriesLocked(currentTime, connection, eventEntry, inputTarget);
 }
 
@@ -45159,12 +45214,9 @@ void InputDispatcher::enqueueDispatchEntriesLocked(nsecs_t currentTime,
     }
 }
 
+//开始循环
 void InputDispatcher::startDispatchCycleLocked(nsecs_t currentTime,
         const sp<Connection>& connection) {
-#if DEBUG_DISPATCH_CYCLE
-    ALOGD("channel '%s' ~ startDispatchCycle",
-            connection->getInputChannelName().c_str());
-#endif
 
     while (connection->status == Connection::STATUS_NORMAL
             && !connection->outboundQueue.isEmpty()) {
@@ -45223,9 +45275,10 @@ void InputDispatcher::startDispatchCycleLocked(nsecs_t currentTime,
             break;
         }
 
-        // Re-enqueue the event on the wait queue.
+        // 回收队列
         connection->outboundQueue.dequeue(dispatchEntry);
         traceOutboundQueueLengthLocked(connection);
+        // 等待执行队列
         connection->waitQueue.enqueueAtTail(dispatchEntry);
         traceWaitQueueLengthLocked(connection);
     }
@@ -45294,6 +45347,75 @@ status_t InputChannel::sendMessage(const InputMessage* msg) {
 
 最终通过`InputChannel`发送包装好的触摸事件
 
+
+
+##### handleReceiveCallback 接收事件
+
+这一节的触发条件会在后面讲到，简单来说就是
+
+后面Java层的事件分发结束，调用到`InputEventReceiver.finishInputEvent()`，会向UI进程持有的`InputChannel`写入数据，然后唤醒`InputDispatcher`线程被唤醒后执行`handleReceiveCallback()`
+
+```c++
+//frameworks/native/services/inputflinger/InputDispatcher.cpp
+int InputDispatcher::handleReceiveCallback(int fd, int events, void* data) {
+  ...
+        sp<Connection> connection = d->mConnectionsByFd.valueAt(connectionIndex);
+  ...
+            for (;;) {
+                uint32_t seq;
+                bool handled;
+              //从 connection 获取消息
+                status = connection->inputPublisher.receiveFinishedSignal(&seq, &handled);
+                if (status) {
+                    break;
+                }
+              
+                d->finishDispatchCycleLocked(currentTime, connection, seq, handled);
+                gotOne = true;
+            }    
+}
+
+void InputDispatcher::finishDispatchCycleLocked(nsecs_t currentTime,
+        const sp<Connection>& connection, uint32_t seq, bool handled) {
+
+    connection->inputPublisherBlocked = false;
+
+    if (connection->status == Connection::STATUS_BROKEN
+            || connection->status == Connection::STATUS_ZOMBIE) {
+        return;
+    }
+
+    // Notify other system components and prepare to start the next dispatch cycle.
+    onDispatchCycleFinishedLocked(currentTime, connection, seq, handled);
+}
+
+void InputDispatcher::onDispatchCycleFinishedLocked(
+        nsecs_t currentTime, const sp<Connection>& connection, uint32_t seq, bool handled) {
+  //发送命令到 doDispatchCycleFinishedLockedInterruptible
+    CommandEntry* commandEntry = postCommandLocked(
+            & InputDispatcher::doDispatchCycleFinishedLockedInterruptible);
+    commandEntry->connection = connection;
+    commandEntry->eventTime = currentTime;
+    commandEntry->seq = seq;
+    commandEntry->handled = handled;
+}
+
+void InputDispatcher::doDispatchCycleFinishedLockedInterruptible(
+        CommandEntry* commandEntry) {
+  ...
+        if (dispatchEntry == connection->findWaitQueueEntry(seq)) {
+          //事件执行完毕后，从waitQueue移除事件
+            connection->waitQueue.dequeue(dispatchEntry);
+            traceWaitQueueLengthLocked(connection);
+        }
+
+        // 开始下一次发送循环
+        startDispatchCycleLocked(now(), connection);  
+}
+```
+
+
+
 ##### 总结
 
 ![img](/images/event1_5.png)
@@ -45324,6 +45446,38 @@ status_t InputChannel::sendMessage(const InputMessage* msg) {
 `InputChannel`通过`socket`发送消息。
 
 既然存在`sendMessage()`就需要找到相对的`receiveMessage()`调用的地方。
+
+
+
+#### InputChannel的理解
+
+本质是`SocketPair(非网络套接字)`。`SocketPair`用于实现本机内的进程间通信。
+
+`SocketPair`提供方法：
+
+- `socketPair()`：创建SocketPair，返回一对相互连接的fd
+- `send()`：写入数据，可在另一个fd读取
+- `recv()`：读取数据
+
+**非常适合用来进行进程间的交互式通讯。**
+
+
+
+`InputChannel`就是`SocketPair`的封装，分别分配给`InputDispatcher`与`Window`。
+
+`InputDispatcher`写入的事件，`Window`可以从自己持有的`InputChannel`获取；反向也是如此。
+
+`InputChannel`提供方法：位于`InputTransport.cpp`中
+
+- `openInputChannelPair()`：封装`socketPair()`
+- `sendMessage()`：封装`send()`
+- `receiveMessage()`：封装`recv()`
+
+
+
+![InputChannel原理](/images/InputChannel原理.png)
+
+
 
 
 
@@ -45438,9 +45592,62 @@ status_t InputChannel::sendMessage(const InputMessage* msg) {
     }
 ```
 
+##### registerInputChannel()
+
+```java
+//InputManagerService.java 
+public void registerInputChannel(InputChannel inputChannel,
+            InputWindowHandle inputWindowHandle) {
+       //通过Native层完成注册
+        nativeRegisterInputChannel(mPtr, inputChannel, inputWindowHandle, false);
+    }
+
+```
+
+```c++
+status_t NativeInputManager::registerInputChannel(JNIEnv* /* env */,
+        const sp<InputChannel>& inputChannel,
+        const sp<InputWindowHandle>& inputWindowHandle, bool monitor) {
+    ATRACE_CALL();
+  //再通过 InputDispatcher 继续注册
+    return mInputManager->getDispatcher()->registerInputChannel(
+            inputChannel, inputWindowHandle, monitor);
+}
+```
+
+```c++
+//frameworks/native/services/inputflinger/InputDispatcher.cpp
+status_t InputDispatcher::registerInputChannel(const sp<InputChannel>& inputChannel,
+        const sp<InputWindowHandle>& inputWindowHandle, bool monitor) {
 
 
-**点到为止**
+    { // acquire lock
+        AutoMutex _l(mLock);
+
+      //为传入的 InputChannel 创建Connection对象
+        sp<Connection> connection = new Connection(inputChannel, inputWindowHandle, monitor);
+
+        int fd = inputChannel->getFd();
+      //监听connection的变化
+        mConnectionsByFd.add(fd, connection);
+
+        if (monitor) {
+            mMonitoringChannels.push(inputChannel);
+        }
+
+      //如果发生变化，回调handleReceiveCallback方法
+        mLooper->addFd(fd, 0, ALOOPER_EVENT_INPUT, handleReceiveCallback, this);
+    } // release lock
+
+    // Wake the looper because some connections have changed.
+    mLooper->wake();
+    return OK;
+}
+```
+
+![InputChannel执行过程](/images/InputChannel执行过程.png)
+
+
 
 ![InputChannel对应关系](/images/v2-1e1273f15cfdd7b81aa7a2cb819d8890_1440w.jpg)
 
@@ -45709,10 +45916,6 @@ status_t InputConsumer::consume(InputEventFactoryInterface* factory,
 - 往主线程Looper添加了一条`Native Request`，且`callback`为`NativeInputReceiver`
 - 向Looper的`mEpollFd`添加了监听，只要收到触摸事件的消息就会调用到`callback->handleEvent()`
 - `NativeInputReceiver::handleEvent()`主要回调到Java层的`dispatchInputEvent()`且携带`InputEvent`回去(在触摸场景下，实际为`MotionEvent`)。
-
-
-
-//TODO 流程图
 
 #### 回调到Activity
 
@@ -46243,7 +46446,7 @@ public final boolean dispatchPointerEvent(MotionEvent event) {
 
 当然，这个事件分发的顺序也可以修改，只需要实现两个方法：
 
-- `isChildDrawingOrder()`：允许自定义顺序
+- `setChildrenDrawingOrderEnabled(true)`：允许自定义顺序。*isChildrenDrawingOrderEnabled()返回true*
 - `getChildDrawingOrder()`：自定义当前View的顺序
 
 也可以通过`setElevation()`、`setTranslationZ()`或者`setZ()`去修改Z轴的坐标值。
@@ -46300,6 +46503,36 @@ public final boolean dispatchPointerEvent(MotionEvent event) {
 
 - `child==null`：发生的情况：`事件被拦截`或`真的没有可执行触摸事件的子View`。执行`View.dispatchTouchEvent()`
 - `child!=null`：向下执行子View/ViewGroup的`dispatchTouchEvent()`
+
+
+
+##### addTouchTarget()
+
+```java
+    private TouchTarget addTouchTarget(@NonNull View child, int pointerIdBits) {
+        final TouchTarget target = TouchTarget.obtain(child, pointerIdBits);
+        target.next = mFirstTouchTarget;
+        mFirstTouchTarget = target;
+        return target;
+    }
+```
+
+`TouchTarget`结构如下：
+
+```java
+    private static final class TouchTarget {
+        // The touched child view.
+        public View child;
+
+        // The combined bit mask of pointer ids for all pointers captured by the target.
+        public int pointerIdBits;
+
+        // The next target in the target list.
+        public TouchTarget next;
+    }
+```
+
+`TouchTarget`是一个单链表结构，记录的是**事件分发链**。每一个元素表示`真正对事件消费的View`。
 
 ![ViewGroup事件分发](/images/ViewGroup-Dispatch.png)
 
@@ -46518,11 +46751,15 @@ public boolean dispatchTouchEvent() {
 
 
 
-1. 点击事件传递从`dispatchTouchEvent()`开始，在不修改默认返回值时，事件会按照嵌套层次由外向内传递，到达最内层View时，由最内层View`onTouchEvent()`处理
+1. 点击事件传递从`dispatchTouchEvent()`开始，在不修改默认返回值时，事件会按照嵌套层次由外向内传递，到达最内层View时，由最内层`View.onTouchEvent()`处理
 2. View的点击事件触发顺序为  `onTouch()` > `onTouchEvent()` > `performClick()` > `onClick()` 
 3. *Touch事件的后续(例如`ACTION_MOVE`,`ACTION_UP`)层级传递*
    - 若`dispatchTouchEvent()`返回true，那么能收到`ACTION_DOWN`的函数也可以收到后续事件
    - 若`onTouchEvent()`返回true，那么其他事件不再往下传递，而是直接传给自己的`onTouchEvent()`并结束本次事件传递
+
+
+
+> 
 
 #### 事件分发特殊情况
 
@@ -46551,6 +46788,12 @@ public boolean dispatchTouchEvent() {
 `外部拦截法`：通过重写父类的`onInterceptTouchEvent()`拦截冲突的事件。
 
 
+
+#### 长按事件原理
+
+在`onTouchEvent()`收到`ACTION_DOWN`事件时，发送一个延时消息`mPendingCheckForLongPress()`，延迟`400ms`后执行。内部执行`performLongClick()`，再然后一步步调用到`performLongClickInternal()`内部执行到`mOnLongClickListener.onLongClick()`
+
+`onLongClick()`返回`true`就会屏蔽`onClick()`执行。
 
 ## 事件分发完成
 
@@ -46657,7 +46900,9 @@ status_t InputConsumer::sendUnchainedFinishedSignal(uint32_t seq, bool handled) 
 }
 ```
 
+`InputChannel.sendMessage()`之后，`InputDispatcher`线程被唤醒，回调到`handleReceiveCallback()`。执行到上面的`InputDispatcheThread`相关代码。
 
+## 相关示例
 
 
 
@@ -46669,7 +46914,9 @@ status_t InputConsumer::sendUnchainedFinishedSignal(uint32_t seq, bool handled) 
 
 [一次触摸，Android 到底干了啥](https://zhuanlan.zhihu.com/p/31210271)
 
-[反思|Android 事件分发机制的设计与实现](https://juejin.cn/post/6844903926446161927#heading-14)]]></content>
+[反思|Android 事件分发机制的设计与实现](https://juejin.cn/post/6844903926446161927#heading-14)
+
+[深入理解Android卷-III](https://wizardforcel.gitbooks.io/deepin-android-vol3/content/5.html)]]></content>
       <tags>
         <tag>Android</tag>
       </tags>
@@ -47809,19 +48056,26 @@ SharedPreferences 本质是对xml文件的读写，可以通过对xml文件添�
 
 ### 编译过程
 
-source 
+```shell
+# 进入Android源码目录
+cd /source/ 
 
+# 开始编译
+source build/envsetup.sh
 
-
+# 选择平台
 lunch 
+# 一般选择 aosp_x86-eng
 
 
+```
 
 ### 启动虚拟机
 
+```shell
+# 编译完成后
 emulator
-
-
+```
 
 ## 内核编译
 
@@ -60937,6 +61191,19 @@ Java层获取消息时，调用到`MessageQueue.next()`，继续调用到`native
 `inotify_add_watch()`：增加对文件或目录的监控，并指定监控事件
 
 `inotify_rm_watch()`：移除对文件或目录的监控
+
+
+
+`iNotify`可以监听到的文件事件：
+
+- access：读取文件
+- modify：文件内容被修改
+- attrib：文件元数据被修改
+- move：文件发生了移动
+- create：生成新文件
+- open：文件打开
+- close：文件关闭
+- delete：文件被删除
 
 
 

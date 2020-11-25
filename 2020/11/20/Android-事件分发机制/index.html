@@ -169,7 +169,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      10.1k 字
+      11.2k 字
     </span>
   
 
@@ -179,7 +179,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      164
+      179
        分钟
     </span>
   
@@ -220,6 +220,7 @@
 <li>交付给对应的Window消费该事件。</li>
 </ol>
 </blockquote>
+<p><img src="/images/Android事件分发机制xmind.png" srcset="/img/loading.gif" alt="事件分发机制xmind"></p>
 <p><img src="/images/真·事件分发" srcset="/img/loading.gif" alt="input"></p>
 <h2 id="硬件中断"><a href="#硬件中断" class="headerlink" title="硬件中断"></a>硬件中断</h2><p>物理设备将数据发送给内核是通过<code>设备驱动</code>传输的，在<code>dev/input/</code>目录下有几个设备文件<code>eventX</code>。</p>
 <p>其中<code>event0</code>对应的就是触摸屏，当触摸屏的驱动被挂载后，驱动程序就会进行初始化。</p>
@@ -341,7 +342,7 @@ EventHub::EventHub(<span class="hljs-keyword">void</span>) :
 <ol>
 <li>初始化<code>epoll</code>实例</li>
 <li>初始化<code>iNotify</code>实例，用于监控<code>/dev/input</code>目录的变化。若发生变化，意味设备发生变化，需要处理。<code>epoll</code>添加<code>iNotify实例</code>监听</li>
-<li>创建非阻塞模式的管道(<code>pipe</code>)，epoll监听管道的内容</li>
+<li>创建非阻塞模式的管道(<code>pipe</code>)，epoll监听管道的内容。(主要用于 唤醒InputReader线程)</li>
 </ol>
 <h4 id="初始InputManager"><a href="#初始InputManager" class="headerlink" title="初始InputManager"></a>初始InputManager</h4><pre><code class="hljs c++"><span class="hljs-comment">//frameworks/native/services/inputflinger/InputManager.cpp</span>
 InputManager::InputManager(
@@ -429,7 +430,8 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
     <span class="hljs-keyword">return</span> OK;
 &#125;</code></pre>
 <p><code>IMS</code>启动，会带着<code>InputDispatcherThread</code>和<code>InputReaderThread</code>一起启动。</p>
-<h4 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h4><p>IMS启动过程重点在于Native的初始化，分别创建以下对象：</p>
+<h4 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h4><p><img src="/images/IMS结构体系.png" srcset="/img/loading.gif" alt="IMS结构体系"></p>
+<p>IMS启动过程重点在于Native的初始化，分别创建以下对象：</p>
 <ul>
 <li><p><strong>EventHub</strong></p>
 <p>监听并记录<code>/dev/input</code>的变化</p>
@@ -453,7 +455,7 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
 
 <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">InputReader::loopOnce</span><span class="hljs-params">()</span> </span>&#123;
   ...
-    <span class="hljs-comment">//从EventHub获取事件</span>
+    <span class="hljs-comment">//从EventHub获取事件列表，返回的是 事件的个数。无事件时将阻塞 </span>
     <span class="hljs-keyword">size_t</span> count = mEventHub-&gt;getEvents(timeoutMillis, mEventBuffer, EVENT_BUFFER_SIZE);
 
     &#123; <span class="hljs-comment">// acquire lock</span>
@@ -526,6 +528,16 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
             <span class="hljs-comment">//等待input事件</span>
            <span class="hljs-keyword">int</span> pollResult = epoll_wait(mEpollFd, mPendingEventItems, EPOLL_MAX_EVENTS, timeoutMillis);
     
+    ...
+        <span class="hljs-comment">// readNotify() will modify the list of devices so this must be done after</span>
+        <span class="hljs-comment">// processing all other events to ensure that we read all remaining events</span>
+        <span class="hljs-comment">// before closing the devices.</span>
+        <span class="hljs-keyword">if</span> (mPendingINotify &amp;&amp; mPendingEventIndex &gt;= mPendingEventCount) &#123;
+            mPendingINotify = <span class="hljs-literal">false</span>;
+          <span class="hljs-comment">//从INotify事件 读取发生的事件</span>
+            readNotifyLocked();
+            deviceChanged = <span class="hljs-literal">true</span>;
+        &#125;
   &#125;
   ...
       <span class="hljs-comment">// 返回读取的事件个数</span>
@@ -547,6 +559,8 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
 <li><code>FINISHED_DEVICE_SCAN</code>：扫描完成</li>
 <li><code>type &lt; FIRST_SYNTHETIC_EVENT</code>：其他事件</li>
 </ul>
+<p><code>getEvents()</code>大概执行流程：</p>
+<p>当<code>设备节点(/dev/input)</code>发生变化时，<code>epoll_wait()</code>会响应到对应的变化，然后<code>getEvents()</code>可以知道对应的变化。继续从<code>mINotifyFd</code>读取<code>iNotify事件</code>，进行输入设备的操作，最后生成相应的<code>RawEvent</code></p>
 <blockquote>
 <p>此时，EventHub从设备节点获取到了事件，并转化为<code>RawEvent</code>向下处理。</p>
 </blockquote>
@@ -633,6 +647,7 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
 <li><code>Cursor-like</code>：鼠标类设备 –&gt; CursorInputMapper</li>
 <li><code>TouchScreens</code>：触摸屏设备 –&gt; MultiTouchInputMapper(多点触控) / SingleTouchInputMapper(单点触控)</li>
 </ul>
+<p><img src="/images/InputMapper对应关系.png" srcset="/img/loading.gif" alt="InputMapper对应关系"></p>
 <h6 id="processEventsForDeviceLocked-处理设备事件"><a href="#processEventsForDeviceLocked-处理设备事件" class="headerlink" title="processEventsForDeviceLocked() 处理设备事件"></a>processEventsForDeviceLocked() 处理设备事件</h6><pre><code class="hljs c++"><span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">InputReader::processEventsForDeviceLocked</span><span class="hljs-params">(<span class="hljs-keyword">int32_t</span> deviceId,
         <span class="hljs-keyword">const</span> RawEvent* rawEvents, <span class="hljs-keyword">size_t</span> count)</span> </span>&#123;
     <span class="hljs-keyword">ssize_t</span> deviceIndex = mDevices.indexOfKey(deviceId);
@@ -860,8 +875,7 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
       <span class="hljs-comment">//唤醒等待线程，监听当前是否发生死锁</span>
         mDispatcherIsAliveCondition.broadcast();
 
-        <span class="hljs-comment">// Run a dispatch loop if there are no pending commands.</span>
-        <span class="hljs-comment">// The dispatch loop might enqueue commands to run afterwards.</span>
+       <span class="hljs-comment">//派发输入事件，`nextWakeUpTime`决定下次派发线程执行时间</span>
         <span class="hljs-keyword">if</span> (!haveCommandsLocked()) &#123;
             dispatchOnceInnerLocked(&amp;nextWakeupTime);
         &#125;
@@ -873,7 +887,7 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
         &#125;
     &#125; <span class="hljs-comment">// release lock</span>
 
-    <span class="hljs-comment">// Wait for callback or timeout or wake.  (make sure we round up, not down)</span>
+   <span class="hljs-comment">//派发线程进入休眠状态</span>
     <span class="hljs-keyword">nsecs_t</span> currentTime = now();
     <span class="hljs-keyword">int</span> timeoutMillis = toMillisecondTimeoutDelay(currentTime, nextWakeupTime);
     mLooper-&gt;pollOnce(timeoutMillis);
@@ -885,6 +899,7 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
     <span class="hljs-comment">// If we don't already have a pending event, go grab one.</span>
     <span class="hljs-keyword">if</span> (! mPendingEvent) &#123;
         <span class="hljs-keyword">if</span> (mInboundQueue.isEmpty()) &#123;
+          <span class="hljs-comment">//派发队列为空，进入线程休眠状态</span>
           ...
             <span class="hljs-comment">// Nothing to do if there is no pending event.</span>
             <span class="hljs-keyword">if</span> (!mPendingEvent) &#123;
@@ -905,6 +920,7 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
     ALOG_ASSERT(mPendingEvent != <span class="hljs-literal">NULL</span>);
     <span class="hljs-keyword">bool</span> done = <span class="hljs-literal">false</span>;
     DropReason dropReason = DROP_REASON_NOT_DROPPED;
+  <span class="hljs-comment">//检查事件是否需要丢弃</span>
     <span class="hljs-keyword">if</span> (!(mPendingEvent-&gt;policyFlags &amp; POLICY_FLAG_PASS_TO_USER)) &#123;
         dropReason = DROP_REASON_POLICY;
     &#125; <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (!mDispatchEnabled) &#123;
@@ -946,6 +962,7 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
     &#125;
 
 
+        <span class="hljs-comment">//准备派发下一个事件</span>
     <span class="hljs-keyword">if</span> (done) &#123;
         <span class="hljs-keyword">if</span> (dropReason != DROP_REASON_NOT_DROPPED) &#123;
             dropInboundEventLocked(mPendingEvent, dropReason);
@@ -961,17 +978,17 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
 
     <span class="hljs-keyword">bool</span> isPointerEvent = entry-&gt;source &amp; AINPUT_SOURCE_CLASS_POINTER;
 
-    <span class="hljs-comment">// Identify targets.</span>
+    <span class="hljs-comment">// 保存触摸事件的发送目标</span>
     Vector&lt;InputTarget&gt; inputTargets;
 
     <span class="hljs-keyword">bool</span> conflictingPointerActions = <span class="hljs-literal">false</span>;
     <span class="hljs-keyword">int32_t</span> injectionResult;
     <span class="hljs-keyword">if</span> (isPointerEvent) &#123;
-        <span class="hljs-comment">// 寻找有 焦点的 window。并记录在inputTargets中</span>
+        <span class="hljs-comment">// 基于坐标点的形式，如触屏，根据坐标点获取目标窗口</span>
         injectionResult = findTouchedWindowTargetsLocked(currentTime,
                 entry, inputTargets, nextWakeupTime, &amp;conflictingPointerActions);
     &#125; <span class="hljs-keyword">else</span> &#123;
-        <span class="hljs-comment">// Non touch event.  (eg. trackball)</span>
+        <span class="hljs-comment">// 无坐标点的触摸事件，例如 轨迹球</span>
         injectionResult = findFocusedWindowTargetsLocked(currentTime,
                 entry, inputTargets, nextWakeupTime);
     &#125;
@@ -981,14 +998,35 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
     dispatchEventLocked(currentTime, entry, inputTargets);
     <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;
 &#125;</code></pre>
-<pre><code class="hljs c++"><span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">InputDispatcher::dispatchEventLocked</span><span class="hljs-params">(<span class="hljs-keyword">nsecs_t</span> currentTime,
+<p><code>InputTarget</code>的结构</p>
+<pre><code class="hljs c++"><span class="hljs-comment">//frameworks/native/services/inputflinger/InputDispatcher.h</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">InputTarget</span> &#123;</span>
+    <span class="hljs-comment">// 连接InputDispatcher与Window的通信管道</span>
+    sp&lt;InputChannel&gt; inputChannel;
+
+    <span class="hljs-comment">// Flags for the input target.</span>
+    <span class="hljs-keyword">int32_t</span> flags;
+
+    <span class="hljs-comment">// The x and y offset to add to a MotionEvent as it is delivered.</span>
+    <span class="hljs-comment">// (ignored for KeyEvents)</span>
+    <span class="hljs-keyword">float</span> xOffset, yOffset;
+
+    <span class="hljs-comment">// Scaling factor to apply to MotionEvent as it is delivered.</span>
+    <span class="hljs-comment">// (ignored for KeyEvents)</span>
+    <span class="hljs-keyword">float</span> scaleFactor;
+
+    <span class="hljs-comment">// The subset of pointer ids to include in motion events dispatched to this input target</span>
+    <span class="hljs-comment">// if FLAG_SPLIT is set.</span>
+    BitSet32 pointerIds;  
+&#125;</code></pre>
+<h5 id="dispatchEventLocked-发送事件"><a href="#dispatchEventLocked-发送事件" class="headerlink" title="dispatchEventLocked() 发送事件"></a>dispatchEventLocked() 发送事件</h5><pre><code class="hljs c++"><span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">InputDispatcher::dispatchEventLocked</span><span class="hljs-params">(<span class="hljs-keyword">nsecs_t</span> currentTime,
         EventEntry* eventEntry, <span class="hljs-keyword">const</span> Vector&lt;InputTarget&gt;&amp; inputTargets)</span> </span>&#123;
 
     pokeUserActivityLocked(eventEntry);
 
     <span class="hljs-keyword">for</span> (<span class="hljs-keyword">size_t</span> i = <span class="hljs-number">0</span>; i &lt; inputTargets.<span class="hljs-built_in">size</span>(); i++) &#123;
         <span class="hljs-keyword">const</span> InputTarget&amp; inputTarget = inputTargets.itemAt(i);
-
+       <span class="hljs-comment">//根据InputTarget的InputChannel 获取 connection</span>
         <span class="hljs-keyword">ssize_t</span> connectionIndex = getConnectionIndexLocked(inputTarget.inputChannel);
         <span class="hljs-keyword">if</span> (connectionIndex &gt;= <span class="hljs-number">0</span>) &#123;
             sp&lt;Connection&gt; connection = mConnectionsByFd.valueAt(connectionIndex);
@@ -1003,7 +1041,7 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
         <span class="hljs-keyword">const</span> sp&lt;Connection&gt;&amp; connection, EventEntry* eventEntry, <span class="hljs-keyword">const</span> InputTarget* inputTarget)</span> </span>&#123;
      ...
 
-    <span class="hljs-comment">// Not splitting.  Enqueue dispatch entries for the event as is.</span>
+    <span class="hljs-comment">// 将事件添加到Connections的发送队列</span>
     enqueueDispatchEntriesLocked(currentTime, connection, eventEntry, inputTarget);
 &#125;
 
@@ -1019,12 +1057,9 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
     &#125;
 &#125;
 
+<span class="hljs-comment">//开始循环</span>
 <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">InputDispatcher::startDispatchCycleLocked</span><span class="hljs-params">(<span class="hljs-keyword">nsecs_t</span> currentTime,
         <span class="hljs-keyword">const</span> sp&lt;Connection&gt;&amp; connection)</span> </span>&#123;
-<span class="hljs-meta">#<span class="hljs-meta-keyword">if</span> DEBUG_DISPATCH_CYCLE</span>
-    ALOGD(<span class="hljs-string">"channel '%s' ~ startDispatchCycle"</span>,
-            connection-&gt;getInputChannelName().c_str());
-<span class="hljs-meta">#<span class="hljs-meta-keyword">endif</span></span>
 
     <span class="hljs-keyword">while</span> (connection-&gt;status == Connection::STATUS_NORMAL
             &amp;&amp; !connection-&gt;outboundQueue.isEmpty()) &#123;
@@ -1083,9 +1118,10 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
             <span class="hljs-keyword">break</span>;
         &#125;
 
-        <span class="hljs-comment">// Re-enqueue the event on the wait queue.</span>
+        <span class="hljs-comment">// 回收队列</span>
         connection-&gt;outboundQueue.dequeue(dispatchEntry);
         traceOutboundQueueLengthLocked(connection);
+        <span class="hljs-comment">// 等待执行队列</span>
         connection-&gt;waitQueue.enqueueAtTail(dispatchEntry);
         traceWaitQueueLengthLocked(connection);
     &#125;
@@ -1143,6 +1179,64 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
  ...
 &#125;</code></pre>
 <p>最终通过<code>InputChannel</code>发送包装好的触摸事件</p>
+<h5 id="handleReceiveCallback-接收事件"><a href="#handleReceiveCallback-接收事件" class="headerlink" title="handleReceiveCallback 接收事件"></a>handleReceiveCallback 接收事件</h5><p>这一节的触发条件会在后面讲到，简单来说就是</p>
+<p>后面Java层的事件分发结束，调用到<code>InputEventReceiver.finishInputEvent()</code>，会向UI进程持有的<code>InputChannel</code>写入数据，然后唤醒<code>InputDispatcher</code>线程被唤醒后执行<code>handleReceiveCallback()</code></p>
+<pre><code class="hljs c++"><span class="hljs-comment">//frameworks/native/services/inputflinger/InputDispatcher.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">int</span> <span class="hljs-title">InputDispatcher::handleReceiveCallback</span><span class="hljs-params">(<span class="hljs-keyword">int</span> fd, <span class="hljs-keyword">int</span> events, <span class="hljs-keyword">void</span>* data)</span> </span>&#123;
+  ...
+        sp&lt;Connection&gt; connection = d-&gt;mConnectionsByFd.valueAt(connectionIndex);
+  ...
+            <span class="hljs-keyword">for</span> (;;) &#123;
+                <span class="hljs-keyword">uint32_t</span> seq;
+                <span class="hljs-keyword">bool</span> handled;
+              <span class="hljs-comment">//从 connection 获取消息</span>
+                status = connection-&gt;inputPublisher.receiveFinishedSignal(&amp;seq, &amp;handled);
+                <span class="hljs-keyword">if</span> (status) &#123;
+                    <span class="hljs-keyword">break</span>;
+                &#125;
+              
+                d-&gt;finishDispatchCycleLocked(currentTime, connection, seq, handled);
+                gotOne = <span class="hljs-literal">true</span>;
+            &#125;    
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">InputDispatcher::finishDispatchCycleLocked</span><span class="hljs-params">(<span class="hljs-keyword">nsecs_t</span> currentTime,
+        <span class="hljs-keyword">const</span> sp&lt;Connection&gt;&amp; connection, <span class="hljs-keyword">uint32_t</span> seq, <span class="hljs-keyword">bool</span> handled)</span> </span>&#123;
+
+    connection-&gt;inputPublisherBlocked = <span class="hljs-literal">false</span>;
+
+    <span class="hljs-keyword">if</span> (connection-&gt;status == Connection::STATUS_BROKEN
+            || connection-&gt;status == Connection::STATUS_ZOMBIE) &#123;
+        <span class="hljs-keyword">return</span>;
+    &#125;
+
+    <span class="hljs-comment">// Notify other system components and prepare to start the next dispatch cycle.</span>
+    onDispatchCycleFinishedLocked(currentTime, connection, seq, handled);
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">InputDispatcher::onDispatchCycleFinishedLocked</span><span class="hljs-params">(
+        <span class="hljs-keyword">nsecs_t</span> currentTime, <span class="hljs-keyword">const</span> sp&lt;Connection&gt;&amp; connection, <span class="hljs-keyword">uint32_t</span> seq, <span class="hljs-keyword">bool</span> handled)</span> </span>&#123;
+  <span class="hljs-comment">//发送命令到 doDispatchCycleFinishedLockedInterruptible</span>
+    CommandEntry* commandEntry = postCommandLocked(
+            &amp; InputDispatcher::doDispatchCycleFinishedLockedInterruptible);
+    commandEntry-&gt;connection = connection;
+    commandEntry-&gt;eventTime = currentTime;
+    commandEntry-&gt;seq = seq;
+    commandEntry-&gt;handled = handled;
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">InputDispatcher::doDispatchCycleFinishedLockedInterruptible</span><span class="hljs-params">(
+        CommandEntry* commandEntry)</span> </span>&#123;
+  ...
+        <span class="hljs-keyword">if</span> (dispatchEntry == connection-&gt;findWaitQueueEntry(seq)) &#123;
+          <span class="hljs-comment">//事件执行完毕后，从waitQueue移除事件</span>
+            connection-&gt;waitQueue.dequeue(dispatchEntry);
+            traceWaitQueueLengthLocked(connection);
+        &#125;
+
+        <span class="hljs-comment">// 开始下一次发送循环</span>
+        startDispatchCycleLocked(now(), connection);  
+&#125;</code></pre>
 <h5 id="总结-2"><a href="#总结-2" class="headerlink" title="总结"></a>总结</h5><p><img src="/images/event1_5.png" srcset="/img/loading.gif" alt="img"></p>
 <p><code>InputReader</code>发送触摸事件到<code>InputDispatcher</code>，通过<code>findFocusedWindowTargetsLocked()</code>寻找触摸事件对应的窗口，如果没有找到就使用第一个<code>Window</code>。把结果写入<code>inputTargets</code>中，然后通过<code>publishMotionEvent</code>分发触摸事件，再通过<code>InputChannel</code>发送消息到UI线程。</p>
 <p><img src="/images/InputDispatcherThread.jpg" srcset="/img/loading.gif" alt="InputDispatche"></p>
@@ -1161,6 +1255,23 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
 &#125;</code></pre>
 <p><code>InputChannel</code>通过<code>socket</code>发送消息。</p>
 <p>既然存在<code>sendMessage()</code>就需要找到相对的<code>receiveMessage()</code>调用的地方。</p>
+<h4 id="InputChannel的理解"><a href="#InputChannel的理解" class="headerlink" title="InputChannel的理解"></a>InputChannel的理解</h4><p>本质是<code>SocketPair(非网络套接字)</code>。<code>SocketPair</code>用于实现本机内的进程间通信。</p>
+<p><code>SocketPair</code>提供方法：</p>
+<ul>
+<li><code>socketPair()</code>：创建SocketPair，返回一对相互连接的fd</li>
+<li><code>send()</code>：写入数据，可在另一个fd读取</li>
+<li><code>recv()</code>：读取数据</li>
+</ul>
+<p><strong>非常适合用来进行进程间的交互式通讯。</strong></p>
+<p><code>InputChannel</code>就是<code>SocketPair</code>的封装，分别分配给<code>InputDispatcher</code>与<code>Window</code>。</p>
+<p><code>InputDispatcher</code>写入的事件，<code>Window</code>可以从自己持有的<code>InputChannel</code>获取；反向也是如此。</p>
+<p><code>InputChannel</code>提供方法：位于<code>InputTransport.cpp</code>中</p>
+<ul>
+<li><code>openInputChannelPair()</code>：封装<code>socketPair()</code></li>
+<li><code>sendMessage()</code>：封装<code>send()</code></li>
+<li><code>receiveMessage()</code>：封装<code>recv()</code></li>
+</ul>
+<p><img src="/images/InputChannel原理.png" srcset="/img/loading.gif" alt="InputChannel原理"></p>
 <p>最后屏幕的触摸事件都需要反映到一个Activity上，然后再一步步传递到对应的View上。所以需要先从Activity开始分析触摸事件的传递流程。</p>
 <h4 id="InputChannel注册"><a href="#InputChannel注册" class="headerlink" title="InputChannel注册"></a>InputChannel注册</h4><pre><code class="hljs java"><span class="hljs-comment">//ActivityThread.java</span>
     <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">handleResumeActivity</span><span class="hljs-params">(IBinder token, <span class="hljs-keyword">boolean</span> finalStateRequest, <span class="hljs-keyword">boolean</span> isForward,
@@ -1253,7 +1364,48 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
         &#125;
         mService.mInputManager.registerInputChannel(mInputChannel, mInputWindowHandle);
     &#125;</code></pre>
-<p><strong>点到为止</strong></p>
+<h5 id="registerInputChannel"><a href="#registerInputChannel" class="headerlink" title="registerInputChannel()"></a>registerInputChannel()</h5><pre><code class="hljs java"><span class="hljs-comment">//InputManagerService.java </span>
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">registerInputChannel</span><span class="hljs-params">(InputChannel inputChannel,
+            InputWindowHandle inputWindowHandle)</span> </span>&#123;
+       <span class="hljs-comment">//通过Native层完成注册</span>
+        nativeRegisterInputChannel(mPtr, inputChannel, inputWindowHandle, <span class="hljs-keyword">false</span>);
+    &#125;</code></pre>
+<pre><code class="hljs c++"><span class="hljs-function"><span class="hljs-keyword">status_t</span> <span class="hljs-title">NativeInputManager::registerInputChannel</span><span class="hljs-params">(JNIEnv* <span class="hljs-comment">/* env */</span>,
+        <span class="hljs-keyword">const</span> sp&lt;InputChannel&gt;&amp; inputChannel,
+        <span class="hljs-keyword">const</span> sp&lt;InputWindowHandle&gt;&amp; inputWindowHandle, <span class="hljs-keyword">bool</span> monitor)</span> </span>&#123;
+    ATRACE_CALL();
+  <span class="hljs-comment">//再通过 InputDispatcher 继续注册</span>
+    <span class="hljs-keyword">return</span> mInputManager-&gt;getDispatcher()-&gt;registerInputChannel(
+            inputChannel, inputWindowHandle, monitor);
+&#125;</code></pre>
+<pre><code class="hljs c++"><span class="hljs-comment">//frameworks/native/services/inputflinger/InputDispatcher.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">status_t</span> <span class="hljs-title">InputDispatcher::registerInputChannel</span><span class="hljs-params">(<span class="hljs-keyword">const</span> sp&lt;InputChannel&gt;&amp; inputChannel,
+        <span class="hljs-keyword">const</span> sp&lt;InputWindowHandle&gt;&amp; inputWindowHandle, <span class="hljs-keyword">bool</span> monitor)</span> </span>&#123;
+
+
+    &#123; <span class="hljs-comment">// acquire lock</span>
+        AutoMutex _l(mLock);
+
+      <span class="hljs-comment">//为传入的 InputChannel 创建Connection对象</span>
+        sp&lt;Connection&gt; connection = <span class="hljs-keyword">new</span> Connection(inputChannel, inputWindowHandle, monitor);
+
+        <span class="hljs-keyword">int</span> fd = inputChannel-&gt;getFd();
+      <span class="hljs-comment">//监听connection的变化</span>
+        mConnectionsByFd.add(fd, connection);
+
+        <span class="hljs-keyword">if</span> (monitor) &#123;
+            mMonitoringChannels.push(inputChannel);
+        &#125;
+
+      <span class="hljs-comment">//如果发生变化，回调handleReceiveCallback方法</span>
+        mLooper-&gt;addFd(fd, <span class="hljs-number">0</span>, ALOOPER_EVENT_INPUT, handleReceiveCallback, <span class="hljs-keyword">this</span>);
+    &#125; <span class="hljs-comment">// release lock</span>
+
+    <span class="hljs-comment">// Wake the looper because some connections have changed.</span>
+    mLooper-&gt;wake();
+    <span class="hljs-keyword">return</span> OK;
+&#125;</code></pre>
+<p><img src="/images/InputChannel执行过程.png" srcset="/img/loading.gif" alt="InputChannel执行过程"></p>
 <p><img src="/images/v2-1e1273f15cfdd7b81aa7a2cb819d8890_1440w.jpg" srcset="/img/loading.gif" alt="InputChannel对应关系"></p>
 <p><code>addToDisplay()</code>主要处理两部分内容</p>
 <ul>
@@ -1489,7 +1641,6 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
 <li>向Looper的<code>mEpollFd</code>添加了监听，只要收到触摸事件的消息就会调用到<code>callback-&gt;handleEvent()</code></li>
 <li><code>NativeInputReceiver::handleEvent()</code>主要回调到Java层的<code>dispatchInputEvent()</code>且携带<code>InputEvent</code>回去(在触摸场景下，实际为<code>MotionEvent</code>)。</li>
 </ul>
-<p>//TODO 流程图</p>
 <h4 id="回调到Activity"><a href="#回调到Activity" class="headerlink" title="回调到Activity"></a>回调到Activity</h4><pre><code class="hljs java"><span class="hljs-comment">//InputEventReceiver.java</span>
 <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">dispatchInputEvent</span><span class="hljs-params">(<span class="hljs-keyword">int</span> seq, InputEvent event, <span class="hljs-keyword">int</span> displayId)</span> </span>&#123;
         mSeqMap.put(event.getSequenceNumber(), seq);
@@ -1938,7 +2089,7 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
 <p>默认的事件分发顺序与绘制顺序一致，按照<code>view.getZ()</code>从大到小排序，Z值大的先绘制且先响应事件。</p>
 <p>当然，这个事件分发的顺序也可以修改，只需要实现两个方法：</p>
 <ul>
-<li><code>isChildDrawingOrder()</code>：允许自定义顺序</li>
+<li><code>setChildrenDrawingOrderEnabled(true)</code>：允许自定义顺序。<em>isChildrenDrawingOrderEnabled()返回true</em></li>
 <li><code>getChildDrawingOrder()</code>：自定义当前View的顺序</li>
 </ul>
 <p>也可以通过<code>setElevation()</code>、<code>setTranslationZ()</code>或者<code>setZ()</code>去修改Z轴的坐标值。</p>
@@ -1990,6 +2141,24 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
 <li><code>child==null</code>：发生的情况：<code>事件被拦截</code>或<code>真的没有可执行触摸事件的子View</code>。执行<code>View.dispatchTouchEvent()</code></li>
 <li><code>child!=null</code>：向下执行子View/ViewGroup的<code>dispatchTouchEvent()</code></li>
 </ul>
+<h5 id="addTouchTarget"><a href="#addTouchTarget" class="headerlink" title="addTouchTarget()"></a>addTouchTarget()</h5><pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">private</span> TouchTarget <span class="hljs-title">addTouchTarget</span><span class="hljs-params">(@NonNull View child, <span class="hljs-keyword">int</span> pointerIdBits)</span> </span>&#123;
+    <span class="hljs-keyword">final</span> TouchTarget target = TouchTarget.obtain(child, pointerIdBits);
+    target.next = mFirstTouchTarget;
+    mFirstTouchTarget = target;
+    <span class="hljs-keyword">return</span> target;
+&#125;</code></pre>
+<p><code>TouchTarget</code>结构如下：</p>
+<pre><code class="hljs java"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">TouchTarget</span> </span>&#123;
+    <span class="hljs-comment">// The touched child view.</span>
+    <span class="hljs-keyword">public</span> View child;
+
+    <span class="hljs-comment">// The combined bit mask of pointer ids for all pointers captured by the target.</span>
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> pointerIdBits;
+
+    <span class="hljs-comment">// The next target in the target list.</span>
+    <span class="hljs-keyword">public</span> TouchTarget next;
+&#125;</code></pre>
+<p><code>TouchTarget</code>是一个单链表结构，记录的是<strong>事件分发链</strong>。每一个元素表示<code>真正对事件消费的View</code>。</p>
 <p><img src="/images/ViewGroup-Dispatch.png" srcset="/img/loading.gif" alt="ViewGroup事件分发"></p>
 <p>根据上述流程图，总结一下：</p>
 <ul>
@@ -2170,7 +2339,7 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
 &#125;</code></pre>
 <p><img src="/images/TouchEvent-Transmit.png" srcset="/img/loading.gif" alt="事件分发"></p>
 <ol>
-<li>点击事件传递从<code>dispatchTouchEvent()</code>开始，在不修改默认返回值时，事件会按照嵌套层次由外向内传递，到达最内层View时，由最内层View<code>onTouchEvent()</code>处理</li>
+<li>点击事件传递从<code>dispatchTouchEvent()</code>开始，在不修改默认返回值时，事件会按照嵌套层次由外向内传递，到达最内层View时，由最内层<code>View.onTouchEvent()</code>处理</li>
 <li>View的点击事件触发顺序为  <code>onTouch()</code> &gt; <code>onTouchEvent()</code> &gt; <code>performClick()</code> &gt; <code>onClick()</code> </li>
 <li><em>Touch事件的后续(例如<code>ACTION_MOVE</code>,<code>ACTION_UP</code>)层级传递</em><ul>
 <li>若<code>dispatchTouchEvent()</code>返回true，那么能收到<code>ACTION_DOWN</code>的函数也可以收到后续事件</li>
@@ -2178,6 +2347,8 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
 </ul>
 </li>
 </ol>
+<blockquote>
+</blockquote>
 <h4 id="事件分发特殊情况"><a href="#事件分发特殊情况" class="headerlink" title="事件分发特殊情况"></a>事件分发特殊情况</h4><h5 id="ACTIOIN-CANCEL产生场景"><a href="#ACTIOIN-CANCEL产生场景" class="headerlink" title="ACTIOIN_CANCEL产生场景"></a><code>ACTIOIN_CANCEL</code>产生场景</h5><ol>
 <li><p>子View处理了Down事件，按照设定Move与Up的事件也会交给他处理。若此时，父View拦截了事件，此时子View就会收到一个Cancel事件，并且无法接收到后续的Move与Up事件。</p>
 <p>常见场景：ListView有一个Item带有Button，此时点击按钮(触发ACTION_DOWN)，再进行上下滑动，ListView就会拦截掉后续的Move事件，此时Button就会收到ACTION_CANCEL</p>
@@ -2191,6 +2362,8 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
 <p><code>内部拦截法</code>：通过在子类中调用<code>parent.requestDisallowInterceptTouchEvent()</code>来控制父类是否拦截事件。</p>
 <p>还有一个是</p>
 <p><code>外部拦截法</code>：通过重写父类的<code>onInterceptTouchEvent()</code>拦截冲突的事件。</p>
+<h4 id="长按事件原理"><a href="#长按事件原理" class="headerlink" title="长按事件原理"></a>长按事件原理</h4><p>在<code>onTouchEvent()</code>收到<code>ACTION_DOWN</code>事件时，发送一个延时消息<code>mPendingCheckForLongPress()</code>，延迟<code>400ms</code>后执行。内部执行<code>performLongClick()</code>，再然后一步步调用到<code>performLongClickInternal()</code>内部执行到<code>mOnLongClickListener.onLongClick()</code></p>
+<p><code>onLongClick()</code>返回<code>true</code>就会屏蔽<code>onClick()</code>执行。</p>
 <h2 id="事件分发完成"><a href="#事件分发完成" class="headerlink" title="事件分发完成"></a>事件分发完成</h2><p>事件分发完毕后，执行到<code>finishInputEvent()</code></p>
 <pre><code class="hljs java"><span class="hljs-comment">//ViewRootImpl.java</span>
         <span class="hljs-function"><span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> <span class="hljs-title">onDeliverToNext</span><span class="hljs-params">(QueuedInputEvent q)</span> </span>&#123;
@@ -2276,10 +2449,12 @@ InputReaderThread::InputReaderThread(<span class="hljs-keyword">const</span> sp&
   <span class="hljs-comment">//通过 InputChannel.sendMessage()发送消息通知</span>
      <span class="hljs-keyword">return</span> mChannel-&gt;sendMessage(&amp;msg);
 &#125;</code></pre>
-<h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="http://gityuan.com/2016/12/11/input-reader/" target="_blank" rel="noopener">InputReaderThread</a></p>
+<p><code>InputChannel.sendMessage()</code>之后，<code>InputDispatcher</code>线程被唤醒，回调到<code>handleReceiveCallback()</code>。执行到上面的<code>InputDispatcheThread</code>相关代码。</p>
+<h2 id="相关示例"><a href="#相关示例" class="headerlink" title="相关示例"></a>相关示例</h2><h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="http://gityuan.com/2016/12/11/input-reader/" target="_blank" rel="noopener">InputReaderThread</a></p>
 <p><a href="https://cs.android.com" target="_blank" rel="noopener">Android相关源码</a></p>
 <p><a href="https://zhuanlan.zhihu.com/p/31210271" target="_blank" rel="noopener">一次触摸，Android 到底干了啥</a></p>
 <p><a href="https://juejin.cn/post/6844903926446161927#heading-14" target="_blank" rel="noopener">反思|Android 事件分发机制的设计与实现</a></p>
+<p><a href="https://wizardforcel.gitbooks.io/deepin-android-vol3/content/5.html" target="_blank" rel="noopener">深入理解Android卷-III</a></p>
 
             </div>
             <hr>
