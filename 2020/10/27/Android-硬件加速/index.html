@@ -415,7 +415,7 @@ canvas = mSurface.lockCanvas()
     <span class="hljs-keyword">status_t</span> err = surface-&gt;lock(&amp;outBuffer, dirtyRectPtr);
   ...
     <span class="hljs-comment">//构建Bitmap对象</span>
-    SkImageInfo info = SkImageInfo::Make(outBuffer.<span class="hljs-built_in">width</span>, outBuffer.<span class="hljs-built_in">height</span>,
+    SkImageInfo info = SkImageInfo::Make(outBuffer.width, outBuffer.height,
                                          convertPixelFormat(outBuffer.format),
                                          outBuffer.format == PIXEL_FORMAT_RGBX_8888
                                                  ? kOpaque_SkAlphaType : kPremul_SkAlphaType,
@@ -424,7 +424,7 @@ canvas = mSurface.lockCanvas()
     SkBitmap bitmap;
     <span class="hljs-keyword">ssize_t</span> bpr = outBuffer.stride * bytesPerPixel(outBuffer.format);
     bitmap.setInfo(info, bpr);
-    <span class="hljs-keyword">if</span> (outBuffer.<span class="hljs-built_in">width</span> &gt; <span class="hljs-number">0</span> &amp;&amp; outBuffer.<span class="hljs-built_in">height</span> &gt; <span class="hljs-number">0</span>) &#123;
+    <span class="hljs-keyword">if</span> (outBuffer.width &gt; <span class="hljs-number">0</span> &amp;&amp; outBuffer.height &gt; <span class="hljs-number">0</span>) &#123;
         bitmap.setPixels(outBuffer.bits);
     &#125; <span class="hljs-keyword">else</span> &#123;
         <span class="hljs-comment">// be safe with an empty bitmap.</span>
@@ -436,7 +436,7 @@ canvas = mSurface.lockCanvas()
     
     <span class="hljs-function">sp&lt;Surface&gt; <span class="hljs-title">lockedSurface</span><span class="hljs-params">(surface)</span></span>;
     lockedSurface-&gt;incStrong(&amp;sRefBaseOwner);
-    <span class="hljs-keyword">return</span> (jlong) lockedSurface.<span class="hljs-built_in">get</span>();
+    <span class="hljs-keyword">return</span> (jlong) lockedSurface.get();
 &#125;</code></pre>
 <p>创建完<code>ANativeWindowBuffer</code>之后，需要与<code>surface</code>进行绑定</p>
 <pre><code class="hljs c++"><span class="hljs-comment">//native/libs/gui/Surface.cpp</span>
@@ -450,7 +450,7 @@ canvas = mSurface.lockCanvas()
   ...
      <span class="hljs-keyword">if</span> (err == NO_ERROR) &#123;
         <span class="hljs-function">sp&lt;GraphicBuffer&gt; <span class="hljs-title">backBuffer</span><span class="hljs-params">(GraphicBuffer::getSelf(out))</span></span>;
-        <span class="hljs-function"><span class="hljs-keyword">const</span> Rect <span class="hljs-title">bounds</span><span class="hljs-params">(backBuffer-&gt;<span class="hljs-built_in">width</span>, backBuffer-&gt;<span class="hljs-built_in">height</span>)</span></span>;
+        <span class="hljs-function"><span class="hljs-keyword">const</span> Rect <span class="hljs-title">bounds</span><span class="hljs-params">(backBuffer-&gt;width, backBuffer-&gt;height)</span></span>;
        ...
      &#125;
   <span class="hljs-comment">//返回GraphicBuffer</span>
@@ -458,7 +458,7 @@ canvas = mSurface.lockCanvas()
 &#125;</code></pre>
 <p>调用到<code>lock()</code>之后，将<code>ANativeWindowBuffer</code>转化为<code>GraphicBuffer</code>。再通过<code>dequeueBuffer</code>分配内存</p>
 <pre><code class="hljs c++"><span class="hljs-comment">//native/libs/gui/Surface.cpp</span>
-<span class="hljs-function"><span class="hljs-keyword">int</span> <span class="hljs-title">Surface::dequeueBuffer</span><span class="hljs-params">(<span class="hljs-keyword">android_native_buffer_t</span>** <span class="hljs-built_in">buffer</span>, <span class="hljs-keyword">int</span>* fenceFd)</span> </span>&#123;
+<span class="hljs-function"><span class="hljs-keyword">int</span> <span class="hljs-title">Surface::dequeueBuffer</span><span class="hljs-params">(<span class="hljs-keyword">android_native_buffer_t</span>** buffer, <span class="hljs-keyword">int</span>* fenceFd)</span> </span>&#123;
   ...
     FrameEventHistoryDelta frameTimestamps;
     <span class="hljs-keyword">status_t</span> result = mGraphicBufferProducer-&gt;dequeueBuffer(&amp;buf, &amp;fence, reqWidth, reqHeight,
@@ -480,12 +480,12 @@ canvas = mSurface.lockCanvas()
         &#125;
     &#125;
   <span class="hljs-comment">//获取buffer</span>
-     *<span class="hljs-built_in">buffer</span> = gbuf.<span class="hljs-built_in">get</span>();
+     *buffer = gbuf.get();
   ...
 &#125;</code></pre>
 <pre><code class="hljs c++"><span class="hljs-comment">//native/libs/gui/BufferQueueProducer.cpp</span>
 <span class="hljs-function"><span class="hljs-keyword">status_t</span> <span class="hljs-title">BufferQueueProducer::dequeueBuffer</span><span class="hljs-params">(<span class="hljs-keyword">int</span>* outSlot, sp&lt;android::Fence&gt;* outFence,
-                                            <span class="hljs-keyword">uint32_t</span> <span class="hljs-built_in">width</span>, <span class="hljs-keyword">uint32_t</span> <span class="hljs-built_in">height</span>, PixelFormat format,
+                                            <span class="hljs-keyword">uint32_t</span> width, <span class="hljs-keyword">uint32_t</span> height, PixelFormat format,
                                             <span class="hljs-keyword">uint64_t</span> usage, <span class="hljs-keyword">uint64_t</span>* outBufferAge,
                                             FrameEventHistoryDelta* outTimestamps)</span> </span>&#123;
  ...
@@ -509,8 +509,8 @@ canvas = mSurface.lockCanvas()
       <span class="hljs-keyword">if</span> (returnFlags &amp; BUFFER_NEEDS_REALLOCATION) &#123;
         BQ_LOGV(<span class="hljs-string">"dequeueBuffer: allocating a new buffer for slot %d"</span>, *outSlot);
         sp&lt;GraphicBuffer&gt; graphicBuffer = <span class="hljs-keyword">new</span> GraphicBuffer(
-                <span class="hljs-built_in">width</span>, <span class="hljs-built_in">height</span>, format, BQ_LAYER_COUNT, usage,
-                &#123;mConsumerName.<span class="hljs-built_in">string</span>(), mConsumerName.<span class="hljs-built_in">size</span>()&#125;);
+                width, height, format, BQ_LAYER_COUNT, usage,
+                &#123;mConsumerName.<span class="hljs-built_in">string</span>(), mConsumerName.size()&#125;);
 
         <span class="hljs-keyword">status_t</span> error = graphicBuffer-&gt;initCheck();
 
@@ -526,11 +526,11 @@ canvas = mSurface.lockCanvas()
         <span class="hljs-keyword">int</span>* found)</span> <span class="hljs-keyword">const</span> </span>&#123;
   ...
     <span class="hljs-comment">//当前是否 队列太多</span>
-        <span class="hljs-keyword">bool</span> tooManyBuffers = mCore-&gt;mQueue.<span class="hljs-built_in">size</span>()
+        <span class="hljs-keyword">bool</span> tooManyBuffers = mCore-&gt;mQueue.size()
                             &gt; <span class="hljs-keyword">static_cast</span>&lt;<span class="hljs-keyword">size_t</span>&gt;(maxBufferCount);
         <span class="hljs-keyword">if</span> (tooManyBuffers) &#123;
             BQ_LOGV(<span class="hljs-string">"%s: queue size is %zu, waiting"</span>, callerString,
-                    mCore-&gt;mQueue.<span class="hljs-built_in">size</span>());
+                    mCore-&gt;mQueue.size());
         &#125; <span class="hljs-keyword">else</span> &#123;
             <span class="hljs-comment">// If in shared buffer mode and a shared buffer exists, always</span>
             <span class="hljs-comment">// return it.</span>
@@ -619,7 +619,7 @@ canvas = mSurface.lockCanvas()
 <span class="hljs-function"><span class="hljs-keyword">status_t</span> <span class="hljs-title">Surface::unlockAndPost</span><span class="hljs-params">()</span>
 </span>&#123;
   ...
-    err = queueBuffer(mLockedBuffer.<span class="hljs-built_in">get</span>(), fd);
+    err = queueBuffer(mLockedBuffer.get(), fd);
     ALOGE_IF(err, <span class="hljs-string">"queueBuffer (handle=%p) failed (%s)"</span>,
             mLockedBuffer-&gt;handle, strerror(-err));
 
@@ -628,10 +628,10 @@ canvas = mSurface.lockCanvas()
     <span class="hljs-keyword">return</span> err;
 &#125;</code></pre>
 <pre><code class="hljs c++"><span class="hljs-comment">//native/libs/gui/Surface.cpp</span>
-<span class="hljs-function"><span class="hljs-keyword">int</span> <span class="hljs-title">Surface::queueBuffer</span><span class="hljs-params">(<span class="hljs-keyword">android_native_buffer_t</span>* <span class="hljs-built_in">buffer</span>, <span class="hljs-keyword">int</span> fenceFd)</span> </span>&#123;
+<span class="hljs-function"><span class="hljs-keyword">int</span> <span class="hljs-title">Surface::queueBuffer</span><span class="hljs-params">(<span class="hljs-keyword">android_native_buffer_t</span>* buffer, <span class="hljs-keyword">int</span> fenceFd)</span> </span>&#123;
   ...
     <span class="hljs-comment">//根据Buffer获取slot</span>
-    <span class="hljs-keyword">int</span> i = getSlotFromBufferLocked(<span class="hljs-built_in">buffer</span>);
+    <span class="hljs-keyword">int</span> i = getSlotFromBufferLocked(buffer);
   ...
     <span class="hljs-comment">//GraphicBufferQueue 插入 GraphicBuffer</span>
     <span class="hljs-keyword">status_t</span> err = mGraphicBufferProducer-&gt;queueBuffer(i, input, &amp;output);
@@ -642,14 +642,14 @@ canvas = mSurface.lockCanvas()
 
 <span class="hljs-comment">//根据传入buffer获取slot</span>
 <span class="hljs-function"><span class="hljs-keyword">int</span> <span class="hljs-title">Surface::getSlotFromBufferLocked</span><span class="hljs-params">(
-        <span class="hljs-keyword">android_native_buffer_t</span>* <span class="hljs-built_in">buffer</span>)</span> <span class="hljs-keyword">const</span> </span>&#123;
+        <span class="hljs-keyword">android_native_buffer_t</span>* buffer)</span> <span class="hljs-keyword">const</span> </span>&#123;
     <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int</span> i = <span class="hljs-number">0</span>; i &lt; NUM_BUFFER_SLOTS; i++) &#123;
-        <span class="hljs-keyword">if</span> (mSlots[i].<span class="hljs-built_in">buffer</span> != <span class="hljs-literal">NULL</span> &amp;&amp;
-                mSlots[i].<span class="hljs-built_in">buffer</span>-&gt;handle == <span class="hljs-built_in">buffer</span>-&gt;handle) &#123;
+        <span class="hljs-keyword">if</span> (mSlots[i].buffer != <span class="hljs-literal">NULL</span> &amp;&amp;
+                mSlots[i].buffer-&gt;handle == buffer-&gt;handle) &#123;
             <span class="hljs-keyword">return</span> i;
         &#125;
     &#125;
-    ALOGE(<span class="hljs-string">"getSlotFromBufferLocked: unknown buffer: %p"</span>, <span class="hljs-built_in">buffer</span>-&gt;handle);
+    ALOGE(<span class="hljs-string">"getSlotFromBufferLocked: unknown buffer: %p"</span>, buffer-&gt;handle);
     <span class="hljs-keyword">return</span> BAD_VALUE;
 &#125;</code></pre>
 <pre><code class="hljs java"><span class="hljs-comment">//native/libs/gui/BufferQueueProducer.cpp</span>
@@ -1343,17 +1343,17 @@ status_t BufferQueueProducer::queueBuffer(<span class="hljs-keyword">int</span> 
 <h2 id="关键节点"><a href="#关键节点" class="headerlink" title="关键节点"></a>关键节点</h2><h3 id="DisplayList初始化"><a href="#DisplayList初始化" class="headerlink" title="DisplayList初始化"></a><code>DisplayList</code>初始化</h3><p><code>DisplayListCanvas.start()</code> -&gt; <code>DisplayListCanvas.obtain()</code>-&gt;<code>nCreateDisplayListCanvas</code></p>
 <pre><code class="hljs c++"><span class="hljs-comment">//android_view_DisplayListCanvas.cpp</span>
 <span class="hljs-function"><span class="hljs-keyword">static</span> jlong <span class="hljs-title">android_view_DisplayListCanvas_createDisplayListCanvas</span><span class="hljs-params">(jlong renderNodePtr,
-        jint <span class="hljs-built_in">width</span>, jint <span class="hljs-built_in">height</span>)</span> </span>&#123;
+        jint width, jint height)</span> </span>&#123;
     RenderNode* renderNode = <span class="hljs-keyword">reinterpret_cast</span>&lt;RenderNode*&gt;(renderNodePtr);
-    <span class="hljs-keyword">return</span> <span class="hljs-keyword">reinterpret_cast</span>&lt;jlong&gt;(Canvas::create_recording_canvas(<span class="hljs-built_in">width</span>, <span class="hljs-built_in">height</span>, renderNode));
+    <span class="hljs-keyword">return</span> <span class="hljs-keyword">reinterpret_cast</span>&lt;jlong&gt;(Canvas::create_recording_canvas(width, height, renderNode));
 &#125;
 
 <span class="hljs-comment">//Canvas.cpp</span>
-<span class="hljs-function">Canvas* <span class="hljs-title">Canvas::create_recording_canvas</span><span class="hljs-params">(<span class="hljs-keyword">int</span> <span class="hljs-built_in">width</span>, <span class="hljs-keyword">int</span> <span class="hljs-built_in">height</span>, uirenderer::RenderNode* renderNode)</span> </span>&#123;
+<span class="hljs-function">Canvas* <span class="hljs-title">Canvas::create_recording_canvas</span><span class="hljs-params">(<span class="hljs-keyword">int</span> width, <span class="hljs-keyword">int</span> height, uirenderer::RenderNode* renderNode)</span> </span>&#123;
     <span class="hljs-keyword">if</span> (uirenderer::Properties::isSkiaEnabled()) &#123;
-        <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> uirenderer::skiapipeline::SkiaRecordingCanvas(renderNode, <span class="hljs-built_in">width</span>, <span class="hljs-built_in">height</span>);
+        <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> uirenderer::skiapipeline::SkiaRecordingCanvas(renderNode, width, height);
     &#125;
-    <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> uirenderer::RecordingCanvas(<span class="hljs-built_in">width</span>, <span class="hljs-built_in">height</span>);
+    <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> uirenderer::RecordingCanvas(width, height);
 &#125;
 
 <span class="hljs-comment">//Properrties.cpp</span>
@@ -1362,16 +1362,16 @@ status_t BufferQueueProducer::queueBuffer(<span class="hljs-keyword">int</span> 
     <span class="hljs-keyword">return</span> RenderPipelineType::SkiaGL == renderType || RenderPipelineType::SkiaVulkan == renderType;
 &#125;</code></pre>
 <pre><code class="hljs c++"><span class="hljs-comment">//RecordingCanvas.cpp</span>
-RecordingCanvas::RecordingCanvas(<span class="hljs-keyword">size_t</span> <span class="hljs-built_in">width</span>, <span class="hljs-keyword">size_t</span> <span class="hljs-built_in">height</span>)
+RecordingCanvas::RecordingCanvas(<span class="hljs-keyword">size_t</span> width, <span class="hljs-keyword">size_t</span> height)
         : mState(*<span class="hljs-keyword">this</span>), mResourceCache(ResourceCache::getInstance()) &#123;
-    resetRecording(<span class="hljs-built_in">width</span>, <span class="hljs-built_in">height</span>);
+    resetRecording(width, height);
 &#125;
 
-<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">RecordingCanvas::resetRecording</span><span class="hljs-params">(<span class="hljs-keyword">int</span> <span class="hljs-built_in">width</span>, <span class="hljs-keyword">int</span> <span class="hljs-built_in">height</span>, RenderNode* node)</span> </span>&#123;
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">RecordingCanvas::resetRecording</span><span class="hljs-params">(<span class="hljs-keyword">int</span> width, <span class="hljs-keyword">int</span> height, RenderNode* node)</span> </span>&#123;
     LOG_ALWAYS_FATAL_IF(mDisplayList, <span class="hljs-string">"prepareDirty called a second time during a recording!"</span>);
     mDisplayList = <span class="hljs-keyword">new</span> DisplayList();<span class="hljs-comment">//初始化DisplayList</span>
 
-    mState.initializeRecordingSaveStack(<span class="hljs-built_in">width</span>, <span class="hljs-built_in">height</span>);
+    mState.initializeRecordingSaveStack(width, height);
 
     mDeferredBarrierType = DeferredBarrierType::InOrder;
 &#125;</code></pre>
