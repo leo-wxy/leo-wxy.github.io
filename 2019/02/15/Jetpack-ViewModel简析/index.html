@@ -169,7 +169,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      2.1k 字
+      2.3k 字
     </span>
   
 
@@ -179,7 +179,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      31
+      35
        分钟
     </span>
   
@@ -216,20 +216,32 @@
 <p>ViewModel是用来存储和管理Lifecycle创建数据的组件，在配置发生改变或者屏幕旋转时数据仍然不会丢失。<strong>ViewModel可以负责组件间的通信，可以高效解决Activity与Fragment的通信问题。</strong></p>
 </blockquote>
 <p>主要的功能还是在非手动关闭以及系统回收条件下进行 Activity/Fragment的数据保存。</p>
+<p>具有以下优势：</p>
+<ul>
+<li>与UI层低耦合</li>
+<li>可以在Fragment间共享ViewModel</li>
+<li>数据一致保存在内存中，即使Activity重建</li>
+</ul>
 <h2 id="ViewModel使用示例"><a href="#ViewModel使用示例" class="headerlink" title="ViewModel使用示例"></a>ViewModel使用示例</h2><blockquote>
 <p>代码中提供了<code>ViewModel</code>以及<code>AndroidViewModel</code>，这两者的区别在于<code>AndroidViewModel</code>多提供了<code>application</code>入参，可以调用它去获取资源或者其他信息。</p>
 </blockquote>
-<p>添加VIewModel的第三方引用</p>
+<p>添加ViewModel的第三方引用</p>
 <pre><code class="hljs groovy">dependencies &#123;
-   <span class="hljs-keyword">def</span> lifecycle_version = <span class="hljs-string">"2.0.0"</span>
-   implementation <span class="hljs-string">"androidx.lifecycle:lifecycle-viewmodel:$lifecycle_version"</span>
-   implementation <span class="hljs-string">"androidx.lifecycle:lifecycle-extensions:$lifecycle_version"</span>
+   <span class="hljs-keyword">def</span> lifecycle_version = <span class="hljs-string">"1.1.1"</span>
+   implementation <span class="hljs-string">"android.arch.lifecycle:extensions:$lifecycle_version"</span>
+   implementation <span class="hljs-string">"android.arch.lifecycle:viewmodel:$lifecycle_version"</span>
 &#125;</code></pre>
-<p>先创建一个类继承ViewModel<br><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">CustomViewModel</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">ViewModel</span></span>&#123;
-   <span class="hljs-keyword">private</span> String text = <span class="hljs-string">"text"</span>;
-   <span class="hljs-function"><span class="hljs-keyword">public</span> String <span class="hljs-title">getText</span><span class="hljs-params">()</span></span>&#123;
-      <span class="hljs-keyword">return</span> text;
-   &#125;
+<p>先创建一个类继承ViewModel<br><pre><code class="hljs java">  <span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">CustomViewModel</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">ViewModel</span></span>&#123;
+     <span class="hljs-keyword">private</span> String text = <span class="hljs-string">"text"</span>;
+     <span class="hljs-function"><span class="hljs-keyword">public</span> String <span class="hljs-title">getText</span><span class="hljs-params">()</span></span>&#123;
+        <span class="hljs-keyword">return</span> text;
+     &#125;
+  &#125;
+
+<span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">CustomAndroidViewModel</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">AndroidViewModel</span> </span>&#123;
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">CustomAndroidViewModel</span><span class="hljs-params">(@NonNull Application application)</span> </span>&#123;
+        <span class="hljs-keyword">super</span>(application);
+    &#125;
 &#125;</code></pre></p>
 <p>创建完毕后，需要在Activity/Fragment中进行调用<br><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">MainActivity</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">AppCompatActivity</span> </span>&#123;
     <span class="hljs-function"><span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> <span class="hljs-title">onCreate</span><span class="hljs-params">(Bundle savedInstanceState)</span> </span>&#123;
@@ -242,6 +254,7 @@
     &#125;
 &#125;</code></pre></p>
 <p>上述为最简单的示例，更高级的可以参考<a href="https://developer.android.google.cn/topic/libraries/architecture/viewmodel" target="_blank" rel="noopener">ViewModel 官方示例</a></p>
+<p><strong>ViewModel绝不能引用View、Lifecycle或者存储对Activity上下文引用的任何类。</strong></p>
 <h2 id="源码分析"><a href="#源码分析" class="headerlink" title="源码分析"></a>源码分析</h2><p>根据上节的使用示例分析ViewModel中的源码实现。</p>
 <h3 id="ViewModel"><a href="#ViewModel" class="headerlink" title="ViewModel"></a>ViewModel</h3><p>需要先新建ViewModel实例，等待调用<br><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">abstract</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">ViewModel</span> </span>&#123;
     <span class="hljs-comment">//当ViewModel实例被销毁时调用</span>
@@ -262,6 +275,7 @@
         <span class="hljs-keyword">return</span> (T) mApplication;
     &#125;
 &#125;</code></pre></p>
+<p><code>ViewModel</code>是一个抽象类，主要提供一个<code>onCleared()</code>，可以在其中来清理一些自定义数据</p>
 <h3 id="ViewModelProvider"><a href="#ViewModelProvider" class="headerlink" title="ViewModelProvider"></a>ViewModelProvider</h3><p>创建实例完毕后，需要获取对应实例<br><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">ViewModelProviders</span> </span>&#123;
    ...
     <span class="hljs-meta">@NonNull</span>
@@ -439,7 +453,37 @@
         mMap.clear();
     &#125;
 &#125;</code></pre></p>
-<h3 id="HolderFragment"><a href="#HolderFragment" class="headerlink" title="HolderFragment"></a>HolderFragment</h3><p><code>HolderFragment</code>是一个Fragment组件，没有UI界面，唯一的作用就是<strong>存储数据(ViewModelStore)</strong>。<br>对于每一个使用了<code>ViewModel</code>的Activity/Fragment都会动态的为其添加一个<code>HolderFragment</code>，其实现了<code>ViewModelStoreOwner</code>接口，可以直接获取到内部存储的<code>ViewModelStore</code>数据。<br><code>HolderFragment</code>是整个ViewModel源码实现的核心，由它进行数据存储且保证发生屏幕旋转等配置改变时存储的数据不会丢失。<br><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">HolderFragment</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">Fragment</span> <span class="hljs-keyword">implements</span> <span class="hljs-title">ViewModelStoreOwner</span> </span>&#123;
+<p><code>ViewModelStore</code>内部维护一个<code>HashMap</code>来管理<code>ViewModel</code></p>
+<h4 id="ViewModelStoreOwner"><a href="#ViewModelStoreOwner" class="headerlink" title="ViewModelStoreOwner"></a>ViewModelStoreOwner</h4><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">interface</span> <span class="hljs-title">ViewModelStoreOwner</span> </span>&#123;
+    <span class="hljs-comment">/**
+     * Returns owned &#123;<span class="hljs-doctag">@link</span> ViewModelStore&#125;
+     *
+     * <span class="hljs-doctag">@return</span> a &#123;<span class="hljs-doctag">@code</span> ViewModelStore&#125;
+     */</span>
+    <span class="hljs-meta">@NonNull</span>
+    <span class="hljs-function">ViewModelStore <span class="hljs-title">getViewModelStore</span><span class="hljs-params">()</span></span>;
+&#125;</code></pre>
+<p><code>ViewModelStoreOwner</code>是一个接口，内部只声明了一个<code>getViewModelStore()</code>需要实现。</p>
+<p>其中<code>FragmentActivity</code>和<code>android.support.v4.app.Fragment</code>默认实现了<code>ViewModelStoreOwner</code>接口。不过初始化上有差异</p>
+<pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> ViewModelStore <span class="hljs-title">getViewModelStore</span><span class="hljs-params">()</span> </span>&#123;
+    <span class="hljs-keyword">if</span> (<span class="hljs-keyword">this</span>.getApplication() == <span class="hljs-keyword">null</span>) &#123;
+        <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> IllegalStateException(<span class="hljs-string">"Your activity is not yet attached to the Application instance. You can't request ViewModel before onCreate call."</span>);
+    &#125; <span class="hljs-keyword">else</span> &#123;
+        <span class="hljs-keyword">if</span> (<span class="hljs-keyword">this</span>.mViewModelStore == <span class="hljs-keyword">null</span>) &#123;
+            FragmentActivity.NonConfigurationInstances nc = (FragmentActivity.NonConfigurationInstances)<span class="hljs-keyword">this</span>.getLastNonConfigurationInstance();
+            <span class="hljs-keyword">if</span> (nc != <span class="hljs-keyword">null</span>) &#123;
+                <span class="hljs-keyword">this</span>.mViewModelStore = nc.viewModelStore;
+            &#125;
+
+            <span class="hljs-keyword">if</span> (<span class="hljs-keyword">this</span>.mViewModelStore == <span class="hljs-keyword">null</span>) &#123;
+                <span class="hljs-keyword">this</span>.mViewModelStore = <span class="hljs-keyword">new</span> ViewModelStore();
+            &#125;
+        &#125;
+
+        <span class="hljs-keyword">return</span> <span class="hljs-keyword">this</span>.mViewModelStore;
+    &#125;
+&#125;</code></pre>
+<h4 id="HolderFragment"><a href="#HolderFragment" class="headerlink" title="HolderFragment"></a>HolderFragment</h4><p><code>HolderFragment</code>是一个Fragment组件，没有UI界面，唯一的作用就是<strong>存储数据(ViewModelStore)</strong>。<br>对于每一个使用了<code>ViewModel</code>的Activity/Fragment都会动态的为其添加一个<code>HolderFragment</code>，其实现了<code>ViewModelStoreOwner</code>接口，可以直接获取到内部存储的<code>ViewModelStore</code>数据。<br><code>HolderFragment</code>是整个ViewModel源码实现的核心，由它进行数据存储且保证发生屏幕旋转等配置改变时存储的数据不会丢失。<br><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">HolderFragment</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">Fragment</span> <span class="hljs-keyword">implements</span> <span class="hljs-title">ViewModelStoreOwner</span> </span>&#123;
     ...
 	<span class="hljs-keyword">private</span> ViewModelStore mViewModelStore = <span class="hljs-keyword">new</span> ViewModelStore();
 
@@ -573,8 +617,9 @@
 <li>当Activity因为系统内存紧张被回收时，<code>onSaveInstanceState()</code>可以恢复数据，而<code>ViewModel</code>因为<code>HolderFragment</code>被销毁数据也随之丢失。</li>
 <li>两者都只是临时性存储</li>
 </ul>
-<h2 id="内容引用"><a href="#内容引用" class="headerlink" title="内容引用"></a>内容引用</h2><p><a href="https://blog.csdn.net/hyc1988107/article/details/81456460" target="_blank" rel="noopener">ViewModel源码分析</a></p>
+<h3 id="ViewModel与协程"><a href="#ViewModel与协程" class="headerlink" title="ViewModel与协程"></a>ViewModel与协程</h3><h2 id="内容引用"><a href="#内容引用" class="headerlink" title="内容引用"></a>内容引用</h2><p><a href="https://blog.csdn.net/hyc1988107/article/details/81456460" target="_blank" rel="noopener">ViewModel源码分析</a></p>
 <p><a href="https://jekton.github.io/2018/06/30/android-arch-ViewModel/" target="_blank" rel="noopener">Jekton-ViewModel</a></p>
+<p><a href="https://developer.android.google.cn/topic/libraries/architecture/viewmodel" target="_blank" rel="noopener">AdnroidDeveloper - ViewModel概览</a></p>
 
             </div>
             <hr>
