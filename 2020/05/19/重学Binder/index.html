@@ -169,7 +169,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      723 字
+      1.9k 字
     </span>
   
 
@@ -179,7 +179,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      7
+      20
        分钟
     </span>
   
@@ -213,8 +213,7 @@
             
             <div class="markdown-body">
               <!--基于先前的学习内容，重新进行Binder理论知识的整理-->
-<h2 id="Linux传统的进程间通信原理"><a href="#Linux传统的进程间通信原理" class="headerlink" title="Linux传统的进程间通信原理"></a>Linux传统的进程间通信原理</h2><span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/Linux-IPC-Basics.png" srcset="/img/loading.gif" class="full-image" alt="Linux进程结构" title="Linux进程结构"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
-<p><img src="/images/Linux-IPC-Basics.png" srcset="/img/loading.gif" alt="Linux进程结构"></p>
+<h2 id="Linux传统的进程间通信原理"><a href="#Linux传统的进程间通信原理" class="headerlink" title="Linux传统的进程间通信原理"></a>Linux传统的进程间通信原理</h2><p><img src="/images/Linux-IPC-Basics.png" srcset="/img/loading.gif" alt="Linux进程结构"></p>
 <h3 id="进程隔离"><a href="#进程隔离" class="headerlink" title="进程隔离"></a>进程隔离</h3><blockquote>
 <p>保护系统中进程互不干扰。在操作系统中，进程之间数据是不互通的，相互之间无法访问数据，保证数据的安全星。</p>
 </blockquote>
@@ -247,7 +246,7 @@
 <li><code>copy_from_user</code>：将数据从用户空间拷贝到内核空间</li>
 <li><code>copy_to_user</code>：将数据从内核空间拷贝到用户空间</li>
 </ul>
-<h3 id="传统IPC功能实现"><a href="#传统IPC功能实现" class="headerlink" title="传统IPC功能实现"></a>传统IPC功能实现</h3><span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/Linux-IPC.png" srcset="/img/loading.gif" class="full-image" alt="Linux IPC" title="Linux IPC"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<h3 id="传统IPC功能实现"><a href="#传统IPC功能实现" class="headerlink" title="传统IPC功能实现"></a>传统IPC功能实现</h3><p><img src="/images/Linux-IPC.png" srcset="/img/loading.gif" alt="Linux-IPC"></p>
 <ol>
 <li>发送进程通过<code>系统调用 copy_from_user·</code>把自己的<code>内存缓存区(发送进程)</code>的数据拷贝到<code>内核缓存区</code>中</li>
 <li>内核程序通过<code>系统调用 copy_to_user</code>把内核缓存区的数据拷贝到接收进程的<code>内存缓存区</code>中</li>
@@ -257,7 +256,102 @@
 <li><strong>性能低下</strong>，需要经历两次数据拷贝过程：<code>发送进程内存缓存区 -&gt; 内核缓存区 -&gt; 接收进程内存缓存区</code></li>
 <li><strong>空间、时间浪费</strong>，接收方需要事先开辟一块内存空间准备接受发送方的数据，由于不能确定数据的大小。所以只能开辟一块较大的空间(<code>空间浪费</code>)或者先行获取发送数据的大小(<code>时间浪费</code>)。</li>
 </ol>
-<h3 id="Binder-mmap实现"><a href="#Binder-mmap实现" class="headerlink" title="Binder-mmap实现"></a>Binder-mmap实现</h3><h2 id="Binder通信"><a href="#Binder通信" class="headerlink" title="Binder通信"></a>Binder通信</h2><h3 id="Binder权限验证"><a href="#Binder权限验证" class="headerlink" title="Binder权限验证"></a>Binder权限验证</h3>
+<h3 id="传统Linux进程通信手段"><a href="#传统Linux进程通信手段" class="headerlink" title="传统Linux进程通信手段"></a>传统Linux进程通信手段</h3><ul>
+<li>管道</li>
+<li>消息队列</li>
+<li><strong>共享内存</strong>：无需复制，共享缓冲区直接附加到进程的虚拟地址，速度快。<em>但是无法解决进程间同步问题</em></li>
+<li><strong>套接字(Socket)</strong>：接口通用，但是传输效率低，主要用于不同机器间的通信</li>
+<li><strong>信号量(semaphore)</strong>：作为一种锁机制，防止某进程正在访问共享资源时，其他进程也在访问该资源。</li>
+<li>信号</li>
+</ul>
+<h2 id="Binder基本原理"><a href="#Binder基本原理" class="headerlink" title="Binder基本原理"></a>Binder基本原理</h2><h3 id="动态内核可加载模块"><a href="#动态内核可加载模块" class="headerlink" title="动态内核可加载模块"></a>动态内核可加载模块</h3><p><code>模块</code>是具有独立功能的程序，可以被单独编译但是无法独立运行。利用<code>动态内核可加载模块</code>机制，动态的添加一个内核模块到内核空间内，用户进程就可以通过这个模块实现通信。</p>
+<p><strong>在Android系统中，加载进内核空间的模块就是<code>Binder驱动</code>。</strong></p>
+<h3 id="内存映射-mmap"><a href="#内存映射-mmap" class="headerlink" title="内存映射-mmap"></a>内存映射-mmap</h3><p><code>Binder驱动</code>添加完毕后，就需要开始进程间通信。接下来就需要用到<code>mmap()——内存映射</code>。</p>
+<p><code>mmap</code>用于文件或者其他对象映射进内存，通常用在有物理介质的文件系统上的，比如磁盘之类。</p>
+<p>在Binder中，通过<code>mmap</code>将用户空间内的一块内存区域映射进内存空间，当映射关系建立完毕后，任何一方对内存区域的改动都会被反映到另一方。</p>
+<p>Binder建立了一个虚拟设备<code>/dev/binder</code>，然后在内核空间创建了一块数据接收的缓冲区，这块<code>数据接收缓冲区</code>与<code>内核缓冲区</code>和<code>接收数据的用户空间</code>建立映射，减少了一次<em>数据拷贝</em>。</p>
+<h3 id="实现原理"><a href="#实现原理" class="headerlink" title="实现原理"></a>实现原理</h3><p><img src="/images/Binder-IPC.png" srcset="/img/loading.gif" alt="Binder流程"></p>
+<ol>
+<li><code>Binder驱动</code>在<code>内核空间</code>建立一个<code>数据接收缓存区</code></li>
+<li>接着在<code>内核空间</code>开辟一块<code>内核缓存区</code>，建立起<code>内核缓存区和内核数据接收缓存区</code>之间的映射关系，以及<code>数据接收缓存区和用户空间</code>的映射关系</li>
+<li>发送方进程通过<code>系统调用copy_from_user</code>将数据复制到<code>内核缓存区</code>，由于各自之间存在映射，等价于<code>直接把数据传递到了接收进程</code>。</li>
+</ol>
+<h3 id="Binder优势"><a href="#Binder优势" class="headerlink" title="Binder优势"></a>Binder优势</h3><ul>
+<li><p>性能</p>
+<blockquote>
+<p>Linux上的通信方式例如<code>管道、Socket</code>都需要复制两次数据。而Binder只要一次</p>
+<p>拷贝两次过程：发送方数据通过<code>系统调用copy_from_user</code>拷贝到<code>内核缓存区</code>，再由<code>内核缓存区</code>调用<code>系统调用copy_to_user</code>拷贝至接收方。</p>
+<p>Binder执行过程：在内核中建立数<code>据接收缓存区</code>，发送方数据通过<code>系统调用copy_from_user</code>拷贝到<code>内核缓存区</code>，此时<code>内核缓存区</code>已与<code>数据接收缓存区</code>和<code>接收进程数据缓存区</code>建立映射，相当于发送方的数据直接到接收方。</p>
+</blockquote>
+</li>
+<li><p>安全性</p>
+<blockquote>
+<p>传统的Linux通信是不包含通信双方的身份验证，Binder自带身份验证，提高了安全性。</p>
+<p><a href="#Binder权限验证">Binder权限验证</a></p>
+</blockquote>
+</li>
+<li><p>稳定性</p>
+<blockquote>
+<p>Binder基于CS架构，Client的需求都交与Server去完成，职责明确。</p>
+</blockquote>
+</li>
+</ul>
+<h2 id="Binder通信模型"><a href="#Binder通信模型" class="headerlink" title="Binder通信模型"></a>Binder通信模型</h2><p><img src="/images/IPC-Binder.jpg" srcset="/img/loading.gif" alt="Binder架构图"></p>
+<h3 id="Client"><a href="#Client" class="headerlink" title="Client"></a>Client</h3><blockquote>
+<p>客户端进程</p>
+</blockquote>
+<p><code>Client</code>负责向<code>Service Mananger</code>查询所需Service，并且获得一个<code>Binder代理对象</code>，再通过<code>Binder代理对象</code>向<code>Server</code>发起请求</p>
+<h3 id="Server"><a href="#Server" class="headerlink" title="Server"></a>Server</h3><blockquote>
+<p>服务端进程</p>
+</blockquote>
+<p><code>Server</code>进程启动时，会通过<code>Binder驱动</code>注册自身的服务到<code>Service Manager</code>中，并且启动一个<code>Binder线程池</code>，用来接收<code>Client</code>的请求。</p>
+<h3 id="Service-Manager"><a href="#Service-Manager" class="headerlink" title="Service Manager"></a>Service Manager</h3><blockquote>
+<p>服务的管理者，指代的是<code>Native</code>层的<code>ServiceManager</code>，是整个 Binder通信机制的 大管家，也是Android进程间通信的守护进程。</p>
+</blockquote>
+<p>主要有以下功能</p>
+<ul>
+<li><code>Service</code>通过<code>Binder驱动</code>向<code>ServiceManager</code>注册Binder，表示可以对外提供服务。</li>
+<li><code>Client</code>通过<code>Binder驱动</code>从<code>ServiceManager</code>获取Binder的引用。</li>
+</ul>
+<p><code>Service Manager</code>就是一个进程，内部维护了一张表，维护了<code>名字+Binder实体的引用</code>。</p>
+<h4 id="启动"><a href="#启动" class="headerlink" title="启动"></a>启动</h4><p><code>Service Manager</code>进程是在开机时启动的</p>
+<ol>
+<li>init进程解析<code>servicemanager.rc</code>之后，找到对应可执行程序<code>/system/bin/servicemanager</code></li>
+<li>继续执行到<code>service_manager.c</code>的<code>main()</code></li>
+</ol>
+<pre><code class="hljs c"><span class="hljs-comment">//frameworks/native/cmds/servicemanager/service_manager.c</span>
+<span class="hljs-function"><span class="hljs-keyword">int</span> <span class="hljs-title">main</span><span class="hljs-params">(<span class="hljs-keyword">int</span> argc, <span class="hljs-keyword">char</span>** argv)</span>
+</span>&#123;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">binder_state</span> *<span class="hljs-title">bs</span>;</span>
+    <span class="hljs-keyword">union</span> selinux_callback cb;
+    <span class="hljs-keyword">char</span> *driver;
+
+    <span class="hljs-keyword">if</span> (argc &gt; <span class="hljs-number">1</span>) &#123;
+        driver = argv[<span class="hljs-number">1</span>];
+    &#125; <span class="hljs-keyword">else</span> &#123;
+        driver = <span class="hljs-string">"/dev/binder"</span>;
+    &#125;
+
+    bs = binder_open(driver, <span class="hljs-number">128</span>*<span class="hljs-number">1024</span>);
+
+    <span class="hljs-keyword">if</span> (binder_become_context_manager(bs)) &#123;
+        ALOGE(<span class="hljs-string">"cannot become context manager (%s)\n"</span>, strerror(errno));
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    &#125;
+  
+<span class="hljs-meta">#<span class="hljs-meta-keyword">ifdef</span> VENDORSERVICEMANAGER</span>
+    sehandle = selinux_android_vendor_service_context_handle();
+<span class="hljs-meta">#<span class="hljs-meta-keyword">else</span></span>
+    sehandle = selinux_android_service_context_handle();
+<span class="hljs-meta">#<span class="hljs-meta-keyword">endif</span></span>
+    selinux_status_open(<span class="hljs-literal">true</span>);
+
+    binder_loop(bs, svcmgr_handler);
+
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+&#125;</code></pre>
+<h5 id="binder-open"><a href="#binder-open" class="headerlink" title="binder_open()"></a>binder_open()</h5><h5 id="binder-become-context-manager"><a href="#binder-become-context-manager" class="headerlink" title="binder_become_context_manager()"></a>binder_become_context_manager()</h5><h5 id="binder-loop"><a href="#binder-loop" class="headerlink" title="binder_loop()"></a>binder_loop()</h5><h4 id="Service-Manager-注册服务"><a href="#Service-Manager-注册服务" class="headerlink" title="Service Manager 注册服务"></a>Service Manager 注册服务</h4><h4 id="Service-Manager-获取服务"><a href="#Service-Manager-获取服务" class="headerlink" title="Service Manager 获取服务"></a>Service Manager 获取服务</h4><h3 id="Binder驱动"><a href="#Binder驱动" class="headerlink" title="Binder驱动"></a>Binder驱动</h3><h4 id="加载过程"><a href="#加载过程" class="headerlink" title="加载过程"></a>加载过程</h4><h5 id="Binder初始化-binder-init"><a href="#Binder初始化-binder-init" class="headerlink" title="Binder初始化-binder_init()"></a>Binder初始化-binder_init()</h5><h5 id="打开Binder设备-binder-open"><a href="#打开Binder设备-binder-open" class="headerlink" title="打开Binder设备-binder_open()"></a>打开Binder设备-binder_open()</h5><h5 id="Binder内存映射-binder-mmap"><a href="#Binder内存映射-binder-mmap" class="headerlink" title="Binder内存映射-binder_mmap()"></a>Binder内存映射-binder_mmap()</h5><h5 id="Binder内存管理-binder-ioctl"><a href="#Binder内存管理-binder-ioctl" class="headerlink" title="Binder内存管理-binder_ioctl()"></a>Binder内存管理-binder_ioctl()</h5><h2 id="Binder通信过程"><a href="#Binder通信过程" class="headerlink" title="Binder通信过程"></a>Binder通信过程</h2><h3 id="Binder权限验证"><a href="#Binder权限验证" class="headerlink" title="Binder权限验证"></a>Binder权限验证</h3><p>getCallingUid,getCallingPid</p>
+
             </div>
             <hr>
             <div>
