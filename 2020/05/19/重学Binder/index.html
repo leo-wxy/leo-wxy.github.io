@@ -169,7 +169,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      6.6k 字
+      9.1k 字
     </span>
   
 
@@ -179,7 +179,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      96
+      135
        分钟
     </span>
   
@@ -433,7 +433,7 @@ fail_open:
 <p><code>BINDER_WRITE_READ</code>：向<code>Binder驱动</code>进行<code>读取或写入操作</code>，参数分为两部分<code>write_size</code>和<code>read_size</code></p>
 <ul>
 <li><code>write_size</code>不为空，取出<code>write_buffer</code>的数据写入到<code>Binder</code>里。</li>
-<li><code>read_size</code>不为空，从<code>Binder</code>里读取数据写入到<code>read_buffer</code>。<code>read_buffer</code>没有数据，就处于等待状态。</li>
+<li><code>read_size</code>不为空，<code>Binder</code>写数据到<code>read_buffer</code>。<code>read_buffer</code>没有数据，就处于等待状态。</li>
 </ul>
 <p><code>binder_write()</code></p>
 <pre><code class="hljs c"><span class="hljs-function"><span class="hljs-keyword">int</span> <span class="hljs-title">binder_write</span><span class="hljs-params">(struct binder_state *bs, <span class="hljs-keyword">void</span> *data, <span class="hljs-keyword">size_t</span> len)</span>
@@ -1251,18 +1251,524 @@ IPCThreadState::IPCThreadState()
     binder_link_to_death(bs, handle, &amp;si-&gt;death);
     <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
 &#125;</code></pre>
-<p>//TODO 流程图</p>
-<h4 id="Service-Manager-获取服务"><a href="#Service-Manager-获取服务" class="headerlink" title="Service Manager 获取服务"></a>Service Manager 获取服务</h4><blockquote>
+<h4 id="Java-注册服务"><a href="#Java-注册服务" class="headerlink" title="Java 注册服务"></a>Java 注册服务</h4><p>上面讲的都是Native层的相关过程，接下来简单分析下<code>Java层 如何注册服务</code></p>
+<p>一般都是通过<code>ServiceManager.addService()</code>去在<code>Service Manager</code>注册服务，这一类方式主要面向的是<code>系统服务</code>。</p>
+<p><code>系统服务</code>相关的分析完毕后，会简单介绍开发者自定义Service的注册过程。</p>
+<p>注册服务的操作都是由<code>Server</code>执行的，所以下面的流程基本都是在<code>Server端操作的</code>。</p>
+<h5 id="系统服务-SystemServer-注册服务"><a href="#系统服务-SystemServer-注册服务" class="headerlink" title="系统服务(SystemServer) 注册服务"></a>系统服务(SystemServer) 注册服务</h5><blockquote>
+<p>系统服务：一般指的是由<code>SystemServer</code>进程启动的服务，例如<code>InputManagerService</code>、<code>WindowManagerService</code></p>
+</blockquote>
+<pre><code class="hljs java"><span class="hljs-comment">//SystemServer.java</span>
+            inputManager = <span class="hljs-keyword">new</span> InputManagerService(context);
+            ServiceManager.addService(Context.INPUT_SERVICE, inputManager,
+                    <span class="hljs-comment">/* allowIsolated= */</span> <span class="hljs-keyword">false</span>, DUMP_FLAG_PRIORITY_CRITICAL);</code></pre>
+<p>都是通过<code>ServiceManager.addService()</code>进行注册</p>
+<pre><code class="hljs java"><span class="hljs-comment">//core/java/android/os/ServiceManager.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">addService</span><span class="hljs-params">(String name, IBinder service, <span class="hljs-keyword">boolean</span> allowIsolated,
+            <span class="hljs-keyword">int</span> dumpPriority)</span> </span>&#123;
+        <span class="hljs-keyword">try</span> &#123;
+            getIServiceManager().addService(name, service, allowIsolated, dumpPriority);
+        &#125; <span class="hljs-keyword">catch</span> (RemoteException e) &#123;
+            Log.e(TAG, <span class="hljs-string">"error in addService"</span>, e);
+        &#125;
+    &#125;
+
+   <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> IServiceManager <span class="hljs-title">getIServiceManager</span><span class="hljs-params">()</span> </span>&#123;
+        <span class="hljs-keyword">if</span> (sServiceManager != <span class="hljs-keyword">null</span>) &#123;
+            <span class="hljs-keyword">return</span> sServiceManager;
+        &#125;
+
+        <span class="hljs-comment">// Find the service manager</span>
+        sServiceManager = ServiceManagerNative
+                .asInterface(Binder.allowBlocking(BinderInternal.getContextObject()));
+        <span class="hljs-keyword">return</span> sServiceManager;
+    &#125;
+
+    <span class="hljs-function"><span class="hljs-keyword">static</span> <span class="hljs-keyword">public</span> IServiceManager <span class="hljs-title">asInterface</span><span class="hljs-params">(IBinder obj)</span>
+    </span>&#123;
+      <span class="hljs-comment">//obj 为 BinderProxy对象</span>
+        <span class="hljs-keyword">if</span> (obj == <span class="hljs-keyword">null</span>) &#123;
+            <span class="hljs-keyword">return</span> <span class="hljs-keyword">null</span>;
+        &#125;
+        IServiceManager in =
+            (IServiceManager)obj.queryLocalInterface(descriptor);
+        <span class="hljs-keyword">if</span> (in != <span class="hljs-keyword">null</span>) &#123;
+            <span class="hljs-keyword">return</span> in;
+        &#125;
+
+        <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> ServiceManagerProxy(obj);
+    &#125;</code></pre>
+<p>前面有讲到具体的处理过程，这边直接贴一个结论：</p>
+<p><code>sServiceManager</code>最后得到的是<code>ServiceManagerProxy</code>对象，且<code>IBinder</code>对象为<code>BinderProxy</code></p>
+<pre><code class="hljs java"><span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">ServiceManagerProxy</span> <span class="hljs-keyword">implements</span> <span class="hljs-title">IServiceManager</span> </span>&#123;
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">ServiceManagerProxy</span><span class="hljs-params">(IBinder remote)</span> </span>&#123;
+        mRemote = remote;
+    &#125;    
+
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">addService</span><span class="hljs-params">(String name, IBinder service, <span class="hljs-keyword">boolean</span> allowIsolated, <span class="hljs-keyword">int</span> dumpPriority)</span>
+            <span class="hljs-keyword">throws</span> RemoteException </span>&#123;
+        Parcel data = Parcel.obtain();
+        Parcel reply = Parcel.obtain();
+        data.writeInterfaceToken(IServiceManager.descriptor);
+        data.writeString(name);
+        data.writeStrongBinder(service);
+        data.writeInt(allowIsolated ? <span class="hljs-number">1</span> : <span class="hljs-number">0</span>);
+        data.writeInt(dumpPriority);
+  <span class="hljs-comment">//mRemote为 BinderProxy对象</span>
+        mRemote.transact(ADD_SERVICE_TRANSACTION, data, reply, <span class="hljs-number">0</span>);
+        reply.recycle();
+        data.recycle();
+    &#125;</code></pre>
+<h6 id="writeStrongBinder"><a href="#writeStrongBinder" class="headerlink" title="writeStrongBinder()"></a><code>writeStrongBinder()</code></h6><blockquote>
+<p>将<code>Binder实体</code>写入<code>Parcel</code>中，就可以传递到对端。</p>
+</blockquote>
+<pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">void</span> <span class="hljs-title">writeStrongBinder</span><span class="hljs-params">(IBinder val)</span> </span>&#123;
+    nativeWriteStrongBinder(mNativePtr, val);
+&#125;</code></pre>
+<pre><code class="hljs c"><span class="hljs-comment">//core/jni/android_os_Parcel.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">android_os_Parcel_writeStrongBinder</span><span class="hljs-params">(JNIEnv* env, jclass clazz, jlong nativePtr, jobject object)</span>
+</span>&#123;
+    Parcel* parcel = <span class="hljs-keyword">reinterpret_cast</span>&lt;Parcel*&gt;(nativePtr);
+    <span class="hljs-keyword">if</span> (parcel != <span class="hljs-literal">NULL</span>) &#123;
+        <span class="hljs-keyword">const</span> <span class="hljs-keyword">status_t</span> err = parcel-&gt;writeStrongBinder(ibinderForJavaObject(env, object));
+        <span class="hljs-keyword">if</span> (err != NO_ERROR) &#123;
+            signalExceptionForError(env, clazz, err);
+        &#125;
+    &#125;
+&#125;</code></pre>
+<p><code>ibinderForJavaObject()</code></p>
+<blockquote>
+<p>将<code>Binder(Java)</code>转化成<code>Binder(c++)</code>对象</p>
+</blockquote>
+<pre><code class="hljs cpp"><span class="hljs-comment">//core/jni/android_util_Binder.cpp</span>
+<span class="hljs-function">sp&lt;IBinder&gt; <span class="hljs-title">ibinderForJavaObject</span><span class="hljs-params">(JNIEnv* env, jobject obj)</span>
+</span>&#123;
+    <span class="hljs-keyword">if</span> (obj == <span class="hljs-literal">NULL</span>) <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+
+    <span class="hljs-comment">// Java层的Binder对象</span>
+    <span class="hljs-keyword">if</span> (env-&gt;IsInstanceOf(obj, gBinderOffsets.mClass)) &#123;
+        JavaBBinderHolder* jbh = (JavaBBinderHolder*)
+            env-&gt;GetLongField(obj, gBinderOffsets.mObject);
+        <span class="hljs-keyword">return</span> jbh-&gt;get(env, obj);
+    &#125;
+
+    <span class="hljs-comment">// Java层的BinderProxy对象</span>
+    <span class="hljs-keyword">if</span> (env-&gt;IsInstanceOf(obj, gBinderProxyOffsets.mClass)) &#123;
+        <span class="hljs-keyword">return</span> getBPNativeData(env, obj)-&gt;mObject;
+    &#125;
+
+    ALOGW(<span class="hljs-string">"ibinderForJavaObject: %p is not a Binder object"</span>, obj);
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+&#125;</code></pre>
+<p><code>parcel-&gt;writeStrongBinder()</code></p>
+<pre><code class="hljs cpp"><span class="hljs-comment">//frameworks/native/libs/binder/Parcel.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">status_t</span> <span class="hljs-title">Parcel::writeStrongBinder</span><span class="hljs-params">(<span class="hljs-keyword">const</span> sp&lt;IBinder&gt;&amp; val)</span>
+</span>&#123;
+    <span class="hljs-keyword">return</span> flatten_binder(ProcessState::self(), val, <span class="hljs-keyword">this</span>);
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">status_t</span> <span class="hljs-title">flatten_binder</span><span class="hljs-params">(<span class="hljs-keyword">const</span> sp&lt;ProcessState&gt;&amp; <span class="hljs-comment">/*proc*/</span>,
+    <span class="hljs-keyword">const</span> sp&lt;IBinder&gt;&amp; binder, Parcel* out)</span>
+</span>&#123;
+    flat_binder_object obj;
+
+    <span class="hljs-keyword">if</span> (IPCThreadState::self()-&gt;backgroundSchedulingDisabled()) &#123;
+        <span class="hljs-comment">/* minimum priority for all nodes is nice 0 */</span>
+        obj.flags = FLAT_BINDER_FLAG_ACCEPTS_FDS;
+    &#125; <span class="hljs-keyword">else</span> &#123;
+        <span class="hljs-comment">/* minimum priority for all nodes is MAX_NICE(19) */</span>
+        obj.flags = <span class="hljs-number">0x13</span> | FLAT_BINDER_FLAG_ACCEPTS_FDS;
+    &#125;
+
+    <span class="hljs-keyword">if</span> (binder != <span class="hljs-literal">NULL</span>) &#123;
+        IBinder *local = binder-&gt;localBinder();<span class="hljs-comment">//本地bidner对象</span>
+        <span class="hljs-keyword">if</span> (!local) &#123;
+            BpBinder *proxy = binder-&gt;remoteBinder();<span class="hljs-comment">//远程Binder对象</span>
+            <span class="hljs-keyword">if</span> (proxy == <span class="hljs-literal">NULL</span>) &#123;
+                ALOGE(<span class="hljs-string">"null proxy"</span>);
+            &#125;
+            <span class="hljs-keyword">const</span> <span class="hljs-keyword">int32_t</span> handle = proxy ? proxy-&gt;handle() : <span class="hljs-number">0</span>;
+            obj.hdr.type = BINDER_TYPE_HANDLE;
+            obj.binder = <span class="hljs-number">0</span>; <span class="hljs-comment">/* Don't pass uninitialized stack data to a remote process */</span>
+            obj.handle = handle;
+            obj.cookie = <span class="hljs-number">0</span>;
+        &#125; <span class="hljs-keyword">else</span> &#123;
+            obj.hdr.type = BINDER_TYPE_BINDER;
+            obj.binder = <span class="hljs-keyword">reinterpret_cast</span>&lt;<span class="hljs-keyword">uintptr_t</span>&gt;(local-&gt;getWeakRefs());
+            obj.cookie = <span class="hljs-keyword">reinterpret_cast</span>&lt;<span class="hljs-keyword">uintptr_t</span>&gt;(local);
+        &#125;
+    &#125; <span class="hljs-keyword">else</span> &#123;
+        obj.hdr.type = BINDER_TYPE_BINDER;
+        obj.binder = <span class="hljs-number">0</span>;
+        obj.cookie = <span class="hljs-number">0</span>;
+    &#125;
+
+  <span class="hljs-comment">//写入 flat_binder_object到 out</span>
+    <span class="hljs-keyword">return</span> finish_flatten_binder(binder, obj, out);
+&#125;</code></pre>
+<pre><code class="hljs undefined">
+</code></pre>
+<h6 id="mRemote-transact"><a href="#mRemote-transact" class="headerlink" title="mRemote.transact()"></a><code>mRemote.transact()</code></h6><h5 id="自定义服务-CustomServer-注册服务"><a href="#自定义服务-CustomServer-注册服务" class="headerlink" title="自定义服务(CustomServer) 注册服务"></a>自定义服务(CustomServer) 注册服务</h5><h4 id="Service-Manager-获取服务"><a href="#Service-Manager-获取服务" class="headerlink" title="Service Manager 获取服务"></a>Service Manager 获取服务</h4><blockquote>
 <p>Client 向 Service Manager 获取服务</p>
 </blockquote>
 <p><code>获取服务</code>流程大致与<code>注册服务</code>流程一致</p>
 <p>只是最后执行的<code>do_find_service()</code>方法，从<code>Service Manager</code>获取注册的服务。</p>
 <p><img src="/images/5-4-2-get_service.jpg" srcset="/img/loading.gif" alt="查询服务"></p>
-<h3 id="Binder驱动"><a href="#Binder驱动" class="headerlink" title="Binder驱动"></a>Binder驱动</h3><blockquote>
+<h4 id="Java-获取服务"><a href="#Java-获取服务" class="headerlink" title="Java 获取服务"></a>Java 获取服务</h4><h3 id="Binder驱动"><a href="#Binder驱动" class="headerlink" title="Binder驱动"></a>Binder驱动</h3><p><em>下面源码分析基于<code>android-goldfish-4.4-dev</code>内核版本</em></p>
+<blockquote>
 <p>Android专用，主要以<code>misc</code>设备进行注册，节点是<code>/dev/binder</code>，直接操作设备内存。</p>
 </blockquote>
-<p>源码位于<code>kernel\drivers\staging\android\binder.c</code></p>
-<h4 id="加载过程"><a href="#加载过程" class="headerlink" title="加载过程"></a>加载过程</h4><h5 id="Binder初始化-binder-init"><a href="#Binder初始化-binder-init" class="headerlink" title="Binder初始化-binder_init()"></a>Binder初始化-binder_init()</h5><h5 id="打开Binder设备-binder-open"><a href="#打开Binder设备-binder-open" class="headerlink" title="打开Binder设备-binder_open()"></a>打开Binder设备-binder_open()</h5><h5 id="Binder内存映射-binder-mmap"><a href="#Binder内存映射-binder-mmap" class="headerlink" title="Binder内存映射-binder_mmap()"></a>Binder内存映射-binder_mmap()</h5><h5 id="Binder内存管理-binder-ioctl"><a href="#Binder内存管理-binder-ioctl" class="headerlink" title="Binder内存管理-binder_ioctl()"></a>Binder内存管理-binder_ioctl()</h5><p><img src="/images/Binder驱动加载过程.png" srcset="/img/loading.gif" alt="Binder驱动加载"></p>
+<p><code>Binder驱动</code>源码位于<code>内核</code>，具体代码路径位于<code>/drivers/android/binder.c</code></p>
+<h4 id="加载过程"><a href="#加载过程" class="headerlink" title="加载过程"></a>加载过程</h4><h5 id="Binder初始化-binder-init"><a href="#Binder初始化-binder-init" class="headerlink" title="Binder初始化-binder_init()"></a>Binder初始化-binder_init()</h5><blockquote>
+<p>注册misc设备</p>
+</blockquote>
+<pre><code class="hljs cpp"><span class="hljs-comment">//drivers/android/binder.c</span>
+<span class="hljs-function"><span class="hljs-keyword">static</span> <span class="hljs-keyword">int</span> __init <span class="hljs-title">binder_init</span><span class="hljs-params">(<span class="hljs-keyword">void</span>)</span>
+</span>&#123;
+	<span class="hljs-keyword">int</span> ret;
+	<span class="hljs-keyword">char</span> *device_name, *device_names;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">binder_device</span> *<span class="hljs-title">device</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">hlist_node</span> *<span class="hljs-title">tmp</span>;</span>
+
+	binder_alloc_shrinker_init();
+
+	atomic_set(&amp;binder_transaction_log.cur, ~<span class="hljs-number">0U</span>);
+	atomic_set(&amp;binder_transaction_log_failed.cur, ~<span class="hljs-number">0U</span>);
+  <span class="hljs-comment">//构建工作队列</span>
+	binder_deferred_workqueue = create_singlethread_workqueue(<span class="hljs-string">"binder"</span>);
+	<span class="hljs-keyword">if</span> (!binder_deferred_workqueue)
+		<span class="hljs-keyword">return</span> -ENOMEM;
+
+	<span class="hljs-keyword">while</span> ((device_name = strsep(&amp;device_names, <span class="hljs-string">","</span>))) &#123;
+    <span class="hljs-comment">//注册bidner设备</span>
+		ret = init_binder_device(device_name);
+		<span class="hljs-keyword">if</span> (ret)
+			<span class="hljs-keyword">goto</span> err_init_binder_device_failed;
+	&#125;
+
+	<span class="hljs-keyword">return</span> ret;
+  
+  <span class="hljs-comment">//执行过程异常处理</span></code></pre>
+<pre><code class="hljs c"><span class="hljs-function"><span class="hljs-keyword">static</span> <span class="hljs-keyword">int</span> __init <span class="hljs-title">init_binder_device</span><span class="hljs-params">(<span class="hljs-keyword">const</span> <span class="hljs-keyword">char</span> *name)</span>
+</span>&#123;
+	<span class="hljs-keyword">int</span> ret;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">binder_device</span> *<span class="hljs-title">binder_device</span>;</span>
+
+	binder_device-&gt;miscdev.fops = &amp;binder_fops;
+	binder_device-&gt;miscdev.minor = MISC_DYNAMIC_MINOR;
+	binder_device-&gt;miscdev.name = name;
+
+	binder_device-&gt;context.binder_context_mgr_uid = INVALID_UID;
+	binder_device-&gt;context.name = name;
+	mutex_init(&amp;binder_device-&gt;context.context_mgr_node_lock);
+
+  <span class="hljs-comment">//注册misc设备</span>
+	ret = misc_register(&amp;binder_device-&gt;miscdev);
+
+	hlist_add_head(&amp;binder_device-&gt;hlist, &amp;binder_devices);
+
+	<span class="hljs-keyword">return</span> ret;
+&#125;</code></pre>
+<p>通过<code>misc_register</code>注册Binder设备，具体配置如下：</p>
+<pre><code class="hljs cpp">miscdev.fops = &amp;binder_fops;
+miscdev.minor = MISC_DYNAMIC_MINOR;
+miscdev.name = name <span class="hljs-comment">//name为以下三个 binder hwbinder cdvbinder</span>
+  
+<span class="hljs-keyword">static</span> <span class="hljs-keyword">const</span> struct file_operations binder_fops = &#123;
+	.owner = THIS_MODULE,
+	.poll = binder_poll,
+	.unlocked_ioctl = binder_ioctl,
+	.compat_ioctl = binder_ioctl,
+	.mmap = binder_mmap,
+	.open = binder_open,
+	.flush = binder_flush,
+	.release = binder_release,
+&#125;;</code></pre>
+<h5 id="打开Binder设备-binder-open"><a href="#打开Binder设备-binder-open" class="headerlink" title="打开Binder设备-binder_open()"></a>打开Binder设备-binder_open()</h5><blockquote>
+<p>打开binder驱动设备</p>
+</blockquote>
+<pre><code class="hljs cpp"><span class="hljs-function"><span class="hljs-keyword">static</span> <span class="hljs-keyword">int</span> <span class="hljs-title">binder_open</span><span class="hljs-params">(struct inode *nodp, struct file *filp)</span>
+</span>&#123;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">binder_proc</span> *<span class="hljs-title">proc</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">binder_device</span> *<span class="hljs-title">binder_dev</span>;</span>
+
+	binder_debug(BINDER_DEBUG_OPEN_CLOSE, <span class="hljs-string">"binder_open: %d:%d\n"</span>,
+		     current-&gt;group_leader-&gt;pid, current-&gt;pid);
+
+	proc = kzalloc(<span class="hljs-keyword">sizeof</span>(*proc), GFP_KERNEL);
+	<span class="hljs-keyword">if</span> (proc == <span class="hljs-literal">NULL</span>)
+		<span class="hljs-keyword">return</span> -ENOMEM;
+	spin_lock_init(&amp;proc-&gt;inner_lock);
+	spin_lock_init(&amp;proc-&gt;outer_lock);
+	get_task_struct(current-&gt;group_leader);
+	proc-&gt;tsk = current-&gt;group_leader;
+	INIT_LIST_HEAD(&amp;proc-&gt;todo);
+  <span class="hljs-comment">//记录进程优先级</span>
+	<span class="hljs-keyword">if</span> (binder_supported_policy(current-&gt;policy)) &#123;
+		proc-&gt;default_priority.sched_policy = current-&gt;policy;
+		proc-&gt;default_priority.prio = current-&gt;normal_prio;
+	&#125; <span class="hljs-keyword">else</span> &#123;
+		proc-&gt;default_priority.sched_policy = SCHED_NORMAL;
+		proc-&gt;default_priority.prio = NICE_TO_PRIO(<span class="hljs-number">0</span>);
+	&#125;
+
+	binder_dev = container_of(filp-&gt;private_data, struct binder_device,
+				  miscdev);
+	proc-&gt;context = &amp;binder_dev-&gt;context;
+	binder_alloc_init(&amp;proc-&gt;alloc);
+
+	binder_stats_created(BINDER_STAT_PROC);
+	proc-&gt;pid = current-&gt;group_leader-&gt;pid;
+	INIT_LIST_HEAD(&amp;proc-&gt;delivered_death);
+	INIT_LIST_HEAD(&amp;proc-&gt;waiting_threads);
+	filp-&gt;private_data = proc;
+
+	mutex_lock(&amp;binder_procs_lock);
+	hlist_add_head(&amp;proc-&gt;proc_node, &amp;binder_procs);<span class="hljs-comment">//创建好的binder_proc对象插入到 binder_procs中</span>
+	mutex_unlock(&amp;binder_procs_lock);
+
+
+	<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+&#125;</code></pre>
+<p>创建<code>binder_proc</code>对象，并保存当前进程信息，内部结构如下：</p>
+<pre><code class="hljs cpp"><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">binder_proc</span> &#123;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">hlist_node</span> <span class="hljs-title">proc_node</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rb_root</span> <span class="hljs-title">threads</span>;</span> <span class="hljs-comment">//对应的binder线程</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rb_root</span> <span class="hljs-title">nodes</span>;</span> <span class="hljs-comment">//binder节点</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rb_root</span> <span class="hljs-title">refs_by_desc</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rb_root</span> <span class="hljs-title">refs_by_node</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> <span class="hljs-title">waiting_threads</span>;</span>
+	<span class="hljs-keyword">int</span> pid;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">task_struct</span> *<span class="hljs-title">tsk</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">hlist_node</span> <span class="hljs-title">deferred_work_node</span>;</span>
+	<span class="hljs-keyword">int</span> deferred_work;
+	<span class="hljs-keyword">bool</span> is_dead;
+
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> <span class="hljs-title">todo</span>;</span><span class="hljs-comment">//当前进程的任务</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">binder_stats</span> <span class="hljs-title">stats</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> <span class="hljs-title">delivered_death</span>;</span>
+	<span class="hljs-keyword">int</span> max_threads; <span class="hljs-comment">//最大并发线程数</span>
+	<span class="hljs-keyword">int</span> requested_threads;
+	<span class="hljs-keyword">int</span> requested_threads_started;
+	<span class="hljs-keyword">int</span> tmp_ref;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">binder_priority</span> <span class="hljs-title">default_priority</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">dentry</span> *<span class="hljs-title">debugfs_entry</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">binder_alloc</span> <span class="hljs-title">alloc</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">binder_context</span> *<span class="hljs-title">context</span>;</span>
+	<span class="hljs-keyword">spinlock_t</span> inner_lock;
+	<span class="hljs-keyword">spinlock_t</span> outer_lock;
+&#125;;</code></pre>
+<p><img src="/images/binder_procs.png" srcset="/img/loading.gif" alt="binder_procs"></p>
+<h5 id="Binder内存映射-binder-mmap"><a href="#Binder内存映射-binder-mmap" class="headerlink" title="Binder内存映射-binder_mmap()"></a>Binder内存映射-binder_mmap()</h5><blockquote>
+<p>首先申内核申请虚拟地址空间，申请一块与用户虚拟内存(<code>*vma</code>)相同大小的内存；<br>再申请一个1个page大小的物理内存，再将同一块物理内存分别映射到<code>内核虚拟地址空间</code>和<code>用户虚拟内存空间</code>。</p>
+<p>从而实现了用户空间和内核空间的<code>buffer</code>同步操作。</p>
+</blockquote>
+<pre><code class="hljs c"><span class="hljs-comment">//drivers/android/binder.c</span>
+<span class="hljs-function"><span class="hljs-keyword">static</span> <span class="hljs-keyword">int</span> <span class="hljs-title">binder_mmap</span><span class="hljs-params">(struct file *filp<span class="hljs-comment">/*Bidner驱动的fd*/</span>, struct vm_area_struct *vma<span class="hljs-comment">/*用户虚拟内存*/</span>)</span>
+</span>&#123;
+	<span class="hljs-keyword">int</span> ret;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">binder_proc</span> *<span class="hljs-title">proc</span> = <span class="hljs-title">filp</span>-&gt;<span class="hljs-title">private_data</span>;</span>
+	<span class="hljs-keyword">const</span> <span class="hljs-keyword">char</span> *failure_string;
+
+  <span class="hljs-comment">//保证映射内存大小不会超过4M</span>
+	<span class="hljs-keyword">if</span> ((vma-&gt;vm_end - vma-&gt;vm_start) &gt; SZ_4M)
+		vma-&gt;vm_end = vma-&gt;vm_start + SZ_4M;
+
+	vma-&gt;vm_flags = (vma-&gt;vm_flags | VM_DONTCOPY) &amp; ~VM_MAYWRITE;
+	vma-&gt;vm_ops = &amp;binder_vm_ops;
+	vma-&gt;vm_private_data = proc;
+
+  
+	ret = binder_alloc_mmap_handler(&amp;proc-&gt;alloc, vma);
+
+	<span class="hljs-keyword">return</span> ret;
+&#125;</code></pre>
+<pre><code class="hljs c"><span class="hljs-function"><span class="hljs-keyword">int</span> <span class="hljs-title">binder_alloc_mmap_handler</span><span class="hljs-params">(struct binder_alloc *alloc,
+			      struct vm_area_struct *vma)</span>
+</span>&#123;
+	mutex_lock(&amp;binder_alloc_mmap_lock);
+	<span class="hljs-keyword">if</span> (alloc-&gt;<span class="hljs-built_in">buffer</span>) &#123;
+		ret = -EBUSY;
+		failure_string = <span class="hljs-string">"already mapped"</span>;
+		<span class="hljs-keyword">goto</span> err_already_mapped;
+	&#125;
+<span class="hljs-comment">//分配一个连续的内核虚拟空间</span>
+	area = get_vm_area(vma-&gt;vm_end - vma-&gt;vm_start, VM_IOREMAP);
+  ...
+    <span class="hljs-comment">//分配物理页的指针数组</span>
+	alloc-&gt;pages = kzalloc(<span class="hljs-keyword">sizeof</span>(alloc-&gt;pages[<span class="hljs-number">0</span>]) *
+				   ((vma-&gt;vm_end - vma-&gt;vm_start) / PAGE_SIZE),
+			       GFP_KERNEL);
+	<span class="hljs-keyword">if</span> (alloc-&gt;pages == <span class="hljs-literal">NULL</span>) &#123;
+		ret = -ENOMEM;
+		failure_string = <span class="hljs-string">"alloc page array"</span>;
+		<span class="hljs-keyword">goto</span> err_alloc_pages_failed;
+	&#125;
+	alloc-&gt;buffer_size = vma-&gt;vm_end - vma-&gt;vm_start;
+
+	<span class="hljs-built_in">buffer</span> = kzalloc(<span class="hljs-keyword">sizeof</span>(*<span class="hljs-built_in">buffer</span>), GFP_KERNEL);
+	<span class="hljs-keyword">if</span> (!<span class="hljs-built_in">buffer</span>) &#123;
+		ret = -ENOMEM;
+		failure_string = <span class="hljs-string">"alloc buffer struct"</span>;
+		<span class="hljs-keyword">goto</span> err_alloc_buf_struct_failed;
+	&#125;
+
+	<span class="hljs-built_in">buffer</span>-&gt;data = alloc-&gt;<span class="hljs-built_in">buffer</span>;
+	list_add(&amp;<span class="hljs-built_in">buffer</span>-&gt;entry, &amp;alloc-&gt;buffers);
+	<span class="hljs-built_in">buffer</span>-&gt;<span class="hljs-built_in">free</span> = <span class="hljs-number">1</span>;
+  <span class="hljs-comment">//</span>
+	binder_insert_free_buffer(alloc, <span class="hljs-built_in">buffer</span>);
+  <span class="hljs-comment">//异步可用空间大小为 buffer总大小的一半</span>
+	alloc-&gt;free_async_space = alloc-&gt;buffer_size / <span class="hljs-number">2</span>;
+	barrier();
+	alloc-&gt;vma = vma;
+	alloc-&gt;vma_vm_mm = vma-&gt;vm_mm;
+	<span class="hljs-comment">/* Same as mmgrab() in later kernel versions */</span>
+	atomic_inc(&amp;alloc-&gt;vma_vm_mm-&gt;mm_count);
+
+	<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;    
+  
+&#125;</code></pre>
+<p>当把同一块物理页面同时映射到进程空间和内核空间时，当需要在两者之间传递数据时，只需要其中任意一方把数据拷贝到物理页面，另一方直接读取即可，也就是说，数据的跨进程传递，只需要一次拷贝就可以完成。</p>
+<h5 id="Binder内存管理-binder-ioctl"><a href="#Binder内存管理-binder-ioctl" class="headerlink" title="Binder内存管理-binder_ioctl()"></a>Binder内存管理-binder_ioctl()</h5><blockquote>
+<p>负责在两个进程间收发<code>IPC 数据</code>和<code>IPC Reply</code>数据。</p>
+</blockquote>
+<pre><code class="hljs cpp"><span class="hljs-function"><span class="hljs-keyword">static</span> <span class="hljs-keyword">long</span> <span class="hljs-title">binder_ioctl</span><span class="hljs-params">(struct file *filp<span class="hljs-comment">/*binder驱动的fd*/</span>, <span class="hljs-keyword">unsigned</span> <span class="hljs-keyword">int</span> cmd<span class="hljs-comment">/*ioctl命令*/</span>, <span class="hljs-keyword">unsigned</span> <span class="hljs-keyword">long</span> arg<span class="hljs-comment">/*数据类型*/</span>)</span>
+</span>&#123;
+...
+<span class="hljs-keyword">switch</span> (cmd) &#123;
+	<span class="hljs-keyword">case</span> BINDER_WRITE_READ:
+		ret = binder_ioctl_write_read(filp, cmd, arg, thread);
+		<span class="hljs-keyword">if</span> (ret)
+			<span class="hljs-keyword">goto</span> err;
+		<span class="hljs-keyword">break</span>;
+	<span class="hljs-keyword">case</span> BINDER_SET_MAX_THREADS: &#123;
+		<span class="hljs-keyword">int</span> max_threads;
+
+		<span class="hljs-keyword">if</span> (copy_from_user(&amp;max_threads, ubuf,
+				   <span class="hljs-keyword">sizeof</span>(max_threads))) &#123;
+			ret = -EINVAL;
+			<span class="hljs-keyword">goto</span> err;
+		&#125;
+		binder_inner_proc_lock(proc);
+		proc-&gt;max_threads = max_threads;
+		binder_inner_proc_unlock(proc);
+		<span class="hljs-keyword">break</span>;
+	&#125;
+	<span class="hljs-keyword">case</span> BINDER_SET_CONTEXT_MGR:
+		ret = binder_ioctl_set_ctx_mgr(filp);
+		<span class="hljs-keyword">if</span> (ret)
+			<span class="hljs-keyword">goto</span> err;
+		<span class="hljs-keyword">break</span>;
+    
+&#125;
+  
+&#125;</code></pre>
+<p><code>binder驱动</code>将业务分为多种不同的命令，再根据具体的命令执行不同的业务。常用命令有以下几种：</p>
+<ul>
+<li><p><strong><code>BINDER_WRITE_READ</code></strong>：负责收发<code>Binder IPC</code>数据</p>
+<p>使用场景：<code>Service Manager</code>通过发送<code>BINDER_WRITE_READ</code>命令向<code>Binder驱动</code>读写数据</p>
+</li>
+<li><p><code>BINDER_SET_MAX_THREADS</code>：设置进程最大binder线程个数</p>
+<p>使用场景：在<code>ProcessState</code>初始化的时候，会设置当前进程支持的最大个数，默认为15，设置的命令为<code>BINDER_SET_MAX_THREADS</code></p>
+</li>
+<li><p><code>BINDER_SET_CONTEXT_MGR</code>：设置Service Manager为大管家。</p>
+<p>使用场景：ServiceManager启动过程中调用<code>binder_become_context_manager()</code>命令为<code>BINDER_SET_CONTEXT_MGR</code></p>
+</li>
+</ul>
+<p>使用最频繁的就是<code>BINDER_WRITE_READ</code>，下面简单的分析一下流程：</p>
+<pre><code class="hljs cpp"><span class="hljs-function"><span class="hljs-keyword">static</span> <span class="hljs-keyword">long</span> <span class="hljs-title">binder_ioctl</span><span class="hljs-params">(struct file *filp, <span class="hljs-keyword">unsigned</span> <span class="hljs-keyword">int</span> cmd, <span class="hljs-keyword">unsigned</span> <span class="hljs-keyword">long</span> arg)</span>
+</span>&#123;
+  ...
+	<span class="hljs-keyword">switch</span> (cmd) &#123;
+	<span class="hljs-keyword">case</span> BINDER_WRITE_READ:
+		ret = binder_ioctl_write_read(filp, cmd, arg, thread);
+		<span class="hljs-keyword">if</span> (ret)
+			<span class="hljs-keyword">goto</span> err;
+		<span class="hljs-keyword">break</span>;
+      ...
+  
+&#125;</code></pre>
+<pre><code class="hljs cpp"><span class="hljs-function"><span class="hljs-keyword">static</span> <span class="hljs-keyword">int</span> <span class="hljs-title">binder_ioctl_write_read</span><span class="hljs-params">(struct file *filp,
+				<span class="hljs-keyword">unsigned</span> <span class="hljs-keyword">int</span> cmd, <span class="hljs-keyword">unsigned</span> <span class="hljs-keyword">long</span> arg,
+				struct binder_thread *thread)</span>
+</span>&#123;
+	<span class="hljs-keyword">int</span> ret = <span class="hljs-number">0</span>;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">binder_proc</span> *<span class="hljs-title">proc</span> = <span class="hljs-title">filp</span>-&gt;<span class="hljs-title">private_data</span>;</span>
+	<span class="hljs-keyword">unsigned</span> <span class="hljs-keyword">int</span> size = _IOC_SIZE(cmd);
+	<span class="hljs-keyword">void</span> __user *ubuf = (<span class="hljs-keyword">void</span> __user *)arg;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">binder_write_read</span> <span class="hljs-title">bwr</span>;</span>
+
+	<span class="hljs-keyword">if</span> (size != <span class="hljs-keyword">sizeof</span>(struct binder_write_read)) &#123;
+		ret = -EINVAL;
+		<span class="hljs-keyword">goto</span> out;
+	&#125;
+  <span class="hljs-comment">//从用户空间拷贝数据到 bwr(内核空间)</span>
+	<span class="hljs-keyword">if</span> (copy_from_user(&amp;bwr, ubuf, <span class="hljs-keyword">sizeof</span>(bwr))) &#123;
+		ret = -EFAULT;
+		<span class="hljs-keyword">goto</span> out;
+	&#125;
+  
+	<span class="hljs-keyword">if</span> (bwr.write_size &gt; <span class="hljs-number">0</span>) &#123;
+    <span class="hljs-comment">//存在写数据时，执行binder写操作</span>
+		ret = binder_thread_write(proc, thread,
+					  bwr.write_buffer,
+					  bwr.write_size,
+					  &amp;bwr.write_consumed);
+		trace_binder_write_done(ret);
+		<span class="hljs-keyword">if</span> (ret &lt; <span class="hljs-number">0</span>) &#123;
+			bwr.read_consumed = <span class="hljs-number">0</span>;
+			<span class="hljs-keyword">if</span> (copy_to_user(ubuf, &amp;bwr, <span class="hljs-keyword">sizeof</span>(bwr)))
+				ret = -EFAULT;
+			<span class="hljs-keyword">goto</span> out;
+		&#125;
+	&#125;
+  
+	<span class="hljs-keyword">if</span> (bwr.read_size &gt; <span class="hljs-number">0</span>) &#123;
+    <span class="hljs-comment">//存在读数据，执行binder读操作</span>
+		ret = binder_thread_read(proc, thread, bwr.read_buffer,
+					 bwr.read_size,
+					 &amp;bwr.read_consumed,
+					 filp-&gt;f_flags &amp; O_NONBLOCK);
+		trace_binder_read_done(ret);
+		binder_inner_proc_lock(proc);
+		<span class="hljs-keyword">if</span> (!binder_worklist_empty_ilocked(&amp;proc-&gt;todo))
+			binder_wakeup_proc_ilocked(proc);
+		binder_inner_proc_unlock(proc);
+		<span class="hljs-keyword">if</span> (ret &lt; <span class="hljs-number">0</span>) &#123;
+			<span class="hljs-keyword">if</span> (copy_to_user(ubuf, &amp;bwr, <span class="hljs-keyword">sizeof</span>(bwr)))
+				ret = -EFAULT;
+			<span class="hljs-keyword">goto</span> out;
+		&#125;
+	&#125;
+
+  <span class="hljs-comment">//将内核数据 bwr 拷贝回 用户空间</span>
+	<span class="hljs-keyword">if</span> (copy_to_user(ubuf, &amp;bwr, <span class="hljs-keyword">sizeof</span>(bwr))) &#123;
+		ret = -EFAULT;
+		<span class="hljs-keyword">goto</span> out;
+	&#125;
+out:
+	<span class="hljs-keyword">return</span> ret;
+&#125;</code></pre>
+<p><code>binder_write_read</code>时<code>内核层</code>定义的结构</p>
+<pre><code class="hljs cpp"><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">binder_write_read</span> &#123;</span><span class="hljs-comment">//用在binder内部</span>
+	<span class="hljs-keyword">binder_size_t</span>		write_size;	<span class="hljs-comment">//用户空间写入数据的size</span>
+	<span class="hljs-keyword">binder_size_t</span>		write_consumed;	<span class="hljs-comment">//Binder读取了多少数据</span>
+	<span class="hljs-keyword">binder_uintptr_t</span>	write_buffer;<span class="hljs-comment">//用户空间写入数据</span>
+	<span class="hljs-keyword">binder_size_t</span>		read_size;	<span class="hljs-comment">//binder写入数据的size</span>
+	<span class="hljs-keyword">binder_size_t</span>		read_consumed;	<span class="hljs-comment">//用户空间读取了多少数据</span>
+	<span class="hljs-keyword">binder_uintptr_t</span>	read_buffer; <span class="hljs-comment">//Binder写入数据</span>
+&#125;;</code></pre>
+<p><img src="/images/binder_transaction_data.jpg" srcset="/img/loading.gif" alt="binder_transaction_data"></p>
+<p><code>binder_ioctl_write_read()</code>主要执行以下几步：</p>
+<ol>
+<li>通过<code>copy_from_user()</code>拷贝<code>用户空间数据</code>到<code>内核空间</code></li>
+<li>存在<code>write_size &gt; 0</code>，意味着外部有数据传入，需要执行<code>binder_thread_write()</code>，读取外部传入数据</li>
+<li>存在<code>read_size &gt; 0</code>，意味着有数据要传出，需要执行<code>binder_thread_read()</code>，写入数据准备传到外部</li>
+<li>最后执行<code>copy_to_user()</code>拷贝<code>内核空间数据</code>到<code>用户空间</code></li>
+</ol>
+<p><img src="/images/Binder_binder_ioctl_write_read.png" srcset="/img/loading.gif" alt="Binder_write_read过程"></p>
+<h4 id="总结-2"><a href="#总结-2" class="headerlink" title="总结"></a>总结</h4><p><img src="/images/Binder驱动加载过程.png" srcset="/img/loading.gif" alt="Binder驱动加载"></p>
 <h2 id="Binder通信过程"><a href="#Binder通信过程" class="headerlink" title="Binder通信过程"></a>Binder通信过程</h2><p><img src="/images/binder_ipc_process.jpg" srcset="/img/loading.gif" alt="binder_ipc_process"></p>
 <h3 id="Binder权限验证"><a href="#Binder权限验证" class="headerlink" title="Binder权限验证"></a>Binder权限验证</h3><p>getCallingUid,getCallingPid</p>
 <h2 id="Binder拓展知识"><a href="#Binder拓展知识" class="headerlink" title="Binder拓展知识"></a>Binder拓展知识</h2><h3 id="Binder传输数据上限，以及超出会如何？"><a href="#Binder传输数据上限，以及超出会如何？" class="headerlink" title="Binder传输数据上限，以及超出会如何？"></a>Binder传输数据上限，以及超出会如何？</h3><blockquote>
