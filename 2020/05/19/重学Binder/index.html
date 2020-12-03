@@ -169,7 +169,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      9.1k 字
+      10.4k 字
     </span>
   
 
@@ -179,7 +179,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      135
+      157
        分钟
     </span>
   
@@ -296,7 +296,7 @@
 </blockquote>
 </li>
 </ul>
-<h2 id="Binder通信模型"><a href="#Binder通信模型" class="headerlink" title="Binder通信模型"></a>Binder通信模型</h2><p><img src="/images/IPC-Binder.jpg" srcset="/img/loading.gif" alt="Binder架构图"></p>
+<h2 id="Binder通信模型"><a href="#Binder通信模型" class="headerlink" title="Binder通信模型"></a>Binder通信模型</h2><p><img src="/images/Binder通信模型.png" srcset="/img/loading.gif" alt="Binder通信模型"></p>
 <h3 id="Client"><a href="#Client" class="headerlink" title="Client"></a>Client</h3><blockquote>
 <p>客户端进程</p>
 </blockquote>
@@ -488,7 +488,7 @@ fail_open:
         <span class="hljs-keyword">switch</span>(cmd) &#123;
        ...
         <span class="hljs-keyword">case</span> BR_TRANSACTION: &#123;
-          <span class="hljs-comment">//当前是向 ServiceManager 发送请求数据，例如获取服务、注册服务</span>
+          <span class="hljs-comment">//当前是Binder驱动向 ServiceManager 发送请求数据，例如获取服务、注册服务</span>
             <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">binder_transaction_data</span> *<span class="hljs-title">txn</span> = (<span class="hljs-title">struct</span> <span class="hljs-title">binder_transaction_data</span> *) <span class="hljs-title">ptr</span>;</span>
             <span class="hljs-keyword">if</span> ((<span class="hljs-built_in">end</span> - ptr) &lt; <span class="hljs-keyword">sizeof</span>(*txn)) &#123;
                 ALOGE(<span class="hljs-string">"parse: txn too small!\n"</span>);
@@ -975,7 +975,7 @@ BpRefBase::BpRefBase(<span class="hljs-keyword">const</span> sp&lt;IBinder&gt;&a
 
     <span class="hljs-keyword">return</span> DEAD_OBJECT;
 &#125;</code></pre>
-<h5 id="IPCThreadState-self-gt-transact"><a href="#IPCThreadState-self-gt-transact" class="headerlink" title="IPCThreadState::self()-&gt;transact()"></a>IPCThreadState::self()-&gt;transact()</h5><blockquote>
+<h5 id="IPCThreadState-gt-transact"><a href="#IPCThreadState-gt-transact" class="headerlink" title="IPCThreadState-&gt;transact"></a>IPCThreadState-&gt;transact</h5><blockquote>
 <p>初始化IPCThreadState之后，向<code>Binder驱动</code>发送数据</p>
 </blockquote>
 <pre><code class="hljs cpp"><span class="hljs-comment">//frameworks/native/libs/binder/IPCThreadState.cpp</span>
@@ -1300,7 +1300,8 @@ IPCThreadState::IPCThreadState()
     &#125;</code></pre>
 <p>前面有讲到具体的处理过程，这边直接贴一个结论：</p>
 <p><code>sServiceManager</code>最后得到的是<code>ServiceManagerProxy</code>对象，且<code>IBinder</code>对象为<code>BinderProxy</code></p>
-<pre><code class="hljs java"><span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">ServiceManagerProxy</span> <span class="hljs-keyword">implements</span> <span class="hljs-title">IServiceManager</span> </span>&#123;
+<pre><code class="hljs java"><span class="hljs-comment">//core/java/android/os/ServiceManagerNative.java</span>
+<span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">ServiceManagerProxy</span> <span class="hljs-keyword">implements</span> <span class="hljs-title">IServiceManager</span> </span>&#123;
     <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">ServiceManagerProxy</span><span class="hljs-params">(IBinder remote)</span> </span>&#123;
         mRemote = remote;
     &#125;    
@@ -1360,6 +1361,21 @@ IPCThreadState::IPCThreadState()
     ALOGW(<span class="hljs-string">"ibinderForJavaObject: %p is not a Binder object"</span>, obj);
     <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
 &#125;</code></pre>
+<pre><code class="hljs cpp"><span class="hljs-function">sp&lt;JavaBBinder&gt; <span class="hljs-title">get</span><span class="hljs-params">(JNIEnv* env, jobject obj)</span>
+</span>&#123;
+    AutoMutex _l(mLock);
+    sp&lt;JavaBBinder&gt; b = mBinder.promote();
+    <span class="hljs-keyword">if</span> (b == <span class="hljs-literal">NULL</span>) &#123;
+        b = <span class="hljs-keyword">new</span> JavaBBinder(env, obj);
+        mBinder = b;
+        ALOGV(<span class="hljs-string">"Creating JavaBinder %p (refs %p) for Object %p, weakCount=%"</span> PRId32 <span class="hljs-string">"\n"</span>,
+             b.get(), b-&gt;getWeakRefs(), obj, b-&gt;getWeakRefs()-&gt;getWeakCount());
+    &#125;
+
+    <span class="hljs-keyword">return</span> b;
+&#125;</code></pre>
+<p><code>iBinderForJavaObject()</code>最后转换出一个<code>JavaBBinder</code>对象</p>
+<p><img src="/images/Java-Binder与Native-Binder" srcset="/img/loading.gif" alt="Java-Binder与Native-Binder"></p>
 <p><code>parcel-&gt;writeStrongBinder()</code></p>
 <pre><code class="hljs cpp"><span class="hljs-comment">//frameworks/native/libs/binder/Parcel.cpp</span>
 <span class="hljs-function"><span class="hljs-keyword">status_t</span> <span class="hljs-title">Parcel::writeStrongBinder</span><span class="hljs-params">(<span class="hljs-keyword">const</span> sp&lt;IBinder&gt;&amp; val)</span>
@@ -1406,15 +1422,218 @@ IPCThreadState::IPCThreadState()
   <span class="hljs-comment">//写入 flat_binder_object到 out</span>
     <span class="hljs-keyword">return</span> finish_flatten_binder(binder, obj, out);
 &#125;</code></pre>
-<pre><code class="hljs undefined">
-</code></pre>
-<h6 id="mRemote-transact"><a href="#mRemote-transact" class="headerlink" title="mRemote.transact()"></a><code>mRemote.transact()</code></h6><h5 id="自定义服务-CustomServer-注册服务"><a href="#自定义服务-CustomServer-注册服务" class="headerlink" title="自定义服务(CustomServer) 注册服务"></a>自定义服务(CustomServer) 注册服务</h5><h4 id="Service-Manager-获取服务"><a href="#Service-Manager-获取服务" class="headerlink" title="Service Manager 获取服务"></a>Service Manager 获取服务</h4><blockquote>
+<p><code>writeStrongBinder()</code>负责转换<code>IBinder</code>对象到<code>flat_bidner_object</code></p>
+<h6 id="mRemote-transact-ADD-SERVICE-TRANSACTION"><a href="#mRemote-transact-ADD-SERVICE-TRANSACTION" class="headerlink" title="mRemote.transact(ADD_SERVICE_TRANSACTION)"></a><code>mRemote.transact(ADD_SERVICE_TRANSACTION)</code></h6><blockquote>
+<p>通过<code>BinderProxy</code>传输<code>Binder对象</code>到<code>Binder驱动</code></p>
+</blockquote>
+<pre><code class="hljs java">mRemote.transact(ADD_SERVICE_TRANSACTION, data, reply, <span class="hljs-number">0</span>);</code></pre>
+<pre><code class="hljs java"><span class="hljs-comment">//core/java/android/os/Binder.java</span>
+<span class="hljs-keyword">final</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">BinderProxy</span> <span class="hljs-keyword">implements</span> <span class="hljs-title">IBinder</span> </span>&#123;
+      <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">transact</span><span class="hljs-params">(<span class="hljs-keyword">int</span> code, Parcel data, Parcel reply, <span class="hljs-keyword">int</span> flags)</span> <span class="hljs-keyword">throws</span> RemoteException </span>&#123;
+        <span class="hljs-comment">//检测 data 的数据是否大于 800k</span>
+        Binder.checkParcel(<span class="hljs-keyword">this</span>, code, data, <span class="hljs-string">"Unreasonably large binder buffer"</span>);
+
+
+        <span class="hljs-keyword">try</span> &#123;
+          <span class="hljs-comment">//通过Native层 向 Binder驱动传递消息</span>
+            <span class="hljs-keyword">return</span> transactNative(code, data, reply, flags);
+        &#125; <span class="hljs-keyword">finally</span> &#123;
+            <span class="hljs-keyword">if</span> (tracingEnabled) &#123;
+                Trace.traceEnd(Trace.TRACE_TAG_ALWAYS);
+            &#125;
+        &#125;
+    &#125;
+  
+&#125;
+
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">native</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">transactNative</span><span class="hljs-params">(<span class="hljs-keyword">int</span> code, Parcel data, Parcel reply,
+            <span class="hljs-keyword">int</span> flags)</span> <span class="hljs-keyword">throws</span> RemoteException</span>;</code></pre>
+<pre><code class="hljs cpp"><span class="hljs-comment">//core/jni/android_util_Binder.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">static</span> jboolean <span class="hljs-title">android_os_BinderProxy_transact</span><span class="hljs-params">(JNIEnv* env, jobject obj,
+        jint code, jobject dataObj, jobject replyObj, jint flags)</span> <span class="hljs-comment">// throws RemoteException</span>
+</span>&#123;
+
+  <span class="hljs-comment">//解析传递数据</span>
+    Parcel* data = parcelForJavaObject(env, dataObj);
+  <span class="hljs-comment">//解析返回数据</span>
+    Parcel* reply = parcelForJavaObject(env, replyObj);
+
+  <span class="hljs-comment">//target 为 BpBinder</span>
+    IBinder* target = getBPNativeData(env, obj)-&gt;mObject.get();
+
+    <span class="hljs-comment">//printf("Transact from Java code to %p sending: ", target); data-&gt;print();</span>
+  <span class="hljs-comment">//向 Binder驱动发送数据</span>
+    <span class="hljs-keyword">status_t</span> err = target-&gt;transact(code, *data, reply, flags);
+    <span class="hljs-comment">//if (reply) printf("Transact from Java code to %p received: ", target); reply-&gt;print();</span>
+
+    signalExceptionForError(env, obj, err, <span class="hljs-literal">true</span> <span class="hljs-comment">/*canThrowRemoteException*/</span>, data-&gt;dataSize());
+    <span class="hljs-keyword">return</span> JNI_FALSE;
+&#125;
+
+
+<span class="hljs-function">BinderProxyNativeData* <span class="hljs-title">getBPNativeData</span><span class="hljs-params">(JNIEnv* env, jobject obj)</span> </span>&#123;
+    <span class="hljs-keyword">return</span> (BinderProxyNativeData *) env-&gt;GetLongField(obj, gBinderProxyOffsets.mNativeData);
+&#125;
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">BinderProxyNativeData</span> &#123;</span>
+    <span class="hljs-comment">// Both fields are constant and not null once javaObjectForIBinder returns this as</span>
+    <span class="hljs-comment">// part of a BinderProxy.</span>
+
+    <span class="hljs-comment">// The native IBinder proxied by this BinderProxy.</span>
+    sp&lt;IBinder&gt; mObject;
+
+    <span class="hljs-comment">// Death recipients for mObject. Reference counted only because DeathRecipients</span>
+    <span class="hljs-comment">// hold a weak reference that can be temporarily promoted.</span>
+    sp&lt;DeathRecipientList&gt; mOrgue;  <span class="hljs-comment">// Death recipients for mObject.</span>
+&#125;;</code></pre>
+<p>继续执行的就是<a href="#IPCThreadState-&gt;transact">IPCThreadState-&gt;transact</a></p>
+<h6 id="总结-2"><a href="#总结-2" class="headerlink" title="总结"></a>总结</h6><p><code>ServiceManager.addService()</code>主要执行了以下几步：</p>
+<ol>
+<li><code>Parcel.obtain()</code>：构建Native层的<code>Parcel</code>对象</li>
+<li><code>parcel.writeStrongBinder()</code>：构造<code>JavaBBinder</code>对象写入到<code>falt_binder_object</code>，准备传到<code>Binder驱动</code></li>
+<li><code>BpBinder.transact(ADD_SERVICE_TRANSACTION)</code>：通过<code>IPCThreadState.talkWithDriver()</code>发送数据到<code>Binder驱动</code></li>
+</ol>
+<h5 id="自定义服务-CustomServer-注册服务"><a href="#自定义服务-CustomServer-注册服务" class="headerlink" title="自定义服务(CustomServer) 注册服务"></a>自定义服务(CustomServer) 注册服务</h5><h4 id="Service-Manager-获取服务"><a href="#Service-Manager-获取服务" class="headerlink" title="Service Manager 获取服务"></a>Service Manager 获取服务</h4><blockquote>
 <p>Client 向 Service Manager 获取服务</p>
 </blockquote>
 <p><code>获取服务</code>流程大致与<code>注册服务</code>流程一致</p>
 <p>只是最后执行的<code>do_find_service()</code>方法，从<code>Service Manager</code>获取注册的服务。</p>
 <p><img src="/images/5-4-2-get_service.jpg" srcset="/img/loading.gif" alt="查询服务"></p>
-<h4 id="Java-获取服务"><a href="#Java-获取服务" class="headerlink" title="Java 获取服务"></a>Java 获取服务</h4><h3 id="Binder驱动"><a href="#Binder驱动" class="headerlink" title="Binder驱动"></a>Binder驱动</h3><p><em>下面源码分析基于<code>android-goldfish-4.4-dev</code>内核版本</em></p>
+<h4 id="Java-获取服务"><a href="#Java-获取服务" class="headerlink" title="Java 获取服务"></a>Java 获取服务</h4><blockquote>
+<p>一般通过<code>ServiceManager.getService()</code>获取服务</p>
+</blockquote>
+<pre><code class="hljs java"><span class="hljs-comment">//core/java/android/os/ServiceManager.java</span>
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> IBinder <span class="hljs-title">getService</span><span class="hljs-params">(String name)</span> </span>&#123;
+        <span class="hljs-keyword">try</span> &#123;
+          <span class="hljs-comment">//缓存直接获取</span>
+            IBinder service = sCache.get(name);
+            <span class="hljs-keyword">if</span> (service != <span class="hljs-keyword">null</span>) &#123;
+                <span class="hljs-keyword">return</span> service;
+            &#125; <span class="hljs-keyword">else</span> &#123;
+              
+                <span class="hljs-keyword">return</span> Binder.allowBlocking(rawGetService(name));
+            &#125;
+        &#125; <span class="hljs-keyword">catch</span> (RemoteException e) &#123;
+            Log.e(TAG, <span class="hljs-string">"error in getService"</span>, e);
+        &#125;
+        <span class="hljs-keyword">return</span> <span class="hljs-keyword">null</span>;
+    &#125;
+
+    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> IBinder <span class="hljs-title">rawGetService</span><span class="hljs-params">(String name)</span> <span class="hljs-keyword">throws</span> RemoteException </span>&#123;
+        <span class="hljs-keyword">final</span> <span class="hljs-keyword">long</span> start = sStatLogger.getTime();
+
+        <span class="hljs-keyword">final</span> IBinder binder = getIServiceManager().getService(name);
+      ...
+         &#125;</code></pre>
+<p><code>getIServiceManager()</code>最后指向的就是<code>ServiceManagerProxy</code></p>
+<pre><code class="hljs java"><span class="hljs-comment">//core/java/android/os/ServiceManagerNative.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> IBinder <span class="hljs-title">getService</span><span class="hljs-params">(String name)</span> <span class="hljs-keyword">throws</span> RemoteException </span>&#123;
+        Parcel data = Parcel.obtain();
+        Parcel reply = Parcel.obtain();
+        data.writeInterfaceToken(IServiceManager.descriptor);
+        data.writeString(name);
+        mRemote.transact(GET_SERVICE_TRANSACTION, data, reply, <span class="hljs-number">0</span>);
+      <span class="hljs-comment">//读取Binder对象</span>
+        IBinder binder = reply.readStrongBinder();
+        reply.recycle();
+        data.recycle();
+        <span class="hljs-keyword">return</span> binder;
+    &#125;</code></pre>
+<h5 id="mRemote-transact-GET-SERVICE-TRANSACTION"><a href="#mRemote-transact-GET-SERVICE-TRANSACTION" class="headerlink" title="mRemote.transact(GET_SERVICE_TRANSACTION)"></a><code>mRemote.transact(GET_SERVICE_TRANSACTION)</code></h5><p>通过<code>IPCThreadState.talkWithDriver()</code>发送数据<code>GET_SERVICE_TRANSACTION</code>到<code>Binder驱动</code></p>
+<h5 id="readStrongBinder"><a href="#readStrongBinder" class="headerlink" title="readStrongBinder()"></a><code>readStrongBinder()</code></h5><p>基本就是<code>writeStrongBinder()</code>的逆向过程</p>
+<pre><code class="hljs cpp"><span class="hljs-function"><span class="hljs-keyword">static</span> jobject <span class="hljs-title">android_os_Parcel_readStrongBinder</span><span class="hljs-params">(JNIEnv* env, jclass clazz, jlong nativePtr)</span>
+</span>&#123;
+    Parcel* parcel = <span class="hljs-keyword">reinterpret_cast</span>&lt;Parcel*&gt;(nativePtr);
+    <span class="hljs-keyword">if</span> (parcel != <span class="hljs-literal">NULL</span>) &#123;
+        <span class="hljs-keyword">return</span> javaObjectForIBinder(env, parcel-&gt;readStrongBinder());
+    &#125;
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+&#125;</code></pre>
+<pre><code class="hljs cpp"><span class="hljs-comment">//frameworks/native/libs/binder/Parcel.cpp</span>
+<span class="hljs-function">sp&lt;IBinder&gt; <span class="hljs-title">Parcel::readStrongBinder</span><span class="hljs-params">()</span> <span class="hljs-keyword">const</span>
+</span>&#123;
+    sp&lt;IBinder&gt; val;
+    <span class="hljs-comment">// Note that a lot of code in Android reads binders by hand with this</span>
+    <span class="hljs-comment">// method, and that code has historically been ok with getting nullptr</span>
+    <span class="hljs-comment">// back (while ignoring error codes).</span>
+    readNullableStrongBinder(&amp;val);
+    <span class="hljs-keyword">return</span> val;
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">status_t</span> <span class="hljs-title">Parcel::readNullableStrongBinder</span><span class="hljs-params">(sp&lt;IBinder&gt;* val)</span> <span class="hljs-keyword">const</span>
+</span>&#123;
+    <span class="hljs-keyword">return</span> unflattenBinder(val);
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">status_t</span> <span class="hljs-title">Parcel::unflattenBinder</span><span class="hljs-params">(sp&lt;IBinder&gt;* out)</span> <span class="hljs-keyword">const</span>
+</span>&#123;
+    <span class="hljs-keyword">const</span> flat_binder_object* flat = readObject(<span class="hljs-literal">false</span>);
+
+    <span class="hljs-keyword">if</span> (flat) &#123;
+        <span class="hljs-keyword">switch</span> (flat-&gt;hdr.type) &#123;
+            <span class="hljs-keyword">case</span> BINDER_TYPE_BINDER: &#123;
+                sp&lt;IBinder&gt; binder = <span class="hljs-keyword">reinterpret_cast</span>&lt;IBinder*&gt;(flat-&gt;cookie);
+                <span class="hljs-keyword">return</span> finishUnflattenBinder(binder, out);
+            &#125;
+            <span class="hljs-keyword">case</span> BINDER_TYPE_HANDLE: &#123;
+                sp&lt;IBinder&gt; binder =
+                    ProcessState::self()-&gt;getStrongProxyForHandle(flat-&gt;handle);
+                <span class="hljs-keyword">return</span> finishUnflattenBinder(binder, out);
+            &#125;
+        &#125;
+    &#125;
+    <span class="hljs-keyword">return</span> BAD_TYPE;
+&#125;</code></pre>
+<p>从<code>flat_binder_obj</code>读取得到<code>IBinder</code>对象，实质就是<code>BpBinder</code>对象</p>
+<pre><code class="hljs cpp"><span class="hljs-comment">//core/jni/android_util_Binder.cpp</span>
+<span class="hljs-function">jobject <span class="hljs-title">javaObjectForIBinder</span><span class="hljs-params">(JNIEnv* env, <span class="hljs-keyword">const</span> sp&lt;IBinder&gt;&amp; val)</span>
+</span>&#123;
+    <span class="hljs-keyword">if</span> (val == <span class="hljs-literal">NULL</span>) <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+
+    <span class="hljs-keyword">if</span> (val-&gt;checkSubclass(&amp;gBinderOffsets)) &#123;
+        <span class="hljs-comment">// It's a JavaBBinder created by ibinderForJavaObject. Already has Java object.</span>
+        jobject object = <span class="hljs-keyword">static_cast</span>&lt;JavaBBinder*&gt;(val.get())-&gt;object();
+        LOGDEATH(<span class="hljs-string">"objectForBinder %p: it's our own %p!\n"</span>, val.get(), object);
+        <span class="hljs-keyword">return</span> object;
+    &#125;
+
+    <span class="hljs-comment">// For the rest of the function we will hold this lock, to serialize</span>
+    <span class="hljs-comment">// looking/creation/destruction of Java proxies for native Binder proxies.</span>
+    AutoMutex _l(gProxyLock);
+
+    BinderProxyNativeData* nativeData = gNativeDataCache;
+    <span class="hljs-keyword">if</span> (nativeData == <span class="hljs-literal">nullptr</span>) &#123;
+        nativeData = <span class="hljs-keyword">new</span> BinderProxyNativeData();
+    &#125;
+    <span class="hljs-comment">// gNativeDataCache is now logically empty.</span>
+    jobject object = env-&gt;CallStaticObjectMethod(gBinderProxyOffsets.mClass,
+            gBinderProxyOffsets.mGetInstance, (jlong) nativeData, (jlong) val.get());
+    <span class="hljs-keyword">if</span> (env-&gt;ExceptionCheck()) &#123;
+        <span class="hljs-comment">// In the exception case, getInstance still took ownership of nativeData.</span>
+        gNativeDataCache = <span class="hljs-literal">nullptr</span>;
+        <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+    &#125;
+    BinderProxyNativeData* actualNativeData = getBPNativeData(env, object);
+    <span class="hljs-keyword">if</span> (actualNativeData == nativeData) &#123;
+        <span class="hljs-comment">// New BinderProxy; we still have exclusive access.</span>
+        nativeData-&gt;mOrgue = <span class="hljs-keyword">new</span> DeathRecipientList;
+        nativeData-&gt;mObject = val;
+        gNativeDataCache = <span class="hljs-literal">nullptr</span>;
+        ++gNumProxies;
+        <span class="hljs-keyword">if</span> (gNumProxies &gt;= gProxiesWarned + PROXY_WARN_INTERVAL) &#123;
+            ALOGW(<span class="hljs-string">"Unexpectedly many live BinderProxies: %d\n"</span>, gNumProxies);
+            gProxiesWarned = gNumProxies;
+        &#125;
+    &#125; <span class="hljs-keyword">else</span> &#123;
+        <span class="hljs-comment">// nativeData wasn't used. Reuse it the next time.</span>
+        gNativeDataCache = nativeData;
+    &#125;
+
+    <span class="hljs-keyword">return</span> object;
+&#125;</code></pre>
+<p>经过<code>javaObjectForIBinder()</code>之后转换<code>BpBinder</code>对象到<code>BinderProxy</code>对象.</p>
+<p>通过<code>ServiceManager.getService()</code>最后<code>Client</code>持有的就是<code>BinderProxy</code>对象。</p>
+<h3 id="Binder驱动"><a href="#Binder驱动" class="headerlink" title="Binder驱动"></a>Binder驱动</h3><p><em>下面源码分析基于<code>android-goldfish-4.4-dev</code>内核版本</em></p>
 <blockquote>
 <p>Android专用，主要以<code>misc</code>设备进行注册，节点是<code>/dev/binder</code>，直接操作设备内存。</p>
 </blockquote>
@@ -1768,9 +1987,22 @@ out:
 <li>最后执行<code>copy_to_user()</code>拷贝<code>内核空间数据</code>到<code>用户空间</code></li>
 </ol>
 <p><img src="/images/Binder_binder_ioctl_write_read.png" srcset="/img/loading.gif" alt="Binder_write_read过程"></p>
-<h4 id="总结-2"><a href="#总结-2" class="headerlink" title="总结"></a>总结</h4><p><img src="/images/Binder驱动加载过程.png" srcset="/img/loading.gif" alt="Binder驱动加载"></p>
+<h4 id="总结-3"><a href="#总结-3" class="headerlink" title="总结"></a>总结</h4><p><img src="/images/Binder驱动加载过程.png" srcset="/img/loading.gif" alt="Binder驱动加载"></p>
 <h2 id="Binder通信过程"><a href="#Binder通信过程" class="headerlink" title="Binder通信过程"></a>Binder通信过程</h2><p><img src="/images/binder_ipc_process.jpg" srcset="/img/loading.gif" alt="binder_ipc_process"></p>
-<h3 id="Binder权限验证"><a href="#Binder权限验证" class="headerlink" title="Binder权限验证"></a>Binder权限验证</h3><p>getCallingUid,getCallingPid</p>
+<h3 id="Binder权限验证"><a href="#Binder权限验证" class="headerlink" title="Binder权限验证"></a>Binder权限验证</h3><p><code>进程A</code>通过Binder调用<code>进程B</code>，然后<code>进程B</code>又Binder调用<code>进程C</code>，此时进程C中的<code>IPCThreadState</code>存储的就是<code>进程A</code>的<code>PID和UID</code>。此时假如<code>进程B</code>想调用<code>进程C</code>，就会抛出异常<code>Bad call: specified package com.providers.xxx under uid 10032 but it is really 10001</code>。</p>
+<p>上述流程就是<code>Binder权限验证</code>的流程。</p>
+<p><code>在被调用时进程回去检测是否与自身IPCThreadState存储的uid与pid一致，只有一致才会请求成功。否则抛出异常</code></p>
+<h4 id="解决方案"><a href="#解决方案" class="headerlink" title="解决方案"></a>解决方案</h4><pre><code class="hljs java"><span class="hljs-keyword">final</span> <span class="hljs-keyword">long</span> origId = Binder.clearCallingIdentity();
+<span class="hljs-comment">//远程调用过程</span>
+Binder.restoreCallingIdentity(origId);</code></pre>
+<p><code>clearCallingIndetity()</code></p>
+<blockquote>
+<p>在当前线程中重置到来的IPC标识(<code>uid/pid</code>)，然后设置<code>mCallingUid</code>和<code>mCallingPid</code>为当前进程的值</p>
+</blockquote>
+<p><code>restoreCallingIdentity(id)</code></p>
+<blockquote>
+<p>还原前面存储的初始调用者的<code>mCallingPid</code>和<code>mCallingUid</code></p>
+</blockquote>
 <h2 id="Binder拓展知识"><a href="#Binder拓展知识" class="headerlink" title="Binder拓展知识"></a>Binder拓展知识</h2><h3 id="Binder传输数据上限，以及超出会如何？"><a href="#Binder传输数据上限，以及超出会如何？" class="headerlink" title="Binder传输数据上限，以及超出会如何？"></a>Binder传输数据上限，以及超出会如何？</h3><blockquote>
 <p>Binder传输数据的最大限制为<code>1016KB</code>(默认情况下)，如果是异步执行，最多只有<code>508KB</code>。</p>
 </blockquote>
@@ -1779,11 +2011,24 @@ out:
 <p>每个进程最多可以运行<code>16</code>个Binder线程</p>
 </blockquote>
 <p>当所有的16个binder线程都在工作时，就会出现线程饥饿状态。如果此时有新的binder线程请求，就会进入阻塞状态。</p>
-<h3 id="oneway的作用"><a href="#oneway的作用" class="headerlink" title="oneway的作用"></a><code>oneway</code>的作用</h3><blockquote>
+<h3 id="oneway的作用"><a href="#oneway的作用" class="headerlink" title="oneway的作用"></a><code>oneway</code>的作用</h3><p><strong>异步调用和串行化处理</strong></p>
+<ul>
+<li><code>异步调用</code>:应用向<code>Binder驱动</code>发送数据后不需要挂起线程等待<code>Binder驱动</code>的回复，接收到<code>BR_TRANSACTION_COMPLETE</code>之后就直接结束。</li>
+<li><code>串行化处理</code>：所有<code>oneway</code>方法不会同时执行，<code>Binder驱动</code>会进行串行化处理，保证一个个执行。</li>
+</ul>
+<blockquote>
 <p><code>oneway</code>都是需要等待<code>BR_TRANSACTION_COMPLETE</code>消息。</p>
 <p>不过<code>oneway</code>的请求方式在收到<code>BR_TRANSACTION_COMPLETE</code>消息后，立即返回；</p>
-<p><code>非oneway</code>的请求方式，还需要等到<code>BR_REPLY</code>之后才返回。</p>
+<p><code>非oneway</code>的请求方式，还需要等到<code>BR_REPLY</code>之后才返回。此时<code>线程就会处于Sleep状态</code>，底层调用的就是<code>wait_event_interruptible()</code></p>
 </blockquote>
+<pre><code class="hljs java"><span class="hljs-comment">//XX.aidl</span>
+<span class="hljs-class"><span class="hljs-keyword">interface</span> <span class="hljs-title">IXX</span> </span>&#123;
+  <span class="hljs-comment">//定义该方法调用 为 oneway</span>
+  <span class="hljs-function">oneway <span class="hljs-keyword">void</span> <span class="hljs-title">xx</span><span class="hljs-params">()</span></span>;
+&#125;</code></pre>
+<h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="https://blog.hacktivesecurity.com/index.php?controller=post&amp;action=view&amp;id_post=48" target="_blank" rel="noopener">Binder介绍</a></p>
+<p><a href="http://gityuan.com/" target="_blank" rel="noopener">Binder系列讲解</a></p>
+<p><a href="https://www.cnblogs.com/samchen2009/p/3316001.html" target="_blank" rel="noopener">图解Android - Binder 和 Service</a></p>
 
             </div>
             <hr>
