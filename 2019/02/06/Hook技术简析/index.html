@@ -28,7 +28,7 @@
     
     
       
-      <link rel="stylesheet" href="https://cdn.staticfile.org/highlight.js/10.1.2/styles/github-gist.min.css">
+      <link rel="stylesheet" href="https://cdn.staticfile.org/highlight.js/10.1.2/styles/dracula.min.css">
     
   
 
@@ -233,18 +233,18 @@
 <h2 id="Hook实例简析"><a href="#Hook实例简析" class="headerlink" title="Hook实例简析"></a>Hook实例简析</h2><h3 id="Hook-startActivity"><a href="#Hook-startActivity" class="headerlink" title="Hook startActivity()"></a>Hook <code>startActivity()</code></h3><p>Activity的启动方式有两种</p>
 <ul>
 <li><p>一个Activity启动另一个Activity</p>
-<pre><code class="hljs java">startActivity(<span class="hljs-keyword">new</span> Intent(<span class="hljs-keyword">this</span>,XXActivity<span class="hljs-class">.<span class="hljs-keyword">class</span>))</span>;</code></pre>
+<div class="hljs"><pre><code class="hljs java">startActivity(<span class="hljs-keyword">new</span> Intent(<span class="hljs-keyword">this</span>,XXActivity<span class="hljs-class">.<span class="hljs-keyword">class</span>))</span>;</code></pre></div>
 </li>
 </ul>
 <ul>
 <li><p>通过Service或者其他非Activity类进行启动Activity(<em>必须设置 FLAG_NEW_TASK</em>)</p>
-<pre><code class="hljs java">Intent intent = <span class="hljs-keyword">new</span> Intent(<span class="hljs-keyword">this</span>, XXActivity<span class="hljs-class">.<span class="hljs-keyword">class</span>)</span>;
+<div class="hljs"><pre><code class="hljs java">Intent intent = <span class="hljs-keyword">new</span> Intent(<span class="hljs-keyword">this</span>, XXActivity<span class="hljs-class">.<span class="hljs-keyword">class</span>)</span>;
 intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-context.startActivity(intent);</code></pre>
+context.startActivity(intent);</code></pre></div>
 </li>
 </ul>
 <h4 id="1-Hook-Activity-startActivity"><a href="#1-Hook-Activity-startActivity" class="headerlink" title="1.Hook Activity.startActivity()"></a>1.Hook <code>Activity.startActivity()</code></h4><p>从源码分析上需要从<code>startActivity()</code>开始</p>
-<pre><code class="hljs java">   <span class="hljs-meta">@Override</span>
+<div class="hljs"><pre><code class="hljs java">   <span class="hljs-meta">@Override</span>
    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">startActivity</span><span class="hljs-params">(Intent intent)</span> </span>&#123;
        <span class="hljs-keyword">this</span>.startActivity(intent, <span class="hljs-keyword">null</span>);
    &#125;
@@ -268,13 +268,13 @@ context.startActivity(intent);</code></pre>
                    intent, requestCode, options);
          ...
        &#125;
-&#125;</code></pre>
+&#125;</code></pre></div>
 <p>最终调用到的是<code>Instrumentation.execStartActivity()</code>执行启动下一个Activity的逻辑。</p>
 <p>按照Hook过程分析，需要先找到<code>Hook点</code>。由于要Hook的就是Activity的启动，所以我们可以设置<code>Instrumentation</code>为Hook点，然后使用静态代理模式生成代理对象，最后替换掉原始的<code>Instrumentation</code>继续执行启动逻辑。</p>
 <blockquote>
 <p>先创建<code>Instrumentation</code>代理对象<code>InstrumentationProxy</code></p>
 </blockquote>
-<pre><code class="hljs java">public class InstrumentationProxy extends Instrumentation &#123;
+<div class="hljs"><pre><code class="hljs java">public class InstrumentationProxy extends Instrumentation &#123;
     private static final String TAG = "InstrumentationProxy";
     Instrumentation mInstrumentation;
 
@@ -307,11 +307,11 @@ context.startActivity(intent);</code></pre>
             throw new RuntimeException("do not support!!! pls adapt it");
         &#125;
     &#125;
-&#125;</code></pre>
+&#125;</code></pre></div>
 <blockquote>
 <p>在需要使用的Activity中实现Hook方法</p>
 </blockquote>
-<pre><code class="hljs java">public class LoadActivity extends AppCompatActivity &#123;
+<div class="hljs"><pre><code class="hljs java">public class LoadActivity extends AppCompatActivity &#123;
 
     @Override
     public void onCreate(Bundle savedInstanceState) &#123;
@@ -339,10 +339,10 @@ context.startActivity(intent);</code></pre>
             e.printStackTrace();
         &#125;
     &#125;
-&#125;</code></pre>
+&#125;</code></pre></div>
 <blockquote>
 <p>理论上来说<code>Hook操作</code>越早越好，<code>handleLaunchActivity()</code>内部开始执行启动流程，然后会调用到<code>Activity.attach()</code>内部继续执行。<code>attachBaseContext()</code>是最早执行的，但是其中无法去执行Hook操作</p>
-<pre><code class="hljs java">&gt;  <span class="hljs-function"><span class="hljs-keyword">final</span> <span class="hljs-keyword">void</span> <span class="hljs-title">attach</span><span class="hljs-params">(Context context, ActivityThread aThread,
+<div class="hljs"><pre><code class="hljs java">&gt;  <span class="hljs-function"><span class="hljs-keyword">final</span> <span class="hljs-keyword">void</span> <span class="hljs-title">attach</span><span class="hljs-params">(Context context, ActivityThread aThread,
 &gt;             Instrumentation instr, IBinder token, <span class="hljs-keyword">int</span> ident,
 &gt;             Application application, Intent intent, ActivityInfo info,
 &gt;             CharSequence title, Activity parent, String id,
@@ -356,10 +356,10 @@ context.startActivity(intent);</code></pre>
 &gt;    ...
 &gt;  &#125;
 &gt;    
-&gt;</code></pre>
+&gt;</code></pre></div>
 </blockquote>
 <h4 id="2-Hook-Context-startActivity"><a href="#2-Hook-Context-startActivity" class="headerlink" title="2.Hook Context.startActivity()"></a>2.Hook <code>Context.startActivity()</code></h4><p><code>Context</code>的具体实现类为<code>ContextImpl</code>，<code>ContextImpl.startActivity()</code>如下所示</p>
-<pre><code class="hljs java"><span class="hljs-meta">@Override</span>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-meta">@Override</span>
 <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">startActivity</span><span class="hljs-params">(Intent intent)</span> </span>&#123;
     warnIfCallingFromSystemProcess();
     startActivity(intent, <span class="hljs-keyword">null</span>);
@@ -377,10 +377,10 @@ context.startActivity(intent);</code></pre>
     mMainThread.getInstrumentation().execStartActivity(
             getOuterContext(), mMainThread.getApplicationThread(), <span class="hljs-keyword">null</span>,
             (Activity) <span class="hljs-keyword">null</span>, intent, -<span class="hljs-number">1</span>, options);
-&#125;</code></pre>
+&#125;</code></pre></div>
 <p><code>getInstrumentation()</code>去获取对应的<code>Instrumentation</code>不过这个是可以全局生效的，<code>ActivityThread</code>是主线程的管理类，<code>Instrumentation</code>是其成员变量，一个进程中只会存在一个<code>ActivityThread</code>，因此依然设置<code>Instrumentation</code>为Hook点。</p>
 <p>可以在<code>Application</code>中或者<code>Activity</code>中去设置Hook方法</p>
-<pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">App</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">Application</span> </span>&#123;
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">App</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">Application</span> </span>&#123;
 
     <span class="hljs-meta">@Override</span>
     <span class="hljs-function"><span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> <span class="hljs-title">attachBaseContext</span><span class="hljs-params">(Context base)</span> </span>&#123;
@@ -413,13 +413,13 @@ context.startActivity(intent);</code></pre>
             e.printStackTrace();
         &#125;
     &#125;
-&#125;</code></pre>
+&#125;</code></pre></div>
 <h4 id="可能出现的问题"><a href="#可能出现的问题" class="headerlink" title="可能出现的问题"></a>可能出现的问题</h4><ol>
 <li><p>无法进行Hook操作</p>
-<pre><code class="hljs xml">E/Instrumentation: Uninitialized ActivityThread, likely app-created Instrumentation, disabling AppComponentFactory</code></pre>
+<div class="hljs"><pre><code class="hljs xml">E/Instrumentation: Uninitialized ActivityThread, likely app-created Instrumentation, disabling AppComponentFactory</code></pre></div>
 <p>出现上述提示，发生的情况是在Android P上运行应用时。</p>
 <p>主要是因为在Android P的源代码中对<code>Instrumentation.newActivity()</code>进行了调整</p>
-<pre><code class="hljs java"><span class="hljs-keyword">private</span> ActivityThread mThread = <span class="hljs-keyword">null</span>;    
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-keyword">private</span> ActivityThread mThread = <span class="hljs-keyword">null</span>;    
 <span class="hljs-function"><span class="hljs-keyword">public</span> Activity <span class="hljs-title">newActivity</span><span class="hljs-params">(ClassLoader cl, String className,
           Intent intent)</span>
           <span class="hljs-keyword">throws</span> InstantiationException, IllegalAccessException,
@@ -444,15 +444,15 @@ context.startActivity(intent);</code></pre>
               <span class="hljs-comment">// This is in the case of starting up "android".</span>
               <span class="hljs-keyword">if</span> (apk == <span class="hljs-keyword">null</span>) apk = mThread.getSystemContext().mPackageInfo;
               <span class="hljs-keyword">return</span> apk.getAppFactory();
-          &#125;</code></pre>
+          &#125;</code></pre></div>
 <p>因为只是hook了<code>execStartActivity()</code>而<code>newActivity()</code>就会抛出如上异常，解决方案就是在我们自定义的<code>InstrumentationProxy</code>中去重写<code>newActivity()</code></p>
-<pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> Activity <span class="hljs-title">newActivity</span><span class="hljs-params">(ClassLoader cl, String className,
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> Activity <span class="hljs-title">newActivity</span><span class="hljs-params">(ClassLoader cl, String className,
                                 Intent intent)</span>
             <span class="hljs-keyword">throws</span> InstantiationException, IllegalAccessException,
             ClassNotFoundException </span>&#123;
 
         <span class="hljs-keyword">return</span> mBase.newActivity(cl, className, intent);
-    &#125;</code></pre>
+    &#125;</code></pre></div>
 </li>
 </ol>
 <h2 id="内容引用"><a href="#内容引用" class="headerlink" title="内容引用"></a>内容引用</h2><p><a href="http://androidxref.com/9.0.0_r3/xref/frameworks/base/core/java/android/app/Instrumentation.java" target="_blank" rel="noopener">Android 9.0相关源码</a></p>

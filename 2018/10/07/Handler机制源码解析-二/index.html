@@ -28,7 +28,7 @@
     
     
       
-      <link rel="stylesheet" href="https://cdn.staticfile.org/highlight.js/10.1.2/styles/github-gist.min.css">
+      <link rel="stylesheet" href="https://cdn.staticfile.org/highlight.js/10.1.2/styles/dracula.min.css">
     
   
 
@@ -218,7 +218,7 @@
 <p>不可以直接在子线程创建Handler对象，因为Handler对象必须要绑定一个Looper，才可以使用。</p>
 <p>若在子线程需要使用Handler，则需要先创建一个Looper对象即执行<code>Looper.prepare()</code>然后再创建Handler对象时调用<code>Looper.myLooper()</code>获取Looper对象传入方法，最后调用<code>Looper.loop()</code>开始运行。</p>
 </blockquote>
-<pre><code class="hljs kotlin"><span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">MyActivity</span> : <span class="hljs-type">Activity&#123;</span></span>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">MyActivity</span> : <span class="hljs-type">Activity&#123;</span></span>
     <span class="hljs-keyword">lateinit</span> <span class="hljs-keyword">var</span> mThread: MyThread
     <span class="hljs-keyword">lateinit</span> <span class="hljs-keyword">var</span> mHandler: MyHandler
     
@@ -259,11 +259,11 @@
             &#125;
         &#125;
     &#125;
-&#125;</code></pre>
+&#125;</code></pre></div>
 <p>以上代码执行完毕后就可以在子线程调用Handler对象。</p>
 <p><strong>但是，在多次执行过程中，会有<font color="red">java.lang.NullPointerException: Attempt to read from field ‘android.os.MessageQueue android.os.Looper.mQueue’ on a null object reference</font>空指针导致应用崩溃。</strong>调试过程中发现是由于Looper对象为空导致的异常。由于<strong>在子线程<code>run()</code>初始化了Looper对象，Handler对象的初始化依然继续执行，Looper对象此时尚未初始化好，导致空指针异常。</strong></p>
 <p>由于这种情况的出现是随机的，不是百分百重现，为了保证应用的运行就需要引入<code>HandlerThread</code>这个类，可以帮我们解决这个问题。</p>
-<pre><code class="hljs kotlin"><span class="hljs-comment">//HandlerThread示例代码</span>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//HandlerThread示例代码</span>
 <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">MyActivity</span> : <span class="hljs-type">Activity&#123;</span></span>
     <span class="hljs-keyword">lateinit</span> <span class="hljs-keyword">var</span> mHandler: MyHandler
     <span class="hljs-keyword">var</span> mHandlerThread: HandlerThread?=<span class="hljs-literal">null</span>
@@ -301,10 +301,10 @@
         <span class="hljs-comment">//结束时停止thread</span>
         mHandlerThread?.quit()
     &#125;
-&#125;</code></pre>
+&#125;</code></pre></div>
 <p>以上代码执行完毕后即在HandlerThread可以调用Handler对象。</p>
 <p>我们需要从源码去分析为什么使用<code>HandlerThread</code>可以避免上述异常，是怎样一个机制实现的。</p>
-<pre><code class="hljs java"><span class="hljs-comment">// 源码位置:../core/java/android/os/HandlerThread.java</span>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">// 源码位置:../core/java/android/os/HandlerThread.java</span>
 <span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">HandlerThread</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">Thread</span> </span>&#123;
     ...
      <span class="hljs-comment">//设置线程优先级 优先级主要分为UI线程和后台线程(Background)</span>
@@ -391,7 +391,7 @@
         &#125;
         <span class="hljs-keyword">return</span> <span class="hljs-keyword">false</span>;
     &#125;
-&#125;</code></pre>
+&#125;</code></pre></div>
 <p>总结：</p>
 <ul>
 <li><code>HandlerThread</code>内嵌了Handler,Looper,MessageQueue对象</li>
@@ -403,7 +403,7 @@
 <p>继承<code>IdleHandler</code>这个接口，需要设置<code>queueIdle()</code>的返回值。若返回<code>false</code>则调用一次后会移除，为<code>true</code>则继续持有，空闲时依然会调用。</p>
 <p>概括就是：<strong>优先级别较低的<code>Message</code>，只有当<code>Looper</code>中没有消息要处理时，才会去处理<code>IdleHandler</code>。</strong></p>
 </blockquote>
-<pre><code class="hljs kotlin"><span class="hljs-comment">//使用示例代码</span>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//使用示例代码</span>
 <span class="hljs-keyword">val</span> message = Message.obtain()
 message.obj = <span class="hljs-string">"1234"</span>
 handler.sendMessage(message)
@@ -437,9 +437,9 @@ Looper.myQueue().addIdleHandler(ForeverIdleHandler())
 
 <span class="hljs-comment">//需要移除IdleHandler 调用</span>
  Looper.myQueue().removeIdleHandler(OnceIdleHandler())
- Looper.myQueue().removeIdleHandler(ForeverIdleHandler())</code></pre>
+ Looper.myQueue().removeIdleHandler(ForeverIdleHandler())</code></pre></div>
 <p>集成上述代码即可测试IdleHandler的使用，接下来要分析源码的实现以及使用场景。</p>
-<pre><code class="hljs java"><span class="hljs-comment">// 源码位置:../core/java/android/os/MessageQueue.java</span>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">// 源码位置:../core/java/android/os/MessageQueue.java</span>
    <span class="hljs-comment">/**
      * IdleHandler定义
      * Callback interface for discovering when a thread is going to block
@@ -520,7 +520,7 @@ Looper.myQueue().addIdleHandler(ForeverIdleHandler())
                     &#125;
                 &#125;
             &#125;
-   &#125;</code></pre>
+   &#125;</code></pre></div>
 <h2 id="3-Handler常见问题"><a href="#3-Handler常见问题" class="headerlink" title="3. Handler常见问题"></a>3. Handler常见问题</h2><h3 id="1-消息机制中的主要引用对象及其关系"><a href="#1-消息机制中的主要引用对象及其关系" class="headerlink" title="1. 消息机制中的主要引用对象及其关系"></a>1. 消息机制中的主要引用对象及其关系</h3><blockquote>
 <p><code>Looper ，MessageQueue，Message，ThreadLocal，Handler</code></p>
 </blockquote>
@@ -541,7 +541,7 @@ Looper.myQueue().addIdleHandler(ForeverIdleHandler())
 </blockquote>
 <p>当进入死循环时又该如何处理其他事务呢？<strong>需要创建新的线程去处理</strong>。</p>
 <p>主线程进入Looper的死循环后，需要处理 activity的各个生命周期的回调函数执行(<code>在同一个线程下，代码是按顺序执行的，如果死循环堵塞了，后续该如何执行</code>)。</p>
-<pre><code class="hljs java"><span class="hljs-comment">//源码地址 android/app/ActivityThread.java </span>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//源码地址 android/app/ActivityThread.java </span>
 <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">main</span><span class="hljs-params">(String[] args)</span></span>&#123;
     ...
     <span class="hljs-comment">//Looper初始化</span>
@@ -564,7 +564,7 @@ Looper.myQueue().addIdleHandler(ForeverIdleHandler())
        Looper.loop();
 
        <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> RuntimeException(<span class="hljs-string">"Main thread loop unexpectedly exited"</span>);
-&#125;</code></pre>
+&#125;</code></pre></div>
 <p>源码中在初始化ActivityThread时也会初始化一个<code>H类型的成员，它继承了Handler</code>。</p>
 <p>源码中调用<code>thread.attach(false)</code>时,<strong>回去创建一个Binder进程（具体代指ApplicationThread,Binder的服务端，用于接收系统AMS发出来的事件），由Handler线程发送Message至主线程。</strong></p>
 <p>所以在主线程开启Looper死循环之前，就已经启动了一个Binder线程并且准备了<code>H 这一个Handler类</code>，就可以用于处理一些死循环之外的事务。<code>仅需通过Binder线程向H发送消息即可</code>。</p>
@@ -582,7 +582,7 @@ Looper.myQueue().addIdleHandler(ForeverIdleHandler())
 <h3 id="4-Message的触发统计"><a href="#4-Message的触发统计" class="headerlink" title="4.Message的触发统计"></a>4.Message的触发统计</h3><blockquote>
 <p>Message是在MessageQueue中进行存放，事件的分发需要通过Looper.loop()从<code>MessageQueue</code>中获取Message，<code>BlockCanary</code>就是通过计算事件分发的时间间隔来判断当前是否出现卡顿。</p>
 </blockquote>
-<pre><code class="hljs java"><span class="hljs-comment">//Looper.java</span>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//Looper.java</span>
     <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">setMessageLogging</span><span class="hljs-params">(@Nullable Printer printer)</span> </span>&#123;
         mLogging = printer;
     &#125;
@@ -602,16 +602,16 @@ Looper.myQueue().addIdleHandler(ForeverIdleHandler())
                 logging.println(<span class="hljs-string">"&lt;&lt;&lt;&lt;&lt; Finished to "</span> + msg.target + <span class="hljs-string">" "</span> + msg.callback);
             &#125;
       &#125;
-    &#125;</code></pre>
+    &#125;</code></pre></div>
 <p>可以通过给Handler中的Looper对象设置<code>setMessageLogging()</code>，对事件的分发进行监听。</p>
-<pre><code class="hljs java">Looper.getMainLooper().setMessageLogging(<span class="hljs-keyword">new</span> Printer()&#123;
+<div class="hljs"><pre><code class="hljs java">Looper.getMainLooper().setMessageLogging(<span class="hljs-keyword">new</span> Printer()&#123;
   <span class="hljs-meta">@Override</span>
   <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">println</span><span class="hljs-params">(String x)</span></span>&#123;
     <span class="hljs-comment">//x 包含了以下内容  Message.target Message.callback  Message.what</span>
   &#125;
-&#125;)</code></pre>
+&#125;)</code></pre></div>
 <h3 id="5-View-post-和Handler-post-有什么区别？"><a href="#5-View-post-和Handler-post-有什么区别？" class="headerlink" title="5.View.post()和Handler.post()有什么区别？"></a>5.View.post()和Handler.post()有什么区别？</h3><p><img src="/images/Handler-View.post.png" srcset="/img/loading.gif" alt="Handler-View.post"></p>
-<pre><code class="hljs java"><span class="hljs-comment">//View.java</span>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//View.java</span>
     <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">post</span><span class="hljs-params">(Runnable action)</span> </span>&#123;
         <span class="hljs-keyword">final</span> AttachInfo attachInfo = mAttachInfo;
         <span class="hljs-keyword">if</span> (attachInfo != <span class="hljs-keyword">null</span>) &#123;
@@ -622,17 +622,17 @@ Looper.myQueue().addIdleHandler(ForeverIdleHandler())
         <span class="hljs-comment">// Assume that the runnable will be successfully placed after attach.</span>
         getRunQueue().post(action);
         <span class="hljs-keyword">return</span> <span class="hljs-keyword">true</span>;
-    &#125;</code></pre>
+    &#125;</code></pre></div>
 <p>需要判断<code>attachInfo</code>是否为null，不为null直接执行<code>handler.post()</code>去执行任务；否则，插入到<code>getRunQueue()</code>中。</p>
 <p>现在需要分为两部分进行分析：</p>
-<h4 id="AttachInfo"><a href="#AttachInfo" class="headerlink" title="AttachInfo"></a>AttachInfo</h4><pre><code class="hljs java"><span class="hljs-comment">//View.java</span>
+<h4 id="AttachInfo"><a href="#AttachInfo" class="headerlink" title="AttachInfo"></a>AttachInfo</h4><div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//View.java</span>
     <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">dispatchAttachedToWindow</span><span class="hljs-params">(AttachInfo info, <span class="hljs-keyword">int</span> visibility)</span> </span>&#123;
       <span class="hljs-comment">//在此处进行赋值</span>
       mAttachInfo = info;
       ...
-    &#125;</code></pre>
+    &#125;</code></pre></div>
 <p>这时需要知道何时调用了<code>dispatchAttachedToWindow()</code>，需要向上看</p>
-<pre><code class="hljs java"><span class="hljs-comment">//ViewGroup.java</span>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//ViewGroup.java</span>
     <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">dispatchAttachedToWindow</span><span class="hljs-params">(AttachInfo info, <span class="hljs-keyword">int</span> visibility)</span> </span>&#123;
        ...
         <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> count = mChildrenCount;
@@ -648,9 +648,9 @@ Looper.myQueue().addIdleHandler(ForeverIdleHandler())
             view.dispatchAttachedToWindow(info,
                     combineVisibility(visibility, view.getVisibility()));
         &#125;
-    &#125;</code></pre>
+    &#125;</code></pre></div>
 <p>再往上就是<code>DecorView</code>，<code>DecorView</code>继承自<code>ViewGroup</code>，所以最终就是到了<code>ViewRootImpl</code></p>
-<pre><code class="hljs java"><span class="hljs-comment">//ViewRootImpl.java</span>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//ViewRootImpl.java</span>
 <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">performTraversals</span><span class="hljs-params">()</span> </span>&#123;
    <span class="hljs-comment">//mView 此处指的是 DecorView</span>
    <span class="hljs-keyword">final</span> View host = mView;
@@ -668,9 +668,9 @@ Looper.myQueue().addIdleHandler(ForeverIdleHandler())
     performLayout()
     
     performDtraw()
-&#125;</code></pre>
+&#125;</code></pre></div>
 <p>是从<code>ViewRootImpl.performTraversal()</code>向下执行到<code>DecorView.dispatchAttachedToWindow()</code>最后执行到<code>View.dispatchAttachedToWindow()</code></p>
-<pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">ViewRootImpl</span><span class="hljs-params">(Context context, Display display)</span> </span>&#123;
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">ViewRootImpl</span><span class="hljs-params">(Context context, Display display)</span> </span>&#123;
 ...
         mFirst = <span class="hljs-keyword">true</span>; <span class="hljs-comment">// true for the first time the view is added</span>
         mAdded = <span class="hljs-keyword">false</span>;
@@ -680,11 +680,11 @@ Looper.myQueue().addIdleHandler(ForeverIdleHandler())
   
 &#125;
 
-<span class="hljs-keyword">final</span> ViewRootHandler mHandler = <span class="hljs-keyword">new</span> ViewRootHandler();</code></pre>
+<span class="hljs-keyword">final</span> ViewRootHandler mHandler = <span class="hljs-keyword">new</span> ViewRootHandler();</code></pre></div>
 <p>是在<code>ViewRootImpl</code>初始化的时候构建了<code>AttachInfo</code>对象，其中<code>attachInfo.handler</code>指的就是<code>ViewRootHandler</code></p>
 <p>所以最后通过<code>View.post()</code>执行的任务都会切换到<code>ViewRootHandler</code>上去执行。</p>
 <h4 id="HandlerActionQueue"><a href="#HandlerActionQueue" class="headerlink" title="HandlerActionQueue"></a>HandlerActionQueue</h4><p>当<code>mAttachInfo</code>未赋值时(<code>尚未执行 dispatchAttachedToWindow()</code>)，缓存当前无法执行的Runnable</p>
-<pre><code class="hljs java"><span class="hljs-comment">//HandlerActionQueue.java</span>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//HandlerActionQueue.java</span>
 <span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">HandlerActionQueue</span> </span>&#123;
   <span class="hljs-keyword">private</span> HandlerAction[] mActions;
   
@@ -734,9 +734,9 @@ Looper.myQueue().addIdleHandler(ForeverIdleHandler())
                     || action != <span class="hljs-keyword">null</span> &amp;&amp; action.equals(otherAction);
         &#125;
     &#125;  
-&#125;</code></pre>
+&#125;</code></pre></div>
 <p>当<code>mAttachInfo</code>尚未赋值时，就会缓存<code>View.post()</code>要执行的任务</p>
-<pre><code class="hljs java"><span class="hljs-comment">//View.java</span>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//View.java</span>
     <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">dispatchAttachedToWindow</span><span class="hljs-params">(AttachInfo info, <span class="hljs-keyword">int</span> visibility)</span> </span>&#123;
       mAttachInfo = info;
       ...
@@ -745,7 +745,7 @@ Looper.myQueue().addIdleHandler(ForeverIdleHandler())
             mRunQueue = <span class="hljs-keyword">null</span>;
         &#125;     
       ...
-    &#125;</code></pre>
+    &#125;</code></pre></div>
 <p>在<code>dispatchAttachedToWindow()</code>执行了关键的两步：</p>
 <ol>
 <li>赋值<code>mAttachInfo</code></li>
@@ -761,7 +761,7 @@ Looper.myQueue().addIdleHandler(ForeverIdleHandler())
 <p><code>dispatchAttachedToWindow()</code>是在<code>ViewRoootImpl.performTraversals()</code>中执行的。</p>
 </blockquote>
 <h4 id="为什么可以获取宽高"><a href="#为什么可以获取宽高" class="headerlink" title="为什么可以获取宽高"></a>为什么可以获取宽高</h4><p>前面有讲过在<code>onCreate()</code>调用<code>View.post()</code>可以获取View的宽和高，下面简单的分析原因。</p>
-<pre><code class="hljs java"><span class="hljs-comment">//ViewRootImpl.java</span>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//ViewRootImpl.java</span>
     <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">performTraversals</span><span class="hljs-params">()</span> </span>&#123;
       ...
         host.dispatchAttachedToWindow(mAttachInfo, <span class="hljs-number">0</span>);
@@ -796,9 +796,9 @@ Looper.myQueue().addIdleHandler(ForeverIdleHandler())
                     Choreographer.CALLBACK_TRAVERSAL, mTraversalRunnable, <span class="hljs-keyword">null</span>);
            ...
         &#125;
-    &#125;</code></pre>
+    &#125;</code></pre></div>
 <p>这边转到<code>Choreographer</code></p>
-<pre><code class="hljs java"><span class="hljs-comment">//Choreographer.java</span>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//Choreographer.java</span>
     <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Choreographer <span class="hljs-title">getInstance</span><span class="hljs-params">()</span> </span>&#123;
         <span class="hljs-keyword">return</span> sThreadInstance.get();
     &#125;
@@ -847,7 +847,7 @@ Looper.myQueue().addIdleHandler(ForeverIdleHandler())
                 mHandler.sendMessageAtTime(msg, dueTime);
             &#125;
         &#125;
-    &#125;</code></pre>
+    &#125;</code></pre></div>
 <p>根据上述源码分析得到结论<code>TraversalRunnable</code>也会运行到FrameHandler上。</p>
 <p>Handler的MessageQueue是按照顺序执行的，就需要等到<code>performTraversals()</code>执行完毕后，才可以执行后续的任务(HandlerActionQueue中缓存的任务。)。</p>
 
