@@ -169,7 +169,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      11.7k 字
+      11.9k 字
     </span>
   
 
@@ -179,7 +179,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      175
+      177
        分钟
     </span>
   
@@ -662,6 +662,7 @@ fail_open:
 <li><code>binder_become_context_manager()</code>：成为管家，并准备进入循环</li>
 <li><code>binder_loop()</code>：开启循环，等待新消息并处理</li>
 </ol>
+<p><img src="/images/ServiceManager初始化.png" srcset="/img/loading.gif" alt="ServiceManager初始化"></p>
 <h4 id="获取Service-Manager代理对象"><a href="#获取Service-Manager代理对象" class="headerlink" title="获取Service Manager代理对象"></a>获取Service Manager代理对象</h4><div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//frameworks/native/libs/binder/IServiceManager.cpp</span>
 [[clang::no_destroy]] <span class="hljs-keyword">static</span> sp&lt;IServiceManager&gt; gDefaultServiceManager;
 
@@ -1493,7 +1494,24 @@ IPCThreadState::IPCThreadState()
 <li><code>parcel.writeStrongBinder()</code>：构造<code>JavaBBinder</code>对象写入到<code>falt_binder_object</code>，准备传到<code>Binder驱动</code></li>
 <li><code>BpBinder.transact(ADD_SERVICE_TRANSACTION)</code>：通过<code>IPCThreadState.talkWithDriver()</code>发送数据到<code>Binder驱动</code></li>
 </ol>
-<h5 id="自定义服务-CustomServer-注册服务"><a href="#自定义服务-CustomServer-注册服务" class="headerlink" title="自定义服务(CustomServer) 注册服务"></a>自定义服务(CustomServer) 注册服务</h5><h4 id="Service-Manager-获取服务"><a href="#Service-Manager-获取服务" class="headerlink" title="Service Manager 获取服务"></a>Service Manager 获取服务</h4><blockquote>
+<h5 id="自定义服务-CustomServer-注册服务"><a href="#自定义服务-CustomServer-注册服务" class="headerlink" title="自定义服务(CustomServer) 注册服务"></a>自定义服务(CustomServer) 注册服务</h5><blockquote>
+<p><code>ServiceManager.addService()</code>主要面向的是系统服务，应用自定义服务是无法通过这种方式注册的。</p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//frameworks/native/cmds/servicemanager/service_manager.c</span>
+
+<span class="hljs-function"><span class="hljs-keyword">static</span> <span class="hljs-keyword">int</span> <span class="hljs-title">svc_can_register</span><span class="hljs-params">(<span class="hljs-keyword">const</span> <span class="hljs-keyword">uint16_t</span> *name, <span class="hljs-keyword">size_t</span> name_len, <span class="hljs-keyword">pid_t</span> spid, <span class="hljs-keyword">uid_t</span> uid)</span>
+</span>&#123;
+    <span class="hljs-keyword">const</span> <span class="hljs-keyword">char</span> *perm = <span class="hljs-string">"add"</span>;
+
+    <span class="hljs-keyword">if</span> (multiuser_get_app_id(uid) &gt;= AID_APP) &#123; <span class="hljs-comment">// AID_APP 为 10000</span>
+        <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>; <span class="hljs-comment">/* Don't allow apps to register services */</span>
+    &#125;
+
+    <span class="hljs-keyword">return</span> check_mac_perms_from_lookup(spid, uid, perm, str8(name, name_len)) ? <span class="hljs-number">1</span> : <span class="hljs-number">0</span>;
+&#125;</code></pre></div>
+<p>自定义Service被分配到的<code>uid</code>都是大于<code>10000</code>的，当自定义Service执行到的时候，会在这一步被拒绝。</p>
+<p>一般情况下通过<code>startService()</code>启动服务，<code>bindService()</code>来绑定服务并与其他Service进行交互。</p>
+<h4 id="Service-Manager-获取服务"><a href="#Service-Manager-获取服务" class="headerlink" title="Service Manager 获取服务"></a>Service Manager 获取服务</h4><blockquote>
 <p>Client 向 Service Manager 获取服务</p>
 </blockquote>
 <p><code>获取服务</code>流程大致与<code>注册服务</code>流程一致</p>
@@ -2117,11 +2135,12 @@ Binder.restoreCallingIdentity(origId);</code></pre></div>
 
 &#125;</code></pre></div>
 <p>根据上述生成的代码：</p>
-<h4 id="类"><a href="#类" class="headerlink" title="类"></a>类</h4><p><code>IInterface</code></p>
+<h4 id="类-接口"><a href="#类-接口" class="headerlink" title="类/接口"></a>类/接口</h4><p><code>IInterface</code></p>
 <p>表示<code>Server</code>进程需要具备什么功能，对应的就是<code>Client</code>进程可以调用的方法。</p>
 <p><code>Stub</code></p>
 <p>一个跨进程调用对象，继承自<code>Binder</code>，表示为<code>Server进程的本地Binder对象</code>，需要实现<code>Server</code>进程可以提供的功能。</p>
 <p><code>Proxy</code></p>
+<p>Binder代理对象，位于<code>Client</code>进程，由其发起<code>transcat()</code>与Binder驱动进行通信。</p>
 <h4 id="方法"><a href="#方法" class="headerlink" title="方法"></a>方法</h4><p><code>asBinder()</code></p>
 <p>返回当前进程的Binder对象。</p>
 <ul>
@@ -2178,6 +2197,8 @@ Binder.restoreCallingIdentity(origId);</code></pre></div>
 <p><a href="http://gityuan.com/" target="_blank" rel="noopener">Binder系列讲解</a></p>
 <p><a href="https://www.cnblogs.com/samchen2009/p/3316001.html" target="_blank" rel="noopener">图解Android - Binder 和 Service</a></p>
 <p><a href="https://blog.csdn.net/happylishang/article/details/62234127" target="_blank" rel="noopener">深入理解Binder通信原理及面试问题</a></p>
+<p><a href="https://blog.csdn.net/universus/article/details/6211589" target="_blank" rel="noopener">Android Binder设计与实现-设计篇</a></p>
+<p><a href="https://juejin.cn/post/6844904113046568973" target="_blank" rel="noopener">Bidner｜内存拷贝的本质和变迁</a></p>
 
             </div>
             <hr>
