@@ -169,7 +169,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      13.4k 字
+      13.9k 字
     </span>
   
 
@@ -179,7 +179,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      201
+      208
        分钟
     </span>
   
@@ -888,7 +888,7 @@ RequestBody body = formBodyBuilder.build();</code></pre></div>
       <span class="hljs-comment">// 401 未经认证</span>
       <span class="hljs-keyword">case</span> HTTP_UNAUTHORIZED:
         <span class="hljs-keyword">return</span> client.authenticator().authenticate(route, userResponse);
-      <span class="hljs-comment">// 307 永久重定向  308 临时重定向  只有GET、HEAD请求方法才有效</span>
+      <span class="hljs-comment">// 301 永久重定向  302 临时重定向  只有GET、HEAD请求方法才有效</span>
       <span class="hljs-keyword">case</span> HTTP_PERM_REDIRECT:
       <span class="hljs-keyword">case</span> HTTP_TEMP_REDIRECT:
         <span class="hljs-comment">// "If the 307 or 308 status code is received in response to a request other than GET</span>
@@ -2190,6 +2190,79 @@ RequestBody body = formBodyBuilder.build();</code></pre></div>
   connection.allocations.add(<span class="hljs-keyword">new</span> StreamAllocationReference(<span class="hljs-keyword">this</span>, callStackTrace));
 &#125;</code></pre></div>
 <p>通过这种<code>引用计数法</code>来判断当前是否为空闲连接</p>
+<h2 id="OkHttp-Cookie机制"><a href="#OkHttp-Cookie机制" class="headerlink" title="OkHttp-Cookie机制"></a>OkHttp-Cookie机制</h2><p><img src="/images/OkHttp-Cookie机制.png" srcset="/img/loading.gif" alt="OkHttp-Cookie机制"></p>
+<p>使用方法</p>
+<div class="hljs"><pre><code class="hljs kotlin">OkHttpClient.Builder()
+  .<span class="hljs-comment">//其他参数</span>
+  .cookieJar(<span class="hljs-keyword">object</span> : CookieJar &#123;
+     <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">saveFromResponse</span><span class="hljs-params">(url:<span class="hljs-type">HttpUrl</span>,cookies:<span class="hljs-type">MutableList</span>&lt;<span class="hljs-type">Cookie</span>&gt;)</span></span>&#123;
+       <span class="hljs-comment">//从Response 获取Cookie信息 并存储到本地</span>
+     &#125;
+    
+     <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">loadForRequest</span><span class="hljs-params">(url:<span class="hljs-type">HttpUrl</span>)</span></span> : MutableList&lt;Cookie&gt; &#123;
+       <span class="hljs-comment">//根据url获取存储本地的Cookie信息 放到 Request请求中</span>
+     &#125;
+  &#125;)</code></pre></div>
+<p><code>Cookie</code>一般都会在请求中进行使用，多用于请求头的<code>Cookie</code>字段，大致可以猜测相关的处理位于<code>BridgeInterceptor</code>中。</p>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//BridgeInterceptor.java</span>
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">BridgeInterceptor</span> <span class="hljs-keyword">implements</span> <span class="hljs-title">Interceptor</span></span>&#123;
+  <span class="hljs-comment">//这个也就是在 构建Client时放入的CookieJar对象</span>
+  <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> CookieJar cookieJar;
+  
+    <span class="hljs-meta">@Override</span> <span class="hljs-function"><span class="hljs-keyword">public</span> Response <span class="hljs-title">intercept</span><span class="hljs-params">(Chain chain)</span> <span class="hljs-keyword">throws</span> IOException </span>&#123;
+  ...
+    <span class="hljs-comment">//从配置的cookiejar中获取信息</span>
+     List&lt;Cookie&gt; cookies = cookieJar.loadForRequest(userRequest.url());
+     <span class="hljs-keyword">if</span> (!cookies.isEmpty()) &#123;
+       <span class="hljs-comment">//在请求头中添加 Cookie请求头，携带Cookie参数</span>
+       requestBuilder.header(<span class="hljs-string">"Cookie"</span>, cookieHeader(cookies));
+     &#125;
+  ...   
+    <span class="hljs-comment">//请求最后得到的 response结果</span>
+    Response networkResponse = chain.proceed(requestBuilder.build());
+    <span class="hljs-comment">//从rensponse中解析Cookie并缓存到 CookieJar中</span>
+    HttpHeaders.receiveHeaders(cookieJar, userRequest.url(), networkResponse.headers());
+      
+    &#125;
+&#125;
+
+<span class="hljs-comment">//HttpHeaders.java</span>
+  <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">receiveHeaders</span><span class="hljs-params">(CookieJar cookieJar, HttpUrl url, Headers headers)</span> </span>&#123;
+    <span class="hljs-keyword">if</span> (cookieJar == CookieJar.NO_COOKIES) <span class="hljs-keyword">return</span>;
+
+    List&lt;Cookie&gt; cookies = Cookie.parseAll(url, headers);
+    <span class="hljs-keyword">if</span> (cookies.isEmpty()) <span class="hljs-keyword">return</span>;
+    <span class="hljs-comment">//获取到Cookie对象 缓存中 CookieJar中</span>
+    cookieJar.saveFromResponse(url, cookies);
+  &#125;
+
+<span class="hljs-comment">//Cookie.java</span>
+  <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> List&lt;Cookie&gt; <span class="hljs-title">parseAll</span><span class="hljs-params">(HttpUrl url, Headers headers)</span> </span>&#123;
+    <span class="hljs-comment">//从响应头中读取到 Set-Cookie字段，并转换成 Cookie对象</span>
+    List&lt;String&gt; cookieStrings = headers.values(<span class="hljs-string">"Set-Cookie"</span>);
+    List&lt;Cookie&gt; cookies = <span class="hljs-keyword">null</span>;
+
+    <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int</span> i = <span class="hljs-number">0</span>, size = cookieStrings.size(); i &lt; size; i++) &#123;
+      Cookie cookie = Cookie.parse(url, cookieStrings.get(i));
+      <span class="hljs-keyword">if</span> (cookie == <span class="hljs-keyword">null</span>) <span class="hljs-keyword">continue</span>;
+      <span class="hljs-keyword">if</span> (cookies == <span class="hljs-keyword">null</span>) cookies = <span class="hljs-keyword">new</span> ArrayList&lt;&gt;();
+      cookies.add(cookie);
+    &#125;
+
+    <span class="hljs-keyword">return</span> cookies != <span class="hljs-keyword">null</span>
+        ? Collections.unmodifiableList(cookies)
+        : Collections.&lt;Cookie&gt;emptyList();
+  &#125;</code></pre></div>
+<p><code>Cookie</code>原理简述：</p>
+<blockquote>
+<p>服务端返回的<code>Response</code>通过<code>Set-Cookie</code>响应头返回对应的<code>Cookie信息</code>，以便在下次进行请求时在<code>Request</code>的请求头中添加<code>Cookie</code>字段以携带Cookie信息。</p>
+<p><code>OkHttp</code>通过<code>setCookieJar</code>对所有的<code>Cookie</code>文件进行管理。</p>
+<ul>
+<li><code>saveFromResponse()</code>：可以获取对应域名的Cookie信息</li>
+<li><code>loadForRequest()</code>：可以在请求域名时添加Cookie信息</li>
+</ul>
+<p>可以通过一个全局的<code>CookieJar</code>类来实现应用内Cookie文件的管理。</p>
+</blockquote>
 <h2 id="OkHttp-DNS功能"><a href="#OkHttp-DNS功能" class="headerlink" title="OkHttp-DNS功能"></a>OkHttp-DNS功能</h2><h3 id="DNS介绍"><a href="#DNS介绍" class="headerlink" title="DNS介绍"></a>DNS介绍</h3><p><code>Domain Name System</code>：根据域名查出IP地址，是<code>HTTP协议</code>的前提，只有将域名正确的进行解析，得到IP地址后，才可以继续进行网络连接。</p>
 <p>DNS服务器结构如下：</p>
 <ul>
