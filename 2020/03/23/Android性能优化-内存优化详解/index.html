@@ -169,7 +169,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      135 字
+      2.6k 字
     </span>
   
 
@@ -179,7 +179,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      1
+      28
        分钟
     </span>
   
@@ -212,13 +212,241 @@
             <h1 style="display: none">Android性能优化-内存优化详解</h1>
             
             <div class="markdown-body">
-              <h1 id="Android内存优化"><a href="#Android内存优化" class="headerlink" title="Android内存优化"></a>Android内存优化</h1><h2 id="内存的概念"><a href="#内存的概念" class="headerlink" title="内存的概念"></a>内存的概念</h2><p>内存是计算机中最重要的部件之一，是硬盘与CPU之间沟通的桥梁，所有程序都是运行其上，会对程序的性能造成很大的影响。</p>
+              <h2 id="内存的概念"><a href="#内存的概念" class="headerlink" title="内存的概念"></a>内存的概念</h2><p>内存是计算机中最重要的部件之一，是硬盘与CPU之间沟通的桥梁，所有程序都是运行其上，会对程序的性能造成很大的影响。</p>
+<h2 id="Why-内存优化？"><a href="#Why-内存优化？" class="headerlink" title="Why 内存优化？"></a>Why 内存优化？</h2><h3 id="减少Crash"><a href="#减少Crash" class="headerlink" title="减少Crash"></a>减少Crash</h3><blockquote>
+<p>减少因为内存问题引起的Crash，其中最典型的就是<strong>OOM</strong></p>
+</blockquote>
+<h3 id="运行流畅"><a href="#运行流畅" class="headerlink" title="运行流畅"></a>运行流畅</h3><blockquote>
+<p>当内存紧张时，就会导致频繁触发<code>GC</code>。当触发<code>GC</code>时，所有线程都要停止，会导致所有运行被搁置，导致运行卡顿。</p>
+</blockquote>
+<h3 id="延长后台运行时间"><a href="#延长后台运行时间" class="headerlink" title="延长后台运行时间"></a>延长后台运行时间</h3><blockquote>
+<p>Android会按照特定的机制进行进程清理，按照<code>前台进程-可见进程-服务进程-后台进程-空进程</code>的顺序优先清理后面的进程。</p>
+<p>当应用占用内存过多时，切到后台时有更高的几率被Kill。</p>
+</blockquote>
 <h2 id="内存管理机制"><a href="#内存管理机制" class="headerlink" title="内存管理机制"></a>内存管理机制</h2><h3 id="系统层面"><a href="#系统层面" class="headerlink" title="系统层面"></a>系统层面</h3><!--进程优先级-->
 <p><code>LowMemoryKiller</code></p>
-<h3 id="进程层面"><a href="#进程层面" class="headerlink" title="进程层面"></a>进程层面</h3><p>GC</p>
-<h2 id="优化目标"><a href="#优化目标" class="headerlink" title="优化目标"></a>优化目标</h2><h3 id="内存泄漏"><a href="#内存泄漏" class="headerlink" title="内存泄漏"></a>内存泄漏</h3><!--分析流程-->
-<h3 id="图片加载"><a href="#图片加载" class="headerlink" title="图片加载"></a>图片加载</h3><h3 id="内存抖动"><a href="#内存抖动" class="headerlink" title="内存抖动"></a>内存抖动</h3><h3 id="内存溢出"><a href="#内存溢出" class="headerlink" title="内存溢出"></a>内存溢出</h3><h3 id="其他问题"><a href="#其他问题" class="headerlink" title="其他问题"></a>其他问题</h3><h2 id="优化工具"><a href="#优化工具" class="headerlink" title="优化工具"></a>优化工具</h2><h2 id="优化技巧"><a href="#优化技巧" class="headerlink" title="优化技巧"></a>优化技巧</h2><h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="https://developer.android.com/topic/performance/memory-overview" target="_blank" rel="noopener">内存管理概览</a></p>
-<p><a href="https://mp.weixin.qq.com/s/EerrwaRGdTkOFPLrg8_-oQ" target="_blank" rel="noopener">探索Android内存优化方法</a></p>
+<blockquote>
+<p>每隔一段时间检查一次，当系统剩余可用内存较低时，便会触发杀进程的策略。</p>
+<p>按照<code>进程优先级</code>来回收资源，如果进程优先级一致的情况下，会优先Kill消耗内存更多的进程。</p>
+</blockquote>
+<h4 id="进程优先级"><a href="#进程优先级" class="headerlink" title="进程优先级"></a>进程优先级</h4><h5 id="前台进程-Foreground-Process"><a href="#前台进程-Foreground-Process" class="headerlink" title="前台进程(Foreground Process)"></a>前台进程(Foreground Process)</h5><blockquote>
+<p><strong>优先级最高的进程</strong>，正处于用户交互的进程。</p>
+<p><em>优先级最高，基本不会被回收。</em></p>
+</blockquote>
+<p>判断条件：</p>
+<ul>
+<li>持有一个与用户交互的Activity</li>
+<li>持有一个Service(<code>startForeground() / 与可交互Activity绑定</code>)</li>
+</ul>
+<h5 id="可见进程-Visible-Process"><a href="#可见进程-Visible-Process" class="headerlink" title="可见进程(Visible Process)"></a>可见进程(Visible Process)</h5><blockquote>
+<p>不含任何前台组件，但是依然可见</p>
+<p><em>除非前台进程内存耗尽，否则不会轻易终止。</em></p>
+</blockquote>
+<p>判断条件：</p>
+<ul>
+<li>持有一个处于<code>pause</code>状态的Activity，例如显示了一个Dialog</li>
+<li>持有一个与可见Activity绑定的Service</li>
+</ul>
+<h5 id="服务进程-Service-Process"><a href="#服务进程-Service-Process" class="headerlink" title="服务进程(Service Process)"></a>服务进程(Service Process)</h5><blockquote>
+<p>可能在播放音乐或者下载文件</p>
+<p><em>除非系统内存不足，否则系统尽量维持服务进程运行</em></p>
+</blockquote>
+<p>判断条件：</p>
+<ul>
+<li>持有一个Service，且是通过<code>startService()</code>启动的</li>
+</ul>
+<h5 id="后台进程-Background-Process"><a href="#后台进程-Background-Process" class="headerlink" title="后台进程(Background Process)"></a>后台进程(Background Process)</h5><blockquote>
+<p>处于用户不可见的状态，例如切到后台的应用</p>
+<p><em>通过LruCache进行管理，系统会适当清理后台进程。占用内存越大越容易被清理</em></p>
+</blockquote>
+<p>判断条件：</p>
+<ul>
+<li>持有一个处于<code>stop</code>状态的Activity，但尚未调用<code>onDestroy()</code></li>
+</ul>
+<h5 id="空进程-Empty-Process"><a href="#空进程-Empty-Process" class="headerlink" title="空进程(Empty Process)"></a>空进程(Empty Process)</h5><blockquote>
+<p>不包含任何活跃的应用组件</p>
+</blockquote>
+<p>主要为了<code>加快下次启动进程的速度</code>。</p>
+<h3 id="进程层面"><a href="#进程层面" class="headerlink" title="进程层面"></a>进程层面</h3><blockquote>
+<p>每个进程都是一个单独的虚拟机，使用的内存空间都是独立的。</p>
+</blockquote>
+<p>不管是哪种虚拟机类型<a href="/2018/05/13/Android中的GC分析-Dalvik和ART虚拟机/" title="Dalvik和Art虚拟机">Dalvik和Art虚拟机</a>，当分配对象所占用的内存空间不足时会触发GC。</p>
+<h4 id="GC类型"><a href="#GC类型" class="headerlink" title="GC类型"></a>GC类型</h4><ul>
+<li><code>GC_FOR_MALLOC</code>：表示在堆上分配对象时内存不足触发的GC</li>
+<li><code>GC_CONCURRENT</code>：当应用程序的堆内存达到一定量时，系统自动触发的GC操作</li>
+<li><code>GC_EXPLICIT</code>：调用了<code>System.gc()</code>时触发的GC</li>
+<li><code>GC_BEFORE_OOM</code>：在准备抛出<code>OOM</code>异常前进行的GC</li>
+</ul>
+<h4 id="内存分配过程"><a href="#内存分配过程" class="headerlink" title="内存分配过程"></a>内存分配过程</h4><p>//TODO</p>
+<h2 id="优化目标"><a href="#优化目标" class="headerlink" title="优化目标"></a>优化目标</h2><p><strong>减少内存的占用。</strong></p>
+<p>内存问题大致可以分为两类：</p>
+<ul>
+<li>无用的数据依然占用内存——<strong>内存泄漏</strong></li>
+<li>有用的数据占用内存过多——<strong>图片加载/内存抖动</strong></li>
+</ul>
+<p>上述两类问题最后都容易导致<strong>内存溢出(OOM)</strong></p>
+<h3 id="内存泄漏"><a href="#内存泄漏" class="headerlink" title="内存泄漏"></a>内存泄漏</h3><blockquote>
+<p>一般采用<code>可达性分析</code>做为内存对象是否存活的判断方式，通过与<code>GC Roots对象</code>是否有关联判断是否需要进行回收。</p>
+<p><code>内存泄漏</code>：当前的对象已经不再使用，但是依然被<code>GC Roots</code>对象所引用，导致无法进行回收，依然占用内存。</p>
+</blockquote>
+<h4 id="触发原因"><a href="#触发原因" class="headerlink" title="触发原因"></a>触发原因</h4><ul>
+<li><p><code>静态变量导致</code></p>
+<p>静态变量会一直持有外部类的引用，导致外部类对象无法被回收。</p>
+</li>
+<li><p><code>单例模式导致</code></p>
+<p>单例传入了外部参数，例如传入<code>Activity的context</code>，就会持有对<code>Activity</code>的引用</p>
+</li>
+<li><p><code>属性动画导致</code></p>
+<p>播放无限循环动画时，没有在Activity关闭时及时停止，导致View持有了Activity</p>
+</li>
+<li><p><code>Handler导致</code></p>
+<p>Handler的Message会持有Handler的引用，而Handler持有Looper的引用，Looper由<code>sThreadLocal 这个静态对象</code>管理。所以导致内存泄漏的<code>GC Roots</code>对象为<code>sThreadLocal</code>。</p>
+</li>
+<li><p><code>匿名内部类/非静态内部类</code></p>
+<p><code>匿名内部类</code>会隐式持有对所在Activity的引用</p>
+</li>
+<li><p><code>资源对象没关闭</code></p>
+<p>一般资源对象都使用了缓冲，不及时关闭的话，缓冲依然存在。</p>
+</li>
+</ul>
+<h3 id="图片加载"><a href="#图片加载" class="headerlink" title="图片加载"></a>图片加载</h3><blockquote>
+<p>图片资源基本是占用内存最多的，如果使用图片不当的话就很容易会导致OOM的发生。</p>
+<p>本地或者网络图片最终都会转换成<code>bitmap</code>。</p>
+</blockquote>
+<h4 id="支持图片格式"><a href="#支持图片格式" class="headerlink" title="支持图片格式"></a>支持图片格式</h4><p>目前移动端Android平台原生支持的图片格式主要有以下几种：</p>
+<ul>
+<li><p><code>JPEG</code></p>
+<blockquote>
+<p>广泛使用的有损压缩图像标准格式，不支持透明度和多帧动画，只有<code>RGB</code>三个通道。</p>
+</blockquote>
+</li>
+<li><p><code>PNG</code></p>
+<blockquote>
+<p>无损压缩图像标准格式，支持完整的透明通道。支持<code>ARGB</code>四个通道</p>
+</blockquote>
+</li>
+<li><p><code>WebP</code></p>
+<blockquote>
+<p>支持<code>有损压缩</code>和<code>无损压缩</code>，也支持透明度。</p>
+<p>在Andorid4.0之后添加的系统支持，在4.3之后支持了无损和透明的WebP展示。</p>
+</blockquote>
+</li>
+</ul>
+<h4 id="Bitmap占用内存"><a href="#Bitmap占用内存" class="headerlink" title="Bitmap占用内存"></a>Bitmap占用内存</h4><blockquote>
+<p><strong>所有像素的内存占用总和。</strong></p>
+</blockquote>
+<p>可以通过<code>getByteCount()</code>和<code>getAllocationByteCount()</code>去获取Bitmap所占用的内存。</p>
+<p>一般情况下Bitmap占用内存大小计算公式为：</p>
+<p><strong>图片长度 x 图片宽度 x 单位像素占用的字节数</strong>。</p>
+<p>其中<code>单位像素占用的字节数</code>来自<code>颜色深度</code>。</p>
+<blockquote>
+<p>颜色深度：每个像素显示的颜色数，显示的越多，色彩就越丰富。</p>
+<p>Android系统提供如下几种：</p>
+<table>
+<thead>
+<tr>
+<th>颜色深度</th>
+<th>每个像素占用内存</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ARGB_8888(<code>默认颜色深度</code>)</td>
+<td>4 byte / 32 bit</td>
+</tr>
+<tr>
+<td>ARGB_4444</td>
+<td>2 byte / 16 bit</td>
+</tr>
+<tr>
+<td>RGB_565</td>
+<td>2 byte / 16 bit</td>
+</tr>
+<tr>
+<td>ALPHA_8</td>
+<td>1 byte / 8 bit</td>
+</tr>
+</tbody>
+</table>
+<p>实际应用中建议使用<code>ARGB_8888(需要透明度)</code>和<code>RGB_565(不需要透明度)</code></p>
+</blockquote>
+<h5 id="加载网络或者本地图片-非Drawable文件夹"><a href="#加载网络或者本地图片-非Drawable文件夹" class="headerlink" title="加载网络或者本地图片(非Drawable文件夹)"></a>加载网络或者本地图片(非Drawable文件夹)</h5><p>占用内存大小：<code>图片宽度 * 图片长度 * 单位像素占用字节数</code>。</p>
+<p>假设<code>100 * 100</code>且颜色深度为<code>ARGB_8888</code>的本地图片，转换Bitmap占用大小为<code>100 * 100 * 4</code>。</p>
+<h5 id="加载Drawable下文件资源-res-drawable"><a href="#加载Drawable下文件资源-res-drawable" class="headerlink" title="加载Drawable下文件资源(/res/drawable/)"></a>加载Drawable下文件资源(/res/drawable/)</h5><p>占用内存大小：<code>图片宽度 * 图片长度 * (inTargetDensity / inDensity) ^ 2 * 单位像素占用字节数</code>。</p>
+<p><code>inDensity</code>：图片所在文件夹对应的密度</p>
+<p><code>inTargetDensity</code>：当前系统的屏幕密度</p>
+<h5 id="占用内存存储位置"><a href="#占用内存存储位置" class="headerlink" title="占用内存存储位置"></a>占用内存存储位置</h5><p>在Android 2.3 之前 占用内存是在 native上分配的，并且生命周期不可控，还需要用户自己回收。</p>
+<p>在Android 2.3 - 7.1 之间，占用内存位于Java堆上</p>
+<p>在Android 8.0 之后，占用内存重新在native上分配，并且不需要主动执行回收。</p>
+<h3 id="内存抖动"><a href="#内存抖动" class="headerlink" title="内存抖动"></a>内存抖动</h3><blockquote>
+<p>短时间内有大量的对象被创建与回收，有短时间内快递的上升和下落的趋势，内存呈锯齿状。</p>
+<p><em>此时频繁触发GC，造成卡顿，甚至OOM</em></p>
+</blockquote>
+<h4 id="触发原因-1"><a href="#触发原因-1" class="headerlink" title="触发原因"></a>触发原因</h4><ol>
+<li>频繁创建对象，例如在<code>for循环</code>创建对象</li>
+</ol>
+<h4 id="解决方案"><a href="#解决方案" class="headerlink" title="解决方案"></a>解决方案</h4><ol>
+<li>尽量避免在循环体中创建对象</li>
+<li>尽量不要在<code>onDraw()</code>中创建对象</li>
+<li>对于能够复用的对象，考虑使用<code>对象池</code>进行缓存以便复用</li>
+</ol>
+<h3 id="内存溢出"><a href="#内存溢出" class="headerlink" title="内存溢出"></a>内存溢出</h3><blockquote>
+<p><code>OutOfMemoryError</code>，应用申请的内存超出单个应用的最大可用内存。<code>可用最大内存配置位于/system/build.prop下的 dalvik.vm.heapgrowthlimit</code></p>
+</blockquote>
+<h4 id="触发原因-2"><a href="#触发原因-2" class="headerlink" title="触发原因"></a>触发原因</h4><ol>
+<li>内存泄漏积累到一定量之后导致OOM</li>
+<li>一次性申请很多内存，例如<code>一次创建大的数组或者显示大型文件(图片)</code></li>
+</ol>
+<h3 id="其他问题"><a href="#其他问题" class="headerlink" title="其他问题"></a>其他问题</h3><h5 id="数据容器"><a href="#数据容器" class="headerlink" title="数据容器"></a>数据容器</h5><p>使用了<code>HashMap</code>之类的容器，针对每一个键值对，都需要额外的<code>Entry</code>对象</p>
+<h5 id="强引用"><a href="#强引用" class="headerlink" title="强引用"></a>强引用</h5><p>针对某些低频使用对象使用强引用，当GC触发时不能去回收这些对象</p>
+<h5 id="数据相关"><a href="#数据相关" class="headerlink" title="数据相关"></a>数据相关</h5><p>使用SP存储数据时，第一次读取时都需要将所有数据缓存到内存中，有时为了一些数据，就需要缓存整个SP。</p>
+<h5 id="缓存"><a href="#缓存" class="headerlink" title="缓存"></a>缓存</h5><p>针对一些大量重复使用对象，但是很快就要被替代，导致频繁发生GC。</p>
+<h2 id="优化工具"><a href="#优化工具" class="headerlink" title="优化工具"></a>优化工具</h2><p>主要是针对<code>内存泄漏</code>场景的优化分析。</p>
+<h3 id="Lint分析"><a href="#Lint分析" class="headerlink" title="Lint分析"></a>Lint分析</h3><p>主要是扫描静态代码，从代码实现方面进行内存泄漏分析。</p>
+<p>识别不太准确且覆盖率不高，<strong>不推荐使用</strong>。</p>
+<h3 id="Memory-Profiler"><a href="#Memory-Profiler" class="headerlink" title="Memory Profiler"></a>Memory Profiler</h3><blockquote>
+<p>AS 提供的性能分析工具，包含了CPU、内存、网络以及电量的分析信息。</p>
+<p>可以实时观测应用的内存使用情况，用于查看是否发生内存抖动(上下波动明显)，内存泄漏(切换Activity时内存明显上升)</p>
+<p>一般情况下会结合下面的<code>MAT</code>一起使用。</p>
+</blockquote>
+<h4 id><a href="#" class="headerlink" title></a><img src="/images/Memory-Profiler.png" srcset="/img/loading.gif" alt="Memory-Profiler.png"></h4><p>主要有以下作用：</p>
+<ol>
+<li>实时图表展示应用内存使用量</li>
+<li>用于识别内存泄漏、内存抖动等</li>
+<li>提供捕获堆转储、强制GC以及查看内存分配详情</li>
+</ol>
+<p><img src="/images/Memory堆转储" srcset="/img/loading.gif" alt="堆转储.png"></p>
+<p>多次点击强制GC后，再点击<code>堆转储</code>，等待一会儿会得到<code>hprof</code>文件，如果想用MAT查看该文件，还需要执行一次转换。</p>
+<div class="hljs"><pre><code class="hljs shell">cd platform-tools //切换Android SDK目录
+./hprof-conv XX.hprof mat.hprof</code></pre></div>
+<p>转换得到的<code>mat.hprof</code>就可以通过MAT打开。</p>
+<h3 id="Memory-Analyzer-Tool"><a href="#Memory-Analyzer-Tool" class="headerlink" title="Memory Analyzer Tool"></a>Memory Analyzer Tool</h3><blockquote>
+<p><code>Memory Profiler</code>只能查看对应内存的分配，不能判断是否发生了内存泄漏。</p>
+<p><code>MAT</code>可以提供完整的<code>Java Heap</code>分析功能，并可以生成对应的内存分配报告以及分析内存问题。</p>
+</blockquote>
+<h4 id="如何使用"><a href="#如何使用" class="headerlink" title="如何使用"></a>如何使用</h4><p>使用Mat打开的上一步生成的<code>mat.hprof</code>文件，打开后会显示一个预览页。</p>
+<p>预览页上主要显示以下组件：</p>
+<ul>
+<li><p><code>Histogram</code></p>
+<p>列举内存中所有<code>实例类型对象</code>和<code>个数以及大小</code>，并在顶部的<code>regex</code>区域支持<code>正则表达式</code>查找。</p>
+</li>
+<li><p><code>Dominator Tree</code></p>
+<p>列举<code>最大的对象及其依赖存活的Object</code>。相比<code>Histogram</code>可以更方便的看出引用关系</p>
+</li>
+<li><p><code>Top Consumers</code></p>
+</li>
+</ul>
+<ul>
+<li><code>Leak Suspects</code></li>
+</ul>
+<h4 id="排查方式"><a href="#排查方式" class="headerlink" title="排查方式"></a>排查方式</h4><ol>
+<li>找到当前Activity(<code>任何猜测可能发生内存泄漏的类</code>)</li>
+<li>在<code>Histogram</code>选择对应类的<code>List Objects</code>的<code>with incoming reference</code>就可以查看类的实例</li>
+<li>看到实例后，右键点击，选择<code>Path to GC Roots</code>的<code>exclude all phantom/weak/soft etc references</code></li>
+<li>根据引用链分析是否发生内存泄漏</li>
+</ol>
+<h4 id="高级使用"><a href="#高级使用" class="headerlink" title="高级使用"></a>高级使用</h4><h3 id="LeakCanary"><a href="#LeakCanary" class="headerlink" title="LeakCanary"></a>LeakCanary</h3><h2 id="优化技巧"><a href="#优化技巧" class="headerlink" title="优化技巧"></a>优化技巧</h2><h3 id="图片高效加载方式"><a href="#图片高效加载方式" class="headerlink" title="图片高效加载方式"></a>图片高效加载方式</h3><h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="https://developer.android.com/topic/performance/memory" target="_blank" rel="noopener">管理应用内存</a></p>
+<p><a href="https://juejin.cn/post/6844903897958449166" target="_blank" rel="noopener">探索Android内存优化方法</a></p>
 <p><a href="https://juejin.im/post/5e780257f265da575209652c#heading-6" target="_blank" rel="noopener">探索Android内存优化</a></p>
 
             </div>
