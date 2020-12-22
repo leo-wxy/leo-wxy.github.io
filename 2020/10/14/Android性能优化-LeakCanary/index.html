@@ -1,0 +1,1406 @@
+
+
+<!DOCTYPE html>
+<html lang="zh-CN" data-default-color-scheme=&#34;auto&#34;>
+
+
+
+<head><meta name="generator" content="Hexo 3.9.0">
+  <meta charset="UTF-8">
+  <link rel="apple-touch-icon" sizes="76x76" href="/img/apple-touch-icon.png">
+  <link rel="icon" type="image/png" href="/img/favicon.png">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  
+  <meta name="theme-color" content="#9b868d">
+  <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
+  <meta name="author" content="Leo-Wxy">
+  <meta name="keywords" content>
+  <title>Android性能优化-LeakCanary - Wxy的个人博客</title>
+
+  <link rel="stylesheet" href="https://cdn.staticfile.org/twitter-bootstrap/4.5.3/css/bootstrap.min.css">
+
+
+  <link rel="stylesheet" href="https://cdn.staticfile.org/github-markdown-css/4.0.0/github-markdown.min.css">
+  <link rel="stylesheet" href="/lib/hint/hint.min.css">
+
+  
+    
+    
+      
+      <link rel="stylesheet" href="https://cdn.staticfile.org/highlight.js/10.1.2/styles/dracula.min.css">
+    
+  
+
+  
+    <link rel="stylesheet" href="https://cdn.staticfile.org/fancybox/3.5.7/jquery.fancybox.min.css">
+  
+
+
+
+<!-- 主题依赖的图标库，不要自行修改 -->
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1749284_ba1fz6golrf.css">
+
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1736178_kmeydafke9r.css">
+
+<link rel="stylesheet" href="/css/main.css">
+
+<!-- 自定义样式保持在最底部 -->
+
+
+  <script id="fluid-configs">
+    var Fluid = window.Fluid || {};
+    var CONFIG = {"hostname":"leo-wxy.github.io","root":"/","version":"1.8.5","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false},"toc":{"enable":true,"headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"right","visible":"hover","icon":""},"copy_btn":true,"image_zoom":{"enable":true},"lazyload":{"enable":true,"onlypost":false},"web_analytics":{"enable":false,"baidu":null,"google":null,"gtag":null,"tencent":{"sid":null,"cid":null},"woyaola":null,"cnzz":null,"leancloud":{"app_id":null,"app_key":null,"server_url":null},"tajs":null}};
+  </script>
+  <script src="/js/utils.js"></script>
+  <script src="/js/color-schema.js"></script>
+</head>
+
+
+<body>
+  <header style="height: 40vh;">
+    <nav id="navbar" class="navbar fixed-top  navbar-expand-lg navbar-dark scrolling-navbar">
+  <div class="container">
+    <a class="navbar-brand"
+       href="/">&nbsp;<strong>Wxy's Blog</strong>&nbsp;</a>
+
+    <button id="navbar-toggler-btn" class="navbar-toggler" type="button" data-toggle="collapse"
+            data-target="#navbarSupportedContent"
+            aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+      <div class="animated-icon"><span></span><span></span><span></span></div>
+    </button>
+
+    <!-- Collapsible content -->
+    <div class="collapse navbar-collapse" id="navbarSupportedContent">
+      <ul class="navbar-nav ml-auto text-center">
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/">
+                <i class="iconfont icon-home-fill"></i>
+                首页
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/archives/">
+                <i class="iconfont icon-archive-fill"></i>
+                归档
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/tags/">
+                <i class="iconfont icon-tags-fill"></i>
+                标签
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/about/">
+                <i class="iconfont icon-user-fill"></i>
+                关于
+              </a>
+            </li>
+          
+        
+        
+          <li class="nav-item" id="search-btn">
+            <a class="nav-link" data-toggle="modal" data-target="#modalSearch">&nbsp;<i
+                class="iconfont icon-search"></i>&nbsp;</a>
+          </li>
+        
+        
+          <li class="nav-item" id="color-toggle-btn">
+            <a class="nav-link" href="javascript:">&nbsp;<i
+                class="iconfont icon-dark" id="color-toggle-icon"></i>&nbsp;</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    <div class="banner intro-2" id="background" parallax=true
+         style="background: url('/img/default.png') no-repeat center center;
+           background-size: cover;">
+      <div class="full-bg-img">
+        <div class="mask flex-center" style="background-color: rgba(0, 0, 0, 0.3)">
+          <div class="page-header text-center fade-in-up">
+            <span class="h2" id="subtitle" title="Android性能优化-LeakCanary">
+              
+                Android性能优化-LeakCanary
+              
+            </span>
+
+            
+              <div class="mt-3">
+  
+  
+    <span class="post-meta">
+      <i class="iconfont icon-date-fill" aria-hidden="true"></i>
+      <time datetime="2020-10-14 14:45" pubdate>
+        2020年10月14日 下午
+      </time>
+    </span>
+  
+</div>
+
+<div class="mt-1">
+  
+    
+    <span class="post-meta mr-2">
+      <i class="iconfont icon-chart"></i>
+      5.1k 字
+    </span>
+  
+
+  
+    
+    <span class="post-meta mr-2">
+      <i class="iconfont icon-clock-fill"></i>
+      
+      
+      77
+       分钟
+    </span>
+  
+
+  
+  
+</div>
+
+            
+          </div>
+
+          
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    
+      
+
+<div class="container-fluid">
+  <div class="row">
+    <div class="d-none d-lg-block col-lg-2"></div>
+    <div class="col-lg-8 nopadding-md">
+      <div class="container nopadding-md" id="board-ctn">
+        <div class="py-5" id="board">
+          <article class="post-content mx-auto">
+            <!-- SEO header -->
+            <h1 style="display: none">Android性能优化-LeakCanary</h1>
+            
+            <div class="markdown-body">
+              <blockquote><p>LeakCanary主要用来<strong>进行内存泄漏检测</strong>，并且可以直观的展示泄漏的路径</p>
+</blockquote>
+<h2 id="如何使用"><a href="#如何使用" class="headerlink" title="如何使用"></a>如何使用</h2><div class="hljs"><pre><code class="hljs groovy">dependencies &#123;
+  <span class="hljs-comment">// debugImplementation because LeakCanary should only run in debug builds.</span>
+  debugImplementation <span class="hljs-string">'com.squareup.leakcanary:leakcanary-android:2.5'</span>
+&#125;</code></pre></div>
+<p>配置完成后，<code>LeakCanary</code>通过<code>ContentProvider</code>进行注册以及初始化。</p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//AppWatcherInstaller.kt</span>
+<span class="hljs-keyword">internal</span> <span class="hljs-keyword">sealed</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">AppWatcherInstaller</span> : <span class="hljs-type">ContentProvider</span></span>() &#123;
+
+  <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">onCreate</span><span class="hljs-params">()</span></span>: <span class="hljs-built_in">Boolean</span> &#123;
+    <span class="hljs-keyword">val</span> application = context!!.applicationContext <span class="hljs-keyword">as</span> Application
+    AppWatcher.manualInstall(application)
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>
+  &#125;
+  
+&#125;</code></pre></div>
+<p>涉及的部分Activity启动过程源码：</p>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//ActivityThread.java</span>
+<span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">handleBindApplication</span><span class="hljs-params">(AppBindData data)</span> </span>&#123;
+  ...
+  <span class="hljs-comment">//获取LoaderApk对象</span>
+  data.info = getPackageInfoNoCheck(data.appInfo, data.compatInfo);
+  <span class="hljs-comment">//创建进程对应的Android运行环境ContextImpl</span>
+  <span class="hljs-keyword">final</span> ContextImpl appContext = ContextImpl.createAppContext(<span class="hljs-keyword">this</span>, data.info);
+  ...
+  <span class="hljs-keyword">try</span> &#123;
+            <span class="hljs-comment">//准备创建Application对象</span>
+            Application app = data.info.makeApplication(data.restrictedBackupMode, <span class="hljs-keyword">null</span>);
+            mInitialApplication = app;
+            ...
+             <span class="hljs-comment">//加载对应进程中的ContentProvider</span>
+            installContentProviders(app, data.providers);
+            <span class="hljs-keyword">try</span> &#123;
+                mInstrumentation.onCreate(data.instrumentationArgs);
+            &#125;
+            <span class="hljs-keyword">catch</span> (Exception e) &#123;
+                <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> RuntimeException(
+                    <span class="hljs-string">"Exception thrown in onCreate() of "</span>
+                    + data.instrumentationName + <span class="hljs-string">": "</span> + e.toString(), e);
+            &#125;
+
+            <span class="hljs-keyword">try</span> &#123;
+                <span class="hljs-comment">//调用Application的onCreate方法</span>
+                mInstrumentation.callApplicationOnCreate(app);
+            &#125; <span class="hljs-keyword">catch</span> (Exception e) &#123;
+                <span class="hljs-keyword">if</span> (!mInstrumentation.onException(app, e)) &#123;
+                    <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> RuntimeException(
+                        <span class="hljs-string">"Unable to create application "</span> + app.getClass().getName()
+                        + <span class="hljs-string">": "</span> + e.toString(), e);
+                &#125;
+            &#125;
+        &#125; <span class="hljs-keyword">finally</span> &#123;
+            StrictMode.setThreadPolicy(savedPolicy);
+        &#125;
+&#125;</code></pre></div>
+<p>在<code>handleBindApplication()</code>进行<code>ContentProvider</code>的启动，此时<code>AppWatcherInstaller</code>会在此时启动。</p>
+<p>向下调用到<code>AppWatcher.manualInstall(application)</code></p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//AppWatcher.kt</span>
+  <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">manualInstall</span><span class="hljs-params">(application: <span class="hljs-type">Application</span>)</span></span> &#123;
+    InternalAppWatcher.install(application)
+  &#125;
+
+<span class="hljs-comment">//InternalAppWatcher.kt</span>
+<span class="hljs-comment">//开始了初始化流程</span>
+  <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">install</span><span class="hljs-params">(application: <span class="hljs-type">Application</span>)</span></span> &#123;
+    <span class="hljs-comment">//初始化</span>
+  &#125;</code></pre></div>
+<p>到此基本的<code>LeakCanary</code>初始化完毕</p>
+<h3 id="主动添加内存泄漏监控"><a href="#主动添加内存泄漏监控" class="headerlink" title="主动添加内存泄漏监控"></a>主动添加内存泄漏监控</h3><div class="hljs"><pre><code class="hljs kotlin">AppWatcher.objectWatcher.watch(watchObject,reason)</code></pre></div>
+<h2 id="源码解析"><a href="#源码解析" class="headerlink" title="源码解析"></a>源码解析</h2><h3 id="注册监听"><a href="#注册监听" class="headerlink" title="注册监听"></a>注册监听</h3><p>在初始化过程执行的<code>注册监听</code>过程</p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//InternalAppWatcher.kt</span>
+<span class="hljs-comment">//开始了初始化流程</span>
+  <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">install</span><span class="hljs-params">(application: <span class="hljs-type">Application</span>)</span></span> &#123;
+    checkMainThread()
+    <span class="hljs-keyword">if</span> (<span class="hljs-keyword">this</span>::application.isInitialized) &#123;
+      <span class="hljs-keyword">return</span>
+    &#125;
+    InternalAppWatcher.application = application
+    <span class="hljs-keyword">if</span> (isDebuggableBuild) &#123;
+      SharkLog.logger = DefaultCanaryLog()
+    &#125;
+
+    <span class="hljs-keyword">val</span> configProvider = &#123; AppWatcher.config &#125;
+    ActivityDestroyWatcher.install(application, objectWatcher, configProvider)
+    FragmentDestroyWatcher.install(application, objectWatcher, configProvider)
+    onAppWatcherInstalled(application)
+  &#125;</code></pre></div>
+<h4 id="监听Activity"><a href="#监听Activity" class="headerlink" title="监听Activity"></a>监听Activity</h4><p><code>ActivityDestroyWatcher.install</code></p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">internal</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">ActivityDestroyWatcher</span> <span class="hljs-keyword">private</span> <span class="hljs-keyword">constructor</span></span>(
+  <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> objectWatcher: ObjectWatcher,
+  <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> configProvider: () -&gt; Config
+) &#123;
+
+  <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> lifecycleCallbacks =
+    <span class="hljs-keyword">object</span> : Application.ActivityLifecycleCallbacks <span class="hljs-keyword">by</span> noOpDelegate() &#123;
+      <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">onActivityDestroyed</span><span class="hljs-params">(activity: <span class="hljs-type">Activity</span>)</span></span> &#123;
+        <span class="hljs-comment">//监听Activity onDestroy()生命周期</span>
+        <span class="hljs-keyword">if</span> (configProvider().watchActivities) &#123;
+          objectWatcher.watch(
+              activity, <span class="hljs-string">"<span class="hljs-subst">$&#123;activity::class.java.name&#125;</span> received Activity#onDestroy() callback"</span>
+          )
+        &#125;
+      &#125;
+    &#125;
+
+  <span class="hljs-keyword">companion</span> <span class="hljs-keyword">object</span> &#123;
+    <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">install</span><span class="hljs-params">(
+      application: <span class="hljs-type">Application</span>,
+      objectWatcher: <span class="hljs-type">ObjectWatcher</span>,
+      configProvider: () -&gt; <span class="hljs-type">Config</span>
+    )</span></span> &#123;
+      <span class="hljs-keyword">val</span> activityDestroyWatcher =
+        ActivityDestroyWatcher(objectWatcher, configProvider)
+      <span class="hljs-comment">//往Application添加Activity生命周期回调监听</span>
+      application.registerActivityLifecycleCallbacks(activityDestroyWatcher.lifecycleCallbacks)
+    &#125;
+  &#125;
+&#125;</code></pre></div>
+<p>主要是为了注册Activity的生命周期回调，监测到<code>onActivityDestroyed()</code>之后，将Activity加入到<code>objectWatcher</code>中</p>
+<h4 id="监听Fragment"><a href="#监听Fragment" class="headerlink" title="监听Fragment"></a>监听Fragment</h4><p><code>FragmentDestroyWatcher.install</code></p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">internal</span> <span class="hljs-keyword">object</span> FragmentDestroyWatcher &#123;
+  
+  <span class="hljs-comment">//AndroidX fragment相关配置</span>
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">const</span> <span class="hljs-keyword">val</span> ANDROIDX_FRAGMENT_CLASS_NAME = <span class="hljs-string">"androidx.fragment.app.Fragment"</span>
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">const</span> <span class="hljs-keyword">val</span> ANDROIDX_FRAGMENT_DESTROY_WATCHER_CLASS_NAME =
+    <span class="hljs-string">"leakcanary.internal.AndroidXFragmentDestroyWatcher"</span>
+  
+  
+  <span class="hljs-comment">//supprt fragment相关配置</span>
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> ANDROID_SUPPORT_FRAGMENT_CLASS_NAME =
+    StringBuilder(<span class="hljs-string">"android."</span>).append(<span class="hljs-string">"support.v4.app.Fragment"</span>)
+        .toString()
+  <span class="hljs-keyword">private</span> <span class="hljs-keyword">const</span> <span class="hljs-keyword">val</span> ANDROID_SUPPORT_FRAGMENT_DESTROY_WATCHER_CLASS_NAME =
+    <span class="hljs-string">"leakcanary.internal.AndroidSupportFragmentDestroyWatcher"</span>
+
+  
+  ...
+   <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">install</span><span class="hljs-params">(
+    application: <span class="hljs-type">Application</span>,
+    objectWatcher: <span class="hljs-type">ObjectWatcher</span>,
+    configProvider: () -&gt; <span class="hljs-type">AppWatcher</span>.<span class="hljs-type">Config</span>
+  )</span></span> &#123;
+    <span class="hljs-keyword">val</span> fragmentDestroyWatchers = mutableListOf&lt;(Activity) -&gt; <span class="hljs-built_in">Unit</span>&gt;()
+
+     <span class="hljs-comment">//Android 8.0及以上 直接构造 AndroidOFragmentDestroyWatcher</span>
+    <span class="hljs-keyword">if</span> (SDK_INT &gt;= O) &#123;
+      fragmentDestroyWatchers.add(
+          AndroidOFragmentDestroyWatcher(objectWatcher, configProvider)
+      )
+    &#125;
+
+     <span class="hljs-comment">//androidx fragment对象 </span>
+    getWatcherIfAvailable(
+        ANDROIDX_FRAGMENT_CLASS_NAME,
+        ANDROIDX_FRAGMENT_DESTROY_WATCHER_CLASS_NAME,
+        objectWatcher,
+        configProvider
+    )?.let &#123;
+      fragmentDestroyWatchers.add(it)
+    &#125;
+
+     <span class="hljs-comment">//fragment相关配置</span>
+    getWatcherIfAvailable(
+        ANDROID_SUPPORT_FRAGMENT_CLASS_NAME,
+        ANDROID_SUPPORT_FRAGMENT_DESTROY_WATCHER_CLASS_NAME,
+        objectWatcher,
+        configProvider
+    )?.let &#123;
+      fragmentDestroyWatchers.add(it)
+    &#125;
+
+    <span class="hljs-keyword">if</span> (fragmentDestroyWatchers.size == <span class="hljs-number">0</span>) &#123;
+      <span class="hljs-keyword">return</span>
+    &#125;
+
+    application.registerActivityLifecycleCallbacks(<span class="hljs-keyword">object</span> : Application.ActivityLifecycleCallbacks <span class="hljs-keyword">by</span> noOpDelegate() &#123;
+      <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">onActivityCreated</span><span class="hljs-params">(
+        activity: <span class="hljs-type">Activity</span>,
+        savedInstanceState: <span class="hljs-type">Bundle</span>?
+      )</span></span> &#123;
+        <span class="hljs-comment">//在Activity创建时 添加Fragment的监听</span>
+        <span class="hljs-keyword">for</span> (watcher <span class="hljs-keyword">in</span> fragmentDestroyWatchers) &#123;
+          <span class="hljs-comment">//调用到 对应的 invoke()</span>
+          watcher(activity)
+        &#125;
+      &#125;
+    &#125;)
+  &#125;
+  
+&#125;</code></pre></div>
+<p>根据上述源码，<code>FragmentDestroyWatcher</code>按照三种情况进行区分：</p>
+<ul>
+<li>Android O 及以上版本的fragment：<code>AndroidOFragmentDestroyWatcher</code></li>
+<li>AndroidX 的fragment：<code>AndroidXFragmentDestroyWatcher</code></li>
+<li>Android support 的 fragment：<code>AndroidSupportFragmentDestroyWatcher</code></li>
+</ul>
+<p>上述三种实现基本一致，只是对引用的<code>fragment</code>进行了区分，下面拿<code>AndroidSupportFragmentDestroyWatcher</code>进行分析</p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//AndroidSupportFragmentDestroyWatcher.kt</span>
+<span class="hljs-keyword">internal</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">AndroidSupportFragmentDestroyWatcher</span></span>(
+  <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> objectWatcher: ObjectWatcher,
+  <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> configProvider: () -&gt; Config
+) : (Activity) -&gt; <span class="hljs-built_in">Unit</span> &#123;
+
+  <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> fragmentLifecycleCallbacks = <span class="hljs-keyword">object</span> : FragmentManager.FragmentLifecycleCallbacks() &#123;
+
+    <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">onFragmentViewDestroyed</span><span class="hljs-params">(
+      fm: <span class="hljs-type">FragmentManager</span>,
+      fragment: <span class="hljs-type">Fragment</span>
+    )</span></span> &#123;
+      <span class="hljs-comment">//添加了对fragment引用的View的泄漏监听</span>
+      <span class="hljs-keyword">val</span> view = fragment.view
+      <span class="hljs-keyword">if</span> (view != <span class="hljs-literal">null</span> &amp;&amp; configProvider().watchFragmentViews) &#123;
+        objectWatcher.watch(
+            view, <span class="hljs-string">"<span class="hljs-subst">$&#123;fragment::class.java.name&#125;</span> received Fragment#onDestroyView() callback "</span> +
+            <span class="hljs-string">"(references to its views should be cleared to prevent leaks)"</span>
+        )
+      &#125;
+    &#125;
+
+    <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">onFragmentDestroyed</span><span class="hljs-params">(
+      fm: <span class="hljs-type">FragmentManager</span>,
+      fragment: <span class="hljs-type">Fragment</span>
+    )</span></span> &#123;
+      <span class="hljs-keyword">if</span> (configProvider().watchFragments) &#123;
+        <span class="hljs-comment">//添加对 fragment的泄漏监听</span>
+        objectWatcher.watch(
+            fragment, <span class="hljs-string">"<span class="hljs-subst">$&#123;fragment::class.java.name&#125;</span> received Fragment#onDestroy() callback"</span>
+        )
+      &#125;
+    &#125;
+  &#125;
+
+  <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">invoke</span><span class="hljs-params">(activity: <span class="hljs-type">Activity</span>)</span></span> &#123;
+    <span class="hljs-keyword">if</span> (activity <span class="hljs-keyword">is</span> FragmentActivity) &#123;
+      <span class="hljs-comment">//针对 fragmentManager 添加 fragmentlifecyclecallback监听</span>
+      <span class="hljs-keyword">val</span> supportFragmentManager = activity.supportFragmentManager
+      supportFragmentManager.registerFragmentLifecycleCallbacks(fragmentLifecycleCallbacks, <span class="hljs-literal">true</span>)
+    &#125;
+  &#125;
+&#125;</code></pre></div>
+<p>主要是在<code>FragmentManager</code>调用<code>registerFragmentLifecycleCallbacks()</code>添加生命周期监听。</p>
+<ul>
+<li>在<code>onFragmentViewDestroyed()</code>添加<code>View</code>的监听</li>
+<li>在<code>onFragmentDestroyed()</code>添加<code>Fragment</code>的监听</li>
+</ul>
+<p>最后在<code>registerActivityLifecycleCallbacks()</code>的每个Activity的<code>onActivityCreated()</code>中执行<code>Fragment</code>的生命周期监听。</p>
+<p>此时<code>objectWatcher</code>对象就已经监听到了如下实例：</p>
+<ul>
+<li>Activity</li>
+<li>Fragment</li>
+<li>Fragment中的View</li>
+</ul>
+<h4 id="InternalLeakCanary"><a href="#InternalLeakCanary" class="headerlink" title="InternalLeakCanary"></a>InternalLeakCanary</h4><div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//InternalappWatcher.kt</span>
+  <span class="hljs-keyword">init</span> &#123;
+    <span class="hljs-keyword">val</span> internalLeakCanary = <span class="hljs-keyword">try</span> &#123;
+      <span class="hljs-keyword">val</span> leakCanaryListener = Class.forName(<span class="hljs-string">"leakcanary.internal.InternalLeakCanary"</span>)
+      leakCanaryListener.getDeclaredField(<span class="hljs-string">"INSTANCE"</span>)
+          .<span class="hljs-keyword">get</span>(<span class="hljs-literal">null</span>)
+    &#125; <span class="hljs-keyword">catch</span> (ignored: Throwable) &#123;
+      NoLeakCanary
+    &#125;
+    <span class="hljs-meta">@kotlin</span>.Suppress(<span class="hljs-string">"UNCHECKED_CAST"</span>)
+    onAppWatcherInstalled = internalLeakCanary <span class="hljs-keyword">as</span> (Application) -&gt; <span class="hljs-built_in">Unit</span>
+  &#125;</code></pre></div>
+<p>最后执行的<code>onAppWatcherInstalled()</code>的实现类就是<code>InternalLeakCanary</code></p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//InternalLeakCanary.kt</span>
+  <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">invoke</span><span class="hljs-params">(application: <span class="hljs-type">Application</span>)</span></span> &#123;
+    _application = application
+
+    checkRunningInDebuggableBuild()
+
+    <span class="hljs-comment">//注册监听对象 可能泄漏的消息</span>
+    AppWatcher.objectWatcher.addOnObjectRetainedListener(<span class="hljs-keyword">this</span>)
+
+    <span class="hljs-keyword">val</span> heapDumper = AndroidHeapDumper(application, createLeakDirectoryProvider(application))
+
+    <span class="hljs-keyword">val</span> gcTrigger = GcTrigger.Default
+
+    <span class="hljs-keyword">val</span> configProvider = &#123; LeakCanary.config &#125;
+
+    <span class="hljs-keyword">val</span> handlerThread = HandlerThread(LEAK_CANARY_THREAD_NAME)
+    handlerThread.start()
+    <span class="hljs-keyword">val</span> backgroundHandler = Handler(handlerThread.looper)
+
+    <span class="hljs-comment">//dump内存</span>
+    heapDumpTrigger = HeapDumpTrigger(
+        application, backgroundHandler, AppWatcher.objectWatcher, gcTrigger, heapDumper,
+        configProvider
+    )
+    application.registerVisibilityListener &#123; applicationVisible -&gt;
+      <span class="hljs-keyword">this</span>.applicationVisible = applicationVisible
+      heapDumpTrigger.onApplicationVisibilityChanged(applicationVisible)
+    &#125;
+    registerResumedActivityListener(application)
+    <span class="hljs-comment">//添加桌面的快捷入口</span>
+    addDynamicShortcut(application)
+
+    <span class="hljs-comment">// We post so that the log happens after Application.onCreate()</span>
+    Handler().post &#123;
+      SharkLog.d &#123;
+        <span class="hljs-keyword">when</span> (<span class="hljs-keyword">val</span> iCanHasHeap = HeapDumpControl.iCanHasHeap()) &#123;
+          <span class="hljs-keyword">is</span> Yup -&gt; application.getString(R.string.leak_canary_heap_dump_enabled_text)
+          <span class="hljs-keyword">is</span> Nope -&gt; application.getString(
+              R.string.leak_canary_heap_dump_disabled_text, iCanHasHeap.reason()
+          )
+        &#125;
+      &#125;
+    &#125;
+  &#125;</code></pre></div>
+<p><code>InternalLeakCanary</code>主要负责接收<code>objectWatcher</code>通知的<code>可能存在的内存泄漏</code>消息并驱动<code>heapDumpTrigger</code>进行<code>Dump</code>过程。</p>
+<p>得到最终产出的<code>Hprof文件</code>去进行分析的流程。</p>
+<p><img src="/images/LeakCanary初始化.jpg" srcset="/img/loading.gif" alt="LeakCanary初始化"></p>
+<h3 id="泄漏检测"><a href="#泄漏检测" class="headerlink" title="泄漏检测"></a>泄漏检测</h3><p>根据上节分析可知，所有需要监控的对象都会通过<code>objectWatcher.watch()</code>进行对象监听</p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//监测引用队列间隔</span>
+<span class="hljs-keyword">val</span> watchDurationMillis: <span class="hljs-built_in">Long</span> = TimeUnit.SECONDS.toMillis(<span class="hljs-number">5</span>),
+
+<span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> checkRetainedExecutor = Executor &#123;
+    mainHandler.postDelayed(it, AppWatcher.config.watchDurationMillis)
+  &#125;
+
+<span class="hljs-keyword">val</span> objectWatcher = ObjectWatcher(
+      clock = clock,
+      checkRetainedExecutor = checkRetainedExecutor,
+      isEnabled = &#123; <span class="hljs-literal">true</span> &#125;
+  )</code></pre></div>
+<p>实现类是<code>ObjectWatcher</code></p>
+<h4 id="ObjectWatcher"><a href="#ObjectWatcher" class="headerlink" title="ObjectWatcher"></a>ObjectWatcher</h4><div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">ObjectWatcher</span> <span class="hljs-keyword">constructor</span></span>(
+  <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> clock: Clock,
+  <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> checkRetainedExecutor: Executor,
+  <span class="hljs-comment">/**
+   * Calls to [watch] will be ignored when [isEnabled] returns false
+   */</span>
+  <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> isEnabled: () -&gt; <span class="hljs-built_in">Boolean</span> = &#123; <span class="hljs-literal">true</span> &#125;
+) &#123;
+  <span class="hljs-comment">//需要监听的弱引用对象实例</span>
+  <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> watchedObjects = mutableMapOf&lt;String, KeyedWeakReference&gt;()
+  <span class="hljs-comment">//引用队列</span>
+  <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> queue = ReferenceQueue&lt;Any&gt;()
+  
+  ...
+  
+    <span class="hljs-meta">@Synchronized</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">watch</span><span class="hljs-params">(
+    watchedObject: <span class="hljs-type">Any</span>,
+    description: <span class="hljs-type">String</span>
+  )</span></span> &#123;
+    <span class="hljs-keyword">if</span> (!isEnabled()) &#123;
+      <span class="hljs-keyword">return</span>
+    &#125;
+    removeWeaklyReachableObjects()
+    <span class="hljs-keyword">val</span> key = UUID.randomUUID()
+        .toString()
+    <span class="hljs-keyword">val</span> watchUptimeMillis = clock.uptimeMillis()
+      <span class="hljs-comment">//将需要监听的对象 构建一个弱引用实例</span>
+    <span class="hljs-keyword">val</span> reference =
+      KeyedWeakReference(watchedObject, key, description, watchUptimeMillis, queue)&#123;&#125;
+
+    watchedObjects[key] = reference
+      <span class="hljs-comment">//执行 checkExecutor任务</span>
+    checkRetainedExecutor.execute &#123;
+      moveToRetained(key)
+    &#125;
+  &#125;
+&#125;</code></pre></div>
+<p>调用<code>watch()</code>之后，将需要监听的对象添加弱引用(<code>WeakReference</code>)，再通过关联一个引用队列(<code>ReferenceQueue</code>)判断监听对象是否被回收。</p>
+<blockquote>
+<p>为什么选用弱引用？</p>
+<p>除了强引用不会被回收外，还存在着<code>软引用</code>和<code>虚引用</code>。其中<code>软引用</code>必须在内存将满时才会被回收并加入到<code>ReferenceQueue</code>中，而<code>虚引用</code>在加入到<code>ReferenceQueue</code>时，内置的引用无法被清空。</p>
+</blockquote>
+<p>包装成弱引用对象后，执行<code>checkRetainedExecutor</code>的线程池，本质上执行的是<strong>等待5s后执行对象是否回收的判断。</strong></p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-meta">@Synchronized</span> <span class="hljs-keyword">private</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">moveToRetained</span><span class="hljs-params">(key: <span class="hljs-type">String</span>)</span></span> &#123;
+  removeWeaklyReachableObjects()
+  <span class="hljs-keyword">val</span> retainedRef = watchedObjects[key]
+  <span class="hljs-keyword">if</span> (retainedRef != <span class="hljs-literal">null</span>) &#123;
+    retainedRef.retainedUptimeMillis = clock.uptimeMillis()
+    onObjectRetainedListeners.forEach &#123; it.onObjectRetained() &#125;
+  &#125;
+&#125;
+
+<span class="hljs-keyword">private</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">removeWeaklyReachableObjects</span><span class="hljs-params">()</span></span> &#123;
+  <span class="hljs-comment">// WeakReferences are enqueued as soon as the object to which they point to becomes weakly</span>
+  <span class="hljs-comment">// reachable. This is before finalization or garbage collection has actually happened.</span>
+  <span class="hljs-keyword">var</span> ref: KeyedWeakReference?
+  <span class="hljs-keyword">do</span> &#123;
+    ref = queue.poll() <span class="hljs-keyword">as</span> KeyedWeakReference?
+    <span class="hljs-keyword">if</span> (ref != <span class="hljs-literal">null</span>) &#123;
+      watchedObjects.remove(ref.key)
+    &#125;
+  &#125; <span class="hljs-keyword">while</span> (ref != <span class="hljs-literal">null</span>)
+&#125;</code></pre></div>
+<p><code>watchedObjects</code>存放的就是<code>被观察的对象引用</code>，每次调用<code>watch()</code>都会发送一个延时5s的消息。</p>
+<p>延时消息主要执行<code>moveToRetained()</code>，内部主要执行如下过程：</p>
+<ol>
+<li>遍历<code>queue(引用队列)</code>，将其中存在的对象从<code>watchedObjects</code>中移除，因为已经被回收</li>
+<li>如果对象没有从<code>watchedObjects</code>中移除，就表示该对象发生了<code>内存泄漏</code></li>
+</ol>
+<h3 id="Dump出Hprof文件"><a href="#Dump出Hprof文件" class="headerlink" title="Dump出Hprof文件"></a>Dump出Hprof文件</h3><p>如果存在未被回收的对象，此时就会回调到<code>OnObjectRetainedListener.onObjectRetained()</code></p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">internal</span> <span class="hljs-keyword">object</span> InternalLeakCanary : (Application) -&gt; <span class="hljs-built_in">Unit</span>, OnObjectRetainedListener &#123;
+  ...
+    <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">invoke</span><span class="hljs-params">(application: <span class="hljs-type">Application</span>)</span></span> &#123;
+      <span class="hljs-comment">//添加回调监听注册</span>
+      AppWatcher.objectWatcher.addOnObjectRetainedListener(<span class="hljs-keyword">this</span>)
+      ...
+    &#125;
+  
+  <span class="hljs-comment">//实现的方法</span>
+  <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">onObjectRetained</span><span class="hljs-params">()</span></span> = scheduleRetainedObjectCheck()  
+  
+  
+  <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">scheduleRetainedObjectCheck</span><span class="hljs-params">()</span></span> &#123;
+    <span class="hljs-comment">//初始化完毕</span>
+    <span class="hljs-keyword">if</span> (<span class="hljs-keyword">this</span>::heapDumpTrigger.isInitialized) &#123;
+      heapDumpTrigger.scheduleRetainedObjectCheck()
+    &#125;
+  &#125;  
+&#125;</code></pre></div>
+<p>切换到<code>HeapDumpTrigger</code>继续执行</p>
+<h4 id="HeapDumpTrigger"><a href="#HeapDumpTrigger" class="headerlink" title="HeapDumpTrigger"></a>HeapDumpTrigger</h4><div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//HeapDumpTrigger.kt </span>
+<span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">scheduleRetainedObjectCheck</span><span class="hljs-params">(
+    delayMillis: <span class="hljs-type">Long</span> = <span class="hljs-number">0</span>L
+  )</span></span> &#123;
+    <span class="hljs-keyword">val</span> checkCurrentlyScheduledAt = checkScheduledAt
+    <span class="hljs-keyword">if</span> (checkCurrentlyScheduledAt &gt; <span class="hljs-number">0</span>) &#123;
+      <span class="hljs-keyword">return</span>
+    &#125;
+    checkScheduledAt = SystemClock.uptimeMillis() + delayMillis
+    backgroundHandler.postDelayed(&#123;
+      checkScheduledAt = <span class="hljs-number">0</span>
+      checkRetainedObjects()
+    &#125;, delayMillis)
+  &#125;
+
+  <span class="hljs-keyword">private</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">checkRetainedObjects</span><span class="hljs-params">()</span></span> &#123;
+   ... 
+    <span class="hljs-comment">//获取未释放的对象数</span>
+    <span class="hljs-keyword">var</span> retainedReferenceCount = objectWatcher.retainedObjectCount
+
+    <span class="hljs-keyword">if</span> (retainedReferenceCount &gt; <span class="hljs-number">0</span>) &#123;
+      <span class="hljs-comment">//手动执行一次GC</span>
+      gcTrigger.runGc()
+      <span class="hljs-comment">//在获取一次 </span>
+      retainedReferenceCount = objectWatcher.retainedObjectCount
+    &#125;
+
+    <span class="hljs-comment">//判断是否超过阈值，避免重复调用dump</span>
+    <span class="hljs-keyword">if</span> (checkRetainedCount(retainedReferenceCount, config.retainedVisibleThreshold)) <span class="hljs-keyword">return</span>
+    
+    <span class="hljs-comment">//dump内存生成 Hprof文件</span>
+        dumpHeap(retainedReferenceCount, retry = <span class="hljs-literal">true</span>)
+    
+  &#125;
+
+<span class="hljs-comment">//GcTrigger.kt</span>
+  <span class="hljs-keyword">object</span> Default : GcTrigger &#123;
+    <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">runGc</span><span class="hljs-params">()</span></span> &#123;
+      Runtime.getRuntime()
+          .gc()
+      enqueueReferences()
+      System.runFinalization()
+    &#125;
+
+    <span class="hljs-keyword">private</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">enqueueReferences</span><span class="hljs-params">()</span></span> &#123;
+      <span class="hljs-comment">// Hack. We don't have a programmatic way to wait for the reference queue daemon to move</span>
+      <span class="hljs-comment">// references to the appropriate queues.</span>
+      <span class="hljs-keyword">try</span> &#123;
+        Thread.sleep(<span class="hljs-number">100</span>)
+      &#125; <span class="hljs-keyword">catch</span> (e: InterruptedException) &#123;
+        <span class="hljs-keyword">throw</span> AssertionError()
+      &#125;
+    &#125;
+  &#125;</code></pre></div>
+<p><code>scheduleRetainedObjectCheck()</code>并不是直接去dump，而是先手动调用一次GC，然后再触发GC后等待<code>100ms</code>之后再去检测一次是否有对象未被回收。</p>
+<p>其中判断过程还添加了<code>阈值(5)</code>，避免频繁触发<code>dumpHeap()</code>导致卡顿。</p>
+<h4 id="dumpHeap"><a href="#dumpHeap" class="headerlink" title="dumpHeap()"></a>dumpHeap()</h4><p>主要负责dump 出 Hprof文件</p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//InternalLeakCanary.kt</span>
+    <span class="hljs-keyword">val</span> heapDumper = AndroidHeapDumper(application, createLeakDirectoryProvider(application))
+
+<span class="hljs-comment">//HeapDumpTrigger.kt</span>
+  <span class="hljs-keyword">private</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">dumpHeap</span><span class="hljs-params">(
+    retainedReferenceCount: <span class="hljs-type">Int</span>,
+    retry: <span class="hljs-type">Boolean</span>
+  )</span></span> &#123;
+    saveResourceIdNamesToMemory()
+    <span class="hljs-keyword">val</span> heapDumpUptimeMillis = SystemClock.uptimeMillis()
+    KeyedWeakReference.heapDumpUptimeMillis = heapDumpUptimeMillis
+    <span class="hljs-comment">//开始执行dump过程</span>
+    <span class="hljs-keyword">when</span> (<span class="hljs-keyword">val</span> heapDumpResult = heapDumper.dumpHeap()) &#123;
+      <span class="hljs-keyword">is</span> NoHeapDump -&gt; &#123;
+        ...
+      &#125;
+      <span class="hljs-keyword">is</span> HeapDump -&gt; &#123;
+        lastDisplayedRetainedObjectCount = <span class="hljs-number">0</span>
+        lastHeapDumpUptimeMillis = SystemClock.uptimeMillis()
+        <span class="hljs-comment">//生成hprof文件</span>
+        objectWatcher.clearObjectsWatchedBefore(heapDumpUptimeMillis)
+        <span class="hljs-comment">//hprof文件生成完毕后，发送到HeapAnalyzeSerview</span>
+        HeapAnalyzerService.runAnalysis(
+            context = application,
+            heapDumpFile = heapDumpResult.file,
+            heapDumpDurationMillis = heapDumpResult.durationMillis
+        )
+      &#125;
+    &#125;
+  &#125;</code></pre></div>
+<p>通过<code>AndroidHeapDumper</code>去执行dump过程</p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//AndroidHeapDumper.kt</span>
+  <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">dumpHeap</span><span class="hljs-params">()</span></span>: DumpHeapResult &#123;
+    ...
+     <span class="hljs-keyword">return</span> <span class="hljs-keyword">try</span> &#123;
+      <span class="hljs-keyword">val</span> durationMillis = measureDurationMillis &#123;
+        <span class="hljs-comment">//执行dump过程</span>
+        Debug.dumpHprofData(heapDumpFile.absolutePath)
+      &#125;
+      <span class="hljs-keyword">if</span> (heapDumpFile.length() == <span class="hljs-number">0L</span>) &#123;
+        SharkLog.d &#123; <span class="hljs-string">"Dumped heap file is 0 byte length"</span> &#125;
+        NoHeapDump
+      &#125; <span class="hljs-keyword">else</span> &#123;
+        HeapDump(file = heapDumpFile, durationMillis = durationMillis)
+      &#125;
+    &#125; <span class="hljs-keyword">catch</span> (e: Exception) &#123;
+      SharkLog.d(e) &#123; <span class="hljs-string">"Could not dump heap"</span> &#125;
+      <span class="hljs-comment">// Abort heap dump</span>
+      NoHeapDump
+    &#125; <span class="hljs-keyword">finally</span> &#123;
+      cancelToast(toast)
+      notificationManager.cancel(R.id.leak_canary_notification_dumping_heap)
+    &#125;
+    
+  &#125;</code></pre></div>
+<p>主要是执行<code>Debug.dumpHprofData()</code>得到<code>Hprof文件</code>去进行内存分析。</p>
+<h4 id="HeapAnalyzerService-runAnalysis"><a href="#HeapAnalyzerService-runAnalysis" class="headerlink" title="HeapAnalyzerService.runAnalysis()"></a>HeapAnalyzerService.runAnalysis()</h4><p>主要负责去分析Hprof文件</p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//HeapAnalyzerService.kt</span>
+    <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">runAnalysis</span><span class="hljs-params">(
+      context: <span class="hljs-type">Context</span>,
+      heapDumpFile: <span class="hljs-type">File</span>,
+      heapDumpDurationMillis: <span class="hljs-type">Long</span>? = <span class="hljs-literal">null</span>
+    )</span></span> &#123;
+      <span class="hljs-keyword">val</span> intent = Intent(context, HeapAnalyzerService::<span class="hljs-class"><span class="hljs-keyword">class</span>.<span class="hljs-title">java</span>)</span>
+      <span class="hljs-comment">//携带文件地址 到 HeapAnalyzerService去进行分析</span>
+      intent.putExtra(HEAPDUMP_FILE_EXTRA, heapDumpFile)
+      heapDumpDurationMillis?.let &#123;
+        intent.putExtra(HEAPDUMP_DURATION_MILLIS, heapDumpDurationMillis)
+      &#125;
+      startForegroundService(context, intent)
+    &#125;</code></pre></div>
+<p>接下来切换到<code>HeapAnalyzerService</code>开始进行Hprof文件解析流程。</p>
+<h3 id="Hprof解析"><a href="#Hprof解析" class="headerlink" title="Hprof解析"></a>Hprof解析</h3><p>在<code>HeapAnalyzerService</code>收到传过来的Hprof文件地址后，就要开始解析</p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//HeapAnalyzerService  </span>
+<span class="hljs-keyword">private</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">analyzeHeap</span><span class="hljs-params">(
+    heapDumpFile: <span class="hljs-type">File</span>,
+    config: <span class="hljs-type">Config</span>
+  )</span></span>: HeapAnalysis &#123;
+    <span class="hljs-keyword">val</span> heapAnalyzer = HeapAnalyzer(<span class="hljs-keyword">this</span>)
+
+    <span class="hljs-keyword">val</span> proguardMappingReader = <span class="hljs-keyword">try</span> &#123;
+      ProguardMappingReader(assets.<span class="hljs-keyword">open</span>(PROGUARD_MAPPING_FILE_NAME))
+    &#125; <span class="hljs-keyword">catch</span> (e: IOException) &#123;
+      <span class="hljs-literal">null</span>
+    &#125;
+    <span class="hljs-keyword">return</span> heapAnalyzer.analyze(
+        heapDumpFile = heapDumpFile,
+        leakingObjectFinder = config.leakingObjectFinder,
+        referenceMatchers = config.referenceMatchers,
+        computeRetainedHeapSize = config.computeRetainedHeapSize,
+        objectInspectors = config.objectInspectors,
+        metadataExtractor = config.metadataExtractor,
+        proguardMapping = proguardMappingReader?.readProguardMapping()
+    )
+  &#125;</code></pre></div>
+<p>解析前需要了解一下<a href="/2020/12/14/Hprof文件解析/" title="Hprof结构">Hprof结构</a>，在此基础上进行Hprof解析的相关流程分析。</p>
+<blockquote>
+<p>简单说明一下Hprof的相关结构</p>
+<p>主要分为两部分：</p>
+<ul>
+<li>Header：主要包含一些元信息，例如<code>文件协议的版本</code>、<code>开始</code>和<code>结束的时间戳</code>，以及<code>标识符大小</code></li>
+<li>Record：主要结构为<code>TAG</code>、<code>TIME</code>、<code>LENGTH(BODY数据长度)</code>和<code>BODY</code><ul>
+<li>TAG：表示<code>Record</code>类型，重要的有<code>HEAP_DUMP_SEGMENT</code>和<code>STRING</code>等</li>
+</ul>
+</li>
+</ul>
+</blockquote>
+<h4 id="Shark-HeapAnalyzer"><a href="#Shark-HeapAnalyzer" class="headerlink" title="Shark.HeapAnalyzer"></a>Shark.HeapAnalyzer</h4><blockquote>
+<p><code>Shark</code>是一款分析<code>Hprof文件</code>的工具，性能高且占用内存少，非常适合手机端的Hprof文件解析功能。</p>
+<p>目的是<strong>提供快速解析Hprof文件和分析的能力。</strong></p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//HeapAnalyzer.kt </span>
+<span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">analyze</span><span class="hljs-params">(
+    heapDumpFile: <span class="hljs-type">File</span>,
+    leakingObjectFinder: <span class="hljs-type">LeakingObjectFinder</span>,
+    referenceMatchers: <span class="hljs-type">List</span>&lt;<span class="hljs-type">ReferenceMatcher</span>&gt; = emptyList()</span></span>,
+    computeRetainedHeapSize: <span class="hljs-built_in">Boolean</span> = <span class="hljs-literal">false</span>,
+    objectInspectors: List&lt;ObjectInspector&gt; = emptyList(),
+    metadataExtractor: MetadataExtractor = MetadataExtractor.NO_OP,
+    proguardMapping: ProguardMapping? = <span class="hljs-literal">null</span>
+  ): HeapAnalysis &#123;
+    ...
+    <span class="hljs-keyword">return</span> <span class="hljs-keyword">try</span> &#123;
+      listener.onAnalysisProgress(PARSING_HEAP_DUMP)
+      <span class="hljs-keyword">val</span> sourceProvider = ConstantMemoryMetricsDualSourceProvider(FileSourceProvider(heapDumpFile))
+      sourceProvider.openHeapGraph(proguardMapping).use &#123; graph -&gt;
+       <span class="hljs-comment">//                                                  </span>
+        <span class="hljs-keyword">val</span> helpers =
+          FindLeakInput(graph, referenceMatchers, computeRetainedHeapSize, objectInspectors)
+        <span class="hljs-keyword">val</span> result = helpers.analyzeGraph(
+            metadataExtractor, leakingObjectFinder, heapDumpFile, analysisStartNanoTime
+        )
+        result.copy(metadata = result.metadata + (<span class="hljs-string">"Stats"</span> to stats))
+      &#125;
+    &#125; <span class="hljs-keyword">catch</span> (exception: Throwable) &#123;
+
+    &#125;  
+    
+  &#125;</code></pre></div>
+<h5 id="openHeapGraph"><a href="#openHeapGraph" class="headerlink" title="openHeapGraph"></a>openHeapGraph</h5><p>主要用来按照格式解析Hprof文件</p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//HprofHeapGraph.kt</span>
+    <span class="hljs-function"><span class="hljs-keyword">fun</span> DualSourceProvider.<span class="hljs-title">openHeapGraph</span><span class="hljs-params">(
+      proguardMapping: <span class="hljs-type">ProguardMapping</span>? = <span class="hljs-literal">null</span>,
+      indexedGcRootTypes: <span class="hljs-type">Set</span>&lt;<span class="hljs-type">HprofRecordTag</span>&gt; = HprofIndex.defaultIndexedGcRootTags()</span></span>
+    ): CloseableHeapGraph &#123;
+      <span class="hljs-comment">//主要负责解析 Hprof head部分的数据</span>
+      <span class="hljs-keyword">val</span> header = openStreamingSource().use &#123; HprofHeader.parseHeaderOf(it) &#125;
+      <span class="hljs-keyword">val</span> index = HprofIndex.indexRecordsOf(<span class="hljs-keyword">this</span>, header, proguardMapping, indexedGcRootTypes)
+      <span class="hljs-keyword">return</span> index.openHeapGraph()
+    &#125;
+
+<span class="hljs-comment">//HprofIndex.kt</span>
+    <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">indexRecordsOf</span><span class="hljs-params">(
+      hprofSourceProvider: <span class="hljs-type">DualSourceProvider</span>,
+      hprofHeader: <span class="hljs-type">HprofHeader</span>,
+      proguardMapping: <span class="hljs-type">ProguardMapping</span>? = <span class="hljs-literal">null</span>,
+      indexedGcRootTags: <span class="hljs-type">Set</span>&lt;<span class="hljs-type">HprofRecordTag</span>&gt; = defaultIndexedGcRootTags()</span></span>
+    ): HprofIndex &#123;
+      <span class="hljs-keyword">val</span> reader = StreamingHprofReader.readerFor(hprofSourceProvider, hprofHeader)
+      <span class="hljs-keyword">val</span> index = HprofInMemoryIndex.indexHprof(
+          reader = reader,
+          hprofHeader = hprofHeader,
+          proguardMapping = proguardMapping,
+          indexedGcRootTags = indexedGcRootTags
+      )
+      <span class="hljs-keyword">return</span> HprofIndex(hprofSourceProvider, hprofHeader, index)
+    &#125;</code></pre></div>
+<p>将Hprof中的<code>Record</code>解析成<code>HprofMemoryIndex</code>，将Record按照Tag进行分析和计数，并通过特定规则进行排序。</p>
+<p>最终通过<code>openHeapGraph()</code>组合得到<code>HprofHeapGraph</code>对象，等价于<code>Hprof文件</code>转换成了<code>HprofHeapGraph</code>对象。</p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//HprofHeapGraph.kt</span>
+<span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">HprofHeapGraph</span> <span class="hljs-keyword">internal</span> <span class="hljs-keyword">constructor</span></span>(
+  <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> header: HprofHeader,
+  <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> reader: RandomAccessHprofReader,
+  <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> index: HprofInMemoryIndex
+) : CloseableHeapGraph &#123;
+  
+  ...
+  <span class="hljs-comment">//缓存可以成为 GC Roots的对象</span>
+  <span class="hljs-keyword">override</span> <span class="hljs-keyword">val</span> gcRoots: List&lt;GcRoot&gt;
+    <span class="hljs-keyword">get</span>() = index.gcRoots()
+  
+  <span class="hljs-comment">//记录的是所有对象</span>
+  <span class="hljs-keyword">override</span> <span class="hljs-keyword">val</span> objects: Sequence&lt;HeapObject&gt;
+  
+  <span class="hljs-comment">//对应TAG为 CLASS_DUMP</span>
+  <span class="hljs-keyword">override</span> <span class="hljs-keyword">val</span> classes: Sequence&lt;HeapClass&gt;
+  
+  <span class="hljs-comment">//对应TAG为 INSTANCE_DUMP</span>
+  <span class="hljs-keyword">override</span> <span class="hljs-keyword">val</span> instances: Sequence&lt;HeapInstance&gt;
+  
+  
+&#125;</code></pre></div>
+<p>内部主要包括了<code>gcRoots</code>、<code>objects</code>、<code>classes</code>和<code>instances</code>几种集合，可以快速定位dump堆中的对象。</p>
+<h5 id="FindLeakInput"><a href="#FindLeakInput" class="headerlink" title="FindLeakInput"></a>FindLeakInput</h5><p>主要分析泄漏对象</p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">///HeapAnalyzer.kt</span>
+  <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">analyze</span><span class="hljs-params">(
+    heapDumpFile: <span class="hljs-type">File</span>,
+    graph: <span class="hljs-type">HeapGraph</span>,
+    leakingObjectFinder: <span class="hljs-type">LeakingObjectFinder</span>,
+    referenceMatchers: <span class="hljs-type">List</span>&lt;<span class="hljs-type">ReferenceMatcher</span>&gt; = emptyList()</span></span>,
+    computeRetainedHeapSize: <span class="hljs-built_in">Boolean</span> = <span class="hljs-literal">false</span>,
+    objectInspectors: List&lt;ObjectInspector&gt; = emptyList(),
+    metadataExtractor: MetadataExtractor = MetadataExtractor.NO_OP
+  ): HeapAnalysis &#123;
+
+    <span class="hljs-keyword">return</span> <span class="hljs-keyword">try</span> &#123;
+      <span class="hljs-keyword">val</span> helpers =
+        FindLeakInput(graph, referenceMatchers, computeRetainedHeapSize, objectInspectors)
+      helpers.analyzeGraph(
+          metadataExtractor, leakingObjectFinder, heapDumpFile, analysisStartNanoTime
+      )
+    &#125; <span class="hljs-keyword">catch</span> (exception: Throwable) &#123;
+      )
+    &#125;
+  &#125;</code></pre></div>
+<p>接下来执行到<code>analyzeGraph</code></p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">private</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> FindLeakInput.<span class="hljs-title">analyzeGraph</span><span class="hljs-params">(
+  metadataExtractor: <span class="hljs-type">MetadataExtractor</span>,
+  leakingObjectFinder: <span class="hljs-type">LeakingObjectFinder</span>,
+  heapDumpFile: <span class="hljs-type">File</span>,
+  analysisStartNanoTime: <span class="hljs-type">Long</span>
+)</span></span>: HeapAnalysisSuccess &#123;
+  listener.onAnalysisProgress(EXTRACTING_METADATA)
+  <span class="hljs-keyword">val</span> metadata = metadataExtractor.extractMetadata(graph)
+
+  listener.onAnalysisProgress(FINDING_RETAINED_OBJECTS)
+  <span class="hljs-keyword">val</span> leakingObjectIds = leakingObjectFinder.findLeakingObjectIds(graph)
+
+  <span class="hljs-keyword">val</span> (applicationLeaks, libraryLeaks) = findLeaks(leakingObjectIds)
+  
+  <span class="hljs-keyword">return</span> HeapAnalysisSuccess(
+      heapDumpFile = heapDumpFile,
+      createdAtTimeMillis = System.currentTimeMillis(),
+      analysisDurationMillis = since(analysisStartNanoTime),
+      metadata = metadata,
+      applicationLeaks = applicationLeaks,
+      libraryLeaks = libraryLeaks
+  )    
+
+&#125;
+
+<span class="hljs-keyword">private</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> FindLeakInput.<span class="hljs-title">findLeaks</span><span class="hljs-params">(leakingObjectIds: <span class="hljs-type">Set</span>&lt;<span class="hljs-type">Long</span>&gt;)</span></span>: Pair&lt;List&lt;ApplicationLeak&gt;, List&lt;LibraryLeak&gt;&gt; &#123;
+  <span class="hljs-keyword">val</span> pathFinder = PathFinder(graph, listener, referenceMatchers)
+  <span class="hljs-keyword">val</span> pathFindingResults =
+    pathFinder.findPathsFromGcRoots(leakingObjectIds, computeRetainedHeapSize)
+  <span class="hljs-comment">//找寻最短路径</span>
+  <span class="hljs-keyword">val</span> shortestPaths =
+    deduplicateShortestPaths(pathFindingResults.pathsToLeakingObjects)
+  <span class="hljs-keyword">val</span> inspectedObjectsByPath = inspectObjects(shortestPaths)
+  <span class="hljs-keyword">return</span> buildLeakTraces(shortestPaths, inspectedObjectsByPath, retainedSizes)
+&#125;</code></pre></div>
+<p>主要执行流程分为3步：</p>
+<h6 id="findLeakingObjectIds"><a href="#findLeakingObjectIds" class="headerlink" title="findLeakingObjectIds"></a>findLeakingObjectIds</h6><blockquote>
+<p>寻找泄漏的对象</p>
+</blockquote>
+<p>设置的<code>leakingObjectFinder</code>实际就是<code>KeyedWeakReferenceFinder</code></p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//KeyedWeakReferenceFinder.kt</span>
+  <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">findLeakingObjectIds</span><span class="hljs-params">(graph: <span class="hljs-type">HeapGraph</span>)</span></span>: Set&lt;<span class="hljs-built_in">Long</span>&gt; =
+    findKeyedWeakReferences(graph).map &#123; it.referent.value &#125;
+        .toSet()
+
+  <span class="hljs-keyword">internal</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">findKeyedWeakReferences</span><span class="hljs-params">(graph: <span class="hljs-type">HeapGraph</span>)</span></span>: List&lt;KeyedWeakReferenceMirror&gt; &#123;
+    <span class="hljs-keyword">return</span> graph.context.getOrPut(KEYED_WEAK_REFERENCE.name) &#123;
+      <span class="hljs-keyword">val</span> keyedWeakReferenceClass = graph.findClassByName(<span class="hljs-string">"leakcanary.KeyedWeakReference"</span>)
+
+      <span class="hljs-keyword">val</span> keyedWeakReferenceClassId = keyedWeakReferenceClass?.objectId ?: <span class="hljs-number">0</span>
+      <span class="hljs-keyword">val</span> legacyKeyedWeakReferenceClassId =
+        graph.findClassByName(<span class="hljs-string">"com.squareup.leakcanary.KeyedWeakReference"</span>)?.objectId ?: <span class="hljs-number">0</span>
+
+      <span class="hljs-keyword">val</span> heapDumpUptimeMillis = heapDumpUptimeMillis(graph)
+
+      <span class="hljs-keyword">val</span> addedToContext: List&lt;KeyedWeakReferenceMirror&gt; = graph.instances
+          .filter &#123; instance -&gt;
+            instance.instanceClassId == keyedWeakReferenceClassId || instance.instanceClassId == legacyKeyedWeakReferenceClassId
+          &#125;
+          .map &#123;
+            KeyedWeakReferenceMirror.fromInstance(
+                it, heapDumpUptimeMillis
+            )
+          &#125;
+          .filter &#123; it.hasReferent &#125;
+          .toList()
+      graph.context[KEYED_WEAK_REFERENCE.name] = addedToContext
+      addedToContext
+    &#125;
+  &#125;</code></pre></div>
+<p>主要就是实现了 找寻<code>instance</code>实例中的被<code>KeyedWeakReference</code>所包装的实例，因为在最前面<code>watch</code>的过程中，需要监控的对象都是被<code>KeyedWeakReference</code>所包装的，既然能在<code>isntance</code>中找到就意味着这些对象是发生了内存泄漏的。</p>
+<h6 id="findPathsFromGcRoots"><a href="#findPathsFromGcRoots" class="headerlink" title="findPathsFromGcRoots"></a>findPathsFromGcRoots</h6><blockquote>
+<p>寻找泄漏对象到GC Roots对象的引用路径</p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//PathFinder.kt </span>
+<span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">findPathsFromGcRoots</span><span class="hljs-params">(
+    leakingObjectIds: <span class="hljs-type">Set</span>&lt;<span class="hljs-type">Long</span>&gt;,
+    computeRetainedHeapSize: <span class="hljs-type">Boolean</span>
+  )</span></span>: PathFindingResults &#123;
+...
+    <span class="hljs-keyword">val</span> state = State(
+        leakingObjectIds = leakingObjectIds.toLongScatterSet(),
+        sizeOfObjectInstances = sizeOfObjectInstances,
+        computeRetainedHeapSize = computeRetainedHeapSize,
+        javaLangObjectId = javaLangObjectId,
+        estimatedVisitedObjects = estimatedVisitedObjects
+    )
+
+    <span class="hljs-keyword">return</span> state.findPathsFromGcRoots()
+  &#125;
+
+<span class="hljs-comment">//找寻泄漏对象 到 GC Roots对象的路径</span>
+  <span class="hljs-keyword">private</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> State.<span class="hljs-title">findPathsFromGcRoots</span><span class="hljs-params">()</span></span>: PathFindingResults &#123;
+    enqueueGcRoots()
+
+    <span class="hljs-keyword">val</span> shortestPathsToLeakingObjects = mutableListOf&lt;ReferencePathNode&gt;()
+    <span class="hljs-symbol">visitingQueue@</span> <span class="hljs-keyword">while</span> (queuesNotEmpty) &#123;
+      <span class="hljs-keyword">val</span> node = poll()
+      <span class="hljs-keyword">if</span> (node.objectId <span class="hljs-keyword">in</span> leakingObjectIds) &#123;
+        shortestPathsToLeakingObjects.add(node)
+        <span class="hljs-comment">// Found all refs, stop searching (unless computing retained size)</span>
+        <span class="hljs-keyword">if</span> (shortestPathsToLeakingObjects.size == leakingObjectIds.size()) &#123;
+          <span class="hljs-keyword">if</span> (computeRetainedHeapSize) &#123;
+            listener.onAnalysisProgress(FINDING_DOMINATORS)
+          &#125; <span class="hljs-keyword">else</span> &#123;
+            <span class="hljs-keyword">break</span><span class="hljs-symbol">@visitingQueue</span>
+          &#125;
+        &#125;
+      &#125;
+
+      <span class="hljs-keyword">when</span> (<span class="hljs-keyword">val</span> heapObject = graph.findObjectById(node.objectId)) &#123;
+        <span class="hljs-keyword">is</span> HeapClass -&gt; visitClassRecord(heapObject, node)
+        <span class="hljs-keyword">is</span> HeapInstance -&gt; visitInstance(heapObject, node)
+        <span class="hljs-keyword">is</span> HeapObjectArray -&gt; visitObjectArray(heapObject, node)
+      &#125;
+    &#125;
+    <span class="hljs-keyword">return</span> PathFindingResults(
+        shortestPathsToLeakingObjects,
+        <span class="hljs-keyword">if</span> (visitTracker <span class="hljs-keyword">is</span> Dominated) visitTracker.dominatorTree <span class="hljs-keyword">else</span> <span class="hljs-literal">null</span>
+    )
+  &#125;</code></pre></div>
+<p>总体思路</p>
+<blockquote>
+<p>采用<strong>广度优先遍历</strong>从<code>GC Roots</code>开始遍历，直到<code>泄漏对象</code>为止。</p>
+<p><code>广度优先遍历</code>：从根节点出发，沿着树宽度依此遍历树的每个节点。<strong>借助队列结构实现</strong></p>
+<p>以<code>GC Roots对象</code>为树的根节点，然后从根节点开始遍历，对每个节点依据类型的不同采取对应的模式进行访问并得到对象，然后引用继续抽象成为<code>Node</code>加入队列以待后续遍历，直到遍历到<code>Node</code>为<code>leakObjectId</code>，期间经过的所有Node对象连在一起就是一次完整的引用路径。</p>
+<p>最终得到的就是<code>泄漏对象 到 GC Roots对象</code>的引用路径。</p>
+</blockquote>
+<h6 id="deduplicateShortestPaths"><a href="#deduplicateShortestPaths" class="headerlink" title="deduplicateShortestPaths"></a>deduplicateShortestPaths</h6><blockquote>
+<p>根据多条引用路径，进行裁剪得到最短的引用路径</p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">private</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">deduplicateShortestPaths</span><span class="hljs-params">(
+  inputPathResults: <span class="hljs-type">List</span>&lt;<span class="hljs-type">ReferencePathNode</span>&gt;
+)</span></span>: List&lt;ShortestPath&gt; &#123;
+  <span class="hljs-comment">//根节点为0</span>
+  <span class="hljs-keyword">val</span> rootTrieNode = ParentNode(<span class="hljs-number">0</span>)
+
+  inputPathResults.forEach &#123; pathNode -&gt;
+    <span class="hljs-comment">// Go through the linked list of nodes and build the reverse list of instances from</span>
+    <span class="hljs-comment">// root to leaking.</span>
+    <span class="hljs-keyword">val</span> path = mutableListOf&lt;<span class="hljs-built_in">Long</span>&gt;()
+    <span class="hljs-keyword">var</span> leakNode: ReferencePathNode = pathNode
+    <span class="hljs-keyword">while</span> (leakNode <span class="hljs-keyword">is</span> ChildNode) &#123;
+      path.add(<span class="hljs-number">0</span>, leakNode.objectId)
+      leakNode = leakNode.parent
+    &#125;
+    path.add(<span class="hljs-number">0</span>, leakNode.objectId)
+    updateTrie(pathNode, path, <span class="hljs-number">0</span>, rootTrieNode)
+  &#125;
+
+&#125;
+
+<span class="hljs-keyword">private</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">updateTrie</span><span class="hljs-params">(
+  pathNode: <span class="hljs-type">ReferencePathNode</span>,
+  path: <span class="hljs-type">List</span>&lt;<span class="hljs-type">Long</span>&gt;,
+  pathIndex: <span class="hljs-type">Int</span>,
+  parentNode: <span class="hljs-type">ParentNode</span>
+)</span></span> &#123;
+  <span class="hljs-keyword">val</span> objectId = path[pathIndex]
+  <span class="hljs-keyword">if</span> (pathIndex == path.lastIndex) &#123;
+    parentNode.children[objectId] = LeafNode(objectId, pathNode)
+  &#125; <span class="hljs-keyword">else</span> &#123;
+    <span class="hljs-keyword">val</span> childNode = parentNode.children[objectId] ?: &#123;
+      <span class="hljs-keyword">val</span> newChildNode = ParentNode(objectId)
+      parentNode.children[objectId] = newChildNode
+      newChildNode
+    &#125;()
+    <span class="hljs-keyword">if</span> (childNode <span class="hljs-keyword">is</span> ParentNode) &#123;
+      updateTrie(pathNode, path, pathIndex + <span class="hljs-number">1</span>, childNode)
+    &#125;
+  &#125;
+&#125;</code></pre></div>
+<p>总体思路：</p>
+<blockquote>
+<p>一个对象被很多对象引用是很正常的行为，所以<code>泄漏对象</code>和<code>GC Roots对象</code>之间可能存在多条引用路径，此时就需要进行裁剪得到最短的引用路径方便分析。</p>
+<p>将路径反转成为<code>GC Roots对象 到 泄漏对象</code>的的引用路径，然后通过<code>updateTrie()</code>转化成为无效Node为根节点的树，最后经过<code>深度优先遍历</code>得到从<code>根节点</code>到<code>叶子节点</code>的所有路径，即为最终的<code>最短引用路径</code>。</p>
+<p><code>深度优先遍历</code>：从树的根节点开始，先遍历左子树再遍历右子树。<strong>借助栈结构实现</strong>。</p>
+</blockquote>
+<h6 id="buildLeakTraces"><a href="#buildLeakTraces" class="headerlink" title="buildLeakTraces"></a>buildLeakTraces</h6><blockquote>
+<p>建立泄漏路径</p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//HeapAnalzer.kt</span>
+  <span class="hljs-keyword">private</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">buildLeakTraces</span><span class="hljs-params">(
+    shortestPaths: <span class="hljs-type">List</span>&lt;<span class="hljs-type">ShortestPath</span>&gt;,
+    inspectedObjectsByPath: <span class="hljs-type">List</span>&lt;<span class="hljs-type">List</span>&lt;<span class="hljs-type">InspectedObject</span>&gt;&gt;,
+    retainedSizes: <span class="hljs-type">Map</span>&lt;<span class="hljs-type">Long</span>, Pair&lt;<span class="hljs-built_in">Int</span>, <span class="hljs-built_in">Int</span>&gt;&gt;?
+  )</span></span>: Pair&lt;List&lt;ApplicationLeak&gt;, List&lt;LibraryLeak&gt;&gt; &#123;
+    ...
+    shortestPaths.forEachIndexed &#123; pathIndex, shortestPath -&gt;
+      <span class="hljs-keyword">val</span> inspectedObjects = inspectedObjectsByPath[pathIndex]
+      <span class="hljs-comment">//构建内存泄漏对象</span>
+      <span class="hljs-keyword">val</span> leakTraceObjects = buildLeakTraceObjects(inspectedObjects, retainedSizes)
+      <span class="hljs-comment">//构建引用路径</span>
+      <span class="hljs-keyword">val</span> referencePath = buildReferencePath(shortestPath.childPath, leakTraceObjects)
+
+      <span class="hljs-keyword">val</span> leakTrace = LeakTrace(
+          gcRootType = GcRootType.fromGcRoot(shortestPath.root.gcRoot),
+          referencePath = referencePath,
+          leakingObject = leakTraceObjects.last()
+      )
+
+      <span class="hljs-keyword">val</span> firstLibraryLeakNode = <span class="hljs-keyword">if</span> (shortestPath.root <span class="hljs-keyword">is</span> LibraryLeakNode) &#123;
+        shortestPath.root
+      &#125; <span class="hljs-keyword">else</span> &#123;
+        shortestPath.childPath.firstOrNull &#123; it <span class="hljs-keyword">is</span> LibraryLeakNode &#125; <span class="hljs-keyword">as</span> LibraryLeakNode?
+      &#125;
+
+      <span class="hljs-keyword">if</span> (firstLibraryLeakNode != <span class="hljs-literal">null</span>) &#123;
+        <span class="hljs-keyword">val</span> matcher = firstLibraryLeakNode.matcher
+        <span class="hljs-keyword">val</span> signature: String = matcher.pattern.toString()
+            .createSHA1Hash()
+        libraryLeaksMap.getOrPut(signature) &#123; matcher to mutableListOf() &#125;
+            .second += leakTrace
+      &#125; <span class="hljs-keyword">else</span> &#123;
+        <span class="hljs-comment">//添加到 应用内存泄漏列表中</span>
+        applicationLeaksMap.getOrPut(leakTrace.signature) &#123; mutableListOf() &#125; += leakTrace
+      &#125;
+    &#125;    
+    
+  &#125;</code></pre></div>
+<p>最终构建得到<code>ApplicationLeak</code>和<code>LibraryLeak</code>，组装得到<code>HeapAnalysis</code></p>
+<ul>
+<li><p><code>ApplicationLeak</code>：在开发工程中应用自身导致的内存泄漏</p>
+</li>
+<li><p><code>LibraryLeak</code>：<code>is a Leak caused by a known bug in third party code that you do not have control over.</code>已知的系统内存泄漏问题。</p>
+<p><a href="https://github.com/square/leakcanary/pull/1785" target="_blank" rel="noopener">Explain Library Leaks in fundamentals</a></p>
+</li>
+</ul>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//HeapAnalyzerService.kt</span>
+
+<span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">onHandleIntentInForeground</span><span class="hljs-params">(intent: <span class="hljs-type">Intent</span>?)</span></span> &#123;
+    <span class="hljs-keyword">if</span> (intent == <span class="hljs-literal">null</span> || !intent.hasExtra(HEAPDUMP_FILE_EXTRA)) &#123;
+      SharkLog.d &#123; <span class="hljs-string">"HeapAnalyzerService received a null or empty intent, ignoring."</span> &#125;
+      <span class="hljs-keyword">return</span>
+    &#125;
+
+    <span class="hljs-comment">// Since we're running in the main process we should be careful not to impact it.</span>
+    Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
+    <span class="hljs-keyword">val</span> heapDumpFile = intent.getSerializableExtra(HEAPDUMP_FILE_EXTRA) <span class="hljs-keyword">as</span> File
+    <span class="hljs-keyword">val</span> heapDumpDurationMillis = intent.getLongExtra(HEAPDUMP_DURATION_MILLIS, -<span class="hljs-number">1</span>)
+<span class="hljs-comment">//获取 LeakCanary的配置</span>
+    <span class="hljs-keyword">val</span> config = LeakCanary.config
+    <span class="hljs-keyword">val</span> heapAnalysis = <span class="hljs-keyword">if</span> (heapDumpFile.exists()) &#123;
+      <span class="hljs-comment">//解析 hprof文件</span>
+      analyzeHeap(heapDumpFile, config)
+    &#125; <span class="hljs-keyword">else</span> &#123;
+      missingFileFailure(heapDumpFile)
+    &#125;
+    <span class="hljs-keyword">val</span> fullHeapAnalysis = <span class="hljs-keyword">when</span> (heapAnalysis) &#123;
+      <span class="hljs-keyword">is</span> HeapAnalysisSuccess -&gt; heapAnalysis.copy(dumpDurationMillis = heapDumpDurationMillis)
+      <span class="hljs-keyword">is</span> HeapAnalysisFailure -&gt; heapAnalysis.copy(dumpDurationMillis = heapDumpDurationMillis)
+    &#125;
+    onAnalysisProgress(REPORTING_HEAP_ANALYSIS)
+  <span class="hljs-comment">//解析完成后 回调 onHeapAnalyzed</span>
+    config.onHeapAnalyzedListener.onHeapAnalyzed(fullHeapAnalysis)
+  &#125;</code></pre></div>
+<p>解析完成后，回调到<code>onHeapAnalyzedListener</code>中的<code>onHeapAnalyzed()</code>.</p>
+<p>其中<code>config</code>配置的<code>onHeapAnalyzedListener</code>为<code>DefaultOnHeapAnalyzedListener</code></p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//DefaultOnHeapAnalyzedListener.kt</span>
+  <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">onHeapAnalyzed</span><span class="hljs-params">(heapAnalysis: <span class="hljs-type">HeapAnalysis</span>)</span></span> &#123;
+    SharkLog.d &#123; <span class="hljs-string">"\u200B\n<span class="hljs-subst">$&#123;LeakTraceWrapper.wrap(heapAnalysis.toString(), <span class="hljs-number">120</span>)&#125;</span>"</span> &#125;
+
+    <span class="hljs-keyword">val</span> id = LeaksDbHelper(application).writableDatabase.use &#123; db -&gt;
+      HeapAnalysisTable.insert(db, heapAnalysis)
+    &#125;
+
+    <span class="hljs-keyword">val</span> (contentTitle, screenToShow) = <span class="hljs-keyword">when</span> (heapAnalysis) &#123;
+      <span class="hljs-keyword">is</span> HeapAnalysisFailure -&gt; application.getString(
+          R.string.leak_canary_analysis_failed
+      ) to HeapAnalysisFailureScreen(id)
+      <span class="hljs-keyword">is</span> HeapAnalysisSuccess -&gt; &#123;
+        <span class="hljs-keyword">val</span> retainedObjectCount = heapAnalysis.allLeaks.sumBy &#123; it.leakTraces.size &#125;
+        <span class="hljs-keyword">val</span> leakTypeCount = heapAnalysis.applicationLeaks.size + heapAnalysis.libraryLeaks.size
+        application.getString(
+            R.string.leak_canary_analysis_success_notification, retainedObjectCount, leakTypeCount
+        ) to HeapDumpScreen(id)
+      &#125;
+    &#125;
+
+    <span class="hljs-comment">//显示通知 提示已经解析完毕</span>
+      showNotification(screenToShow, contentTitle)
+
+  &#125;</code></pre></div>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>1.LeakCanary整套流程从<code>注册监听Activity/Fragment对象生命周期</code>开始，当对应组件销毁时<code>添加对应组件的观察</code>。</p>
+<ul>
+<li>在<code>onActivityDestroyed()</code>添加对<code>Activity</code>的观察</li>
+<li>在<code>onFragmentViewDestroyed()</code>添加对<code>Fragment中的View</code>的观察</li>
+<li>在<code>onFragmentDestroyed()</code>添加对<code>Fragment</code>的观察</li>
+<li>可以通过<code>AppWatcher.objectWatcher.watch(XX)</code>添加自定义对象的观察。</li>
+</ul>
+<p>2.在<code>泄漏检测</code>时，通过<code>WeakRefrence</code>包装<code>被观察的对象</code>，然后等待<strong>5s</strong>后，检查与<code>WeakReference</code>绑定的<code>ReferenceQueue</code>中是否包含<code>被观察对象</code>，若包含表示<code>被观察对象</code>已被回收；否则，判断对象可能泄漏。<em>5s并不一定是执行了GC，只是一个估值，一般都会触发GC。</em></p>
+<p>3.在<code>准备DumpHeap</code>前，还会再去<code>手动执行一次GC</code>，等待<strong>100ms</strong>后如果还存在<code>泄漏对象</code>，就需要准备dump内存数据。此时有一个阈值，如果泄漏对象超过<strong>5个</strong>，才会去dump，避免频繁执行dump流程。</p>
+<p>4.通过执行<code>Debug.dumpHprofData()</code>去生成<code>Hprof文件</code>，等待<code>Hprof文件</code>生成后，发送到<code>HeapAnalyzerService</code>去处理该文件。</p>
+<p>5.<code>HeapAnalyzerService</code>收到<code>Hprof文件</code>后，通过<strong>Shark</strong>对文件进行解析，按照<code>Hprof文件格式</code>进行解析，解析得到<code>HprofHeapGraph</code>对象，内部包含<code>gcRoots</code>、<code>instances</code>、<code>classes</code>、<code>objects</code>等集合，可以快速定位泄漏对象。</p>
+<p>6.得到<code>HprofHeapGraph</code>对象后，开始分析内存泄漏的最短路径。<em>内存泄漏的对象仍然与GC Roots对象保持可达的引用路径，导致GC无法释放。——一般用的都是<code>可达性分析</code></em>。</p>
+<ul>
+<li><code>寻找内存泄漏对象</code>：在<code>instances</code>集合中寻找<code>instanceClassId</code>为<code>KeyedWeakReferences</code>的对象，这些就是前面所观察的对象。</li>
+<li><code>寻找所有内存泄漏对象与GC Roots对象的引用路径</code>：采用<code>广度优先遍历</code>，从<code>Gc Roots对象</code>开始遍历到<code>内存泄漏对象</code>的所有引用路径</li>
+<li><code>裁剪所有路径得到 最短引用路径</code>：采用<code>深度优先遍历</code>，得到<code>内存泄漏对象</code>到<code>GC Roots对象</code>的最短引用路径</li>
+<li><code>通知内存泄漏检测完毕</code>：将<code>最短引用路径</code>包装成<code>LeakTrace</code>，按照<strong>是否为应用自身导致的内存泄漏</strong>分为两个对象：<code>ApplicationLeak</code>和<code>LibraryLeak</code>。</li>
+</ul>
+<h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="https://square.github.io/leakcanary/getting_started/" target="_blank" rel="noopener">LeakCanary Wiki</a></p>
+<p><a href="https://linjiang.tech/2019/12/25/leakcanary/" target="_blank" rel="noopener">LeakCanary解析</a></p>
+
+            </div>
+            <hr>
+            <div>
+              <div class="post-metas mb-3">
+                
+                
+                  <div class="post-meta">
+                    <i class="iconfont icon-tags"></i>
+                    
+                      <a class="hover-with-bg" href="/tags/Android/">Android</a>
+                    
+                  </div>
+                
+              </div>
+              
+                <p class="note note-warning">本博客所有文章除特别声明外，均采用 <a href="https://zh.wikipedia.org/wiki/Wikipedia:CC_BY-SA_3.0%E5%8D%8F%E8%AE%AE%E6%96%87%E6%9C%AC" rel="nofollow noopener">CC BY-SA 3.0协议</a> 。转载请注明出处！</p>
+              
+              
+                <div class="post-prevnext row">
+                  <article class="post-prev col-6">
+                    
+                    
+                      <a href="/2020/10/27/Android-硬件加速/">
+                        <i class="iconfont icon-arrowleft"></i>
+                        <span class="hidden-mobile">Android硬件加速</span>
+                        <span class="visible-mobile">上一篇</span>
+                      </a>
+                    
+                  </article>
+                  <article class="post-next col-6">
+                    
+                    
+                      <a href="/2020/10/12/Android-动画-属性动画/">
+                        <span class="hidden-mobile">Android动画-属性动画</span>
+                        <span class="visible-mobile">下一篇</span>
+                        <i class="iconfont icon-arrowright"></i>
+                      </a>
+                    
+                  </article>
+                </div>
+              
+            </div>
+
+            
+          </article>
+        </div>
+      </div>
+    </div>
+    
+      <div class="d-none d-lg-block col-lg-2 toc-container" id="toc-ctn">
+        <div id="toc">
+  <p class="toc-header"><i class="iconfont icon-list"></i>&nbsp;目录</p>
+  <div class="toc-body" id="toc-body"></div>
+</div>
+
+      </div>
+    
+  </div>
+</div>
+
+<!-- Custom -->
+
+
+    
+
+    
+      <a id="scroll-top-button" href="#" role="button">
+        <i class="iconfont icon-arrowup" aria-hidden="true"></i>
+      </a>
+    
+
+    
+      <div class="modal fade" id="modalSearch" tabindex="-1" role="dialog" aria-labelledby="ModalLabel"
+     aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header text-center">
+        <h4 class="modal-title w-100 font-weight-bold">搜索</h4>
+        <button type="button" id="local-search-close" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body mx-3">
+        <div class="md-form mb-5">
+          <input type="text" id="local-search-input" class="form-control validate">
+          <label data-error="x" data-success="v"
+                 for="local-search-input">关键词</label>
+        </div>
+        <div class="list-group" id="local-search-result"></div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+
+    
+  </main>
+
+  <footer class="text-center mt-5 py-3">
+  <div class="footer-content">
+     <a href="https://hexo.io" target="_blank" rel="nofollow noopener"><span>Hexo</span></a> <i class="iconfont icon-love"></i> <a href="https://github.com/fluid-dev/hexo-theme-fluid" target="_blank" rel="nofollow noopener"><span>Fluid</span></a> 
+  </div>
+  
+
+  
+
+  
+</footer>
+
+<!-- SCRIPTS -->
+
+  <script  src="https://cdn.staticfile.org/nprogress/0.2.0/nprogress.min.js" ></script>
+  <link  rel="stylesheet" href="https://cdn.staticfile.org/nprogress/0.2.0/nprogress.min.css" />
+
+  <script>
+    NProgress.configure({"showSpinner":false,"trickleSpeed":200})
+    NProgress.start()
+    document.addEventListener('DOMContentLoaded', function() {
+      window.NProgress && window.NProgress.inc();
+    })
+    window.addEventListener('load', function() {
+      NProgress.done();
+    })
+  </script>
+
+
+<script  src="https://cdn.staticfile.org/jquery/3.5.1/jquery.min.js" ></script>
+<script  src="https://cdn.staticfile.org/twitter-bootstrap/4.5.3/js/bootstrap.min.js" ></script>
+<script  src="/js/debouncer.js" ></script>
+<script  src="/js/events.js" ></script>
+<script  src="/js/plugins.js" ></script>
+
+<!-- Plugins -->
+
+
+  
+    <script  src="/js/lazyload.js" ></script>
+  
+
+
+
+  
+
+
+
+  <script  src="https://cdn.staticfile.org/tocbot/4.12.0/tocbot.min.js" ></script>
+
+
+
+  <script  src="https://cdn.staticfile.org/fancybox/3.5.7/jquery.fancybox.min.js" ></script>
+
+
+
+  <script  src="https://cdn.staticfile.org/anchor-js/4.3.0/anchor.min.js" ></script>
+
+
+
+  <script defer src="https://cdn.staticfile.org/clipboard.js/2.0.6/clipboard.min.js" ></script>
+
+
+
+
+
+
+
+  <script  src="/js/local-search.js" ></script>
+  <script>
+    (function () {
+      var path = "/local-search.xml";
+      var inputArea = document.querySelector("#local-search-input");
+      inputArea.onclick = function () {
+        searchFunc(path, 'local-search-input', 'local-search-result');
+        this.onclick = null
+      }
+    })()
+  </script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- 主题的启动项 保持在最底部 -->
+<script  src="/js/boot.js" ></script>
+
+
+
+</body>
+</html>

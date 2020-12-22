@@ -1,0 +1,1141 @@
+
+
+<!DOCTYPE html>
+<html lang="zh-CN" data-default-color-scheme=&#34;auto&#34;>
+
+
+
+<head><meta name="generator" content="Hexo 3.9.0">
+  <meta charset="UTF-8">
+  <link rel="apple-touch-icon" sizes="76x76" href="/img/apple-touch-icon.png">
+  <link rel="icon" type="image/png" href="/img/favicon.png">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  
+  <meta name="theme-color" content="#9b868d">
+  <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
+  <meta name="author" content="Leo-Wxy">
+  <meta name="keywords" content>
+  <title>Android-SurfaceFlinger解析 - Wxy的个人博客</title>
+
+  <link rel="stylesheet" href="https://cdn.staticfile.org/twitter-bootstrap/4.5.3/css/bootstrap.min.css">
+
+
+  <link rel="stylesheet" href="https://cdn.staticfile.org/github-markdown-css/4.0.0/github-markdown.min.css">
+  <link rel="stylesheet" href="/lib/hint/hint.min.css">
+
+  
+    
+    
+      
+      <link rel="stylesheet" href="https://cdn.staticfile.org/highlight.js/10.1.2/styles/dracula.min.css">
+    
+  
+
+  
+    <link rel="stylesheet" href="https://cdn.staticfile.org/fancybox/3.5.7/jquery.fancybox.min.css">
+  
+
+
+
+<!-- 主题依赖的图标库，不要自行修改 -->
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1749284_ba1fz6golrf.css">
+
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1736178_kmeydafke9r.css">
+
+<link rel="stylesheet" href="/css/main.css">
+
+<!-- 自定义样式保持在最底部 -->
+
+
+  <script id="fluid-configs">
+    var Fluid = window.Fluid || {};
+    var CONFIG = {"hostname":"leo-wxy.github.io","root":"/","version":"1.8.5","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false},"toc":{"enable":true,"headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"right","visible":"hover","icon":""},"copy_btn":true,"image_zoom":{"enable":true},"lazyload":{"enable":true,"onlypost":false},"web_analytics":{"enable":false,"baidu":null,"google":null,"gtag":null,"tencent":{"sid":null,"cid":null},"woyaola":null,"cnzz":null,"leancloud":{"app_id":null,"app_key":null,"server_url":null},"tajs":null}};
+  </script>
+  <script src="/js/utils.js"></script>
+  <script src="/js/color-schema.js"></script>
+</head>
+
+
+<body>
+  <header style="height: 40vh;">
+    <nav id="navbar" class="navbar fixed-top  navbar-expand-lg navbar-dark scrolling-navbar">
+  <div class="container">
+    <a class="navbar-brand"
+       href="/">&nbsp;<strong>Wxy's Blog</strong>&nbsp;</a>
+
+    <button id="navbar-toggler-btn" class="navbar-toggler" type="button" data-toggle="collapse"
+            data-target="#navbarSupportedContent"
+            aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+      <div class="animated-icon"><span></span><span></span><span></span></div>
+    </button>
+
+    <!-- Collapsible content -->
+    <div class="collapse navbar-collapse" id="navbarSupportedContent">
+      <ul class="navbar-nav ml-auto text-center">
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/">
+                <i class="iconfont icon-home-fill"></i>
+                首页
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/archives/">
+                <i class="iconfont icon-archive-fill"></i>
+                归档
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/tags/">
+                <i class="iconfont icon-tags-fill"></i>
+                标签
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/about/">
+                <i class="iconfont icon-user-fill"></i>
+                关于
+              </a>
+            </li>
+          
+        
+        
+          <li class="nav-item" id="search-btn">
+            <a class="nav-link" data-toggle="modal" data-target="#modalSearch">&nbsp;<i
+                class="iconfont icon-search"></i>&nbsp;</a>
+          </li>
+        
+        
+          <li class="nav-item" id="color-toggle-btn">
+            <a class="nav-link" href="javascript:">&nbsp;<i
+                class="iconfont icon-dark" id="color-toggle-icon"></i>&nbsp;</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    <div class="banner intro-2" id="background" parallax=true
+         style="background: url('/img/default.png') no-repeat center center;
+           background-size: cover;">
+      <div class="full-bg-img">
+        <div class="mask flex-center" style="background-color: rgba(0, 0, 0, 0.3)">
+          <div class="page-header text-center fade-in-up">
+            <span class="h2" id="subtitle" title="Android-SurfaceFlinger解析">
+              
+                Android-SurfaceFlinger解析
+              
+            </span>
+
+            
+              <div class="mt-3">
+  
+  
+    <span class="post-meta">
+      <i class="iconfont icon-date-fill" aria-hidden="true"></i>
+      <time datetime="2020-12-21 15:06" pubdate>
+        2020年12月21日 下午
+      </time>
+    </span>
+  
+</div>
+
+<div class="mt-1">
+  
+    
+    <span class="post-meta mr-2">
+      <i class="iconfont icon-chart"></i>
+      3.4k 字
+    </span>
+  
+
+  
+    
+    <span class="post-meta mr-2">
+      <i class="iconfont icon-clock-fill"></i>
+      
+      
+      58
+       分钟
+    </span>
+  
+
+  
+  
+</div>
+
+            
+          </div>
+
+          
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    
+      
+
+<div class="container-fluid">
+  <div class="row">
+    <div class="d-none d-lg-block col-lg-2"></div>
+    <div class="col-lg-8 nopadding-md">
+      <div class="container nopadding-md" id="board-ctn">
+        <div class="py-5" id="board">
+          <article class="post-content mx-auto">
+            <!-- SEO header -->
+            <h1 style="display: none">Android-SurfaceFlinger解析</h1>
+            
+            <div class="markdown-body">
+              <p><code>SurfaceFlinger</code>是Android系统中最重要的<strong>图像消费者</strong>，Activity绘制的界面图像，都会传递到<code>SurfaceFlinger</code>中。</p>
+<p>主要作用：<strong>接收图像缓冲区数据，然后交给HWComposer或OpenGL合成，合成完毕后再返回。</strong></p>
+<p><img src="/images/SurfaceFlinger执行流程.jpg" srcset="/img/loading.gif" alt="SurfaceFlinger执行流程"></p>
+<h2 id="SurfaceFlinger初始化"><a href="#SurfaceFlinger初始化" class="headerlink" title="SurfaceFlinger初始化"></a>SurfaceFlinger初始化</h2><p><code>init</code>通过执行<code>surfaceflinger.rc</code>文件，然后就执行到了<code>main_surfaceflinger.cpp</code>开始初始化流程</p>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//frameworks/native/services/surfaceflinger/main_surfaceflinger.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">int</span> <span class="hljs-title">main</span><span class="hljs-params">(<span class="hljs-keyword">int</span>, <span class="hljs-keyword">char</span>**)</span> </span>&#123;
+    signal(SIGPIPE, SIG_IGN);
+
+    hardware::configureRpcThreadpool(<span class="hljs-number">1</span> <span class="hljs-comment">/* maxThreads */</span>,
+            <span class="hljs-literal">false</span> <span class="hljs-comment">/* callerWillJoin */</span>);
+
+    startGraphicsAllocatorService();
+
+   <span class="hljs-comment">//设置支持最多 4个 binder线程执行</span>
+    ProcessState::self()-&gt;setThreadPoolMaxThreadCount(<span class="hljs-number">4</span>);
+
+    <span class="hljs-comment">// start the thread pool</span>
+    <span class="hljs-function">sp&lt;ProcessState&gt; <span class="hljs-title">ps</span><span class="hljs-params">(ProcessState::self())</span></span>;
+    ps-&gt;startThreadPool();
+
+    <span class="hljs-comment">//构建 Surfaceflinger实例</span>
+    sp&lt;SurfaceFlinger&gt; flinger = <span class="hljs-keyword">new</span> SurfaceFlinger();
+
+    <span class="hljs-comment">// 执行初始化流程</span>
+    flinger-&gt;init();
+
+    <span class="hljs-comment">// 通过ServiceManager注册 SurfaceFlinger服务</span>
+    <span class="hljs-function">sp&lt;IServiceManager&gt; <span class="hljs-title">sm</span><span class="hljs-params">(defaultServiceManager())</span></span>;
+    sm-&gt;addService(String16(SurfaceFlinger::getServiceName()), flinger, <span class="hljs-literal">false</span>,
+                   IServiceManager::DUMP_FLAG_PRIORITY_CRITICAL | IServiceManager::DUMP_FLAG_PROTO);
+
+    startDisplayService(); <span class="hljs-comment">// dependency on SF getting registered above</span>
+
+    <span class="hljs-comment">// 开始运行</span>
+    flinger-&gt;run();
+
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+&#125;</code></pre></div>
+<h3 id="new-SurfaceFlinger"><a href="#new-SurfaceFlinger" class="headerlink" title="new SurfaceFlinger"></a>new SurfaceFlinger</h3><div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//frameworks/native/services/surfaceflinger/SurfaceFlinger.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">SurfaceFlinger::onFirstRef</span><span class="hljs-params">()</span>
+</span>&#123;
+    mEventQueue-&gt;init(<span class="hljs-keyword">this</span>);
+&#125;</code></pre></div>
+<p><code>mEventQueue</code>执行初始化</p>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//frameworks/native/services/surfaceflinger/MessageQueue.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">MessageQueue::init</span><span class="hljs-params">(<span class="hljs-keyword">const</span> sp&lt;SurfaceFlinger&gt;&amp; flinger)</span> </span>&#123;
+    mFlinger = flinger;
+    mLooper = <span class="hljs-keyword">new</span> Looper(<span class="hljs-literal">true</span>);
+    mHandler = <span class="hljs-keyword">new</span> Handler(*<span class="hljs-keyword">this</span>);
+&#125;</code></pre></div>
+<p>初始化<code>Handler</code></p>
+<h3 id="SurfaceFlinger-init"><a href="#SurfaceFlinger-init" class="headerlink" title="SurfaceFlinger#init"></a>SurfaceFlinger#init</h3><div class="hljs"><pre><code class="hljs cpp"><span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">SurfaceFlinger::init</span><span class="hljs-params">()</span> </span>&#123;
+    ALOGI(  <span class="hljs-string">"SurfaceFlinger's main thread ready to run. "</span>
+            <span class="hljs-string">"Initializing graphics H/W..."</span>);
+
+    Mutex::Autolock _l(mStateLock);
+
+    <span class="hljs-comment">// initialize EGL for the default display</span>
+    mEGLDisplay = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+    eglInitialize(mEGLDisplay, <span class="hljs-literal">NULL</span>, <span class="hljs-literal">NULL</span>);
+
+    <span class="hljs-comment">// start the EventThread</span>
+    sp&lt;VSyncSource&gt; vsyncSrc = <span class="hljs-keyword">new</span> DispSyncSource(&amp;mPrimaryDispSync,
+            vsyncPhaseOffsetNs, <span class="hljs-literal">true</span>, <span class="hljs-string">"app"</span>);
+    mEventThread = <span class="hljs-keyword">new</span> EventThread(vsyncSrc);
+    sp&lt;VSyncSource&gt; sfVsyncSrc = <span class="hljs-keyword">new</span> DispSyncSource(&amp;mPrimaryDispSync,
+            sfVsyncPhaseOffsetNs, <span class="hljs-literal">true</span>, <span class="hljs-string">"sf"</span>);
+    mSFEventThread = <span class="hljs-keyword">new</span> EventThread(sfVsyncSrc);
+    mEventQueue.setEventThread(mSFEventThread);
+
+    <span class="hljs-comment">// Initialize the H/W composer object.  There may or may not be an</span>
+    <span class="hljs-comment">// actual hardware composer underneath.</span>
+    mHwc = <span class="hljs-keyword">new</span> HWComposer(<span class="hljs-keyword">this</span>,
+            *<span class="hljs-keyword">static_cast</span>&lt;HWComposer::EventHandler *&gt;(<span class="hljs-keyword">this</span>));
+
+    <span class="hljs-comment">// get a RenderEngine for the given display / config (can't fail)</span>
+    mRenderEngine = RenderEngine::create(mEGLDisplay, mHwc-&gt;getVisualID());
+
+    <span class="hljs-comment">// retrieve the EGL context that was selected/created</span>
+    mEGLContext = mRenderEngine-&gt;getEGLContext();
+
+    <span class="hljs-comment">// initialize our non-virtual displays</span>
+    <span class="hljs-keyword">for</span> (<span class="hljs-keyword">size_t</span> i=<span class="hljs-number">0</span> ; i&lt;DisplayDevice::NUM_BUILTIN_DISPLAY_TYPES ; i++) &#123;
+        <span class="hljs-function">DisplayDevice::DisplayType <span class="hljs-title">type</span><span class="hljs-params">((DisplayDevice::DisplayType)i)</span></span>;
+        <span class="hljs-comment">// set-up the displays that are already connected</span>
+        <span class="hljs-keyword">if</span> (mHwc-&gt;isConnected(i) || type==DisplayDevice::DISPLAY_PRIMARY) &#123;
+            <span class="hljs-comment">// All non-virtual displays are currently considered secure.</span>
+            <span class="hljs-keyword">bool</span> isSecure = <span class="hljs-literal">true</span>;
+            createBuiltinDisplayLocked(type);
+            wp&lt;IBinder&gt; token = mBuiltinDisplays[i];
+
+            sp&lt;IGraphicBufferProducer&gt; producer;
+            sp&lt;IGraphicBufferConsumer&gt; consumer;
+            BufferQueue::createBufferQueue(&amp;producer, &amp;consumer,
+                    <span class="hljs-keyword">new</span> GraphicBufferAlloc());
+
+            sp&lt;FramebufferSurface&gt; fbs = <span class="hljs-keyword">new</span> FramebufferSurface(*mHwc, i,
+                    consumer);
+            <span class="hljs-keyword">int32_t</span> hwcId = allocateHwcDisplayId(type);
+            sp&lt;DisplayDevice&gt; hw = <span class="hljs-keyword">new</span> DisplayDevice(<span class="hljs-keyword">this</span>,
+                    type, hwcId, mHwc-&gt;getFormat(hwcId), isSecure, token,
+                    fbs, producer,
+                    mRenderEngine-&gt;getEGLConfig());
+            <span class="hljs-keyword">if</span> (i &gt; DisplayDevice::DISPLAY_PRIMARY) &#123;
+                <span class="hljs-comment">// <span class="hljs-doctag">FIXME:</span> currently we don't get blank/unblank requests</span>
+                <span class="hljs-comment">// for displays other than the main display, so we always</span>
+                <span class="hljs-comment">// assume a connected display is unblanked.</span>
+                ALOGD(<span class="hljs-string">"marking display %zu as acquired/unblanked"</span>, i);
+                hw-&gt;setPowerMode(HWC_POWER_MODE_NORMAL);
+            &#125;
+            mDisplays.add(token, hw);
+        &#125;
+    &#125;
+
+    <span class="hljs-comment">// make the GLContext current so that we can create textures when creating Layers</span>
+    <span class="hljs-comment">// (which may happens before we render something)</span>
+    getDefaultDisplayDevice()-&gt;makeCurrent(mEGLDisplay, mEGLContext);
+
+    mEventControlThread = <span class="hljs-keyword">new</span> EventControlThread(<span class="hljs-keyword">this</span>);
+    mEventControlThread-&gt;run(<span class="hljs-string">"EventControl"</span>, PRIORITY_URGENT_DISPLAY);
+
+    <span class="hljs-comment">// set a fake vsync period if there is no HWComposer</span>
+    <span class="hljs-keyword">if</span> (mHwc-&gt;initCheck() != NO_ERROR) &#123;
+        mPrimaryDispSync.setPeriod(<span class="hljs-number">16666667</span>);
+    &#125;
+
+    <span class="hljs-comment">// initialize our drawing state</span>
+    mDrawingState = mCurrentState;
+
+    <span class="hljs-comment">// set initial conditions (e.g. unblank default device)</span>
+    initializeDisplays();
+
+    <span class="hljs-comment">// start boot animation</span>
+    startBootAnim();
+&#125;</code></pre></div>
+<h4 id="创建HWComposer"><a href="#创建HWComposer" class="headerlink" title="创建HWComposer"></a>创建HWComposer</h4><blockquote>
+<p><code>HWComposer</code>代表着硬件显示设备。</p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//frameworks/native/services/surfaceflinger/DisplayHardware/HWComposer.cpp</span>
+HWComposer::HWComposer(
+        <span class="hljs-keyword">const</span> sp&lt;SurfaceFlinger&gt;&amp; flinger,
+        EventHandler&amp; handler)
+    : mFlinger(flinger),
+      mFbDev(<span class="hljs-number">0</span>), mHwc(<span class="hljs-number">0</span>), mNumDisplays(<span class="hljs-number">1</span>),
+      mCBContext(<span class="hljs-keyword">new</span> cb_context),
+      mEventHandler(handler),
+      mDebugForceFakeVSync(<span class="hljs-literal">false</span>)
+&#123;
+    ...     
+    <span class="hljs-keyword">bool</span> needVSyncThread = <span class="hljs-literal">true</span>;
+
+    <span class="hljs-comment">// Note: some devices may insist that the FB HAL be opened before HWC.</span>
+    <span class="hljs-keyword">int</span> fberr = loadFbHalModule();
+    loadHwcModule();<span class="hljs-comment">//加载HWComposer模块</span>
+
+    <span class="hljs-comment">// these display IDs are always reserved</span>
+    <span class="hljs-keyword">for</span> (<span class="hljs-keyword">size_t</span> i=<span class="hljs-number">0</span> ; i&lt;NUM_BUILTIN_DISPLAYS ; i++) &#123;
+        mAllocatedDisplayIDs.markBit(i);
+    &#125;
+
+    <span class="hljs-keyword">if</span> (mHwc) &#123;
+        ALOGI(<span class="hljs-string">"Using %s version %u.%u"</span>, HWC_HARDWARE_COMPOSER,
+              (hwcApiVersion(mHwc) &gt;&gt; <span class="hljs-number">24</span>) &amp; <span class="hljs-number">0xff</span>,
+              (hwcApiVersion(mHwc) &gt;&gt; <span class="hljs-number">16</span>) &amp; <span class="hljs-number">0xff</span>);
+        <span class="hljs-keyword">if</span> (mHwc-&gt;registerProcs) &#123;
+            mCBContext-&gt;hwc = <span class="hljs-keyword">this</span>;
+            mCBContext-&gt;procs.invalidate = &amp;hook_invalidate;
+          <span class="hljs-comment">//vsync信号回调方法</span>
+            mCBContext-&gt;procs.vsync = &amp;hook_vsync;
+            <span class="hljs-keyword">if</span> (hwcHasApiVersion(mHwc, HWC_DEVICE_API_VERSION_1_1))
+                mCBContext-&gt;procs.hotplug = &amp;hook_hotplug;
+            <span class="hljs-keyword">else</span>
+                mCBContext-&gt;procs.hotplug = <span class="hljs-literal">NULL</span>;
+            <span class="hljs-built_in">memset</span>(mCBContext-&gt;procs.zero, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(mCBContext-&gt;procs.zero));
+          <span class="hljs-comment">//注册回调函数</span>
+            mHwc-&gt;registerProcs(mHwc, &amp;mCBContext-&gt;procs);
+        &#125;
+
+        <span class="hljs-comment">// don't need a vsync thread if we have a hardware composer</span>
+        needVSyncThread = <span class="hljs-literal">false</span>;
+        <span class="hljs-comment">// always turn vsync off when we start</span>
+        eventControl(HWC_DISPLAY_PRIMARY, HWC_EVENT_VSYNC, <span class="hljs-number">0</span>);
+
+        <span class="hljs-comment">// the number of displays we actually have depends on the</span>
+        <span class="hljs-comment">// hw composer version</span>
+        <span class="hljs-keyword">if</span> (hwcHasApiVersion(mHwc, HWC_DEVICE_API_VERSION_1_3)) &#123;
+            <span class="hljs-comment">// 1.3 adds support for virtual displays</span>
+            mNumDisplays = MAX_HWC_DISPLAYS;
+        &#125; <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (hwcHasApiVersion(mHwc, HWC_DEVICE_API_VERSION_1_1)) &#123;
+            <span class="hljs-comment">// 1.1 adds support for multiple displays</span>
+            mNumDisplays = NUM_BUILTIN_DISPLAYS;
+        &#125; <span class="hljs-keyword">else</span> &#123;
+            mNumDisplays = <span class="hljs-number">1</span>;
+        &#125;
+    &#125;
+
+
+    <span class="hljs-keyword">if</span> (needVSyncThread) &#123;
+        <span class="hljs-comment">// 不支持硬件Vsync的设备，则使用`VsyncThread`模拟发出Vsync信号</span>
+        mVSyncThread = <span class="hljs-keyword">new</span> VSyncThread(*<span class="hljs-keyword">this</span>);
+    &#125;
+&#125;</code></pre></div>
+<p><code>Vsync信号</code>本身由显示驱动发出，如果不支持硬件<code>Vsync</code>，则使用<code>VsyncThread</code>模拟发出信号。</p>
+<h4 id="初始化显示设备"><a href="#初始化显示设备" class="headerlink" title="初始化显示设备"></a>初始化显示设备</h4><h4 id="运行EventThread线程"><a href="#运行EventThread线程" class="headerlink" title="运行EventThread线程"></a>运行EventThread线程</h4><blockquote>
+<p><code>EventThread</code>主要用来接收<code>Vsync信号</code>。</p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">SurfaceFlinger::init</span><span class="hljs-params">()</span> </span>&#123;
+  ...
+        <span class="hljs-comment">// start the EventThread</span>
+    sp&lt;VSyncSource&gt; vsyncSrc = <span class="hljs-keyword">new</span> DispSyncSource(&amp;mPrimaryDispSync,
+            vsyncPhaseOffsetNs, <span class="hljs-literal">true</span>, <span class="hljs-string">"app"</span>);
+  <span class="hljs-comment">//创建App的Vsync信号接收线程</span>
+    mEventThread = <span class="hljs-keyword">new</span> EventThread(vsyncSrc);
+    sp&lt;VSyncSource&gt; sfVsyncSrc = <span class="hljs-keyword">new</span> DispSyncSource(&amp;mPrimaryDispSync,
+            sfVsyncPhaseOffsetNs, <span class="hljs-literal">true</span>, <span class="hljs-string">"sf"</span>);
+   <span class="hljs-comment">//创建Sf的Vsync信号接收线程</span>
+    mSFEventThread = <span class="hljs-keyword">new</span> EventThread(sfVsyncSrc);
+    mEventQueue.setEventThread(mSFEventThread);
+...
+&#125;</code></pre></div>
+<h5 id="DispSyncSource"><a href="#DispSyncSource" class="headerlink" title="DispSyncSource"></a>DispSyncSource</h5><div class="hljs"><pre><code class="hljs cpp">DispSyncSource(DispSync* dispSync, <span class="hljs-keyword">nsecs_t</span> phaseOffset, <span class="hljs-keyword">bool</span> traceVsync,
+    <span class="hljs-keyword">const</span> <span class="hljs-keyword">char</span>* label) :
+        mValue(<span class="hljs-number">0</span>),
+        mTraceVsync(traceVsync),
+        mVsyncOnLabel(String8::format(<span class="hljs-string">"VsyncOn-%s"</span>, label)),
+        mVsyncEventLabel(String8::format(<span class="hljs-string">"VSYNC-%s"</span>, label)),
+        mDispSync(dispSync),
+        mCallbackMutex(),
+        mCallback(),
+        mVsyncMutex(),
+        mPhaseOffset(phaseOffset),
+        mEnabled(<span class="hljs-literal">false</span>) &#123;&#125;</code></pre></div>
+<h5 id="EventThread"><a href="#EventThread" class="headerlink" title="EventThread"></a>EventThread</h5><div class="hljs"><pre><code class="hljs cpp">EventThread::EventThread(<span class="hljs-keyword">const</span> sp&lt;VSyncSource&gt;&amp; src)
+    : mVSyncSource(src),
+      mUseSoftwareVSync(<span class="hljs-literal">false</span>),
+      mVsyncEnabled(<span class="hljs-literal">false</span>),
+      mDebugVsyncEnabled(<span class="hljs-literal">false</span>),
+      mVsyncHintSent(<span class="hljs-literal">false</span>) &#123;
+
+    <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int32_t</span> i=<span class="hljs-number">0</span> ; i&lt;DisplayDevice::NUM_BUILTIN_DISPLAY_TYPES ; i++) &#123;
+        mVSyncEvent[i].header.type = DisplayEventReceiver::DISPLAY_EVENT_VSYNC;
+        mVSyncEvent[i].header.id = <span class="hljs-number">0</span>;
+        mVSyncEvent[i].header.timestamp = <span class="hljs-number">0</span>;
+        mVSyncEvent[i].vsync.count =  <span class="hljs-number">0</span>;
+    &#125;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sigevent</span> <span class="hljs-title">se</span>;</span>
+    se.sigev_notify = SIGEV_THREAD;
+    se.sigev_value.sival_ptr = <span class="hljs-keyword">this</span>;
+    se.sigev_notify_function = vsyncOffCallback;
+    se.sigev_notify_attributes = <span class="hljs-literal">NULL</span>;
+    timer_create(CLOCK_MONOTONIC, &amp;se, &amp;mTimerId);
+&#125;</code></pre></div>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">EventThread::onFirstRef</span><span class="hljs-params">()</span> </span>&#123;
+  <span class="hljs-comment">//运行EventThread线程</span>
+    run(<span class="hljs-string">"EventThread"</span>, PRIORITY_URGENT_DISPLAY + PRIORITY_MORE_FAVORABLE);
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">bool</span> <span class="hljs-title">EventThread::threadLoop</span><span class="hljs-params">()</span> </span>&#123;
+    DisplayEventReceiver::Event event;
+    Vector&lt; sp&lt;EventThread::Connection&gt; &gt; signalConnections;
+  <span class="hljs-comment">//等待事件发生</span>
+    signalConnections = waitForEvent(&amp;event);
+
+    <span class="hljs-keyword">const</span> <span class="hljs-keyword">size_t</span> count = signalConnections.size();
+    <span class="hljs-keyword">for</span> (<span class="hljs-keyword">size_t</span> i=<span class="hljs-number">0</span> ; i&lt;count ; i++) &#123;
+        <span class="hljs-function"><span class="hljs-keyword">const</span> sp&lt;Connection&gt;&amp; <span class="hljs-title">conn</span><span class="hljs-params">(signalConnections[i])</span></span>;
+        <span class="hljs-comment">// 分发事件给所有的监听者</span>
+        <span class="hljs-keyword">status_t</span> err = conn-&gt;postEvent(event);
+        <span class="hljs-keyword">if</span> (err == -EAGAIN || err == -EWOULDBLOCK) &#123;
+          
+        &#125; <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (err &lt; <span class="hljs-number">0</span>) &#123;
+            removeDisplayEventConnection(signalConnections[i]);
+        &#125;
+    &#125;
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;
+&#125;
+
+<span class="hljs-function">Vector&lt; sp&lt;EventThread::Connection&gt; &gt; <span class="hljs-title">EventThread::waitForEvent</span><span class="hljs-params">(
+        DisplayEventReceiver::Event* event)</span>
+</span>&#123;
+    Mutex::Autolock _l(mLock);
+    Vector&lt; sp&lt;EventThread::Connection&gt; &gt; signalConnections;
+
+    <span class="hljs-keyword">do</span> &#123;
+        <span class="hljs-comment">// Here we figure out if we need to enable or disable vsyncs</span>
+        <span class="hljs-keyword">if</span> (timestamp &amp;&amp; !waitForVSync) &#123;
+            disableVSyncLocked();
+        &#125; <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (!timestamp &amp;&amp; waitForVSync) &#123;
+            enableVSyncLocked();
+        &#125;
+
+        <span class="hljs-comment">// note: !timestamp implies signalConnections.isEmpty(), because we</span>
+        <span class="hljs-comment">// don't populate signalConnections if there's no vsync pending</span>
+        <span class="hljs-keyword">if</span> (!timestamp &amp;&amp; !eventPending) &#123;
+            <span class="hljs-comment">// wait for something to happen</span>
+            <span class="hljs-keyword">if</span> (waitForVSync) &#123;
+                <span class="hljs-keyword">bool</span> softwareSync = mUseSoftwareVSync;
+                <span class="hljs-keyword">nsecs_t</span> timeout = softwareSync ? ms2ns(<span class="hljs-number">16</span>) : ms2ns(<span class="hljs-number">1000</span>);
+                <span class="hljs-keyword">if</span> (mCondition.waitRelative(mLock, timeout) == TIMED_OUT) &#123;
+                    <span class="hljs-keyword">if</span> (!softwareSync) &#123;
+                        ALOGW(<span class="hljs-string">"Timed out waiting for hw vsync; faking it"</span>);
+                    &#125;
+                    mVSyncEvent[<span class="hljs-number">0</span>].header.type = DisplayEventReceiver::DISPLAY_EVENT_VSYNC;
+                    mVSyncEvent[<span class="hljs-number">0</span>].header.id = DisplayDevice::DISPLAY_PRIMARY;
+                    mVSyncEvent[<span class="hljs-number">0</span>].header.timestamp = systemTime(SYSTEM_TIME_MONOTONIC);
+                    mVSyncEvent[<span class="hljs-number">0</span>].vsync.count++;
+                &#125;
+            &#125; <span class="hljs-keyword">else</span> &#123;
+                mCondition.wait(mLock);
+            &#125;
+        &#125;
+    &#125; <span class="hljs-keyword">while</span> (signalConnections.isEmpty());
+
+    <span class="hljs-keyword">return</span> signalConnections;
+&#125;</code></pre></div>
+<p>创建<code>EventThread</code>线程完毕后，执行<code>threadLoop</code>，通过<code>waitForEvent()</code>等待事件通知。</p>
+<p>等待通过<code>mCondition.wait()</code>实现</p>
+<h5 id="MessaqeQueue-setEventThread"><a href="#MessaqeQueue-setEventThread" class="headerlink" title="MessaqeQueue#setEventThread"></a>MessaqeQueue#setEventThread</h5><div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//frameworks/native/services/surfaceflinger/MessageQueue.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">MessageQueue::setEventThread</span><span class="hljs-params">(<span class="hljs-keyword">const</span> sp&lt;EventThread&gt;&amp; eventThread)</span>
+</span>&#123;
+    mEventThread = eventThread;
+    mEvents = eventThread-&gt;createEventConnection();
+    mEventTube = mEvents-&gt;getDataChannel();
+    mLooper-&gt;addFd(mEventTube-&gt;getFd(), <span class="hljs-number">0</span>, Looper::EVENT_INPUT,
+            MessageQueue::cb_eventReceiver, <span class="hljs-keyword">this</span>);
+&#125;</code></pre></div>
+<p>主要执行了以下几步：</p>
+<h6 id="EventThread-createEventConnection"><a href="#EventThread-createEventConnection" class="headerlink" title="EventThread#createEventConnection"></a>EventThread#createEventConnection</h6><blockquote>
+<p>新建<code>BitTube</code>对象</p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//frameworks/native/services/surfaceflinger/EventThread.cpp</span>
+<span class="hljs-function">sp&lt;EventThread::Connection&gt; <span class="hljs-title">EventThread::createEventConnection</span><span class="hljs-params">()</span> <span class="hljs-keyword">const</span> </span>&#123;
+    <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> Connection(<span class="hljs-keyword">const_cast</span>&lt;EventThread*&gt;(<span class="hljs-keyword">this</span>));
+&#125;
+
+EventThread::Connection::Connection(
+        <span class="hljs-keyword">const</span> sp&lt;EventThread&gt;&amp; eventThread)
+    : count(<span class="hljs-number">-1</span>), mEventThread(eventThread), mChannel(<span class="hljs-keyword">new</span> BitTube())
+&#123;
+&#125;</code></pre></div>
+<p>构建完成<code>Connection</code>对象，执行如下代码</p>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-keyword">void</span> EventThread::Connection::onFirstRef() &#123;
+    <span class="hljs-comment">// <span class="hljs-doctag">NOTE:</span> mEventThread doesn't hold a strong reference on us</span>
+    mEventThread-&gt;registerDisplayEventConnection(<span class="hljs-keyword">this</span>);
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">status_t</span> <span class="hljs-title">EventThread::registerDisplayEventConnection</span><span class="hljs-params">(
+        <span class="hljs-keyword">const</span> sp&lt;EventThread::Connection&gt;&amp; connection)</span> </span>&#123;
+    Mutex::Autolock _l(mLock);
+    mDisplayEventConnections.add(connection);
+    mCondition.broadcast();
+    <span class="hljs-keyword">return</span> NO_ERROR;
+&#125;</code></pre></div>
+<p>初始化<code>Connection</code>之后，将<code>Connection</code>对象添加到<code>mDisplayEventConnections</code>中。</p>
+<p><code>mDisplayEventConnections</code>主要负责<strong>保存接收Vsync信号的Connection的容器</strong>. 主要存储的是<code>SurfaceFlinger</code>与<code>App</code>的用来接收<code>Vsync信号</code>。</p>
+<h6 id="Connection-getDataChannel"><a href="#Connection-getDataChannel" class="headerlink" title="Connection#getDataChannel"></a>Connection#getDataChannel</h6><blockquote>
+<p>获取<code>BitTube</code>对象</p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs cpp">sp&lt;BitTube&gt; EventThread::Connection::getDataChannel() <span class="hljs-keyword">const</span> &#123;
+    <span class="hljs-keyword">return</span> mChannel;
+&#125;</code></pre></div>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//frameworks/native/libs/gui/BitTube.cpp</span>
+BitTube::BitTube(<span class="hljs-keyword">size_t</span> bufsize) &#123;
+    <span class="hljs-comment">// 创建socket pair，用于发送事件</span>
+    init(bufsize, bufsize);
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">BitTube::init</span><span class="hljs-params">(<span class="hljs-keyword">size_t</span> rcvbuf, <span class="hljs-keyword">size_t</span> sndbuf)</span> </span>&#123;
+    <span class="hljs-keyword">int</span> sockets[<span class="hljs-number">2</span>];
+    <span class="hljs-keyword">if</span> (socketpair(AF_UNIX, SOCK_SEQPACKET, <span class="hljs-number">0</span>, sockets) == <span class="hljs-number">0</span>) &#123;
+        <span class="hljs-keyword">size_t</span> size = DEFAULT_SOCKET_BUFFER_SIZE;
+        <span class="hljs-comment">// 设置socket buffer</span>
+        setsockopt(sockets[<span class="hljs-number">0</span>], SOL_SOCKET, SO_RCVBUF, &amp;rcvbuf, <span class="hljs-keyword">sizeof</span>(rcvbuf));
+        setsockopt(sockets[<span class="hljs-number">1</span>], SOL_SOCKET, SO_SNDBUF, &amp;sndbuf, <span class="hljs-keyword">sizeof</span>(sndbuf));
+        <span class="hljs-comment">// since we don't use the "return channel", we keep it small...</span>
+        setsockopt(sockets[<span class="hljs-number">0</span>], SOL_SOCKET, SO_SNDBUF, &amp;size, <span class="hljs-keyword">sizeof</span>(size));
+        setsockopt(sockets[<span class="hljs-number">1</span>], SOL_SOCKET, SO_RCVBUF, &amp;size, <span class="hljs-keyword">sizeof</span>(size));
+        fcntl(sockets[<span class="hljs-number">0</span>], F_SETFL, O_NONBLOCK);
+        fcntl(sockets[<span class="hljs-number">1</span>], F_SETFL, O_NONBLOCK);
+        <span class="hljs-comment">// socket[0]用于接收端，最终通过Binder IPC返回给客户端应用</span>
+        mReceiveFd.reset(sockets[<span class="hljs-number">0</span>]);
+        <span class="hljs-comment">// socket[1]用于发送端</span>
+        mSendFd.reset(sockets[<span class="hljs-number">1</span>]);
+    &#125; <span class="hljs-keyword">else</span> &#123;
+        mReceiveFd.reset();
+        ALOGE(<span class="hljs-string">"BitTube: pipe creation failed (%s)"</span>, strerror(errno));
+    &#125;
+&#125;</code></pre></div>
+<p><code>BitTube</code>实际是一个<code>Socket</code>，所以<code>EventThread</code>实际通过<code>Socket</code>和<code>MessageQueue</code>通信。</p>
+<h6 id="Looper-addFd"><a href="#Looper-addFd" class="headerlink" title="Looper#addFd"></a>Looper#addFd</h6><blockquote>
+<p>监听<code>BitTube</code>，一旦收到数据调用<code>cb_eventReceiver()</code></p>
+</blockquote>
+<p>通过<code>Looper</code>监听<code>BitTube</code>的fd。</p>
+<h5 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h5><p>这一步主要用于接收<code>Vsync信号</code>的初始化操作</p>
+<ol>
+<li><code>init()</code>中，创建了<code>EventThread</code>用来接收<code>Vsync信号</code></li>
+<li>通过<code>MessageQueue.setEventThread()</code>将<code>EventThread</code>与<code>MessageQueue</code>建立关联。实际内部通过<code>BitTube(Socket)</code>建立两者间的通信。</li>
+<li>再通过<code>addFd()</code>监听<code>BitTube</code>的套接字fd，这样就可以监听到数据的变化。</li>
+</ol>
+<h4 id="启动SurfaceFlinger"><a href="#启动SurfaceFlinger" class="headerlink" title="启动SurfaceFlinger"></a>启动SurfaceFlinger</h4><p>最后执行<code>SurfaceFlinger#run</code></p>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">SurfaceFlinger::run</span><span class="hljs-params">()</span> </span>&#123;
+    <span class="hljs-keyword">do</span> &#123;
+        waitForEvent();
+    &#125; <span class="hljs-keyword">while</span> (<span class="hljs-literal">true</span>);
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">SurfaceFlinger::waitForEvent</span><span class="hljs-params">()</span> </span>&#123;
+    mEventQueue.waitMessage();
+&#125;</code></pre></div>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//frameworks/native/services/surfaceflinger/MessageQueue.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">MessageQueue::waitMessage</span><span class="hljs-params">()</span> </span>&#123;
+    <span class="hljs-keyword">do</span> &#123;
+        IPCThreadState::self()-&gt;flushCommands();
+        <span class="hljs-keyword">int32_t</span> ret = mLooper-&gt;pollOnce(<span class="hljs-number">-1</span>);
+        <span class="hljs-keyword">switch</span> (ret) &#123;
+            <span class="hljs-keyword">case</span> Looper::POLL_WAKE:
+            <span class="hljs-keyword">case</span> Looper::POLL_CALLBACK:
+                <span class="hljs-keyword">continue</span>;
+            <span class="hljs-keyword">case</span> Looper::POLL_ERROR:
+                ALOGE(<span class="hljs-string">"Looper::POLL_ERROR"</span>);
+            <span class="hljs-keyword">case</span> Looper::POLL_TIMEOUT:
+                <span class="hljs-comment">// timeout (should not happen)</span>
+                <span class="hljs-keyword">continue</span>;
+            <span class="hljs-keyword">default</span>:
+                <span class="hljs-comment">// should not happen</span>
+                ALOGE(<span class="hljs-string">"Looper::pollOnce() returned unknown status %d"</span>, ret);
+                <span class="hljs-keyword">continue</span>;
+        &#125;
+    &#125; <span class="hljs-keyword">while</span> (<span class="hljs-literal">true</span>);
+&#125;</code></pre></div>
+<p>通过<code>waitMessage()</code>等待消息的到来</p>
+<h2 id="Vsync信号相关"><a href="#Vsync信号相关" class="headerlink" title="Vsync信号相关"></a>Vsync信号相关</h2><h3 id="接收Vsync"><a href="#接收Vsync" class="headerlink" title="接收Vsync"></a>接收Vsync</h3><h4 id="HWC-hook-vsync"><a href="#HWC-hook-vsync" class="headerlink" title="HWC#hook_vsync"></a>HWC#hook_vsync</h4><p><code>Vsync信号</code>都是由<code>HWComposer</code>发出的，需要从<code>HWC</code>进行分析</p>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//frameworks/native/services/surfaceflinger/DisplayHardware/HWComposer.cpp</span>
+HWComposer::HWComposer(
+        <span class="hljs-keyword">const</span> sp&lt;SurfaceFlinger&gt;&amp; flinger,
+        EventHandler&amp; handler)
+    : mFlinger(flinger),
+      mFbDev(<span class="hljs-number">0</span>), mHwc(<span class="hljs-number">0</span>), mNumDisplays(<span class="hljs-number">1</span>),
+      mCBContext(<span class="hljs-keyword">new</span> cb_context),
+      mEventHandler(handler),
+      mDebugForceFakeVSync(<span class="hljs-literal">false</span>)
+&#123;
+        ...
+    <span class="hljs-keyword">if</span> (mHwc) &#123;
+        <span class="hljs-keyword">if</span> (mHwc-&gt;registerProcs) &#123;
+            mCBContext-&gt;hwc = <span class="hljs-keyword">this</span>;
+            mCBContext-&gt;procs.invalidate = &amp;hook_invalidate; <span class="hljs-comment">//invalidate事件回调</span>
+            mCBContext-&gt;procs.vsync = &amp;hook_vsync;<span class="hljs-comment">//Vsync回调</span>
+            <span class="hljs-keyword">if</span> (hwcHasApiVersion(mHwc, HWC_DEVICE_API_VERSION_1_1))
+                mCBContext-&gt;procs.hotplug = &amp;hook_hotplug;
+            <span class="hljs-keyword">else</span>
+                mCBContext-&gt;procs.hotplug = <span class="hljs-literal">NULL</span>;
+            <span class="hljs-built_in">memset</span>(mCBContext-&gt;procs.zero, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(mCBContext-&gt;procs.zero));
+            mHwc-&gt;registerProcs(mHwc, &amp;mCBContext-&gt;procs);
+        &#125;          
+&#125;</code></pre></div>
+<p>通过<code>hook_vsync</code>处理<code>Vsync信号</code></p>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">HWComposer::hook_vsync</span><span class="hljs-params">(<span class="hljs-keyword">const</span> struct hwc_procs* procs, <span class="hljs-keyword">int</span> disp,
+        <span class="hljs-keyword">int64_t</span> timestamp)</span> </span>&#123;
+    cb_context* ctx = <span class="hljs-keyword">reinterpret_cast</span>&lt;cb_context*&gt;(
+            <span class="hljs-keyword">const_cast</span>&lt;<span class="hljs-keyword">hwc_procs_t</span>*&gt;(procs));
+    ctx-&gt;hwc-&gt;vsync(disp, timestamp);
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">HWComposer::vsync</span><span class="hljs-params">(<span class="hljs-keyword">int</span> disp, <span class="hljs-keyword">int64_t</span> timestamp)</span> </span>&#123;
+    <span class="hljs-keyword">if</span> (<span class="hljs-keyword">uint32_t</span>(disp) &lt; HWC_NUM_PHYSICAL_DISPLAY_TYPES) &#123;
+        &#123;
+            Mutex::Autolock _l(mLock);
+
+            mLastHwVSync[disp] = timestamp;
+        &#125;
+
+        <span class="hljs-keyword">char</span> tag[<span class="hljs-number">16</span>];
+        <span class="hljs-built_in">snprintf</span>(tag, <span class="hljs-keyword">sizeof</span>(tag), <span class="hljs-string">"HW_VSYNC_%1u"</span>, disp);
+        mEventHandler.onVSyncReceived(disp, timestamp);
+    &#125;
+&#125;</code></pre></div>
+<p>当<code>hook_vsync</code>收到<code>Vsync信号</code>时，回调到<code>vsync()</code>，继续调用到<code>mEventHandler.onVsyncReceived()</code></p>
+<p><code>mEventHandler</code>是在<code>HWC</code>初始化时赋值的，实际就是<code>SurfaceFlinger</code></p>
+<h4 id="Sf-onVSyncReceived"><a href="#Sf-onVSyncReceived" class="headerlink" title="Sf#onVSyncReceived"></a>Sf#onVSyncReceived</h4><div class="hljs"><pre><code class="hljs cpp"><span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">SurfaceFlinger::onVSyncReceived</span><span class="hljs-params">(<span class="hljs-keyword">int</span> type, <span class="hljs-keyword">nsecs_t</span> timestamp)</span> </span>&#123;
+    <span class="hljs-keyword">bool</span> needsHwVsync = <span class="hljs-literal">false</span>;
+
+    &#123; <span class="hljs-comment">// Scope for the lock</span>
+        Mutex::Autolock _l(mHWVsyncLock);
+        <span class="hljs-keyword">if</span> (type == <span class="hljs-number">0</span> &amp;&amp; mPrimaryHWVsyncEnabled) &#123;
+            needsHwVsync = mPrimaryDispSync.addResyncSample(timestamp);
+        &#125;
+    &#125;
+
+    <span class="hljs-keyword">if</span> (needsHwVsync) &#123;
+        enableHardwareVsync();
+    &#125; <span class="hljs-keyword">else</span> &#123;
+        disableHardwareVsync(<span class="hljs-literal">false</span>);
+    &#125;
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">SurfaceFlinger::init</span><span class="hljs-params">()</span> </span>&#123;
+    sp&lt;VSyncSource&gt; vsyncSrc = <span class="hljs-keyword">new</span> DispSyncSource(&amp;mPrimaryDispSync,
+            vsyncPhaseOffsetNs, <span class="hljs-literal">true</span>, <span class="hljs-string">"app"</span>);
+    mEventThread = <span class="hljs-keyword">new</span> EventThread(vsyncSrc);
+&#125;</code></pre></div>
+<h5 id="DispSync-addResyncSample"><a href="#DispSync-addResyncSample" class="headerlink" title="DispSync#addResyncSample"></a>DispSync#addResyncSample</h5><div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//frameworks/native/services/surfaceflinger/DispSync.cpp</span>
+DispSync::DispSync() :
+        mRefreshSkipCount(<span class="hljs-number">0</span>),
+        mThread(<span class="hljs-keyword">new</span> DispSyncThread()) &#123;
+    <span class="hljs-comment">//启动DispSyncThread</span>
+    mThread-&gt;run(<span class="hljs-string">"DispSync"</span>, PRIORITY_URGENT_DISPLAY + PRIORITY_MORE_FAVORABLE);
+
+    reset();
+    beginResync();
+
+    <span class="hljs-keyword">if</span> (kTraceDetailedInfo) &#123;
+        <span class="hljs-keyword">if</span> (!kIgnorePresentFences) &#123;
+            addEventListener(<span class="hljs-number">0</span>, <span class="hljs-keyword">new</span> ZeroPhaseTracer());
+        &#125;
+    &#125;
+&#125;</code></pre></div>
+<h6 id="DispSyncThread-threadLoop"><a href="#DispSyncThread-threadLoop" class="headerlink" title="DispSyncThread#threadLoop"></a>DispSyncThread#threadLoop</h6><div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//frameworks/native/services/surfaceflinger/DispSync.cpp   </span>
+<span class="hljs-function"><span class="hljs-keyword">virtual</span> <span class="hljs-keyword">bool</span> <span class="hljs-title">threadLoop</span><span class="hljs-params">()</span> </span>&#123;
+  ...
+       <span class="hljs-keyword">while</span> (<span class="hljs-literal">true</span>) &#123;
+         ...
+                <span class="hljs-keyword">if</span> (mPeriod == <span class="hljs-number">0</span>) &#123;
+                    err = mCond.wait(mMutex);
+                    <span class="hljs-keyword">if</span> (err != NO_ERROR) &#123;
+                        ALOGE(<span class="hljs-string">"error waiting for new events: %s (%d)"</span>,
+                                strerror(-err), err);
+                        <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;
+                    &#125;
+                    <span class="hljs-keyword">continue</span>;
+                &#125;        
+               <span class="hljs-comment">//收集Vsync信号回调的方法</span>
+                callbackInvocations = gatherCallbackInvocationsLocked(now);         
+       &#125;
+
+            <span class="hljs-keyword">if</span> (callbackInvocations.size() &gt; <span class="hljs-number">0</span>) &#123;
+                fireCallbackInvocations(callbackInvocations);
+            &#125;  
+    &#125;
+
+    <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">fireCallbackInvocations</span><span class="hljs-params">(<span class="hljs-keyword">const</span> Vector&lt;CallbackInvocation&gt;&amp; callbacks)</span> </span>&#123;
+        <span class="hljs-keyword">for</span> (<span class="hljs-keyword">size_t</span> i = <span class="hljs-number">0</span>; i &lt; callbacks.size(); i++) &#123;
+          <span class="hljs-comment">//回调callback的 onDispSyncEvent</span>
+            callbacks[i].mCallback-&gt;onDispSyncEvent(callbacks[i].mEventTime);
+        &#125;
+    &#125;</code></pre></div>
+<p><code>DispSyncThread</code>通过<code>mCond.wait()</code>等待被唤醒，被唤醒之后回调到<code>onDispSynvEvent()</code></p>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-function"><span class="hljs-keyword">bool</span> <span class="hljs-title">DispSync::addResyncSample</span><span class="hljs-params">(<span class="hljs-keyword">nsecs_t</span> timestamp)</span> </span>&#123;
+    <span class="hljs-function">Mutex::Autolock <span class="hljs-title">lock</span><span class="hljs-params">(mMutex)</span></span>;
+    <span class="hljs-keyword">size_t</span> idx = (mFirstResyncSample + mNumResyncSamples) % MAX_RESYNC_SAMPLES;
+    mResyncSamples[idx] = timestamp;
+
+    <span class="hljs-keyword">if</span> (mNumResyncSamples &lt; MAX_RESYNC_SAMPLES) &#123;
+        mNumResyncSamples++;
+    &#125; <span class="hljs-keyword">else</span> &#123;
+        mFirstResyncSample = (mFirstResyncSample + <span class="hljs-number">1</span>) % MAX_RESYNC_SAMPLES;
+    &#125;
+    updateModelLocked();
+
+    <span class="hljs-keyword">return</span> mPeriod == <span class="hljs-number">0</span> || mError &gt; kErrorThreshold;
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">DispSync::updateModelLocked</span><span class="hljs-params">()</span> </span>&#123;
+    <span class="hljs-keyword">if</span> (mNumResyncSamples &gt;= MIN_RESYNC_SAMPLES_FOR_UPDATE) &#123;
+        ...
+        mPeriod = durationSum / (mNumResyncSamples - <span class="hljs-number">1</span>);
+
+        <span class="hljs-comment">// Artificially inflate the period if requested.</span>
+        mPeriod += mPeriod * mRefreshSkipCount;
+
+        mThread-&gt;updateModel(mPeriod, mPhase);
+    &#125;
+&#125;</code></pre></div>
+<h5 id="DispsyncThread-updateModel"><a href="#DispsyncThread-updateModel" class="headerlink" title="DispsyncThread#updateModel"></a>DispsyncThread#updateModel</h5><div class="hljs"><pre><code class="hljs cpp"><span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">updateModel</span><span class="hljs-params">(<span class="hljs-keyword">nsecs_t</span> period, <span class="hljs-keyword">nsecs_t</span> phase)</span> </span>&#123;
+    <span class="hljs-function">Mutex::Autolock <span class="hljs-title">lock</span><span class="hljs-params">(mMutex)</span></span>;
+    mPeriod = period;
+    mPhase = phase;
+    mCond.signal();
+&#125;</code></pre></div>
+<p>执行<code>updateModel()</code>后，唤醒了<code>DispSyncThread</code></p>
+<p>在<code>SurfaceFlinger.init()</code>之后初始化设置的<code>DispSyncSource</code>就是<code>callbakc</code>，然后回调到<code>onDispSyncEvent</code></p>
+<h4 id="Sf-DispSyncSource-onDispSyncEvent"><a href="#Sf-DispSyncSource-onDispSyncEvent" class="headerlink" title="Sf.DispSyncSource#onDispSyncEvent"></a>Sf.DispSyncSource#onDispSyncEvent</h4><div class="hljs"><pre><code class="hljs cpp"><span class="hljs-function"><span class="hljs-keyword">virtual</span> <span class="hljs-keyword">void</span> <span class="hljs-title">onDispSyncEvent</span><span class="hljs-params">(<span class="hljs-keyword">nsecs_t</span> when)</span> </span>&#123;
+    sp&lt;VSyncSource::Callback&gt; callback;
+    &#123;
+        <span class="hljs-function">Mutex::Autolock <span class="hljs-title">lock</span><span class="hljs-params">(mCallbackMutex)</span></span>;
+        callback = mCallback;
+
+        <span class="hljs-keyword">if</span> (mTraceVsync) &#123;
+            mValue = (mValue + <span class="hljs-number">1</span>) % <span class="hljs-number">2</span>;
+            ATRACE_INT(mVsyncEventLabel.<span class="hljs-built_in">string</span>(), mValue);
+        &#125;
+    &#125;
+
+    <span class="hljs-keyword">if</span> (callback != <span class="hljs-literal">NULL</span>) &#123;
+        callback-&gt;onVSyncEvent(when);
+    &#125;
+&#125;</code></pre></div>
+<p>这个<code>callback</code>是在<code>EventThread</code>初始化的时候设置的，所以<code>mCallback</code>就是<code>EventThread</code></p>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">EventThread::enableVSyncLocked</span><span class="hljs-params">()</span> </span>&#123;
+    <span class="hljs-keyword">if</span> (!mUseSoftwareVSync) &#123;
+        <span class="hljs-comment">// never enable h/w VSYNC when screen is off</span>
+        <span class="hljs-keyword">if</span> (!mVsyncEnabled) &#123;
+            mVsyncEnabled = <span class="hljs-literal">true</span>;
+            mVSyncSource-&gt;setCallback(<span class="hljs-keyword">static_cast</span>&lt;VSyncSource::Callback*&gt;(<span class="hljs-keyword">this</span>));
+            mVSyncSource-&gt;setVSyncEnabled(<span class="hljs-literal">true</span>);
+        &#125;
+    &#125;
+    mDebugVsyncEnabled = <span class="hljs-literal">true</span>;
+    sendVsyncHintOnLocked();
+&#125;</code></pre></div>
+<p>通过<code>setCallback()</code>建立<code>EventThread</code>与<code>DispSyncSource</code>之间的关联</p>
+<h4 id="EventThread-onVsyncEvent"><a href="#EventThread-onVsyncEvent" class="headerlink" title="EventThread#onVsyncEvent"></a>EventThread#onVsyncEvent</h4><div class="hljs"><pre><code class="hljs cpp"><span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">EventThread::onVSyncEvent</span><span class="hljs-params">(<span class="hljs-keyword">nsecs_t</span> timestamp)</span> </span>&#123;
+    Mutex::Autolock _l(mLock);
+    mVSyncEvent[<span class="hljs-number">0</span>].header.type = DisplayEventReceiver::DISPLAY_EVENT_VSYNC;
+    mVSyncEvent[<span class="hljs-number">0</span>].header.id = <span class="hljs-number">0</span>;
+    mVSyncEvent[<span class="hljs-number">0</span>].header.timestamp = timestamp;
+    mVSyncEvent[<span class="hljs-number">0</span>].vsync.count++;
+    mCondition.broadcast();<span class="hljs-comment">//唤醒EventThread</span>
+&#125;</code></pre></div>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-function"><span class="hljs-keyword">bool</span> <span class="hljs-title">EventThread::threadLoop</span><span class="hljs-params">()</span> </span>&#123;
+    DisplayEventReceiver::Event event;
+    Vector&lt; sp&lt;EventThread::Connection&gt; &gt; signalConnections;
+  <span class="hljs-comment">//等待事件发生</span>
+    signalConnections = waitForEvent(&amp;event);
+
+    <span class="hljs-keyword">const</span> <span class="hljs-keyword">size_t</span> count = signalConnections.size();
+    <span class="hljs-keyword">for</span> (<span class="hljs-keyword">size_t</span> i=<span class="hljs-number">0</span> ; i&lt;count ; i++) &#123;
+        <span class="hljs-function"><span class="hljs-keyword">const</span> sp&lt;Connection&gt;&amp; <span class="hljs-title">conn</span><span class="hljs-params">(signalConnections[i])</span></span>;
+        <span class="hljs-comment">// 分发事件给所有的监听者</span>
+        <span class="hljs-keyword">status_t</span> err = conn-&gt;postEvent(event);
+        <span class="hljs-keyword">if</span> (err == -EAGAIN || err == -EWOULDBLOCK) &#123;
+          
+        &#125; <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (err &lt; <span class="hljs-number">0</span>) &#123;
+            removeDisplayEventConnection(signalConnections[i]);
+        &#125;
+    &#125;
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;
+&#125;</code></pre></div>
+<p><code>EventThread#threadLoop</code>在被唤醒后会执行<code>conn-&gt;postEvent()</code></p>
+<h5 id="ET-Connection-postEvent"><a href="#ET-Connection-postEvent" class="headerlink" title="ET.Connection#postEvent"></a>ET.Connection#postEvent</h5><div class="hljs"><pre><code class="hljs cpp"><span class="hljs-keyword">status_t</span> EventThread::Connection::postEvent(
+        <span class="hljs-keyword">const</span> DisplayEventReceiver::Event&amp; event) &#123;
+    <span class="hljs-keyword">ssize_t</span> size = DisplayEventReceiver::sendEvents(mChannel, &amp;event, <span class="hljs-number">1</span>);
+    <span class="hljs-keyword">return</span> size &lt; <span class="hljs-number">0</span> ? <span class="hljs-keyword">status_t</span>(size) : <span class="hljs-keyword">status_t</span>(NO_ERROR);
+&#125;</code></pre></div>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//frameworks/native/libs/gui/DisplayEventReceiver.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">ssize_t</span> <span class="hljs-title">DisplayEventReceiver::sendEvents</span><span class="hljs-params">(gui::BitTube* dataChannel,
+        Event <span class="hljs-keyword">const</span>* events, <span class="hljs-keyword">size_t</span> count)</span>
+</span>&#123;
+    <span class="hljs-keyword">return</span> gui::BitTube::sendObjects(dataChannel, events, count);
+&#125;</code></pre></div>
+<p>通过<code>BitTube</code>发送消息，此时就会触发到<code>MQ#cb_eventReceiver</code></p>
+<blockquote>
+<p><code>DisplayEventReceiver</code>实质是<code>App进程</code>用来申请Vsync信号监听的，实质也是通过监听<code>BitTube</code>去获取对应的数据，如果触发到了数据读写，就会回调到<code>DisplayEventDispatcher.handleEvent()</code>，此时就是接收到<code>Vsync信号</code></p>
+</blockquote>
+<h4 id="MessageQueue-cb-eventReceiver"><a href="#MessageQueue-cb-eventReceiver" class="headerlink" title="MessageQueue#cb_eventReceiver"></a>MessageQueue#cb_eventReceiver</h4><div class="hljs"><pre><code class="hljs cpp"><span class="hljs-function"><span class="hljs-keyword">int</span> <span class="hljs-title">MessageQueue::cb_eventReceiver</span><span class="hljs-params">(<span class="hljs-keyword">int</span> fd, <span class="hljs-keyword">int</span> events, <span class="hljs-keyword">void</span>* data)</span> </span>&#123;
+    MessageQueue* <span class="hljs-built_in">queue</span> = <span class="hljs-keyword">reinterpret_cast</span>&lt;MessageQueue *&gt;(data);
+    <span class="hljs-keyword">return</span> <span class="hljs-built_in">queue</span>-&gt;eventReceiver(fd, events);
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">int</span> <span class="hljs-title">MessageQueue::eventReceiver</span><span class="hljs-params">(<span class="hljs-keyword">int</span> <span class="hljs-comment">/*fd*/</span>, <span class="hljs-keyword">int</span> <span class="hljs-comment">/*events*/</span>)</span> </span>&#123;
+    <span class="hljs-keyword">ssize_t</span> n;
+    DisplayEventReceiver::Event buffer[<span class="hljs-number">8</span>];
+    <span class="hljs-keyword">while</span> ((n = DisplayEventReceiver::getEvents(mEventTube, buffer, <span class="hljs-number">8</span>)) &gt; <span class="hljs-number">0</span>) &#123;
+        <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int</span> i=<span class="hljs-number">0</span> ; i&lt;n ; i++) &#123;
+            <span class="hljs-keyword">if</span> (buffer[i].header.type == DisplayEventReceiver::DISPLAY_EVENT_VSYNC) &#123;
+<span class="hljs-meta">#<span class="hljs-meta-keyword">if</span> INVALIDATE_ON_VSYNC</span>
+                mHandler-&gt;dispatchInvalidate();
+<span class="hljs-meta">#<span class="hljs-meta-keyword">else</span></span>
+                mHandler-&gt;dispatchRefresh();
+<span class="hljs-meta">#<span class="hljs-meta-keyword">endif</span></span>
+                <span class="hljs-keyword">break</span>;
+            &#125;
+        &#125;
+    &#125;
+    <span class="hljs-keyword">return</span> <span class="hljs-number">1</span>;
+&#125;</code></pre></div>
+<p>回调到<code>MessageQueue.Handler</code>的<code>handleMessage()</code></p>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-keyword">void</span> MessageQueue::Handler::handleMessage(<span class="hljs-keyword">const</span> Message&amp; message) &#123;
+    <span class="hljs-keyword">switch</span> (message.what) &#123;
+        <span class="hljs-keyword">case</span> INVALIDATE:
+            android_atomic_and(~eventMaskInvalidate, &amp;mEventMask);
+            mQueue.mFlinger-&gt;onMessageReceived(message.what);
+            <span class="hljs-keyword">break</span>;
+        <span class="hljs-keyword">case</span> REFRESH:
+            android_atomic_and(~eventMaskRefresh, &amp;mEventMask);
+            mQueue.mFlinger-&gt;onMessageReceived(message.what);
+            <span class="hljs-keyword">break</span>;
+        <span class="hljs-keyword">case</span> TRANSACTION:
+            android_atomic_and(~eventMaskTransaction, &amp;mEventMask);
+            mQueue.mFlinger-&gt;onMessageReceived(message.what);
+            <span class="hljs-keyword">break</span>;
+    &#125;
+&#125;</code></pre></div>
+<h4 id="Sf-onMessageReceived"><a href="#Sf-onMessageReceived" class="headerlink" title="Sf#onMessageReceived"></a>Sf#onMessageReceived</h4><div class="hljs"><pre><code class="hljs cpp"><span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">SurfaceFlinger::onMessageReceived</span><span class="hljs-params">(<span class="hljs-keyword">int32_t</span> what)</span> </span>&#123;
+    ATRACE_CALL();
+    <span class="hljs-keyword">switch</span> (what) &#123;
+        <span class="hljs-keyword">case</span> MessageQueue::TRANSACTION: &#123;
+            handleMessageTransaction();
+            <span class="hljs-keyword">break</span>;
+        &#125;
+        <span class="hljs-keyword">case</span> MessageQueue::INVALIDATE: &#123;
+            <span class="hljs-keyword">bool</span> refreshNeeded = handleMessageTransaction();
+            refreshNeeded |= handleMessageInvalidate();
+            refreshNeeded |= mRepaintEverything;
+            <span class="hljs-keyword">if</span> (refreshNeeded) &#123;
+                signalRefresh();
+            &#125;
+            <span class="hljs-keyword">break</span>;
+        &#125;
+        <span class="hljs-keyword">case</span> MessageQueue::REFRESH: &#123;
+            handleMessageRefresh();
+            <span class="hljs-keyword">break</span>;
+        &#125;
+    &#125;
+&#125;</code></pre></div>
+<h4 id="总结-1"><a href="#总结-1" class="headerlink" title="总结"></a>总结</h4><p><img src="/images/15751538247774.jpg" srcset="/img/loading.gif" alt="img"></p>
+<p>接收Vsync信号主要分为以下几步：</p>
+<ol>
+<li>HWC收到Vsync信号时，回调到<code>hook_vsync</code>，内部执行到<code>sf#onVsyncReceived()</code></li>
+<li>继续执行到<code>DispSync#addResyncSample()</code>，然后到<code>DispSyncThread#updateModel()</code>调用<code>mCondition.broadcast()</code>唤醒<code>EventThread</code></li>
+<li>唤醒之后执行到<code>DispSyncSource.onDispSyncEvent()</code>继续执行到<code>EventThread.onVsyncEvent()</code>，其中内部调用了<code>DisplayEventReceiver.sendEvents() -&gt; BitTube.sendObjects()</code>发送消息，<code>Looper</code>监听到<code>BitTube</code>有数据流动，就会回调<code>MessageQueue.cb_eventReceiver()</code></li>
+<li>继续通过消息机制，回调到<code>MessageQueue.handleMessage()</code>，最后调用<code>Sf.handleMessageReceived()</code></li>
+</ol>
+<blockquote>
+<p>简化版：</p>
+<p><code>Vsync信号</code>由<code>HWC</code>产生，然后回调到<code>DispSyncthread</code>在继续回调到<code>DispSyncSource</code>，继续调用到了<code>EventThread</code>。最后<code>EventThread</code>通过<code>BitTube(Socket)</code>发送消息到<code>MessageQueue</code>，<code>MessageQueue</code>接收到消息后，在回调给<code>SurfaceFlinger</code>。</p>
+</blockquote>
+<h3 id="处理Vsync"><a href="#处理Vsync" class="headerlink" title="处理Vsync"></a>处理Vsync</h3><p>主要在<code>Sf#onMessageReceived()</code>处理<code>Vsync信号</code></p>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">SurfaceFlinger::onMessageReceived</span><span class="hljs-params">(<span class="hljs-keyword">int32_t</span> what)</span> </span>&#123;
+        <span class="hljs-keyword">case</span> MessageQueue::REFRESH: &#123;
+            handleMessageRefresh();
+            <span class="hljs-keyword">break</span>;
+        &#125;
+&#125;</code></pre></div>
+
+            </div>
+            <hr>
+            <div>
+              <div class="post-metas mb-3">
+                
+                
+                  <div class="post-meta">
+                    <i class="iconfont icon-tags"></i>
+                    
+                      <a class="hover-with-bg" href="/tags/Android/">Android</a>
+                    
+                  </div>
+                
+              </div>
+              
+                <p class="note note-warning">本博客所有文章除特别声明外，均采用 <a href="https://zh.wikipedia.org/wiki/Wikipedia:CC_BY-SA_3.0%E5%8D%8F%E8%AE%AE%E6%96%87%E6%9C%AC" rel="nofollow noopener">CC BY-SA 3.0协议</a> 。转载请注明出处！</p>
+              
+              
+                <div class="post-prevnext row">
+                  <article class="post-prev col-6">
+                    
+                    
+                  </article>
+                  <article class="post-next col-6">
+                    
+                    
+                      <a href="/2020/12/14/Android性能优化-自动内存分析/">
+                        <span class="hidden-mobile">Android性能优化-自动内存分析</span>
+                        <span class="visible-mobile">下一篇</span>
+                        <i class="iconfont icon-arrowright"></i>
+                      </a>
+                    
+                  </article>
+                </div>
+              
+            </div>
+
+            
+          </article>
+        </div>
+      </div>
+    </div>
+    
+      <div class="d-none d-lg-block col-lg-2 toc-container" id="toc-ctn">
+        <div id="toc">
+  <p class="toc-header"><i class="iconfont icon-list"></i>&nbsp;目录</p>
+  <div class="toc-body" id="toc-body"></div>
+</div>
+
+      </div>
+    
+  </div>
+</div>
+
+<!-- Custom -->
+
+
+    
+
+    
+      <a id="scroll-top-button" href="#" role="button">
+        <i class="iconfont icon-arrowup" aria-hidden="true"></i>
+      </a>
+    
+
+    
+      <div class="modal fade" id="modalSearch" tabindex="-1" role="dialog" aria-labelledby="ModalLabel"
+     aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header text-center">
+        <h4 class="modal-title w-100 font-weight-bold">搜索</h4>
+        <button type="button" id="local-search-close" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body mx-3">
+        <div class="md-form mb-5">
+          <input type="text" id="local-search-input" class="form-control validate">
+          <label data-error="x" data-success="v"
+                 for="local-search-input">关键词</label>
+        </div>
+        <div class="list-group" id="local-search-result"></div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+
+    
+  </main>
+
+  <footer class="text-center mt-5 py-3">
+  <div class="footer-content">
+     <a href="https://hexo.io" target="_blank" rel="nofollow noopener"><span>Hexo</span></a> <i class="iconfont icon-love"></i> <a href="https://github.com/fluid-dev/hexo-theme-fluid" target="_blank" rel="nofollow noopener"><span>Fluid</span></a> 
+  </div>
+  
+
+  
+
+  
+</footer>
+
+<!-- SCRIPTS -->
+
+  <script  src="https://cdn.staticfile.org/nprogress/0.2.0/nprogress.min.js" ></script>
+  <link  rel="stylesheet" href="https://cdn.staticfile.org/nprogress/0.2.0/nprogress.min.css" />
+
+  <script>
+    NProgress.configure({"showSpinner":false,"trickleSpeed":200})
+    NProgress.start()
+    document.addEventListener('DOMContentLoaded', function() {
+      window.NProgress && window.NProgress.inc();
+    })
+    window.addEventListener('load', function() {
+      NProgress.done();
+    })
+  </script>
+
+
+<script  src="https://cdn.staticfile.org/jquery/3.5.1/jquery.min.js" ></script>
+<script  src="https://cdn.staticfile.org/twitter-bootstrap/4.5.3/js/bootstrap.min.js" ></script>
+<script  src="/js/debouncer.js" ></script>
+<script  src="/js/events.js" ></script>
+<script  src="/js/plugins.js" ></script>
+
+<!-- Plugins -->
+
+
+  
+    <script  src="/js/lazyload.js" ></script>
+  
+
+
+
+  
+
+
+
+  <script  src="https://cdn.staticfile.org/tocbot/4.12.0/tocbot.min.js" ></script>
+
+
+
+  <script  src="https://cdn.staticfile.org/fancybox/3.5.7/jquery.fancybox.min.js" ></script>
+
+
+
+  <script  src="https://cdn.staticfile.org/anchor-js/4.3.0/anchor.min.js" ></script>
+
+
+
+  <script defer src="https://cdn.staticfile.org/clipboard.js/2.0.6/clipboard.min.js" ></script>
+
+
+
+
+
+
+
+  <script  src="/js/local-search.js" ></script>
+  <script>
+    (function () {
+      var path = "/local-search.xml";
+      var inputArea = document.querySelector("#local-search-input");
+      inputArea.onclick = function () {
+        searchFunc(path, 'local-search-input', 'local-search-result');
+        this.onclick = null
+      }
+    })()
+  </script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- 主题的启动项 保持在最底部 -->
+<script  src="/js/boot.js" ></script>
+
+
+
+</body>
+</html>

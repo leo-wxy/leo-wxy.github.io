@@ -169,7 +169,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      4.4k 字
+      4.9k 字
     </span>
   
 
@@ -179,7 +179,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      59
+      66
        分钟
     </span>
   
@@ -871,6 +871,64 @@ testJava.`<span class="hljs-keyword">is</span>`()</code></pre></div>
 </blockquote>
 <p>被擦除的泛型信息存放于<code>Signature</code>中</p>
 <p><a href="https://stackoverflow.com/questions/937933/where-are-generic-types-stored-in-java-class-files/937999#937999" target="_blank" rel="noopener">https://stackoverflow.com/questions/937933/where-are-generic-types-stored-in-java-class-files/937999#937999</a></p>
+<h3 id="Collection-amp-Sequence"><a href="#Collection-amp-Sequence" class="headerlink" title="Collection &amp; Sequence"></a>Collection &amp; Sequence</h3><blockquote>
+<p>kotlin提供了基于不同执行方式的两种集合类型：</p>
+<ul>
+<li><strong>立即执行的 Collection类型</strong></li>
+<li><strong>延迟执行的 Sequence类型</strong></li>
+</ul>
+</blockquote>
+<p><code>立即执行</code>和<code>延迟执行</code>的区别在于<code>每次对集合进行转换时，这个操作会在何时真正执行。</code></p>
+<h4 id="Collection"><a href="#Collection" class="headerlink" title="Collection"></a>Collection</h4><blockquote>
+<p>在每次操作时都是立即执行的，执行结果都会存储到一个新的集合中。</p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//_Collections.kt</span>
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">inline</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-type">&lt;T, R&gt;</span> Iterable<span class="hljs-type">&lt;T&gt;</span>.<span class="hljs-title">map</span><span class="hljs-params">(transform: (<span class="hljs-type">T</span>) -&gt; <span class="hljs-type">R</span>)</span></span>: List&lt;R&gt; &#123;
+    <span class="hljs-keyword">return</span> mapTo(ArrayList&lt;R&gt;(collectionSizeOrDefault(<span class="hljs-number">10</span>)), transform)
+&#125;</code></pre></div>
+<p><code>Collection</code>内部的每一步操作都会生成一个新的集合。</p>
+<h4 id="Sequence"><a href="#Sequence" class="headerlink" title="Sequence"></a>Sequence</h4><blockquote>
+<p>是延迟执行的，主要有两种类型：</p>
+<ul>
+<li><strong>中间操作</strong>：不会立即执行，所有中间操作的引用会存储起来</li>
+<li><strong>末端操作</strong>：立即执行，按照顺序执行存储的<code>中间操作</code></li>
+</ul>
+</blockquote>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//_Sequences.kt</span>
+<span class="hljs-comment">//中间操作</span>
+<span class="hljs-keyword">public</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-type">&lt;T, R&gt;</span> Sequence<span class="hljs-type">&lt;T&gt;</span>.<span class="hljs-title">map</span><span class="hljs-params">(transform: (<span class="hljs-type">T</span>) -&gt; <span class="hljs-type">R</span>)</span></span>: Sequence&lt;R&gt; &#123;
+    <span class="hljs-keyword">return</span> TransformingSequence(<span class="hljs-keyword">this</span>, transform)
+&#125;
+
+<span class="hljs-keyword">internal</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">TransformingSequence</span>&lt;<span class="hljs-type">T, R</span>&gt;</span>
+<span class="hljs-keyword">constructor</span>(<span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> sequence: Sequence&lt;T&gt;, <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> transformer: (T) -&gt; R) : Sequence&lt;R&gt; &#123;
+    <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">iterator</span><span class="hljs-params">()</span></span>: Iterator&lt;R&gt; = <span class="hljs-keyword">object</span> : Iterator&lt;R&gt; &#123;
+        <span class="hljs-keyword">val</span> iterator = sequence.iterator()
+        <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">next</span><span class="hljs-params">()</span></span>: R &#123;
+            <span class="hljs-keyword">return</span> transformer(iterator.next())
+        &#125;
+
+        <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">hasNext</span><span class="hljs-params">()</span></span>: <span class="hljs-built_in">Boolean</span> &#123;
+            <span class="hljs-keyword">return</span> iterator.hasNext()
+        &#125;
+    &#125;
+&#125;
+
+<span class="hljs-comment">//末端操作</span>
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">inline</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-type">&lt;T&gt;</span> Sequence<span class="hljs-type">&lt;T&gt;</span>.<span class="hljs-title">first</span><span class="hljs-params">(predicate: (<span class="hljs-type">T</span>) -&gt; <span class="hljs-type">Boolean</span>)</span></span>: T &#123;
+    <span class="hljs-keyword">for</span> (element <span class="hljs-keyword">in</span> <span class="hljs-keyword">this</span>) <span class="hljs-keyword">if</span> (predicate(element)) <span class="hljs-keyword">return</span> element
+    <span class="hljs-keyword">throw</span> NoSuchElementException(<span class="hljs-string">"Sequence contains no element matching the predicate."</span>)
+&#125;</code></pre></div>
+<p>最后调用<code>first()、count()</code>等<code>末端操作</code>之后，内部去遍历<code>Sequence</code>中的元素，挨个执行直到条件匹配为止。</p>
+<h4 id="性能"><a href="#性能" class="headerlink" title="性能"></a>性能</h4><h5 id="转换的顺序"><a href="#转换的顺序" class="headerlink" title="转换的顺序"></a>转换的顺序</h5><p><code>.filter{}.map{}</code> 性能是优于 <code>.map{}.filter{}</code></p>
+<h5 id="数据量的选择"><a href="#数据量的选择" class="headerlink" title="数据量的选择"></a>数据量的选择</h5><p><code>Collection</code>会为每次转换操作创建一个新的列表，而<code>Sequence</code>仅仅是保留对转换函数的引用。</p>
+<blockquote>
+<p>根据需要处理的数据量大小，按照如下规则选择：</p>
+<ul>
+<li>数据量小 使用 Collection</li>
+<li>数据量大 使用 Sequence</li>
+</ul>
+</blockquote>
 
             </div>
             <hr>

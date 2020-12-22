@@ -169,7 +169,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      0 字
+      7.6k 字
     </span>
   
 
@@ -179,7 +179,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      1
+      103
        分钟
     </span>
   
@@ -212,7 +212,1050 @@
             <h1 style="display: none">Kotlin协程原理</h1>
             
             <div class="markdown-body">
-              
+              <p>在介绍了大部分概念，现在需要针对这些概念进行详细的说明以及分析。</p>
+<blockquote><p>协程是轻量级的线程</p>
+</blockquote>
+<h2 id="协程概念"><a href="#协程概念" class="headerlink" title="协程概念"></a>协程概念</h2><blockquote>
+<p><code>非抢占式或协作式</code>的计算机并发调度的实现，程序可以主动挂起或者恢复执行，</p>
+<p>避免在异步程序中使用大量的回调，<strong>使用阻塞的方式写出非阻塞的代码。</strong></p>
+</blockquote>
+<p>一种全新处理并发的方式，可以在Android平台上简化异步执行的代码。</p>
+<p><code>协程</code>主要用来解决两个问题：</p>
+<ul>
+<li><strong>处理耗时任务</strong></li>
+<li><strong>保证主线程安全</strong></li>
+</ul>
+<p>在后面的原理介绍中，会介绍与这两个问题相关的概念。</p>
+<h2 id="概念介绍"><a href="#概念介绍" class="headerlink" title="概念介绍"></a>概念介绍</h2><blockquote>
+<p>在执行过程中会涉及的一些概念，在后续源码分析也会涉及。</p>
+</blockquote>
+<p><code>协程体</code></p>
+<p>协程中要执行的操作，是一个被<code>suspend</code>修饰的<code>lambda表达式</code></p>
+<p><code>挂起函数</code></p>
+<p>由<code>suspend</code>修饰的函数，只能在<code>挂起函数</code>或者<code>协程体</code>中调用。可以通过调用其他<code>挂起函数</code>挂起执行代码，而不阻塞当前执行线程。</p>
+<p><code>挂起点</code></p>
+<p>一般对应<code>挂起函数</code>被调用的位置</p>
+<p><code>续体-Continuation</code></p>
+<p>挂起的协程在<code>挂起点</code>时的状态。概念上表示<code>挂起点之后的剩余应该执行的代码</code>。</p>
+<h2 id="核心类"><a href="#核心类" class="headerlink" title="核心类"></a>核心类</h2><h3 id="协程作用域—CoroutineScope"><a href="#协程作用域—CoroutineScope" class="headerlink" title="协程作用域—CoroutineScope"></a>协程作用域—CoroutineScope</h3><blockquote>
+<p>追踪每一个通过<code>launch</code>或<code>async</code>创建的协程。并且任何时候都可以通过<code>scope.cancel()</code>取消正在执行的协程。</p>
+<p>可以通过<code>CoroutineScope</code>控制协程的生命周期，当Activity/Fragment关闭时，调用<code>cancel()</code>及时关闭。</p>
+</blockquote>
+<p><code>协程作用域</code>主要有三种：</p>
+<h4 id="阻塞协程作用域"><a href="#阻塞协程作用域" class="headerlink" title="阻塞协程作用域"></a>阻塞协程作用域</h4><p>调用<code>runBlocking()</code>的线程会被阻塞直到内部协程任务执行完毕。</p>
+<h4 id="全局协程作用域"><a href="#全局协程作用域" class="headerlink" title="全局协程作用域"></a>全局协程作用域</h4><p><code>GlobalScope</code>作用于整个应用的生命周期，并且无法被取消，在界面上使用时，就会导致内存泄漏。</p>
+<div class="hljs"><pre><code class="hljs kotlin">
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">object</span> GlobalScope : CoroutineScope &#123;  
+    <span class="hljs-comment">// 重写coroutineContext，返回一个空的协程上下文  </span>
+    <span class="hljs-keyword">override</span> <span class="hljs-keyword">val</span> coroutineContext: CoroutineContext  
+        <span class="hljs-keyword">get</span>() = EmptyCoroutineContext  
+&#125;  
+<span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">interface</span> <span class="hljs-title">CoroutineScope</span> </span>&#123;  
+    <span class="hljs-comment">// 协程上下文  </span>
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">val</span> coroutineContext: CoroutineContext  
+&#125;</code></pre></div>
+<h4 id="自定义作用域"><a href="#自定义作用域" class="headerlink" title="自定义作用域"></a>自定义作用域</h4><p>自定义协程作用域，可以针对性的控制避免内存泄漏。</p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">val</span> coroutineContext : CoroutineContext = Dispatchers.Main + Job()<span class="hljs-comment">//协程上下文</span>
+<span class="hljs-keyword">val</span> coroutineScope = CoroutineScope(coroutineContext)<span class="hljs-comment">//自定义作用域</span></code></pre></div>
+<p>需要自定义<code>协程作用域</code>时，需要构造一个<code>CoroutineContext</code>作为参数。</p>
+<p><code>CoroutineContext</code>会在下面重点介绍。</p>
+<h5 id="内置的自定义作用域"><a href="#内置的自定义作用域" class="headerlink" title="内置的自定义作用域"></a>内置的自定义作用域</h5><h6 id="MainScope"><a href="#MainScope" class="headerlink" title="MainScope"></a>MainScope</h6><blockquote>
+<p>为了方便开发使用，Kotlin标准库提供了<code>MainScope</code>用于快速生成<code>CoroutineScope</code></p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">public</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">MainScope</span><span class="hljs-params">()</span></span>: CoroutineScope = ContextScope(SupervisorJob() + Dispatchers.Main)</code></pre></div>
+<h6 id="viewModelScope"><a href="#viewModelScope" class="headerlink" title="viewModelScope"></a>viewModelScope</h6><blockquote>
+<p>在AndroidX中引入的<code>viewMdoelScope</code>，在ViewModel销毁时会自动取消协程任务</p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">val</span> ViewModel.viewModelScope: CoroutineScope
+        <span class="hljs-keyword">get</span>() &#123;
+            <span class="hljs-keyword">val</span> scope: CoroutineScope? = <span class="hljs-keyword">this</span>.getTag(JOB_KEY)
+          <span class="hljs-comment">//缓存中读取 对应scope</span>
+            <span class="hljs-keyword">if</span> (scope != <span class="hljs-literal">null</span>) &#123;
+                <span class="hljs-keyword">return</span> scope
+            &#125;
+           <span class="hljs-comment">//对应了ViewModel内部的实现代码</span>
+            <span class="hljs-keyword">return</span> setTagIfAbsent(JOB_KEY,
+                CloseableCoroutineScope(SupervisorJob() + Dispatchers.Main.immediate))
+        &#125;
+<span class="hljs-comment">//自动取消 coroutineScope</span>
+<span class="hljs-keyword">internal</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">CloseableCoroutineScope</span></span>(context: CoroutineContext) : Closeable, CoroutineScope &#123;
+    <span class="hljs-keyword">override</span> <span class="hljs-keyword">val</span> coroutineContext: CoroutineContext = context
+
+    <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">close</span><span class="hljs-params">()</span></span> &#123;
+        coroutineContext.cancel()
+    &#125;
+&#125;</code></pre></div>
+<h3 id="协程上下文-CoroutineContext"><a href="#协程上下文-CoroutineContext" class="headerlink" title="协程上下文-CoroutineContext"></a>协程上下文-CoroutineContext</h3><blockquote>
+<p>一组定义协程行为的元素，本体是一个数据结构，类似于<code>Map</code>，内部实现为<code>单链表</code></p>
+</blockquote>
+<p>由如下几项构成：</p>
+<ul>
+<li>Job：执行的任务</li>
+<li>CoroutineDispatcher：协程调度器</li>
+<li>CoroutineName：协程的名称，主要用于调试</li>
+<li>CoroutineExceptionHandler：处理未被捕获的异常。</li>
+</ul>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">interface</span> <span class="hljs-title">CoroutineContext</span> </span>&#123;
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">operator</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-type">&lt;E : Element&gt;</span> <span class="hljs-title">get</span><span class="hljs-params">(key: <span class="hljs-type">Key</span>&lt;<span class="hljs-type">E</span>&gt;)</span></span>: E?
+
+    <span class="hljs-keyword">public</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-type">&lt;R&gt;</span> <span class="hljs-title">fold</span><span class="hljs-params">(initial: <span class="hljs-type">R</span>, operation: (<span class="hljs-type">R</span>, <span class="hljs-type">Element</span>) -&gt; <span class="hljs-type">R</span>)</span></span>: R
+
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">operator</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">plus</span><span class="hljs-params">(context: <span class="hljs-type">CoroutineContext</span>)</span></span>: CoroutineContext =
+        <span class="hljs-comment">//空实现直接返回</span>
+        <span class="hljs-keyword">if</span> (context === EmptyCoroutineContext) <span class="hljs-keyword">this</span> <span class="hljs-keyword">else</span> 
+           <span class="hljs-comment">// 遍历context集合</span>
+            context.fold(<span class="hljs-keyword">this</span>) &#123; acc, element -&gt; <span class="hljs-comment">//acc 当前上下文集合 element context集合的元素</span>
+                <span class="hljs-keyword">val</span> removed = acc.minusKey(element.key) <span class="hljs-comment">//移除对应集合的元素</span>
+                <span class="hljs-keyword">if</span> (removed === EmptyCoroutineContext) element <span class="hljs-keyword">else</span> &#123; 
+                    <span class="hljs-keyword">val</span> interceptor = removed[ContinuationInterceptor] <span class="hljs-comment">//获取拦截器</span>
+                    <span class="hljs-keyword">if</span> (interceptor == <span class="hljs-literal">null</span>) CombinedContext(removed, element) <span class="hljs-comment">//生成最后的CombinedContext节点</span>
+                  <span class="hljs-keyword">else</span> &#123;
+                    <span class="hljs-comment">//拦截器永远位于 链表尾部</span>
+                        <span class="hljs-keyword">val</span> left = removed.minusKey(ContinuationInterceptor)
+                        <span class="hljs-keyword">if</span> (left === EmptyCoroutineContext) CombinedContext(element, interceptor) <span class="hljs-keyword">else</span>
+                            CombinedContext(CombinedContext(left, element), interceptor)
+                    &#125;
+                &#125;
+            &#125;
+
+    <span class="hljs-keyword">public</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">minusKey</span><span class="hljs-params">(key: <span class="hljs-type">Key</span>&lt;*&gt;)</span></span>: CoroutineContext
+
+&#125;</code></pre></div>
+<h4 id="自定义CoroutineContext"><a href="#自定义CoroutineContext" class="headerlink" title="自定义CoroutineContext"></a>自定义CoroutineContext</h4><div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">val</span> coroutineContext : CoroutineContext = Dispatchers.Main + Job() + CoroutineName(<span class="hljs-string">"name"</span>)<span class="hljs-comment">//协程上下文</span></code></pre></div>
+<p><code>CoroutineContext</code>通过<code>+</code>进行元素的合并，<code>+</code>右侧的元素会覆盖左侧的元素。</p>
+<p><code>CoroutineContext</code>存储方式为<code>左向链表</code>，链表的每一个节点都是<code>CombinedContext</code>，当存在<code>协程拦截器</code>时，永远处于链表的最后。</p>
+<p>经过上述的<code>plus</code>操作后，最后得到一个完整的<code>CoroutineContext</code>对象。</p>
+<h4 id="CoroutineContext的父子关系"><a href="#CoroutineContext的父子关系" class="headerlink" title="CoroutineContext的父子关系"></a>CoroutineContext的父子关系</h4><blockquote>
+<p>每个协程都会有一个父对象，协程的父级<code>CoroutineContext</code>和父协程的<code>CoroutineContext</code>是不一致的。</p>
+</blockquote>
+<p><strong>父级上下文 = 默认值 + 继承的<code>CoroutineContext</code>+参数</strong></p>
+<p><code>默认值</code>：一些元素包含的默认值，例如默认<code>Dispatcher</code>就是<code>Dispatchers.Default</code></p>
+<p><code>继承的CoroutineContext</code>：父协程的<code>CoroutineContenxt</code></p>
+<p><code>参数</code>：后续子协程配置的参数，如上文所示组成部分，新添加的参数会覆盖前面的对应配置。</p>
+<h3 id="协程执行任务-Job"><a href="#协程执行任务-Job" class="headerlink" title="协程执行任务-Job"></a>协程执行任务-Job</h3><blockquote>
+<p>用于处理协程，封装了协程需要执行的代码逻辑，并且负责管理协程的生命周期。</p>
+<p>通过<code>协程构造器</code>创建的协程都会返回一个<code>Job实例</code>。</p>
+</blockquote>
+<p>主要有以下几种生命周期：</p>
+<ul>
+<li><code>New</code> 新建任务</li>
+<li><code>Active</code> 任务活跃</li>
+<li><code>Completing</code> 任务完成中</li>
+<li><code>Cancelling</code> 任务取消中</li>
+<li><code>Cancelled</code> 任务已取消</li>
+<li><code>Completed</code> 任务已完成</li>
+</ul>
+<p><img src="/images/Job生命周期.jpg" srcset="/img/loading.gif" alt="Job生命周期"></p>
+<p><code>Job</code>内提供了<code>isActive()</code>、<code>isCancelled()</code>和<code>isCompleted()</code>等属性用于判断协程的状态。</p>
+<p><a href="#协程取消-Cancel">协程取消</a>会更多的分析<code>Job</code>相关。</p>
+<h3 id="协程调度器-CoroutineDispatcher"><a href="#协程调度器-CoroutineDispatcher" class="headerlink" title="协程调度器-CoroutineDispatcher"></a>协程调度器-CoroutineDispatcher</h3><blockquote>
+<p><code>Dispatchers</code>是协程中提供的<code>线程调度器</code>，用来切换线程，指定协程运行的线程。</p>
+</blockquote>
+<p>默认提供了四种调度器</p>
+<h4 id="Dispatchers-Default"><a href="#Dispatchers-Default" class="headerlink" title="Dispatchers.Default"></a>Dispatchers.Default</h4><blockquote>
+<p>默认调度器，适合处理后台运算，为<code>CPU密集型</code>任务调度器</p>
+</blockquote>
+<h4 id="Dispatchers-IO-仅JVM可用"><a href="#Dispatchers-IO-仅JVM可用" class="headerlink" title="Dispatchers.IO(仅JVM可用)"></a>Dispatchers.IO(仅JVM可用)</h4><blockquote>
+<p>适合执行IO相关操作，例如<code>读写文件</code>等，为<code>IO密集型</code>任务调度器</p>
+</blockquote>
+<h4 id="Dispatchers-Main"><a href="#Dispatchers-Main" class="headerlink" title="Dispatchers.Main"></a>Dispatchers.Main</h4><blockquote>
+<p>UI调度器，根据执行平台的不同会初始化为对应平台的UI线程调度器。</p>
+<p>在Android中，就会通过<code>Handler</code>调度任务到<code>UI线程</code>执行。</p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//加载各平台下定义的MainDispatcherFactory</span>
+<span class="hljs-keyword">private</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">loadMainDispatcher</span><span class="hljs-params">()</span></span>: MainCoroutineDispatcher &#123;
+        <span class="hljs-keyword">return</span> <span class="hljs-keyword">try</span> &#123;
+            <span class="hljs-keyword">val</span> factories = <span class="hljs-keyword">if</span> (FAST_SERVICE_LOADER_ENABLED) &#123;
+                FastServiceLoader.loadMainDispatcherFactory()
+            &#125; <span class="hljs-keyword">else</span> &#123;
+                <span class="hljs-comment">// We are explicitly using the</span>
+                <span class="hljs-comment">// `ServiceLoader.load(MyClass::class.java, MyClass::class.java.classLoader).iterator()`</span>
+                <span class="hljs-comment">// form of the ServiceLoader call to enable R8 optimization when compiled on Android.</span>
+                ServiceLoader.load(
+                        MainDispatcherFactory::<span class="hljs-class"><span class="hljs-keyword">class</span>.<span class="hljs-title">java</span>,
+                        <span class="hljs-type">MainDispatcherFactory::class.java.classLoader</span></span>
+                ).iterator().asSequence().toList()
+            &#125;
+            <span class="hljs-meta">@Suppress(<span class="hljs-meta-string">"ConstantConditionIf"</span>)</span>
+            factories.maxBy &#123; it.loadPriority &#125;?.tryCreateDispatcher(factories)
+                ?: createMissingDispatcher()
+        &#125; <span class="hljs-keyword">catch</span> (e: Throwable) &#123;
+            <span class="hljs-comment">// Service loader can throw an exception as well</span>
+            createMissingDispatcher(e)
+        &#125;
+    &#125;
+
+    <span class="hljs-keyword">internal</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">loadMainDispatcherFactory</span><span class="hljs-params">()</span></span>: List&lt;MainDispatcherFactory&gt; &#123;
+        <span class="hljs-keyword">val</span> clz = MainDispatcherFactory::<span class="hljs-class"><span class="hljs-keyword">class</span>.<span class="hljs-title">java</span></span>
+        <span class="hljs-keyword">if</span> (!ANDROID_DETECTED) &#123;
+            <span class="hljs-keyword">return</span> load(clz, clz.classLoader)
+        &#125;
+
+        <span class="hljs-keyword">return</span> <span class="hljs-keyword">try</span> &#123;
+            <span class="hljs-keyword">val</span> result = ArrayList&lt;MainDispatcherFactory&gt;(<span class="hljs-number">2</span>)
+          <span class="hljs-comment">//加载对应类名的类</span>
+            createInstanceOf(clz, <span class="hljs-string">"kotlinx.coroutines.android.AndroidDispatcherFactory"</span>)?.apply &#123; result.add(<span class="hljs-keyword">this</span>) &#125;
+            createInstanceOf(clz, <span class="hljs-string">"kotlinx.coroutines.test.internal.TestMainDispatcherFactory"</span>)?.apply &#123; result.add(<span class="hljs-keyword">this</span>) &#125;
+            result
+        &#125; <span class="hljs-keyword">catch</span> (e: Throwable) &#123;
+            <span class="hljs-comment">// Fallback to the regular SL in case of any unexpected exception</span>
+            load(clz, clz.classLoader)
+        &#125;
+    &#125;</code></pre></div>
+<p>按照类名去加载，Android下的名为<code>kotlinx.coroutions.android.AndroidDispatcherFactory</code>的类</p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//在Android编译完成后，可以读取到该类</span>
+<span class="hljs-keyword">internal</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">AndroidDispatcherFactory</span> : <span class="hljs-type">MainDispatcherFactory &#123;</span></span>
+    <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">createDispatcher</span><span class="hljs-params">(allFactories: <span class="hljs-type">List</span>&lt;<span class="hljs-type">MainDispatcherFactory</span>&gt;)</span></span> = HandlerContext(Looper.getMainLooper().asHandler(async = <span class="hljs-literal">true</span>), <span class="hljs-string">"Main"</span>)
+&#125;
+<span class="hljs-keyword">internal</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">HandlerContext</span> <span class="hljs-keyword">private</span> <span class="hljs-keyword">constructor</span></span>(
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> handler: Handler,
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> name: String?,
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> invokeImmediately: <span class="hljs-built_in">Boolean</span>
+) : HandlerDispatcher(), Delay &#123;
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">constructor</span>(
+        handler: Handler,
+        name: String? = <span class="hljs-literal">null</span>
+    ) : <span class="hljs-keyword">this</span>(handler, name, <span class="hljs-literal">false</span>)
+
+    <span class="hljs-comment">//android中需要向主looper进行提交调度</span>
+    <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">isDispatchNeeded</span><span class="hljs-params">(context: <span class="hljs-type">CoroutineContext</span>)</span></span>: <span class="hljs-built_in">Boolean</span> &#123;
+        <span class="hljs-keyword">return</span> !invokeImmediately || Looper.myLooper() != handler.looper
+    &#125;
+
+    <span class="hljs-comment">//通过持有主线程looper的handler进行调度</span>
+    <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">dispatch</span><span class="hljs-params">(context: <span class="hljs-type">CoroutineContext</span>, block: <span class="hljs-type">Runnable</span>)</span></span> &#123;
+        handler.post(block)
+    &#125;
+    ...
+&#125;</code></pre></div>
+<h5 id="Dispatchers-Main-immediate"><a href="#Dispatchers-Main-immediate" class="headerlink" title="Dispatchers.Main.immediate"></a>Dispatchers.Main.immediate</h5><blockquote>
+<p>适用于<code>响应一个UI事件后从而启动一个协程时</code>，会在下一帧中去立即执行任务。</p>
+</blockquote>
+<h4 id="Dispatchers-Unconfined"><a href="#Dispatchers-Unconfined" class="headerlink" title="Dispatchers.Unconfined"></a>Dispatchers.Unconfined</h4><blockquote>
+<p>非限制的调度器，在遇到第一个挂起函数前的代码运行在原线程中，执行挂起函数后，就切换线程运行。</p>
+</blockquote>
+<p><img src="/images/协程调度器间的差异" srcset="/img/loading.gif" alt="调度器间的差异"></p>
+<h4 id="自定义调度器"><a href="#自定义调度器" class="headerlink" title="自定义调度器"></a>自定义调度器</h4><blockquote>
+<p><code>Default</code>和<code>IO</code>的底层实现都依赖于<code>线程池</code>，执行到<code>挂起函数</code>时还是会发生线程的切换，可以通过<code>自定义调度器</code>减少这类切换的发生。</p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">val</span> myDispatcher= Executors.newSingleThreadExecutor&#123; r -&gt; Thread(r, <span class="hljs-string">"MyThread"</span>) &#125;.asCoroutineDispatcher() <span class="hljs-comment">//转换线程池到 Dispatcher</span></code></pre></div>
+<h3 id="协程拦截器-ContinuationInterceptor"><a href="#协程拦截器-ContinuationInterceptor" class="headerlink" title="协程拦截器-ContinuationInterceptor"></a>协程拦截器-ContinuationInterceptor</h3><blockquote>
+<p><code>ContinuationInterceptor</code>是一个拦截器的接口定义，用于控制协程的执行流程。</p>
+<p>在<code>CoroutineContext</code>中，实现了<code>ContinuationInterceptor</code>接口的类，永远会处于最后一位，保证不会被其他类覆盖。</p>
+<p><strong>协程拦截器只能存在一个！</strong></p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">// ContinuationInterceptor.kt</span>
+   <span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">interface</span> <span class="hljs-title">ContinuationInterceptor</span> : <span class="hljs-type">CoroutineContext.Element &#123;  </span></span>
+     <span class="hljs-comment">// 实现CoroutineContext.Element接口，说明自身是CoroutineContext上下文集合的一个元素类型  </span>
+     <span class="hljs-comment">// 定义伴生对象Key作为集合中的索引key，可直接通过类名访问该伴生对象  </span>
+     <span class="hljs-keyword">companion</span> <span class="hljs-keyword">object</span> Key : CoroutineContext.Key&lt;ContinuationInterceptor&gt;  
+   
+     <span class="hljs-comment">// 传入一个Continuation对象，并返回一个新的Continuation对象  </span>
+     <span class="hljs-comment">// 在协程中，这里的传参continuation就是协程体编译后Continuation对象  </span>
+     <span class="hljs-keyword">public</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-type">&lt;T&gt;</span> <span class="hljs-title">interceptContinuation</span><span class="hljs-params">(continuation: <span class="hljs-type">Continuation</span>&lt;<span class="hljs-type">T</span>&gt;)</span></span>: Continuation&lt;T&gt;  
+   
+     <span class="hljs-keyword">public</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">releaseInterceptedContinuation</span><span class="hljs-params">(continuation: <span class="hljs-type">Continuation</span>&lt;*&gt;)</span></span> &#123;  
+         
+     ...  
+ &#125;</code></pre></div>
+<p>其中<code>CoroutineDispatcher</code>就是基于<code>ContinuationInterceptor</code>所实现的。</p>
+<h3 id="协程异常处理-CoroutineExceptionHandler"><a href="#协程异常处理-CoroutineExceptionHandler" class="headerlink" title="协程异常处理-CoroutineExceptionHandler"></a>协程异常处理-CoroutineExceptionHandler</h3><blockquote>
+<p><strong>所有未被捕获的异常一定会抛出，无论使用哪种Job!!!</strong></p>
+</blockquote>
+<p>当一个协程由于一个异常而运行失败时，它会传播这个异常并传递给他的父级。</p>
+<p><img src="/images/协程异常传递流程" srcset="/img/loading.gif" alt="△ 协程中的异常会通过协程的层级不断传播"></p>
+<p>主要执行以下几步：</p>
+<ol>
+<li>取消它的子级任务</li>
+<li>取消自己的任务</li>
+<li>把异常继续向上传递到自己的父级</li>
+</ol>
+<h4 id="SupervisorJob"><a href="#SupervisorJob" class="headerlink" title="SupervisorJob"></a>SupervisorJob</h4><p>使用<code>Job</code>时，若发生异常会导致异常传递，使得所有的任务都会被取消。</p>
+<p>使用<code>SupervisorJob</code>，一个子协程运行失败不会传播异常，<code>只会影响自身</code>，其他任务都不会受到影响。</p>
+<p><strong>SupervisorJob只有在<code>supervisorScope</code>或<code>CoroutineScope(SupervisorJob())</code>内执行才可以生效。</strong></p>
+<p><img src="/images/SuperVisorJob不取消" srcset="/img/loading.gif" alt="SupervisorJob 不会取消它其他的子级"></p>
+<p><code>CoroutineScope(SupervisorJob())</code></p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">val</span> scope = CoroutineScope(SupervisorJob())
+scope.launch&#123;
+  <span class="hljs-comment">//child 1</span>
+&#125;
+scope.launch&#123;
+  <span class="hljs-comment">//child 2</span>
+&#125;
+<span class="hljs-comment">//若child1 发生异常不会影响 child2</span></code></pre></div>
+<p><code>supervisorScope</code></p>
+<div class="hljs"><pre><code class="hljs kotlin">supervisorScope &#123;
+    launch &#123;
+        <span class="hljs-keyword">throw</span> NullPointerException(<span class="hljs-string">"123"</span>)
+    &#125;
+    launch &#123;
+        System.err.println(<span class="hljs-number">3</span>)
+    &#125;
+&#125;</code></pre></div>
+<p>使用这两种方式都可以保证异常不向上传播</p>
+<h4 id="Job-VS-SupervisorJob"><a href="#Job-VS-SupervisorJob" class="headerlink" title="Job VS SupervisorJob"></a>Job VS SupervisorJob</h4><blockquote>
+<p>如果想在出现错误时不会退出父级和其他平级的协程，就要使用<code>SupervisorJob</code>或<code>supervisorScope</code></p>
+</blockquote>
+<h4 id="局部异常捕获"><a href="#局部异常捕获" class="headerlink" title="局部异常捕获"></a>局部异常捕获</h4><p>根据不同的<code>协程构造器</code>，处理方式也不尽相同</p>
+<h5 id="launch"><a href="#launch" class="headerlink" title="launch()"></a><code>launch()</code></h5><p>主要采用<code>try{}catch{}</code>的形式进行异常捕获</p>
+<div class="hljs"><pre><code class="hljs kotlin">scope.launch &#123;
+    <span class="hljs-keyword">try</span> &#123;
+        codeThatCanThrowExceptions()
+    &#125; <span class="hljs-keyword">catch</span>(e: Exception) &#123;
+        <span class="hljs-comment">// 处理异常</span>
+    &#125;
+&#125;</code></pre></div>
+<p><strong><code>launch()</code>时，异常会在第一时间被抛出。</strong></p>
+<h5 id="async-await"><a href="#async-await" class="headerlink" title="async/await()"></a><code>async/await()</code></h5><p><strong>只有当<code>async()</code>作为根协程时，不会自动抛出异常，而是要等到<code>await()</code>执行时才抛出异常。</strong></p>
+<p><code>根协程</code>：<code>coroutintScope</code>或<code>supervisorScope</code>的直接子协程，或者类似<code>scope.async()</code>这种实现。</p>
+<p>这种情况下可以通过<code>try{}catch{}</code>捕获异常</p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//supervisorScope</span>
+coroutineScope&#123;
+  <span class="hljs-keyword">val</span> deferred = async&#123;
+    <span class="hljs-keyword">throw</span> NullPointerException(<span class="hljs-string">"123"</span>)
+  &#125;
+&#125;</code></pre></div>
+<p>此时不会执行任何</p>
+<p>只有在调用<code>.await()</code>时才会抛出异常，此时就可以添加<code>try{}catch{}</code>捕获异常。</p>
+<p><strong>针对<code>async()</code>这种情况，最有效的方式就是<code>async()</code>内部进行<code>try{}catch{}</code></strong></p>
+<h4 id="全局异常捕获"><a href="#全局异常捕获" class="headerlink" title="全局异常捕获"></a>全局异常捕获</h4><blockquote>
+<p>类似Java，协程也提供了捕获全局异常(<code>未声明捕获异常</code>)的方式</p>
+</blockquote>
+<p>Java的全局异常捕获方式</p>
+<div class="hljs"><pre><code class="hljs java">Thread.setDefaultUncaughtExceptionHandler(<span class="hljs-keyword">new</span> UncaughtExceptionHandler() &#123;
+    <span class="hljs-meta">@Override</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">uncaughtException</span><span class="hljs-params">(Thread t, Throwable e)</span> </span>&#123;
+        <span class="hljs-comment">//TODO 异常处理</span>
+    &#125;
+&#125;);</code></pre></div>
+<h5 id="协程内全局异常捕获方式"><a href="#协程内全局异常捕获方式" class="headerlink" title="协程内全局异常捕获方式"></a>协程内全局异常捕获方式</h5><p>主要使用的是<code>CoroutineExceptionHandler</code>，可以帮助处理一些<code>未捕获的异常</code>。</p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">val</span> exceptionHandler = CoroutineExceptionHandler &#123; coroutineContext, throwable -&gt;
+    log(<span class="hljs-string">"Throws an exception with message: <span class="hljs-subst">$&#123;throwable.message&#125;</span>"</span>)
+&#125;
+
+<span class="hljs-keyword">val</span> context = Dispatchers.Main + Job() + exceptionHandler
+<span class="hljs-keyword">val</span> scope = CoroutineScope(context)
+
+<span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">main</span><span class="hljs-params">()</span></span>&#123;
+        scope.launch &#123;
+            launch &#123;
+                <span class="hljs-keyword">throw</span> NullPointerException(<span class="hljs-string">"1234"</span>)
+            &#125;
+            delay(<span class="hljs-number">1000</span>)
+        &#125;
+&#125;</code></pre></div>
+<p>此时就会捕获到<code>NPE</code>。</p>
+<p>需要<code>CoroutineExceptionHandler</code>生效需要两个条件：</p>
+<ol>
+<li>异常是被自动抛出异常的协程所抛出的。(<strong>只能是 launch()，async()这种是不可以的</strong>)</li>
+<li>必须在<code>根协程</code>中，<code>coroutintScope</code>或<code>supervisorScope</code>的直接子协程，或者类似<code>scope.async()</code>这种实现。</li>
+</ol>
+<h5 id="真·全局异常捕获"><a href="#真·全局异常捕获" class="headerlink" title="真·全局异常捕获"></a>真·全局异常捕获</h5><p>上面说到的<code>CoroutineExceptionHandler</code>只能在协程内部使用，无法兼顾其他协程的异常情况。此时就需要使用另一种方式，使用<code>ServiceLoader</code>实现全局内协程异常捕获</p>
+<p>实现这个功能需要如下几步：</p>
+<ol>
+<li>新建全局<code>CoroutineExceptionHandler</code>类</li>
+<li>在<code>classPath</code>中注册该类<ul>
+<li>在<code>src/main/</code>目录下的，<code>resources/META-INF/services</code>文件夹</li>
+<li>新建<code>kotlinx.coroutines.CoroutineExceptionHandler</code>文件</li>
+<li>文件内写入自定义的全局<code>CoroutineExceptionHandler</code>完整类名</li>
+</ul>
+</li>
+</ol>
+<p><strong>同样这种配置方式也只对launch()生效。</strong></p>
+<p>这里主要应用了<strong>SPI机制</strong></p>
+<blockquote>
+<p>全称为<code>Service Provider Interface</code>，JDK内置的一种服务提供发现机制，主要源码实现在<code>java.util.ServiceLoader</code></p>
+</blockquote>
+<p>使用过程：</p>
+<p>需要在<code>resources/META-INF/services</code>目录下创建与服务同名的<strong>全限定名</strong>相同的文件，然后在文件中写入<strong>服务提供者的全限定名</strong>。</p>
+<p>原理简介：</p>
+<p>主要通过反射调用配置的类进行实例化，反射成功后存入缓存，后续使用直接从缓存重新读取。</p>
+<h5 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h5><ol>
+<li><p><strong>协程内部异常处理流程</strong></p>
+<ul>
+<li><p>在作用域内使用<code>try..catch</code>可以直接捕获子线程中的异常。</p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">try</span>&#123;
+  launch&#123;
+    
+  &#125;
+  
+  async&#123;
+    
+  &#125;
+&#125;<span class="hljs-keyword">catch</span>&#123;...&#125;&#123;
+  
+&#125;</code></pre></div>
+</li>
+</ul>
+</li>
+</ol>
+<ul>
+<li><p>如果未设置异常捕获，则会走<code>全局异常捕获流程</code>(<strong>只在<code>launch</code>创建协程下生效</strong>)</p>
+<ul>
+<li>若设置<code>CoroutineExceptionHandler</code>则处理。<strong>必须在根协程下才可以生效</strong></li>
+<li>没配置，向<code>GlobalExceptionHandler</code>进行处理，该配置是全局的，对所有协程任务生效</li>
+</ul>
+</li>
+</ul>
+<ol start="2">
+<li><p><strong>异常传播在不同作用域的表现</strong></p>
+<ul>
+<li><code>GlobalScope</code>：异常不会向外传递，因为已经是<code>根协程</code></li>
+<li><code>coroutineScope</code>：异常进行<code>双向传递</code>，父协程和子协程都会被取消</li>
+<li><code>supervisorScope</code>：异常进行<code>单向传递</code>，只有父协程向子协程传递异常，子协程会被取消，父协程不受影响</li>
+</ul>
+</li>
+<li><p><code>launch/join</code>和<code>async/await</code>表现不同</p>
+<p><code>launch/join</code>关注的是<strong>任务是否执行完成</strong>，<code>async/await</code>关注的是<strong>任务的执行结果</strong>，所以在局部异常捕获的时候，两种创建方式的异常捕获也会有区别</p>
+</li>
+<li><p>想要避免异常传播，就要使用<code>SupervisorJob</code>；不在意就用<code>Job</code></p>
+</li>
+</ol>
+<h3 id="协程构造器-CoroutineBuilder"><a href="#协程构造器-CoroutineBuilder" class="headerlink" title="协程构造器-CoroutineBuilder"></a>协程构造器-CoroutineBuilder</h3><blockquote>
+<p>主要负责构造一个协程并启动它</p>
+</blockquote>
+<p>常用的有两种方法</p>
+<h4 id="launch-重点分析"><a href="#launch-重点分析" class="headerlink" title="launch(重点分析)"></a>launch(重点分析)</h4><blockquote>
+<p>默认创建一个新的协程，并返回<code>Job</code>对象，通过<code>Job</code>管理协程。</p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">public</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> CoroutineScope.<span class="hljs-title">launch</span><span class="hljs-params">(
+    context: <span class="hljs-type">CoroutineContext</span> = EmptyCoroutineContext,
+    start: <span class="hljs-type">CoroutineStart</span> = CoroutineStart.DEFAULT,
+    block: <span class="hljs-type">suspend</span> <span class="hljs-type">CoroutineScope</span>.() -&gt; <span class="hljs-type">Unit</span>
+)</span></span>: Job &#123;
+    <span class="hljs-keyword">val</span> newContext = newCoroutineContext(context)
+    <span class="hljs-keyword">val</span> coroutine = <span class="hljs-keyword">if</span> (start.isLazy)
+        LazyStandaloneCoroutine(newContext, block) <span class="hljs-keyword">else</span>
+        StandaloneCoroutine(newContext, active = <span class="hljs-literal">true</span>)
+    coroutine.start(start, coroutine, block)
+    <span class="hljs-keyword">return</span> coroutine
+&#125;</code></pre></div>
+<p>主要有三个参数：</p>
+<ul>
+<li><code>context</code>：就是前面介绍的<code>CoroutineContext</code></li>
+<li><code>start</code>：<a href="#协程启动模式-CoroutineStart">协程启动模式</a></li>
+<li><code>block</code>：需要执行的任务，由<code>suspend</code>修饰</li>
+</ul>
+<h5 id="newCoroutineContext"><a href="#newCoroutineContext" class="headerlink" title="newCoroutineContext"></a>newCoroutineContext</h5><blockquote>
+<p>将传参的<code>context</code>与<code>ContextScope</code>配置的<code>context</code>进行合并，并返回一个新的<code>context</code>。</p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">public</span> <span class="hljs-keyword">actual</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> CoroutineScope.<span class="hljs-title">newCoroutineContext</span><span class="hljs-params">(context: <span class="hljs-type">CoroutineContext</span>)</span></span>: CoroutineContext &#123;
+    <span class="hljs-keyword">val</span> combined = coroutineContext + context
+    <span class="hljs-keyword">val</span> debug = <span class="hljs-keyword">if</span> (DEBUG) combined + CoroutineId(COROUTINE_ID.incrementAndGet()) <span class="hljs-keyword">else</span> combined
+    <span class="hljs-keyword">return</span> <span class="hljs-keyword">if</span> (combined !== Dispatchers.Default &amp;&amp; combined[ContinuationInterceptor] == <span class="hljs-literal">null</span>)
+        debug + Dispatchers.Default <span class="hljs-keyword">else</span> debug
+&#125;</code></pre></div>
+<h5 id="StandaloneCoroutine-LazyStandaloneCoroutine"><a href="#StandaloneCoroutine-LazyStandaloneCoroutine" class="headerlink" title="StandaloneCoroutine/LazyStandaloneCoroutine"></a>StandaloneCoroutine/LazyStandaloneCoroutine</h5><div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">private</span> <span class="hljs-keyword">open</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">StandaloneCoroutine</span></span>(
+    parentContext: CoroutineContext,
+    active: <span class="hljs-built_in">Boolean</span>
+) : AbstractCoroutine&lt;<span class="hljs-built_in">Unit</span>&gt;(parentContext, active) &#123;
+    <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">handleJobException</span><span class="hljs-params">(exception: <span class="hljs-type">Throwable</span>)</span></span>: <span class="hljs-built_in">Boolean</span> &#123;
+        handleCoroutineException(context, exception)
+        <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>
+    &#125;
+&#125;</code></pre></div>
+<p>继承<code>AbstractCoroutine</code>且重写了<code>handleJobException()</code>，这也是为什么<code>CoroutineExceptionHandler</code>可以监听到异常的原因。</p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">private</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">LazyStandaloneCoroutine</span></span>(
+    parentContext: CoroutineContext,
+    block: <span class="hljs-keyword">suspend</span> CoroutineScope.() -&gt; <span class="hljs-built_in">Unit</span>
+) : StandaloneCoroutine(parentContext, active = <span class="hljs-literal">false</span>) &#123;
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">var</span> block: (<span class="hljs-keyword">suspend</span> CoroutineScope.() -&gt; <span class="hljs-built_in">Unit</span>)? = block
+
+    <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">onStart</span><span class="hljs-params">()</span></span> &#123;
+        <span class="hljs-keyword">val</span> block = checkNotNull(<span class="hljs-keyword">this</span>.block) &#123; <span class="hljs-string">"Already started"</span> &#125;
+        <span class="hljs-keyword">this</span>.block = <span class="hljs-literal">null</span>
+        block.startCoroutineCancellable(<span class="hljs-keyword">this</span>, <span class="hljs-keyword">this</span>)
+    &#125;
+&#125;</code></pre></div>
+<p><code>LazyStandaloneCoroutine</code>重写了<code>onStart()</code>，只有在调用到<code>start()/join()</code>等方法才会执行。</p>
+<h5 id="start"><a href="#start" class="headerlink" title="start()"></a>start()</h5><blockquote>
+<p>启动协程任务</p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//AbstractCoroutine.kt</span>
+    <span class="hljs-keyword">public</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-type">&lt;R&gt;</span> <span class="hljs-title">start</span><span class="hljs-params">(start: <span class="hljs-type">CoroutineStart</span>, receiver: <span class="hljs-type">R</span>, block: <span class="hljs-type">suspend</span> <span class="hljs-type">R</span>.() -&gt; <span class="hljs-type">T</span>)</span></span> &#123;
+        initParentJob()
+        start(block, receiver, <span class="hljs-keyword">this</span>)
+    &#125;</code></pre></div>
+<p>调用到<code>CoroutineStart.invoke()</code></p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//CoroutineStart.kt</span>
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">operator</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-type">&lt;R, T&gt;</span> <span class="hljs-title">invoke</span><span class="hljs-params">(block: <span class="hljs-type">suspend</span> <span class="hljs-type">R</span>.() -&gt; <span class="hljs-type">T</span>, receiver: <span class="hljs-type">R</span>, completion: <span class="hljs-type">Continuation</span>&lt;<span class="hljs-type">T</span>&gt;)</span></span> =
+        <span class="hljs-keyword">when</span> (<span class="hljs-keyword">this</span>) &#123;
+            CoroutineStart.DEFAULT -&gt; block.startCoroutineCancellable(receiver, completion)
+            CoroutineStart.ATOMIC -&gt; block.startCoroutine(receiver, completion)
+            CoroutineStart.UNDISPATCHED -&gt; block.startCoroutineUndispatched(receiver, completion)
+            CoroutineStart.LAZY -&gt; <span class="hljs-built_in">Unit</span> <span class="hljs-comment">// will start lazily</span>
+        &#125;</code></pre></div>
+<p>默认使用<code>CoroutineStart.DEFAULT</code>，以这个作为示例分析</p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//Cancellable.kt</span>
+<span class="hljs-keyword">internal</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-type">&lt;R, T&gt;</span> <span class="hljs-params">(<span class="hljs-keyword">suspend</span> (R)</span></span> -&gt; T).startCoroutineCancellable(receiver: R, completion: Continuation&lt;T&gt;) =
+    runSafely(completion) &#123;
+        createCoroutineUnintercepted(receiver, completion)
+      .intercepted()
+      .resumeCancellable(<span class="hljs-built_in">Unit</span>)
+    &#125;</code></pre></div>
+<p>主要流程分为三步：</p>
+<h6 id="createCoroutineUninterecpted"><a href="#createCoroutineUninterecpted" class="headerlink" title="createCoroutineUninterecpted"></a>createCoroutineUninterecpted</h6><div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//IntrinsicsJvm.kt</span>
+<span class="hljs-meta">@SinceKotlin(<span class="hljs-meta-string">"1.3"</span>)</span>
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">actual</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-type">&lt;T&gt;</span> <span class="hljs-params">(<span class="hljs-keyword">suspend</span> ()</span></span> -&gt; T).createCoroutineUnintercepted(
+    completion: Continuation&lt;T&gt;
+): Continuation&lt;<span class="hljs-built_in">Unit</span>&gt; &#123;
+    <span class="hljs-keyword">val</span> probeCompletion = probeCoroutineCreated(completion)
+    <span class="hljs-keyword">return</span> <span class="hljs-keyword">if</span> (<span class="hljs-keyword">this</span> <span class="hljs-keyword">is</span> BaseContinuationImpl)
+        create(probeCompletion)
+    <span class="hljs-keyword">else</span>
+        createCoroutineFromSuspendFunction(probeCompletion) &#123;
+            (<span class="hljs-keyword">this</span> <span class="hljs-keyword">as</span> Function1&lt;Continuation&lt;T&gt;, Any?&gt;).invoke(it)
+        &#125;
+&#125;</code></pre></div>
+<p>主要是为了创建<code>Continuation</code>对象</p>
+<h6 id="intercepted"><a href="#intercepted" class="headerlink" title="intercepted"></a>intercepted</h6><div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">public</span> <span class="hljs-keyword">actual</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-type">&lt;T&gt;</span> Continuation<span class="hljs-type">&lt;T&gt;</span>.<span class="hljs-title">intercepted</span><span class="hljs-params">()</span></span>: Continuation&lt;T&gt; =
+    (<span class="hljs-keyword">this</span> <span class="hljs-keyword">as</span>? ContinuationImpl)?.intercepted() ?: <span class="hljs-keyword">this</span>
+
+
+<span class="hljs-comment">//ContinuationImpl.kt</span>
+    <span class="hljs-keyword">public</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">intercepted</span><span class="hljs-params">()</span></span>: Continuation&lt;Any?&gt; =
+        intercepted
+            ?: (context[ContinuationInterceptor]?.interceptContinuation(<span class="hljs-keyword">this</span>) ?: <span class="hljs-keyword">this</span>)
+                .also &#123; intercepted = it &#125;</code></pre></div>
+<p>如果设置了<code>ContinutionInterceptor</code>，就获取并执行<code>interceptContinuation()</code>。</p>
+<h6 id="resumeCancellable"><a href="#resumeCancellable" class="headerlink" title="resumeCancellable"></a>resumeCancellable</h6><div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">internal</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-type">&lt;T&gt;</span> Continuation<span class="hljs-type">&lt;T&gt;</span>.<span class="hljs-title">resumeCancellable</span><span class="hljs-params">(value: <span class="hljs-type">T</span>)</span></span> = <span class="hljs-keyword">when</span> (<span class="hljs-keyword">this</span>) &#123;
+    <span class="hljs-keyword">is</span> DispatchedContinuation -&gt; resumeCancellable(value)
+    <span class="hljs-keyword">else</span> -&gt; resume(value)
+&#125;</code></pre></div>
+<p>进行线程调度或者事件拦截处理，然后协程就开始启动了。</p>
+<h4 id="async"><a href="#async" class="headerlink" title="async"></a>async</h4><h3 id="协程启动模式-CoroutineStart"><a href="#协程启动模式-CoroutineStart" class="headerlink" title="协程启动模式-CoroutineStart"></a>协程启动模式-CoroutineStart</h3><blockquote>
+<p>控制协程创建后的调用规则</p>
+</blockquote>
+<h4 id="CoroutineStart-DEFAULT"><a href="#CoroutineStart-DEFAULT" class="headerlink" title="CoroutineStart.DEFAULT"></a>CoroutineStart.DEFAULT</h4><blockquote>
+<p>协程的默认启动模式，为<code>饿汉式调用</code>。在调用协程后，会立即进入调度状态。</p>
+<p><em>可以在调度前被取消。</em></p>
+</blockquote>
+<h4 id="CoroutineStart-LAZY"><a href="#CoroutineStart-LAZY" class="headerlink" title="CoroutineStart.LAZY"></a>CoroutineStart.LAZY</h4><blockquote>
+<p><code>懒汉式调用</code>，只有需要执行时才会执行。</p>
+<p>通过调用以下方法就可以进入调度状态。</p>
+<ul>
+<li><code>job.start()</code>：启动协程</li>
+<li><code>job.join</code>：启动协程并等待任务执行结束</li>
+<li><code>job.await()</code></li>
+</ul>
+</blockquote>
+<h4 id="CoroutineStart-ATOMIC"><a href="#CoroutineStart-ATOMIC" class="headerlink" title="CoroutineStart.ATOMIC"></a>CoroutineStart.ATOMIC</h4><blockquote>
+<p>协程创建后，立即开始调度。</p>
+<p><strong>在执行到第一个挂起点之前不会响应<code>cancel()</code></strong></p>
+</blockquote>
+<h4 id="CoroutineStart-UNDISPATCHED"><a href="#CoroutineStart-UNDISPATCHED" class="headerlink" title="CoroutineStart.UNDISPATCHED"></a>CoroutineStart.UNDISPATCHED</h4><blockquote>
+<p>协程创建后，立即开始调度</p>
+<p><strong>直到遇到第一个挂起点之前，都会在当前线程中执行。</strong></p>
+</blockquote>
+<h3 id="协程取消-Cancel"><a href="#协程取消-Cancel" class="headerlink" title="协程取消-Cancel"></a>协程取消-Cancel</h3><blockquote>
+<p>取消协程可以针对<code>CoroutineScope</code>或<code>Job</code>去执行。</p>
+</blockquote>
+<h4 id="取消作用域下所有协程"><a href="#取消作用域下所有协程" class="headerlink" title="取消作用域下所有协程"></a>取消作用域下所有协程</h4><blockquote>
+<p>调用<code>CoroutineScope.cancel()</code></p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">val</span> scope = CoroutineScope(context)
+
+...
+<span class="hljs-keyword">if</span>(scope.isActive)&#123; <span class="hljs-comment">//判断当前scope是否活跃</span>
+  scope.cancel()
+&#125;</code></pre></div>
+<p>适用于页面关闭时，需要回收资源的情况</p>
+<p><strong>不能在已取消的作用域中再次启动新的协程。</strong></p>
+<h4 id="取消单个协程"><a href="#取消单个协程" class="headerlink" title="取消单个协程"></a>取消单个协程</h4><blockquote>
+<p>针对<code>Job</code>进行取消，调用<code>cancel()</code>可以取消正在运行的协程</p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-comment">//官方示例代码</span>
+<span class="hljs-keyword">val</span> job = launch &#123;
+    repeat(<span class="hljs-number">1000</span>) &#123; i -&gt;
+        println(<span class="hljs-string">"I'm sleeping <span class="hljs-variable">$i</span> ..."</span>)
+        delay(<span class="hljs-number">500L</span>)
+    &#125;
+&#125;
+delay(<span class="hljs-number">1300L</span>) <span class="hljs-comment">// 等待一段时间</span>
+println(<span class="hljs-string">"main: I'm tired of waiting!"</span>)
+job.cancel() <span class="hljs-comment">// 取消 job</span>
+job.join() <span class="hljs-comment">// 等待 job 结束</span>
+println(<span class="hljs-string">"main: Now I can quit."</span>)</code></pre></div>
+<h5 id="协程之间的关系"><a href="#协程之间的关系" class="headerlink" title="协程之间的关系"></a>协程之间的关系</h5><blockquote>
+<p>协程是存在着父子关系的，<strong>取消父协程时，也会取消所有子协程</strong></p>
+</blockquote>
+<p>主要有以下三种关系：</p>
+<ol>
+<li><p><code>父协程</code>调用<code>cancel()</code>或触发异常时，会立即取消所有<code>子协程</code>；<code>子协程</code>调用<code>cancel()</code>不影响父协程及兄弟协程的执行</p>
+<blockquote>
+<p>在底层实现中，子协程通过抛出异常的方式将取消的情况通知到父协程。</p>
+<p>父协程通过传入的异常来决定是否处理异常，如果异常为<code>CancellationException</code>就不做处理。</p>
+</blockquote>
+</li>
+<li><p><code>父协程</code>必须等到所有<code>子协程</code>完成才算完成</p>
+</li>
+<li><p><code>子协程</code>抛出未捕获的异常时，默认情况下会取消<code>父协程</code>(<code>superVisorJob</code>和<code>CancellationException</code>除外)</p>
+</li>
+</ol>
+<h4 id="使协程可以取消"><a href="#使协程可以取消" class="headerlink" title="使协程可以取消"></a>使协程可以取消</h4><blockquote>
+<p>协程处理任务的代码必须是<strong>协作式</strong>的，需要配合<code>协程取消</code>进行了处理。</p>
+</blockquote>
+<p>需要在任务处理期间<code>定期检查协程是否已被取消</code>，或者在处理耗时任务之前就<code>检查当前协程是否已取消</code>。</p>
+<p>目前只有<code>kotlinx.coroutines</code>所有的挂起函数都是<code>可取消的</code>，例如<code>delay()</code>、<code>yield()</code>等，这些都不需要去检查协程是否已取消。</p>
+<p>因此要使<code>协程可以被取消</code>，可以使用以下两种方法：</p>
+<ul>
+<li>通过<code>job.isActive</code>或<code>ensureActive()</code>检查协程状态</li>
+<li>内部使用<code>delay()</code>或<code>yield()</code>等挂起函数——核心在于<code>suspendCoroutineUninterceptedOrReturn</code></li>
+</ul>
+<h5 id="检查Job的活跃状态-isActive"><a href="#检查Job的活跃状态-isActive" class="headerlink" title="检查Job的活跃状态-isActive"></a>检查Job的活跃状态-isActive</h5><blockquote>
+<p>在协程执行过程中，添加<code>isActive</code>检查协程状态，若<code>!isActive</code>就不向下执行任务。</p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">val</span> job = scope.launch&#123;
+  <span class="hljs-keyword">var</span> i = <span class="hljs-number">0</span>
+  <span class="hljs-keyword">while</span>(i &lt; <span class="hljs-number">5</span> &amp;&amp; isActive)&#123;
+    Log.e(<span class="hljs-string">"test"</span>,<span class="hljs-string">"now value = <span class="hljs-subst">$&#123;i++&#125;</span>"</span>)
+  &#125;
+&#125;
+
+...
+job.cancel()</code></pre></div>
+<p>还有一种方式就是<code>ensureActive()</code></p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">public</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> Job.<span class="hljs-title">ensureActive</span><span class="hljs-params">()</span></span>: <span class="hljs-built_in">Unit</span> &#123;
+    <span class="hljs-keyword">if</span> (!isActive) <span class="hljs-keyword">throw</span> getCancellationException()
+&#125;</code></pre></div>
+<p>使用<code>ensureActive()</code>可以不用手动去检测<code>isActive</code>，通过直接抛出异常来结束任务。</p>
+<h5 id="使用挂起函数"><a href="#使用挂起函数" class="headerlink" title="使用挂起函数"></a>使用挂起函数</h5><blockquote>
+<p><code>挂起函数</code>：<code>delay()</code>、<code>yield()</code>等函数，内部核心实现为<code>suspendCancellableCoroutine</code></p>
+</blockquote>
+<h6 id="delay"><a href="#delay" class="headerlink" title="delay()"></a>delay()</h6><blockquote>
+<p>让协程挂起，而且不会阻塞CPU。类似于<code>Thread.sleep()</code></p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">public</span> <span class="hljs-keyword">suspend</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">delay</span><span class="hljs-params">(timeMillis: <span class="hljs-type">Long</span>)</span></span> &#123;
+    <span class="hljs-keyword">if</span> (timeMillis &lt;= <span class="hljs-number">0</span>) <span class="hljs-keyword">return</span> <span class="hljs-comment">// don't delay</span>
+    <span class="hljs-keyword">return</span> suspendCancellableCoroutine <span class="hljs-symbol">sc@</span> &#123; cont: CancellableContinuation&lt;<span class="hljs-built_in">Unit</span>&gt; -&gt;
+        cont.context.delay.scheduleResumeAfterDelay(timeMillis, cont)
+    &#125;
+&#125;</code></pre></div>
+<h6 id="yield"><a href="#yield" class="headerlink" title="yield()"></a>yield()</h6><blockquote>
+<p>挂起当前协程，然后将协程分发到<code>Dispatcher</code>队列，可以让该协程所在线程或线程池可以运行其他协程逻辑，然后等待<code>Dispatcher</code>空闲的时候继续执行原来的协程任务。类似于<code>Thread.yield()</code></p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">public</span> <span class="hljs-keyword">suspend</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">yield</span><span class="hljs-params">()</span></span>: <span class="hljs-built_in">Unit</span> = suspendCoroutineUninterceptedOrReturn <span class="hljs-symbol">sc@</span> &#123; uCont -&gt;
+    <span class="hljs-keyword">val</span> context = uCont.context
+    context.checkCompletion()
+    <span class="hljs-keyword">val</span> cont = uCont.intercepted() <span class="hljs-keyword">as</span>? DispatchedContinuation&lt;<span class="hljs-built_in">Unit</span>&gt; ?: <span class="hljs-keyword">return</span><span class="hljs-symbol">@sc</span> <span class="hljs-built_in">Unit</span>
+    <span class="hljs-keyword">if</span> (!cont.dispatcher.isDispatchNeeded(context)) &#123;
+        <span class="hljs-keyword">return</span><span class="hljs-symbol">@sc</span> <span class="hljs-keyword">if</span> (cont.yieldUndispatched()) COROUTINE_SUSPENDED <span class="hljs-keyword">else</span> <span class="hljs-built_in">Unit</span>
+    &#125;
+    cont.dispatchYield(<span class="hljs-built_in">Unit</span>)
+    COROUTINE_SUSPENDED
+&#125;
+
+<span class="hljs-keyword">internal</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> CoroutineContext.<span class="hljs-title">checkCompletion</span><span class="hljs-params">()</span></span> &#123;
+    <span class="hljs-keyword">val</span> job = <span class="hljs-keyword">get</span>(Job)
+    <span class="hljs-keyword">if</span> (job != <span class="hljs-literal">null</span> &amp;&amp; !job.isActive) <span class="hljs-keyword">throw</span> job.getCancellationException()
+&#125;</code></pre></div>
+<p>执行<code>yield()</code>时，会优先检测任务的完成状态，如果<code>!job.isActive</code>直接抛出<code>CancellableException</code></p>
+<h6 id="suspendCoroutineUninterceptedOrReturn"><a href="#suspendCoroutineUninterceptedOrReturn" class="headerlink" title="suspendCoroutineUninterceptedOrReturn"></a>suspendCoroutineUninterceptedOrReturn</h6><blockquote>
+<p>主要作用为<code>获取当前协程的实例，并且挂起当前协程或者不挂起直接返回结果</code>。</p>
+</blockquote>
+<p>根据上述源码发现，<code>挂起函数</code>的关键在于<code>suspendCoroutineUninterceptedOrReturn</code>，只要使用了该方法，就可以成为<code>挂起函数</code>。</p>
+<p>通过做转换的时候，可以使用系统提供的两个转换函数：</p>
+<ul>
+<li><code>suspendCoroutine</code></li>
+<li><code>suspendCancellableCoroutine</code><em>推荐使用</em></li>
+</ul>
+<h4 id="相关源码"><a href="#相关源码" class="headerlink" title="相关源码"></a>相关源码</h4><h5 id="suspendCoroutine"><a href="#suspendCoroutine" class="headerlink" title="suspendCoroutine"></a>suspendCoroutine</h5><div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">suspend</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">test</span><span class="hljs-params">()</span></span> = suspendCoroutine&lt;String&gt; &#123; continuation -&gt;
+    <span class="hljs-keyword">if</span> (...) &#123;
+        continuation.resume(<span class="hljs-string">"11"</span>)
+    &#125; <span class="hljs-keyword">else</span> &#123;
+        continuation.resumeWithException(NullPointerException(<span class="hljs-string">"123"</span>))
+    &#125;
+&#125;</code></pre></div>
+<h5 id="suspendCancellableCoroutine"><a href="#suspendCancellableCoroutine" class="headerlink" title="suspendCancellableCoroutine"></a>suspendCancellableCoroutine</h5><div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">val</span> aa = <span class="hljs-number">0</span>
+<span class="hljs-keyword">suspend</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">ttt</span><span class="hljs-params">()</span></span> = suspendCancellableCoroutine&lt;<span class="hljs-built_in">Int</span>&gt; &#123; cancellableContinuation -&gt;
+    <span class="hljs-keyword">if</span> (aa == <span class="hljs-number">0</span>) &#123;
+        <span class="hljs-comment">//执行完毕抛出结果</span>
+        cancellableContinuation.resume(<span class="hljs-number">1</span>) &#123;
+            <span class="hljs-comment">// 执行过程异常捕获</span>
+            log(<span class="hljs-string">"aaa <span class="hljs-subst">$&#123;it.message&#125;</span>"</span>)
+        &#125;
+    &#125; <span class="hljs-keyword">else</span> &#123;
+        cancellableContinuation.resumeWithException(IllegalArgumentException(<span class="hljs-string">"123"</span>))
+    &#125;
+
+    cancellableContinuation.invokeOnCancellation &#123;
+       <span class="hljs-comment">//协程任务执行cancel时，回调该方法</span>
+        log(<span class="hljs-string">"我被取消了"</span>)
+    &#125;
+&#125;</code></pre></div>
+<p>可以通过<code>continuation.invokeCancellation()</code>执行取消操作</p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">public</span> <span class="hljs-keyword">suspend</span> <span class="hljs-keyword">inline</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-type">&lt;T&gt;</span> <span class="hljs-title">suspendCancellableCoroutine</span><span class="hljs-params">(
+    <span class="hljs-keyword">crossinline</span> block: (<span class="hljs-type">CancellableContinuation</span>&lt;<span class="hljs-type">T</span>&gt;) -&gt; <span class="hljs-type">Unit</span>
+)</span></span>: T =
+    suspendCoroutineUninterceptedOrReturn &#123; uCont -&gt;
+        <span class="hljs-keyword">val</span> cancellable = CancellableContinuationImpl(uCont.intercepted(), resumeMode = MODE_CANCELLABLE)
+        <span class="hljs-comment">/*
+         * For non-atomic cancellation we setup parent-child relationship immediately
+         * in case when `block` blocks the current thread (e.g. Rx2 with trampoline scheduler), but
+         * properly supports cancellation.
+         */</span>
+        cancellable.initCancellability()
+        block(cancellable)
+        cancellable.getResult()
+    &#125;</code></pre></div>
+<h4 id="禁止取消"><a href="#禁止取消" class="headerlink" title="禁止取消"></a>禁止取消</h4><blockquote>
+<p>当任务被取消时，挂起函数会收到<code>CancellationException</code>后续如果需要执行一些其他的挂起函数任务将无法执行。</p>
+</blockquote>
+<p>对挂起函数调用<code>withContext(NonCancellable)</code>，保证挂起函数正常执行。</p>
+<p>关键在于<code>isActive</code>永远为<code>true</code></p>
+<h4 id="超时取消"><a href="#超时取消" class="headerlink" title="超时取消"></a>超时取消</h4><blockquote>
+<p>大部分取消协程的原因都是<strong>超出了预期的执行时间</strong>，此时就会去触发取消的操作。</p>
+</blockquote>
+<p>对挂起函数调用<code>withTimeout(XX)</code>或<code>withTimeoutOrNull(XX)</code>，唯一的区别就是后者会返回<code>null</code>而不是抛出异常。</p>
+<h2 id="原理实现"><a href="#原理实现" class="headerlink" title="原理实现"></a>原理实现</h2><h3 id="Dispatchers原理"><a href="#Dispatchers原理" class="headerlink" title="Dispatchers原理"></a>Dispatchers原理</h3><p>无论是<code>Dispatchers.Default</code>或者<code>IO</code>都是<code>CoroutineDispatcher</code>的子类。</p>
+<div class="hljs"><pre><code class="hljs kotlin">public abstract class CoroutineDispatcher :
+    AbstractCoroutineContextElement(ContinuationInterceptor), ContinuationInterceptor &#123;
+    //线程调度，指定协程在某一线程上运行
+    public abstract fun dispatch(context: CoroutineContext, block: Runnable)      
+    //封装 Continuation 为 DispatchedContinuation
+    public final override fun &lt;T&gt; interceptContinuation(continuation: Continuation&lt;T&gt;): Continuation&lt;T&gt; =
+        DispatchedContinuation(this, continuation)
+    &#125;</code></pre></div>
+<p><code>CoroutineDispatacher</code>继承<code>AbstractCoroutineContextElement</code>类，还实现了<code>ContinuationInterceptor</code>接口。</p>
+<h4 id="DispatchedContinuation"><a href="#DispatchedContinuation" class="headerlink" title="DispatchedContinuation"></a>DispatchedContinuation</h4><blockquote>
+<p>代理协程体Continuation对象并持有线程调度器，负责<strong>使用线程调度器将协程体调度到执行的线程执行</strong>。</p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">internal</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">DispatchedContinuation</span>&lt;<span class="hljs-type">in T</span>&gt;</span>(
+    <span class="hljs-meta">@JvmField</span> <span class="hljs-keyword">val</span> dispatcher: CoroutineDispatcher,
+    <span class="hljs-meta">@JvmField</span> <span class="hljs-keyword">val</span> continuation: Continuation&lt;T&gt;
+) : DispatchedTask&lt;T&gt;(MODE_ATOMIC_DEFAULT), CoroutineStackFrame, Continuation&lt;T&gt; <span class="hljs-keyword">by</span> continuation &#123;
+  
+  
+     <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">resumeWith</span><span class="hljs-params">(result: <span class="hljs-type">Result</span>&lt;<span class="hljs-type">T</span>&gt;)</span></span> &#123;  
+         <span class="hljs-keyword">val</span> context = continuation.context  
+         <span class="hljs-keyword">val</span> state = result.toState()  
+         <span class="hljs-comment">// 是否需要线程调度  </span>
+         <span class="hljs-keyword">if</span> (dispatcher.isDispatchNeeded(context)) &#123;  
+             _state = state  
+             resumeMode = MODE_ATOMIC_DEFAULT  
+             <span class="hljs-comment">// dispatch 调度线程，第二个参数是一个Runnable类型，这里传参this也就是DispatchedContinuation自身  </span>
+             <span class="hljs-comment">// DispatchedContinuation实际上也是一个Runnable对象，调用调度器的dispatch方法之后就可以使这个runnable在指定的线程运行了  </span>
+             dispatcher.dispatch(context, <span class="hljs-keyword">this</span>)  
+         &#125; <span class="hljs-keyword">else</span> &#123;  
+             executeUnconfined(state, MODE_ATOMIC_DEFAULT) &#123;  
+                 withCoroutineContext(<span class="hljs-keyword">this</span>.context, countOrElement) &#123;  
+                     <span class="hljs-comment">// 不需要调度，执行协程体的resumeWith  </span>
+                     continuation.resumeWith(result)  
+                 &#125;  
+             &#125;  
+         &#125;  
+     &#125;  
+      <span class="hljs-comment">// 默认启动模式  </span>
+      <span class="hljs-keyword">inline</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">resumeCancellableWith</span><span class="hljs-params">(result: <span class="hljs-type">Result</span>&lt;<span class="hljs-type">T</span>&gt;)</span></span> &#123;  
+         <span class="hljs-keyword">val</span> state = result.toState()  
+         <span class="hljs-keyword">if</span> (dispatcher.isDispatchNeeded(context)) &#123;  
+             _state = state  
+             resumeMode = MODE_CANCELLABLE  
+             dispatcher.dispatch(context, <span class="hljs-keyword">this</span>)  
+         &#125; <span class="hljs-keyword">else</span> &#123;  
+             executeUnconfined(state, MODE_CANCELLABLE) &#123;  
+                 <span class="hljs-keyword">if</span> (!resumeCancelled()) &#123;  
+                     resumeUndispatchedWith(result)  
+                 &#125;  
+             &#125;  
+         &#125;  
+     &#125;    
+  
+&#125;</code></pre></div>
+<p><code>DispatchedContinuation</code>用两个参数构建</p>
+<ul>
+<li><code>dispatcher</code>：拦截器</li>
+<li><code>continuation</code>：协程体类对象</li>
+</ul>
+<p>其中<code>resumeWith()</code>和<code>resumeCancellableWith()</code>负责协程的启动。</p>
+<p>//TODO 先挂着</p>
+<h3 id="协程启动流程"><a href="#协程启动流程" class="headerlink" title="协程启动流程"></a>协程启动流程</h3><ol>
+<li>通过<code>CoroutineScope.launch()</code>创建一个协程，默认启动模式为<code>ControutineStart.DEFAULT</code>，创建一个<code>StandaloneCoroutine</code>协程对象</li>
+<li>执行<code>StandaloneCoroutine.start()</code>实质执行到<code>AbstractCoroutine.start()</code>，继续触发到<code>CoroutineStart.invoke()</code></li>
+<li>由于默认调度器为<code>Dispatchers.Default</code>，所以执行到了<code>startCoroutineCancellable()</code></li>
+<li><code>startCoroutineCancellable()</code>内部主要有三次调用<ul>
+<li><code>createCoroutineUnintercepted()</code>：创建一个协程体类对象</li>
+<li><code>intercepted</code>：将协程体类包装成<code>DispatchedContinuation</code>对象</li>
+<li><code>resumeCancellableWith()</code>：通过<code>Default</code>调用到<code>resumeCancellableWith()</code></li>
+</ul>
+</li>
+<li>实际调用到了<code>DispatchContinuation.resumeCancellableWith()</code>，最后执行到<code>Continuation.resumeWith()</code>执行协程任务。</li>
+</ol>
+<h3 id="协程挂起-恢复原理"><a href="#协程挂起-恢复原理" class="headerlink" title="协程挂起/恢复原理"></a>协程挂起/恢复原理</h3><blockquote>
+<p>挂起的特点：<strong>不阻塞线程</strong>。挂起的本质<strong>切线程</strong>，并且在相应逻辑处理完毕之后，再重新切回线程。</p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">suspend</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">loginUser</span><span class="hljs-params">(userId: <span class="hljs-type">String</span>, password: <span class="hljs-type">String</span>)</span></span>: String &#123;
+  <span class="hljs-keyword">val</span> user = logUserIn(userId, password)
+  <span class="hljs-keyword">val</span> userDb = logUserIn(user)
+  <span class="hljs-keyword">return</span> userDb
+&#125;
+
+<span class="hljs-keyword">suspend</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">logUserIn</span><span class="hljs-params">(userId: <span class="hljs-type">String</span>, password: <span class="hljs-type">String</span>)</span></span>: String
+
+<span class="hljs-keyword">suspend</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">logUserIn</span><span class="hljs-params">(userId: <span class="hljs-type">String</span>)</span></span>: String</code></pre></div>
+<p>反编译后得到</p>
+<div class="hljs"><pre><code class="hljs kotlin">
+<span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">loginUser</span><span class="hljs-params">(userId: <span class="hljs-type">String</span>, password: <span class="hljs-type">String</span>, completion: <span class="hljs-type">Continuation</span>&lt;<span class="hljs-type">Any</span>?&gt;)</span></span> &#123;
+  <span class="hljs-keyword">val</span> user = logUserIn(userId, password)
+  <span class="hljs-keyword">val</span> userDb = logUserIn(user)
+  completion.resume(userDb)
+&#125;</code></pre></div>
+<p>调用<code>挂起函数</code>或者<code>suspend lambda表达式</code>时，都会一个<code>隐式参数</code>传入，这个参数是<code>Continuation</code>类型。</p>
+<blockquote>
+<p>CPS：续体传递风格</p>
+<p>在每个<code>挂起函数</code>与<code>suspend lambda表达式</code>都会附加一个<code>Continuation</code>参数，并且是用来代替<code>suspend</code></p>
+</blockquote>
+<h4 id="Continuation接口"><a href="#Continuation接口" class="headerlink" title="Continuation接口"></a>Continuation接口</h4><p><code>挂起函数</code>通过<code>Continuation</code>在方法间互相通信，基本实现如下：</p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-class"><span class="hljs-keyword">interface</span> <span class="hljs-title">Continuation</span>&lt;<span class="hljs-type">in T</span>&gt; </span>&#123;
+  <span class="hljs-keyword">public</span> <span class="hljs-keyword">val</span> context: CoroutineContext
+  <span class="hljs-keyword">public</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">resumeWith</span><span class="hljs-params">(value: <span class="hljs-type">Result</span>&lt;<span class="hljs-type">T</span>&gt;)</span></span>
+&#125;
+
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">inline</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-type">&lt;T&gt;</span> Continuation<span class="hljs-type">&lt;T&gt;</span>.<span class="hljs-title">resume</span><span class="hljs-params">(value: <span class="hljs-type">T</span>)</span></span>: <span class="hljs-built_in">Unit</span> =
+    resumeWith(Result.success(value))
+
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">inline</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-type">&lt;T&gt;</span> Continuation<span class="hljs-type">&lt;T&gt;</span>.<span class="hljs-title">resumeWithException</span><span class="hljs-params">(exception: <span class="hljs-type">Throwable</span>)</span></span>: <span class="hljs-built_in">Unit</span> =
+    resumeWith(Result.failure(exception))</code></pre></div>
+<p>后续添加<code>resume(value)</code>和<code>resumeWithException(exception)</code>可以方便的获取结果，而不需要从<code>Result</code>解析。</p>
+<p><code>Continuation</code>主要有以下参数和方法</p>
+<ul>
+<li><code>context</code>：内部使用的<code>CoroutineContext</code></li>
+<li><code>resumeWith()</code>：恢复协程的执行，同时传入一个<code>Result</code>。内部包括了<code>计算结果</code>或<code>过程中发生的异常</code></li>
+</ul>
+<h4 id="状态机"><a href="#状态机" class="headerlink" title="状态机"></a>状态机</h4><blockquote>
+<p>Kotlin编译器会确定函数何时可以在内部挂起，每个挂起点都会被声明为有限状态机的一个状态，每个状态用<code>label</code>表示</p>
+</blockquote>
+<p>查看反编译后源码，内部源码大概如下</p>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-meta">@Nullable</span>
+  <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> Object <span class="hljs-title">loginUser</span><span class="hljs-params">(@NotNull String userId, @NotNull String password, @NotNull Continuation $completion)</span> </span>&#123;
+     Object $continuation;
+     label27: &#123;
+        <span class="hljs-keyword">if</span> ($completion <span class="hljs-keyword">instanceof</span> &lt;undefinedtype&gt;) &#123;
+           $continuation = (&lt;undefinedtype&gt;)$completion;
+           <span class="hljs-keyword">if</span> ((((&lt;undefinedtype&gt;)$continuation).label &amp; Integer.MIN_VALUE) != <span class="hljs-number">0</span>) &#123;
+              ((&lt;undefinedtype&gt;)$continuation).label -= Integer.MIN_VALUE;
+              <span class="hljs-keyword">break</span> label27;
+           &#125;
+        &#125;
+
+        $continuation = <span class="hljs-keyword">new</span> ContinuationImpl($completion) &#123;
+           <span class="hljs-comment">// $FF: synthetic field</span>
+           Object result;
+           <span class="hljs-keyword">int</span> label;
+           Object L$<span class="hljs-number">0</span>;
+           Object L$<span class="hljs-number">1</span>;
+           Object L$<span class="hljs-number">2</span>;
+           Object L$<span class="hljs-number">3</span>;
+
+           <span class="hljs-meta">@Nullable</span>
+           <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> Object <span class="hljs-title">invokeSuspend</span><span class="hljs-params">(@NotNull Object $result)</span> </span>&#123;
+              <span class="hljs-keyword">this</span>.result = $result;
+              <span class="hljs-keyword">this</span>.label |= Integer.MIN_VALUE;
+              <span class="hljs-keyword">return</span> MyClass.<span class="hljs-keyword">this</span>.loginUser((String)<span class="hljs-keyword">null</span>, (String)<span class="hljs-keyword">null</span>, <span class="hljs-keyword">this</span>);
+           &#125;
+        &#125;;
+     &#125;
+
+     Object var10000;
+     label22: &#123;
+        Object $result = ((&lt;undefinedtype&gt;)$continuation).result;
+        Object var8 = IntrinsicsKt.getCOROUTINE_SUSPENDED();
+        String user;
+        <span class="hljs-keyword">switch</span>(((&lt;undefinedtype&gt;)$continuation).label) &#123;
+        <span class="hljs-keyword">case</span> <span class="hljs-number">0</span>:
+            <span class="hljs-comment">//错误检查</span>
+           ResultKt.throwOnFailure($result);
+           ((&lt;undefinedtype&gt;)$continuation).L$<span class="hljs-number">0</span> = <span class="hljs-keyword">this</span>;
+           ((&lt;undefinedtype&gt;)$continuation).L$<span class="hljs-number">1</span> = userId;
+           ((&lt;undefinedtype&gt;)$continuation).L$<span class="hljs-number">2</span> = password;
+            <span class="hljs-comment">//设置 label为1 下次执行切换到 case 1</span>
+           ((&lt;undefinedtype&gt;)$continuation).label = <span class="hljs-number">1</span>;
+            <span class="hljs-comment">//当前状态机执行的流程</span>
+           var10000 = <span class="hljs-keyword">this</span>.logUserIn(userId, password, (Continuation)$continuation);
+           <span class="hljs-keyword">if</span> (var10000 == var8) &#123;
+              <span class="hljs-keyword">return</span> var8;
+           &#125;
+           <span class="hljs-keyword">break</span>;
+        <span class="hljs-keyword">case</span> <span class="hljs-number">1</span>:
+           password = (String)((&lt;undefinedtype&gt;)$continuation).L$<span class="hljs-number">2</span>;
+           userId = (String)((&lt;undefinedtype&gt;)$continuation).L$<span class="hljs-number">1</span>;
+           <span class="hljs-keyword">this</span> = (MyClass)((&lt;undefinedtype&gt;)$continuation).L$<span class="hljs-number">0</span>;
+           ResultKt.throwOnFailure($result);
+           user = (String)var10000;
+           ((&lt;undefinedtype&gt;)$continuation).L$<span class="hljs-number">0</span> = <span class="hljs-keyword">this</span>;
+           ((&lt;undefinedtype&gt;)$continuation).L$<span class="hljs-number">1</span> = userId;
+           ((&lt;undefinedtype&gt;)$continuation).L$<span class="hljs-number">2</span> = password;
+           ((&lt;undefinedtype&gt;)$continuation).L$<span class="hljs-number">3</span> = user;
+           ((&lt;undefinedtype&gt;)$continuation).label = <span class="hljs-number">2</span>;
+            var10000 = <span class="hljs-keyword">this</span>.logUserIn(user, (Continuation)$continuation);
+           <span class="hljs-keyword">if</span> (var10000 == var8) &#123;
+              <span class="hljs-keyword">return</span> var8;
+           &#125;             
+           var10000 = $result;
+           <span class="hljs-keyword">break</span>;
+        <span class="hljs-keyword">case</span> <span class="hljs-number">2</span>:
+           user = (String)((&lt;undefinedtype&gt;)$continuation).L$<span class="hljs-number">3</span>;
+           password = (String)((&lt;undefinedtype&gt;)$continuation).L$<span class="hljs-number">2</span>;
+           userId = (String)((&lt;undefinedtype&gt;)$continuation).L$<span class="hljs-number">1</span>;
+           MyClass var9 = (MyClass)((&lt;undefinedtype&gt;)$continuation).L$<span class="hljs-number">0</span>;
+           ResultKt.throwOnFailure($result);
+           var10000 = $result;
+           <span class="hljs-keyword">break</span> label22;
+        <span class="hljs-keyword">default</span>:
+           <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> IllegalStateException(<span class="hljs-string">"call to 'resume' before 'invoke' with coroutine"</span>);
+        &#125;
+
+     &#125;
+
+     String userDb = (String)var10000;
+     <span class="hljs-keyword">return</span> userDb;
+  &#125;</code></pre></div>
+<blockquote>
+<p>Kotlin编译器将每个<code>挂起函数</code>转换为一个状态机，在每次函数需要挂起时使用回调并进行优化。</p>
+</blockquote>
+<p>观察上述源码发现主要有几个关键点</p>
+<h5 id="ContinuationImpl"><a href="#ContinuationImpl" class="headerlink" title="ContinuationImpl"></a>ContinuationImpl</h5><div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">internal</span> <span class="hljs-keyword">abstract</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">ContinuationImpl</span></span>(
+    completion: Continuation&lt;Any?&gt;?,
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> _context: CoroutineContext?
+) : BaseContinuationImpl(completion) &#123;
+    <span class="hljs-keyword">constructor</span>(completion: Continuation&lt;Any?&gt;?) : <span class="hljs-keyword">this</span>(completion, completion?.context)
+
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">override</span> <span class="hljs-keyword">val</span> context: CoroutineContext
+        <span class="hljs-keyword">get</span>() = _context!!
+
+    <span class="hljs-meta">@Transient</span>
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">var</span> intercepted: Continuation&lt;Any?&gt;? = <span class="hljs-literal">null</span>
+
+    <span class="hljs-keyword">public</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">intercepted</span><span class="hljs-params">()</span></span>: Continuation&lt;Any?&gt; =
+        intercepted
+            ?: (context[ContinuationInterceptor]?.interceptContinuation(<span class="hljs-keyword">this</span>) ?: <span class="hljs-keyword">this</span>)
+                .also &#123; intercepted = it &#125;
+
+&#125;
+
+<span class="hljs-comment">//其中 invokeSuspend()是由BaseContinuationImpl实现</span></code></pre></div>
+<div class="hljs"><pre><code class="hljs Kotlin"><span class="hljs-keyword">internal</span> <span class="hljs-keyword">abstract</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">BaseContinuationImpl</span></span>(
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">val</span> completion: Continuation&lt;Any?&gt;?
+) : Continuation&lt;Any?&gt;, CoroutineStackFrame, Serializable &#123;
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">resumeWith</span><span class="hljs-params">(result: <span class="hljs-type">Result</span>&lt;<span class="hljs-type">Any</span>?&gt;)</span></span> &#123;
+        <span class="hljs-keyword">var</span> current = <span class="hljs-keyword">this</span>
+        <span class="hljs-keyword">var</span> param = result
+        <span class="hljs-keyword">while</span> (<span class="hljs-literal">true</span>) &#123;
+            probeCoroutineResumed(current)
+            with(current) &#123;
+                <span class="hljs-keyword">val</span> completion = completion!! 
+                <span class="hljs-keyword">val</span> outcome: Result&lt;Any?&gt; =
+                    <span class="hljs-keyword">try</span> &#123;
+                      <span class="hljs-comment">//调用 invokeSuspend 真正执行协程体</span>
+                        <span class="hljs-keyword">val</span> outcome = invokeSuspend(param)
+                      <span class="hljs-comment">//如果返回值为 CORPUTINE_SUSPENDED ，需要执行挂起操作</span>
+                        <span class="hljs-keyword">if</span> (outcome === COROUTINE_SUSPENDED) <span class="hljs-keyword">return</span>
+                      <span class="hljs-comment">//协程体执行成功</span>
+                        Result.success(outcome)
+                    &#125; <span class="hljs-keyword">catch</span> (exception: Throwable) &#123;
+                      <span class="hljs-comment">//协程体执行异常</span>
+                        Result.failure(exception)
+                    &#125;
+                releaseIntercepted() <span class="hljs-comment">// this state machine instance is terminating</span>
+                <span class="hljs-keyword">if</span> (completion <span class="hljs-keyword">is</span> BaseContinuationImpl) &#123;
+                    <span class="hljs-comment">// unrolling recursion via loop</span>
+                    current = completion
+                    param = outcome
+                &#125; <span class="hljs-keyword">else</span> &#123;
+                   <span class="hljs-comment">//此处表示 StandaloneCoroutine</span>
+                    completion.resumeWith(outcome)
+                    <span class="hljs-keyword">return</span>
+                &#125;
+            &#125;
+        &#125;
+    &#125;
+
+    <span class="hljs-keyword">protected</span> <span class="hljs-keyword">abstract</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">invokeSuspend</span><span class="hljs-params">(result: <span class="hljs-type">Result</span>&lt;<span class="hljs-type">Any</span>?&gt;)</span></span>: Any?
+  ...
+&#125;</code></pre></div>
+<p><code>invokeSuspend()</code>执行的就是<code>协程体</code>，当<code>invokeSuspend()</code>返回值为<code>COROUTINE_SUSPENDED</code>时，执行<code>return操作</code>，协程体的操作也会被结束，所以<code>COROUTINE_SUSPENDED</code>也表示<strong>协程发生挂起</strong>。</p>
+<h4 id="协程挂起"><a href="#协程挂起" class="headerlink" title="协程挂起"></a>协程挂起</h4><blockquote>
+<p>通过挂起函数将协程挂起，此处拿<code>withContext()</code>进行分析</p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">public</span> <span class="hljs-keyword">suspend</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-type">&lt;T&gt;</span> <span class="hljs-title">withContext</span><span class="hljs-params">(
+    context: <span class="hljs-type">CoroutineContext</span>,
+    block: <span class="hljs-type">suspend</span> <span class="hljs-type">CoroutineScope</span>.() -&gt; <span class="hljs-type">T</span>
+)</span></span>: T = suspendCoroutineUninterceptedOrReturn <span class="hljs-symbol">sc@</span> &#123; uCont -&gt;
+
+    <span class="hljs-keyword">val</span> oldContext = uCont.context
+    <span class="hljs-keyword">val</span> newContext = oldContext + context
+   <span class="hljs-comment">//检查协程是否活跃</span>
+    newContext.checkCompletion()
+
+    <span class="hljs-keyword">if</span> (newContext === oldContext) &#123;
+        <span class="hljs-keyword">val</span> coroutine = ScopeCoroutine(newContext, uCont) <span class="hljs-comment">// MODE_DIRECT</span>
+        <span class="hljs-keyword">return</span><span class="hljs-symbol">@sc</span> coroutine.startUndispatchedOrReturn(coroutine, block)
+    &#125;
+
+    <span class="hljs-keyword">if</span> (newContext[ContinuationInterceptor] == oldContext[ContinuationInterceptor]) &#123;
+        <span class="hljs-keyword">val</span> coroutine = UndispatchedCoroutine(newContext, uCont) <span class="hljs-comment">// MODE_UNDISPATCHED</span>
+        <span class="hljs-comment">// There are changes in the context, so this thread needs to be updated</span>
+        withCoroutineContext(newContext, <span class="hljs-literal">null</span>) &#123;
+            <span class="hljs-keyword">return</span><span class="hljs-symbol">@sc</span> coroutine.startUndispatchedOrReturn(coroutine, block)
+        &#125;
+    &#125;
+
+    <span class="hljs-keyword">val</span> coroutine = DispatchedCoroutine(newContext, uCont) <span class="hljs-comment">// MODE_CANCELLABLE</span>
+    coroutine.initParentJob()
+   <span class="hljs-comment">//coroutine 为 DispatchedCoroutine，持有需要恢复的协程                                                 </span>
+    block.startCoroutineCancellable(coroutine, coroutine)
+    <span class="hljs-comment">//返回结果为 挂起 还是完成                                              </span>
+    coroutine.getResult()
+&#125;</code></pre></div>
+<div class="hljs"><pre><code class="hljs Kotlin"><span class="hljs-comment">//DispatchedCoroutine.kt</span>
+    <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">getResult</span><span class="hljs-params">()</span></span>: Any? &#123;
+      <span class="hljs-comment">//需要挂起，则返回COROUTINE_SUSPENDED</span>
+        <span class="hljs-keyword">if</span> (trySuspend()) <span class="hljs-keyword">return</span> COROUTINE_SUSPENDED
+        <span class="hljs-comment">// otherwise, onCompletionInternal was already invoked &amp; invoked tryResume, and the result is in the state</span>
+        <span class="hljs-keyword">val</span> state = <span class="hljs-keyword">this</span>.state.unboxState()
+        <span class="hljs-keyword">if</span> (state <span class="hljs-keyword">is</span> CompletedExceptionally) <span class="hljs-keyword">throw</span> state.cause
+        <span class="hljs-meta">@Suppress(<span class="hljs-meta-string">"UNCHECKED_CAST"</span>)</span>
+        <span class="hljs-keyword">return</span> state <span class="hljs-keyword">as</span> T
+    &#125;
+
+    <span class="hljs-keyword">private</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">trySuspend</span><span class="hljs-params">()</span></span>: <span class="hljs-built_in">Boolean</span> &#123;
+        _decision.loop &#123; decision -&gt;
+            <span class="hljs-keyword">when</span> (decision) &#123;
+                UNDECIDED -&gt; <span class="hljs-keyword">if</span> (<span class="hljs-keyword">this</span>._decision.compareAndSet(UNDECIDED, SUSPENDED)) <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>
+                RESUMED -&gt; <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>
+                <span class="hljs-keyword">else</span> -&gt; error(<span class="hljs-string">"Already suspended"</span>)
+            &#125;
+        &#125;
+    &#125;</code></pre></div>
+<blockquote>
+<p>协程是否挂起，关键在于<strong>是否返回COROUTINE_SUSPENDED</strong>，在<code>getResult()</code>中就是判断<code>trySuspend()</code>是否返回<code>true</code>。</p>
+</blockquote>
+<p><img src="/images/协程挂起流程.png" srcset="/img/loading.gif" alt="协程挂起"></p>
+<h4 id="协程恢复"><a href="#协程恢复" class="headerlink" title="协程恢复"></a>协程恢复</h4><p>在<code>withContext()</code>中调用<code>startCoroutine()</code>传入了两个参数，其中第二个表示<code>协程完成的回调</code>。</p>
+<p>当协程完成的时候会调用<code>resumeWith()</code>，然后层层传递到<code>JobSupport.afterCompletion()</code>，最后执行到<code>DispatchedCoroutine</code></p>
+<div class="hljs"><pre><code class="hljs kotlin"><span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">afterCompletionInternal</span><span class="hljs-params">(state: <span class="hljs-type">Any</span>?, mode: <span class="hljs-type">Int</span>)</span></span> &#123;
+    <span class="hljs-keyword">if</span> (tryResume()) <span class="hljs-keyword">return</span> <span class="hljs-comment">// completed before getResult invocation -- bail out</span>
+    <span class="hljs-comment">// otherwise, getResult has already commenced, i.e. completed later or in other thread</span>
+    <span class="hljs-keyword">super</span>.afterCompletionInternal(state, mode)
+&#125;
+
+<span class="hljs-keyword">private</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">tryResume</span><span class="hljs-params">()</span></span>: <span class="hljs-built_in">Boolean</span> &#123;
+    _decision.loop &#123; decision -&gt;
+        <span class="hljs-keyword">when</span> (decision) &#123;
+            UNDECIDED -&gt; <span class="hljs-keyword">if</span> (<span class="hljs-keyword">this</span>._decision.compareAndSet(UNDECIDED, RESUMED)) <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>
+            SUSPENDED -&gt; <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>
+            <span class="hljs-keyword">else</span> -&gt; error(<span class="hljs-string">"Already resumed"</span>)
+        &#125;
+    &#125;
+&#125;</code></pre></div>
+<p>在<code>afterCompletionInternal()</code>判断协程是否被挂起，若挂起则恢复已被挂起的协程。</p>
+<p>然后再回到执行线程上，就会继续执行<code>invokeSuspend()</code>直到执行结束。</p>
+<p><img src="/images/协程恢复流程.png" srcset="/img/loading.gif" alt="协程恢复"></p>
+<h3 id="协程并发"><a href="#协程并发" class="headerlink" title="协程并发"></a>协程并发</h3><h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="https://github.com/Kotlin/KEEP/blob/master/proposals/coroutines.md" target="_blank" rel="noopener">Kotlin/Keep</a></p>
+<p><a href="https://juejin.cn/user/2277843822969863" target="_blank" rel="noopener">Android_开发者</a></p>
+<p><a href="https://mp.weixin.qq.com/s?__biz=MzUyMDAxMjQ3Ng==&amp;mid=2247495170&amp;idx=1&amp;sn=b54e233699fd7bba0e940e2837258002&amp;chksm=f9f279d1ce85f0c741857443332c20a82caedc24d8ea798219c2098c2d09ee58e11a6aba9296&amp;mpshare=1&amp;scene=23&amp;srcid=1212Jz0IsITrVDTTTBRNCn0j&amp;sharer_sharetime=1607751713936&amp;sharer_shareid=65073698ab9ac2983b955fa53b4ff585%23rd" target="_blank" rel="noopener">Kotlin协程原理解析</a></p>
+<p><a href="https://juejin.cn/post/6883652600462327821#heading-10" target="_blank" rel="noopener">图解协程：suspend</a></p>
+<!-- https://juejin.cn/post/6890348438873964551#heading-1 -->
             </div>
             <hr>
             <div>

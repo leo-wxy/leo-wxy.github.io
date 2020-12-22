@@ -169,7 +169,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      6.3k 字
+      6.5k 字
     </span>
   
 
@@ -179,7 +179,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      94
+      98
        分钟
     </span>
   
@@ -263,7 +263,7 @@
 <p><strong>三缓冲</strong>有效利用等待<code>vsync</code>的时间，减少了<code>jank</code>，但是增加了延迟。</p>
 <p><strong><code>Graphic Buffer</code>不是越多越好，一般还是两个，出现<code>jank</code>以后可以三个。</strong></p>
 </blockquote>
-<h3 id="Project-Buffer-黄油计划"><a href="#Project-Buffer-黄油计划" class="headerlink" title="Project Buffer(黄油计划)"></a>Project Buffer(黄油计划)</h3><p>前面提到的<code>VSYnc</code>、<code>双缓冲/三缓冲</code>都是<code>Project Buffer</code>的关键点，还有下面需要提到的<code>Choreographer</code>.</p>
+<h3 id="Project-Buffer-黄油计划"><a href="#Project-Buffer-黄油计划" class="headerlink" title="Project Buffer(黄油计划)"></a>Project Buffer(黄油计划)</h3><p>前面提到的<code>VSYnc</code>、<code>双缓冲/三缓冲</code>都是<code>Project Buffer</code>的关键点，还有下面提到的<code>Choreographer</code>.</p>
 <ul>
 <li>核心关键：<strong>VSync</strong>实现定时中断</li>
 <li><code>双缓冲/三缓冲</code>：一般情况下<code>双缓冲</code>足矣，当出现<code>jank</code>时，可以添加一块<code>Graphic Buffer</code>缓冲区，实现<code>三缓冲</code></li>
@@ -1036,7 +1036,7 @@
         jniThrowRuntimeException(env, <span class="hljs-string">"MessageQueue is not initialized."</span>);
         <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
     &#125;
-    <span class="hljs-comment">//创建NAtiveDisplayEventReceiver，与DurfaceFlinger建立连接</span>
+    <span class="hljs-comment">//创建NAtiveDisplayEventReceiver，与SurfaceFlinger建立连接</span>
     sp&lt;NativeDisplayEventReceiver&gt; receiver = <span class="hljs-keyword">new</span> NativeDisplayEventReceiver(env,
             receiverWeak, messageQueue, vsyncSource, configChanged);
     <span class="hljs-keyword">status_t</span> status = receiver-&gt;initialize();
@@ -1250,9 +1250,52 @@ EventThreadConnection::EventThreadConnection(EventThread* eventThread,
 
     <span class="hljs-keyword">return</span> OK;
 &#125;</code></pre></div>
-<blockquote>
-<p><code>FrameDisplayEventReceiver</code></p>
-</blockquote>
+<h4 id="DisplayEventReceiver-scheduleVsync"><a href="#DisplayEventReceiver-scheduleVsync" class="headerlink" title="DisplayEventReceiver#scheduleVsync"></a>DisplayEventReceiver#scheduleVsync</h4><p><code>DisplayEventReceiver</code>初始化完毕后，继续执行<code>scheduleVsync()</code></p>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//libs/androidfw/DisplayEventDispatcher.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">status_t</span> <span class="hljs-title">DisplayEventDispatcher::scheduleVsync</span><span class="hljs-params">()</span> </span>&#123;
+    <span class="hljs-keyword">if</span> (!mWaitingForVsync) &#123;
+        ALOGV(<span class="hljs-string">"dispatcher %p ~ Scheduling vsync."</span>, <span class="hljs-keyword">this</span>);
+      
+        <span class="hljs-keyword">status_t</span> status = mReceiver.requestNextVsync();
+        <span class="hljs-keyword">if</span> (status) &#123;
+            ALOGW(<span class="hljs-string">"Failed to request next vsync, status=%d"</span>, status);
+            <span class="hljs-keyword">return</span> status;
+        &#125;
+
+        mWaitingForVsync = <span class="hljs-literal">true</span>;
+    &#125;
+    <span class="hljs-keyword">return</span> OK;
+&#125;</code></pre></div>
+<p>回调到<code>DisplayEventReceiver</code></p>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//frameworks/native/libs/gui/DisplayEventReceiver.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">status_t</span> <span class="hljs-title">DisplayEventReceiver::requestNextVsync</span><span class="hljs-params">()</span> </span>&#123;
+    <span class="hljs-keyword">if</span> (mEventConnection != <span class="hljs-literal">NULL</span>) &#123;
+        mEventConnection-&gt;requestNextVsync();
+        <span class="hljs-keyword">return</span> NO_ERROR;
+    &#125;
+    <span class="hljs-keyword">return</span> NO_INIT;
+&#125;</code></pre></div>
+<p><code>mEventConnection</code>指向了<code>EventThreadConnection</code></p>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//frameworks/native/services/surfaceflinger/Scheduler/EventThread.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">EventThreadConnection::requestNextVsync</span><span class="hljs-params">()</span> </span>&#123;
+    ATRACE_NAME(<span class="hljs-string">"requestNextVsync"</span>);
+    mEventThread-&gt;requestNextVsync(<span class="hljs-keyword">this</span>);
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">EventThread::requestNextVsync</span><span class="hljs-params">(<span class="hljs-keyword">const</span> sp&lt;EventThreadConnection&gt;&amp; connection)</span> </span>&#123;
+    <span class="hljs-keyword">if</span> (connection-&gt;resyncCallback) &#123;
+        connection-&gt;resyncCallback();
+    &#125;
+
+    <span class="hljs-function"><span class="hljs-built_in">std</span>::lock_guard&lt;<span class="hljs-built_in">std</span>::mutex&gt; <span class="hljs-title">lock</span><span class="hljs-params">(mMutex)</span></span>;
+
+    <span class="hljs-keyword">if</span> (connection-&gt;vsyncRequest == VSyncRequest::None) &#123;
+        connection-&gt;vsyncRequest = VSyncRequest::Single;
+        mCondition.notify_all();
+    &#125;
+&#125;</code></pre></div>
+<p>调用<code>mCondition.notify_all()</code>唤醒了等待的<code>EventThread</code></p>
+<p>就去获取一次<code>Vsync信号</code></p>
 <h3 id="回调Vsync信号"><a href="#回调Vsync信号" class="headerlink" title="回调Vsync信号"></a>回调Vsync信号</h3><p>收到<code>Vsync信号</code>后，回调到<code>DisplayEventDispatcher.handleEvent()</code></p>
 <div class="hljs"><pre><code class="hljs c++"><span class="hljs-function"><span class="hljs-keyword">int</span> <span class="hljs-title">DisplayEventDispatcher::handleEvent</span><span class="hljs-params">(<span class="hljs-keyword">int</span>, <span class="hljs-keyword">int</span> events, <span class="hljs-keyword">void</span>*)</span> </span>&#123;
     <span class="hljs-keyword">if</span> (events &amp; (Looper::EVENT_ERROR | Looper::EVENT_HANGUP)) &#123;
@@ -1300,6 +1343,8 @@ EventThreadConnection::EventThreadConnection(EventThread* eventThread,
     mMessageQueue-&gt;raiseAndClearException(env, <span class="hljs-string">"dispatchVsync"</span>);
 &#125;</code></pre></div>
 <p>此处调用到<code>DisplayEventReceiver.dispatchVsync()</code></p>
+<h3 id="SurfaceFlinger监听Vsync信号"><a href="#SurfaceFlinger监听Vsync信号" class="headerlink" title="SurfaceFlinger监听Vsync信号"></a>SurfaceFlinger监听Vsync信号</h3><p>上面讲到的都是从<code>SurfaceFlinger</code>去监听到<code>Vsync</code>信号，但是<code>SurfaceFlinger</code>的Vsync信号又是从哪里来的？</p>
+<a href="/2020/12/21/Android-SurfaceFlinger解析/" title="Android-SurfaceFlinger解析">Android-SurfaceFlinger解析</a>
 <h2 id="Handler异步消息与同步屏障"><a href="#Handler异步消息与同步屏障" class="headerlink" title="Handler异步消息与同步屏障"></a>Handler异步消息与同步屏障</h2><p>在<code>ViewRootImpl.schdeuleTraversals()</code>执行<code>mHandler.getLooper().getQueue().postSyncBarrier()</code>添加<code>同步屏障</code>，在<code>doTraversal()</code>执行<code>removeSyncBarrier()</code>移除<code>同步屏障</code>。</p>
 <p><code>同步屏障</code>：为了<strong>提高异步消息优先级，保证Vsync信号和绘制的同步。</strong></p>
 <a href="/2018/05/14/Handler机制即源码解析/" title="Handler机制源码解析">Handler机制源码解析</a>
