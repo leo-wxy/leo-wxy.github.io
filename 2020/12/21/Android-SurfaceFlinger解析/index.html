@@ -169,7 +169,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      3.4k 字
+      5.2k 字
     </span>
   
 
@@ -179,7 +179,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      58
+      88
        分钟
     </span>
   
@@ -212,7 +212,10 @@
             <h1 style="display: none">Android-SurfaceFlinger解析</h1>
             
             <div class="markdown-body">
-              <p><code>SurfaceFlinger</code>是Android系统中最重要的<strong>图像消费者</strong>，Activity绘制的界面图像，都会传递到<code>SurfaceFlinger</code>中。</p>
+              <blockquote>
+<p> 基于<code>Android 9.0</code>源码进行分析</p>
+</blockquote>
+<p><code>SurfaceFlinger</code>是Android系统中最重要的<strong>图像消费者</strong>，Activity绘制的界面图像，都会传递到<code>SurfaceFlinger</code>中。</p>
 <p>主要作用：<strong>接收图像缓冲区数据，然后交给HWComposer或OpenGL合成，合成完毕后再返回。</strong></p>
 <p><img src="/images/SurfaceFlinger执行流程.jpg" srcset="/img/loading.gif" alt="SurfaceFlinger执行流程"></p>
 <h2 id="SurfaceFlinger初始化"><a href="#SurfaceFlinger初始化" class="headerlink" title="SurfaceFlinger初始化"></a>SurfaceFlinger初始化</h2><p><code>init</code>通过执行<code>surfaceflinger.rc</code>文件，然后就执行到了<code>main_surfaceflinger.cpp</code>开始初始化流程</p>
@@ -267,76 +270,79 @@
     ALOGI(  <span class="hljs-string">"SurfaceFlinger's main thread ready to run. "</span>
             <span class="hljs-string">"Initializing graphics H/W..."</span>);
 
+    ALOGI(<span class="hljs-string">"Phase offest NS: %"</span> PRId64 <span class="hljs-string">""</span>, vsyncPhaseOffsetNs);
+
     Mutex::Autolock _l(mStateLock);
 
-    <span class="hljs-comment">// initialize EGL for the default display</span>
-    mEGLDisplay = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-    eglInitialize(mEGLDisplay, <span class="hljs-literal">NULL</span>, <span class="hljs-literal">NULL</span>);
-
     <span class="hljs-comment">// start the EventThread</span>
-    sp&lt;VSyncSource&gt; vsyncSrc = <span class="hljs-keyword">new</span> DispSyncSource(&amp;mPrimaryDispSync,
-            vsyncPhaseOffsetNs, <span class="hljs-literal">true</span>, <span class="hljs-string">"app"</span>);
-    mEventThread = <span class="hljs-keyword">new</span> EventThread(vsyncSrc);
-    sp&lt;VSyncSource&gt; sfVsyncSrc = <span class="hljs-keyword">new</span> DispSyncSource(&amp;mPrimaryDispSync,
-            sfVsyncPhaseOffsetNs, <span class="hljs-literal">true</span>, <span class="hljs-string">"sf"</span>);
-    mSFEventThread = <span class="hljs-keyword">new</span> EventThread(sfVsyncSrc);
-    mEventQueue.setEventThread(mSFEventThread);
+    mEventThreadSource =
+            <span class="hljs-built_in">std</span>::make_unique&lt;DispSyncSource&gt;(&amp;mPrimaryDispSync, SurfaceFlinger::vsyncPhaseOffsetNs,
+                                             <span class="hljs-literal">true</span>, <span class="hljs-string">"app"</span>);
+    mEventThread = <span class="hljs-built_in">std</span>::make_unique&lt;impl::EventThread&gt;(mEventThreadSource.get(),
+                                                       [<span class="hljs-keyword">this</span>]() &#123; resyncWithRateLimit(); &#125;,
+                                                       impl::EventThread::InterceptVSyncsCallback(),
+                                                       <span class="hljs-string">"appEventThread"</span>);
+    mSfEventThreadSource =
+            <span class="hljs-built_in">std</span>::make_unique&lt;DispSyncSource&gt;(&amp;mPrimaryDispSync,
+                                             SurfaceFlinger::sfVsyncPhaseOffsetNs, <span class="hljs-literal">true</span>, <span class="hljs-string">"sf"</span>);
 
-    <span class="hljs-comment">// Initialize the H/W composer object.  There may or may not be an</span>
-    <span class="hljs-comment">// actual hardware composer underneath.</span>
-    mHwc = <span class="hljs-keyword">new</span> HWComposer(<span class="hljs-keyword">this</span>,
-            *<span class="hljs-keyword">static_cast</span>&lt;HWComposer::EventHandler *&gt;(<span class="hljs-keyword">this</span>));
+    mSFEventThread =
+            <span class="hljs-built_in">std</span>::make_unique&lt;impl::EventThread&gt;(mSfEventThreadSource.get(),
+                                                [<span class="hljs-keyword">this</span>]() &#123; resyncWithRateLimit(); &#125;,
+                                                [<span class="hljs-keyword">this</span>](<span class="hljs-keyword">nsecs_t</span> timestamp) &#123;
+                                                    mInterceptor-&gt;saveVSyncEvent(timestamp);
+                                                &#125;,
+                                                <span class="hljs-string">"sfEventThread"</span>);
+    mEventQueue-&gt;setEventThread(mSFEventThread.get());
+    mVsyncModulator.setEventThread(mSFEventThread.get());
 
-    <span class="hljs-comment">// get a RenderEngine for the given display / config (can't fail)</span>
-    mRenderEngine = RenderEngine::create(mEGLDisplay, mHwc-&gt;getVisualID());
+    <span class="hljs-comment">// Get a RenderEngine for the given display / config (can't fail)</span>
+    getBE().mRenderEngine =
+            RE::impl::RenderEngine::create(HAL_PIXEL_FORMAT_RGBA_8888,
+                                           hasWideColorDisplay
+                                                   ? RE::RenderEngine::WIDE_COLOR_SUPPORT
+                                                   : <span class="hljs-number">0</span>);
+    LOG_ALWAYS_FATAL_IF(getBE().mRenderEngine == <span class="hljs-literal">nullptr</span>, <span class="hljs-string">"couldn't create RenderEngine"</span>);
 
-    <span class="hljs-comment">// retrieve the EGL context that was selected/created</span>
-    mEGLContext = mRenderEngine-&gt;getEGLContext();
+    LOG_ALWAYS_FATAL_IF(mVrFlingerRequestsDisplay,
+            <span class="hljs-string">"Starting with vr flinger active is not currently supported."</span>);
+    getBE().mHwc.reset(
+            <span class="hljs-keyword">new</span> HWComposer(<span class="hljs-built_in">std</span>::make_unique&lt;Hwc2::impl::Composer&gt;(getBE().mHwcServiceName)));
+    getBE().mHwc-&gt;registerCallback(<span class="hljs-keyword">this</span>, getBE().mComposerSequenceId);
+    <span class="hljs-comment">// Process any initial hotplug and resulting display changes.</span>
+    processDisplayHotplugEventsLocked();
+    LOG_ALWAYS_FATAL_IF(!getBE().mHwc-&gt;isConnected(HWC_DISPLAY_PRIMARY),
+            <span class="hljs-string">"Registered composer callback but didn't create the default primary display"</span>);
 
-    <span class="hljs-comment">// initialize our non-virtual displays</span>
-    <span class="hljs-keyword">for</span> (<span class="hljs-keyword">size_t</span> i=<span class="hljs-number">0</span> ; i&lt;DisplayDevice::NUM_BUILTIN_DISPLAY_TYPES ; i++) &#123;
-        <span class="hljs-function">DisplayDevice::DisplayType <span class="hljs-title">type</span><span class="hljs-params">((DisplayDevice::DisplayType)i)</span></span>;
-        <span class="hljs-comment">// set-up the displays that are already connected</span>
-        <span class="hljs-keyword">if</span> (mHwc-&gt;isConnected(i) || type==DisplayDevice::DISPLAY_PRIMARY) &#123;
-            <span class="hljs-comment">// All non-virtual displays are currently considered secure.</span>
-            <span class="hljs-keyword">bool</span> isSecure = <span class="hljs-literal">true</span>;
-            createBuiltinDisplayLocked(type);
-            wp&lt;IBinder&gt; token = mBuiltinDisplays[i];
+    <span class="hljs-comment">// make the default display GLContext current so that we can create textures</span>
+    <span class="hljs-comment">// when creating Layers (which may happens before we render something)</span>
+    getDefaultDisplayDeviceLocked()-&gt;makeCurrent();
 
-            sp&lt;IGraphicBufferProducer&gt; producer;
-            sp&lt;IGraphicBufferConsumer&gt; consumer;
-            BufferQueue::createBufferQueue(&amp;producer, &amp;consumer,
-                    <span class="hljs-keyword">new</span> GraphicBufferAlloc());
-
-            sp&lt;FramebufferSurface&gt; fbs = <span class="hljs-keyword">new</span> FramebufferSurface(*mHwc, i,
-                    consumer);
-            <span class="hljs-keyword">int32_t</span> hwcId = allocateHwcDisplayId(type);
-            sp&lt;DisplayDevice&gt; hw = <span class="hljs-keyword">new</span> DisplayDevice(<span class="hljs-keyword">this</span>,
-                    type, hwcId, mHwc-&gt;getFormat(hwcId), isSecure, token,
-                    fbs, producer,
-                    mRenderEngine-&gt;getEGLConfig());
-            <span class="hljs-keyword">if</span> (i &gt; DisplayDevice::DISPLAY_PRIMARY) &#123;
-                <span class="hljs-comment">// <span class="hljs-doctag">FIXME:</span> currently we don't get blank/unblank requests</span>
-                <span class="hljs-comment">// for displays other than the main display, so we always</span>
-                <span class="hljs-comment">// assume a connected display is unblanked.</span>
-                ALOGD(<span class="hljs-string">"marking display %zu as acquired/unblanked"</span>, i);
-                hw-&gt;setPowerMode(HWC_POWER_MODE_NORMAL);
-            &#125;
-            mDisplays.add(token, hw);
+    <span class="hljs-keyword">if</span> (useVrFlinger) &#123;
+        <span class="hljs-keyword">auto</span> vrFlingerRequestDisplayCallback = [<span class="hljs-keyword">this</span>] (<span class="hljs-keyword">bool</span> requestDisplay) &#123;
+            <span class="hljs-comment">// This callback is called from the vr flinger dispatch thread. We</span>
+            <span class="hljs-comment">// need to call signalTransaction(), which requires holding</span>
+            <span class="hljs-comment">// mStateLock when we're not on the main thread. Acquiring</span>
+            <span class="hljs-comment">// mStateLock from the vr flinger dispatch thread might trigger a</span>
+            <span class="hljs-comment">// deadlock in surface flinger (see b/66916578), so post a message</span>
+            <span class="hljs-comment">// to be handled on the main thread instead.</span>
+            sp&lt;LambdaMessage&gt; message = <span class="hljs-keyword">new</span> LambdaMessage([=]() &#123;
+                ALOGI(<span class="hljs-string">"VR request display mode: requestDisplay=%d"</span>, requestDisplay);
+                mVrFlingerRequestsDisplay = requestDisplay;
+                signalTransaction();
+            &#125;);
+            postMessageAsync(message);
+        &#125;;
+        mVrFlinger = dvr::VrFlinger::Create(getBE().mHwc-&gt;getComposer(),
+                getBE().mHwc-&gt;getHwcDisplayId(HWC_DISPLAY_PRIMARY).value_or(<span class="hljs-number">0</span>),
+                vrFlingerRequestDisplayCallback);
+        <span class="hljs-keyword">if</span> (!mVrFlinger) &#123;
+            ALOGE(<span class="hljs-string">"Failed to start vrflinger"</span>);
         &#125;
     &#125;
 
-    <span class="hljs-comment">// make the GLContext current so that we can create textures when creating Layers</span>
-    <span class="hljs-comment">// (which may happens before we render something)</span>
-    getDefaultDisplayDevice()-&gt;makeCurrent(mEGLDisplay, mEGLContext);
-
-    mEventControlThread = <span class="hljs-keyword">new</span> EventControlThread(<span class="hljs-keyword">this</span>);
-    mEventControlThread-&gt;run(<span class="hljs-string">"EventControl"</span>, PRIORITY_URGENT_DISPLAY);
-
-    <span class="hljs-comment">// set a fake vsync period if there is no HWComposer</span>
-    <span class="hljs-keyword">if</span> (mHwc-&gt;initCheck() != NO_ERROR) &#123;
-        mPrimaryDispSync.setPeriod(<span class="hljs-number">16666667</span>);
-    &#125;
+    mEventControlThread = <span class="hljs-built_in">std</span>::make_unique&lt;impl::EventControlThread&gt;(
+            [<span class="hljs-keyword">this</span>](<span class="hljs-keyword">bool</span> enabled) &#123; setVsyncEnabled(HWC_DISPLAY_PRIMARY, enabled); &#125;);
 
     <span class="hljs-comment">// initialize our drawing state</span>
     mDrawingState = mCurrentState;
@@ -344,8 +350,24 @@
     <span class="hljs-comment">// set initial conditions (e.g. unblank default device)</span>
     initializeDisplays();
 
-    <span class="hljs-comment">// start boot animation</span>
-    startBootAnim();
+    getBE().mRenderEngine-&gt;primeCache();
+
+    <span class="hljs-comment">// Inform native graphics APIs whether the present timestamp is supported:</span>
+    <span class="hljs-keyword">if</span> (getHwComposer().hasCapability(
+            HWC2::Capability::PresentFenceIsNotReliable)) &#123;
+        mStartPropertySetThread = <span class="hljs-keyword">new</span> StartPropertySetThread(<span class="hljs-literal">false</span>);
+    &#125; <span class="hljs-keyword">else</span> &#123;
+        mStartPropertySetThread = <span class="hljs-keyword">new</span> StartPropertySetThread(<span class="hljs-literal">true</span>);
+    &#125;
+
+    <span class="hljs-keyword">if</span> (mStartPropertySetThread-&gt;Start() != NO_ERROR) &#123;
+        ALOGE(<span class="hljs-string">"Run StartPropertySetThread failed!"</span>);
+    &#125;
+
+    mLegacySrgbSaturationMatrix = getBE().mHwc-&gt;getDataspaceSaturationMatrix(HWC_DISPLAY_PRIMARY,
+            Dataspace::SRGB_LINEAR);
+
+    ALOGV(<span class="hljs-string">"Done initializing"</span>);
 &#125;</code></pre></div>
 <h4 id="创建HWComposer"><a href="#创建HWComposer" class="headerlink" title="创建HWComposer"></a>创建HWComposer</h4><blockquote>
 <p><code>HWComposer</code>代表着硬件显示设备。</p>
@@ -611,7 +633,7 @@ BitTube::BitTube(<span class="hljs-keyword">size_t</span> bufsize) &#123;
 <li>通过<code>MessageQueue.setEventThread()</code>将<code>EventThread</code>与<code>MessageQueue</code>建立关联。实际内部通过<code>BitTube(Socket)</code>建立两者间的通信。</li>
 <li>再通过<code>addFd()</code>监听<code>BitTube</code>的套接字fd，这样就可以监听到数据的变化。</li>
 </ol>
-<h4 id="启动SurfaceFlinger"><a href="#启动SurfaceFlinger" class="headerlink" title="启动SurfaceFlinger"></a>启动SurfaceFlinger</h4><p>最后执行<code>SurfaceFlinger#run</code></p>
+<h3 id="SurfaceFlinger-run"><a href="#SurfaceFlinger-run" class="headerlink" title="SurfaceFlinger#run"></a>SurfaceFlinger#run</h3><p>最后执行<code>SurfaceFlinger#run</code></p>
 <div class="hljs"><pre><code class="hljs cpp"><span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">SurfaceFlinger::run</span><span class="hljs-params">()</span> </span>&#123;
     <span class="hljs-keyword">do</span> &#123;
         waitForEvent();
@@ -863,9 +885,6 @@ DispSync::DispSync() :
     <span class="hljs-keyword">return</span> gui::BitTube::sendObjects(dataChannel, events, count);
 &#125;</code></pre></div>
 <p>通过<code>BitTube</code>发送消息，此时就会触发到<code>MQ#cb_eventReceiver</code></p>
-<blockquote>
-<p><code>DisplayEventReceiver</code>实质是<code>App进程</code>用来申请Vsync信号监听的，实质也是通过监听<code>BitTube</code>去获取对应的数据，如果触发到了数据读写，就会回调到<code>DisplayEventDispatcher.handleEvent()</code>，此时就是接收到<code>Vsync信号</code></p>
-</blockquote>
 <h4 id="MessageQueue-cb-eventReceiver"><a href="#MessageQueue-cb-eventReceiver" class="headerlink" title="MessageQueue#cb_eventReceiver"></a>MessageQueue#cb_eventReceiver</h4><div class="hljs"><pre><code class="hljs cpp"><span class="hljs-function"><span class="hljs-keyword">int</span> <span class="hljs-title">MessageQueue::cb_eventReceiver</span><span class="hljs-params">(<span class="hljs-keyword">int</span> fd, <span class="hljs-keyword">int</span> events, <span class="hljs-keyword">void</span>* data)</span> </span>&#123;
     MessageQueue* <span class="hljs-built_in">queue</span> = <span class="hljs-keyword">reinterpret_cast</span>&lt;MessageQueue *&gt;(data);
     <span class="hljs-keyword">return</span> <span class="hljs-built_in">queue</span>-&gt;eventReceiver(fd, events);
@@ -887,6 +906,18 @@ DispSync::DispSync() :
         &#125;
     &#125;
     <span class="hljs-keyword">return</span> <span class="hljs-number">1</span>;
+&#125;
+
+<span class="hljs-keyword">void</span> MessageQueue::Handler::dispatchRefresh() &#123;
+    <span class="hljs-keyword">if</span> ((android_atomic_or(eventMaskRefresh, &amp;mEventMask) &amp; eventMaskRefresh) == <span class="hljs-number">0</span>) &#123;
+        mQueue.mLooper-&gt;sendMessage(<span class="hljs-keyword">this</span>, Message(MessageQueue::REFRESH));
+    &#125;
+&#125;
+
+<span class="hljs-keyword">void</span> MessageQueue::Handler::dispatchInvalidate() &#123;
+    <span class="hljs-keyword">if</span> ((android_atomic_or(eventMaskInvalidate, &amp;mEventMask) &amp; eventMaskInvalidate) == <span class="hljs-number">0</span>) &#123;
+        mQueue.mLooper-&gt;sendMessage(<span class="hljs-keyword">this</span>, Message(MessageQueue::INVALIDATE));
+    &#125;
 &#125;</code></pre></div>
 <p>回调到<code>MessageQueue.Handler</code>的<code>handleMessage()</code></p>
 <div class="hljs"><pre><code class="hljs cpp"><span class="hljs-keyword">void</span> MessageQueue::Handler::handleMessage(<span class="hljs-keyword">const</span> Message&amp; message) &#123;
@@ -941,11 +972,353 @@ DispSync::DispSync() :
 </blockquote>
 <h3 id="处理Vsync"><a href="#处理Vsync" class="headerlink" title="处理Vsync"></a>处理Vsync</h3><p>主要在<code>Sf#onMessageReceived()</code>处理<code>Vsync信号</code></p>
 <div class="hljs"><pre><code class="hljs cpp"><span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">SurfaceFlinger::onMessageReceived</span><span class="hljs-params">(<span class="hljs-keyword">int32_t</span> what)</span> </span>&#123;
+        <span class="hljs-keyword">case</span> MessageQueue::INVALIDATE: &#123;
+            <span class="hljs-keyword">bool</span> refreshNeeded = handleMessageTransaction();
+            refreshNeeded |= handleMessageInvalidate();
+            refreshNeeded |= mRepaintEverything;
+            <span class="hljs-keyword">if</span> (refreshNeeded) &#123;
+                signalRefresh();
+            &#125;
+            <span class="hljs-keyword">break</span>;
+        &#125;  
         <span class="hljs-keyword">case</span> MessageQueue::REFRESH: &#123;
             handleMessageRefresh();
             <span class="hljs-keyword">break</span>;
         &#125;
 &#125;</code></pre></div>
+<p>在接受到<code>Vsync信号</code>后，就会回调到<code>MessageQueue::INVALIDATE</code>，继续向下执行到<code>signalRefresh()</code></p>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//frameworks/native/services/surfaceflinger/SurfaceFlinger.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">SurfaceFlinger::signalRefresh</span><span class="hljs-params">()</span> </span>&#123;
+    mEventQueue.refresh();
+&#125;
+
+<span class="hljs-comment">//frameworks/native/services/surfaceflinger/MessageQueue.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">MessageQueue::refresh</span><span class="hljs-params">()</span> </span>&#123;
+<span class="hljs-meta">#<span class="hljs-meta-keyword">if</span> INVALIDATE_ON_VSYNC</span>
+    mHandler-&gt;dispatchRefresh();
+<span class="hljs-meta">#<span class="hljs-meta-keyword">else</span></span>
+    mEvents-&gt;requestNextVsync();
+<span class="hljs-meta">#<span class="hljs-meta-keyword">endif</span></span>
+&#125;
+
+<span class="hljs-keyword">void</span> MessageQueue::Handler::dispatchRefresh() &#123;
+    <span class="hljs-keyword">if</span> ((android_atomic_or(eventMaskRefresh, &amp;mEventMask) &amp; eventMaskRefresh) == <span class="hljs-number">0</span>) &#123;
+        mQueue.mLooper-&gt;sendMessage(<span class="hljs-keyword">this</span>, Message(MessageQueue::REFRESH));
+    &#125;
+&#125;</code></pre></div>
+<h4 id="Sf-handleMessageRefresh"><a href="#Sf-handleMessageRefresh" class="headerlink" title="Sf#handleMessageRefresh"></a>Sf#handleMessageRefresh</h4><p>最后还是执行到了<code>handleMessageRefresh()</code></p>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">SurfaceFlinger::handleMessageRefresh</span><span class="hljs-params">()</span> </span>&#123;
+    ATRACE_CALL();
+    preComposition();
+    rebuildLayerStacks();
+    setUpHWComposer();
+    doDebugFlashRegions();
+    doComposition();
+    postComposition();
+&#125;</code></pre></div>
+<h5 id="preComposition-合成前预处理"><a href="#preComposition-合成前预处理" class="headerlink" title="preComposition-合成前预处理"></a>preComposition-合成前预处理</h5><div class="hljs"><pre><code class="hljs cpp"><span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">SurfaceFlinger::preComposition</span><span class="hljs-params">()</span>
+</span>&#123;
+    <span class="hljs-comment">//是否需要刷新布局</span>
+    <span class="hljs-keyword">bool</span> needExtraInvalidate = <span class="hljs-literal">false</span>;
+    <span class="hljs-function"><span class="hljs-keyword">const</span> LayerVector&amp; <span class="hljs-title">layers</span><span class="hljs-params">(mDrawingState.layersSortedByZ)</span></span>;
+    <span class="hljs-keyword">const</span> <span class="hljs-keyword">size_t</span> count = layers.size();
+    <span class="hljs-keyword">for</span> (<span class="hljs-keyword">size_t</span> i=<span class="hljs-number">0</span> ; i&lt;count ; i++) &#123;
+       <span class="hljs-comment">//当前Layer发生了变化</span>
+        <span class="hljs-keyword">if</span> (layers[i]-&gt;onPreComposition()) &#123;
+            needExtraInvalidate = <span class="hljs-literal">true</span>;
+        &#125;
+    &#125;
+    <span class="hljs-keyword">if</span> (needExtraInvalidate) &#123;
+      <span class="hljs-comment">//申请下一个Vsync信号</span>
+        signalLayerUpdate();
+    &#125;
+&#125;
+
+<span class="hljs-comment">//frameworks/native/services/surfaceflinger/Layer.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">bool</span> <span class="hljs-title">Layer::onPreComposition</span><span class="hljs-params">()</span> </span>&#123;
+    mRefreshPending = <span class="hljs-literal">false</span>;
+   <span class="hljs-comment">//有待处理的Buffer帧，</span>
+    <span class="hljs-keyword">return</span> mQueuedFrames &gt; <span class="hljs-number">0</span> || mSidebandStreamChanged;
+&#125;</code></pre></div>
+<p><code>preComposition()</code>需要先判断<code>Layer</code>是否发生了变化，没发生变化不需要申请下一次Vsync信号，否则执行<code>signalLayerUpdate()</code>申请下一次Vsync信号。</p>
+<h6 id="signalLayerUpdate"><a href="#signalLayerUpdate" class="headerlink" title="signalLayerUpdate"></a>signalLayerUpdate</h6><div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//frameworks/native/services/surfaceflinger/SurfaceFlinger.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">SurfaceFlinger::signalLayerUpdate</span><span class="hljs-params">()</span> </span>&#123;
+    mEventQueue.invalidate();
+&#125;
+
+<span class="hljs-comment">//frameworks/native/services/surfaceflinger/MessageQueue.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">MessageQueue::invalidate</span><span class="hljs-params">()</span> </span>&#123;
+<span class="hljs-meta">#<span class="hljs-meta-keyword">if</span> INVALIDATE_ON_VSYNC</span>
+    mEvents-&gt;requestNextVsync();
+<span class="hljs-meta">#<span class="hljs-meta-keyword">else</span></span>
+    mHandler-&gt;dispatchInvalidate();
+<span class="hljs-meta">#<span class="hljs-meta-keyword">endif</span></span>
+&#125;
+
+<span class="hljs-comment">//frameworks/native/services/surfaceflinger/EventThread.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">EventThread::requestNextVsync</span><span class="hljs-params">(
+        <span class="hljs-keyword">const</span> sp&lt;EventThread::Connection&gt;&amp; connection)</span> </span>&#123;
+    Mutex::Autolock _l(mLock);
+    <span class="hljs-keyword">if</span> (connection-&gt;count &lt; <span class="hljs-number">0</span>) &#123;
+        connection-&gt;count = <span class="hljs-number">0</span>;
+        mCondition.broadcast();
+    &#125;
+&#125;</code></pre></div>
+<p>唤醒了<code>EventThread</code>，返回Vsync信号通知。</p>
+<h5 id="rebuildLayerStacks-重建Layer"><a href="#rebuildLayerStacks-重建Layer" class="headerlink" title="rebuildLayerStacks-重建Layer"></a>rebuildLayerStacks-重建Layer</h5><blockquote>
+<p>遍历<code>Lqayer</code>，计算和存储每个Layer的<code>dirtyRegion</code>，如果<code>dirtyRegion</code>显示在设备的显示区域内，就表示<code>Layer</code>需要重新绘制。</p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">SurfaceFlinger::rebuildLayerStacks</span><span class="hljs-params">()</span> </span>&#123;
+    <span class="hljs-comment">// rebuild the visible layer list per screen</span>
+    <span class="hljs-keyword">if</span> (CC_UNLIKELY(mVisibleRegionsDirty)) &#123;
+        ATRACE_CALL();
+        mVisibleRegionsDirty = <span class="hljs-literal">false</span>;
+        invalidateHwcGeometry();
+
+        <span class="hljs-function"><span class="hljs-keyword">const</span> LayerVector&amp; <span class="hljs-title">layers</span><span class="hljs-params">(mDrawingState.layersSortedByZ)</span></span>;
+      <span class="hljs-comment">//遍历所有显示设备，计算显示设备中dirtyRegion和 opaqueRegion</span>
+        <span class="hljs-keyword">for</span> (<span class="hljs-keyword">size_t</span> dpy=<span class="hljs-number">0</span> ; dpy&lt;mDisplays.size() ; dpy++) &#123;
+            Region opaqueRegion;<span class="hljs-comment">//非透明区域</span>
+            Region dirtyRegion;<span class="hljs-comment">//变化区域，需要刷新</span>
+            Vector&lt; sp&lt;Layer&gt; &gt; layersSortedByZ;
+            <span class="hljs-function"><span class="hljs-keyword">const</span> sp&lt;DisplayDevice&gt;&amp; <span class="hljs-title">hw</span><span class="hljs-params">(mDisplays[dpy])</span></span>;
+            <span class="hljs-function"><span class="hljs-keyword">const</span> Transform&amp; <span class="hljs-title">tr</span><span class="hljs-params">(hw-&gt;getTransform())</span></span>;
+            <span class="hljs-function"><span class="hljs-keyword">const</span> Rect <span class="hljs-title">bounds</span><span class="hljs-params">(hw-&gt;getBounds())</span></span>;
+            <span class="hljs-keyword">if</span> (hw-&gt;isDisplayOn()) &#123;
+              <span class="hljs-comment">//计算Layer的 dirtyRegion和 opaqueRegion</span>
+                SurfaceFlinger::computeVisibleRegions(layers,
+                        hw-&gt;getLayerStack(), dirtyRegion, opaqueRegion);
+
+                <span class="hljs-keyword">const</span> <span class="hljs-keyword">size_t</span> count = layers.size();
+                <span class="hljs-keyword">for</span> (<span class="hljs-keyword">size_t</span> i=<span class="hljs-number">0</span> ; i&lt;count ; i++) &#123;
+                    <span class="hljs-function"><span class="hljs-keyword">const</span> sp&lt;Layer&gt;&amp; <span class="hljs-title">layer</span><span class="hljs-params">(layers[i])</span></span>;
+                    <span class="hljs-function"><span class="hljs-keyword">const</span> Layer::State&amp; <span class="hljs-title">s</span><span class="hljs-params">(layer-&gt;getDrawingState())</span></span>;
+                    <span class="hljs-keyword">if</span> (s.layerStack == hw-&gt;getLayerStack()) &#123;
+                        <span class="hljs-function">Region <span class="hljs-title">drawRegion</span><span class="hljs-params">(tr.transform(
+                                layer-&gt;visibleNonTransparentRegion))</span></span>;
+                        drawRegion.andSelf(bounds);
+                        <span class="hljs-keyword">if</span> (!drawRegion.isEmpty()) &#123;
+                            layersSortedByZ.add(layer);
+                        &#125;
+                    &#125;
+                &#125;
+            &#125;
+          <span class="hljs-comment">//按照Z轴由小到大排序</span>
+            hw-&gt;setVisibleLayersSortedByZ(layersSortedByZ);
+            hw-&gt;undefinedRegion.<span class="hljs-built_in">set</span>(bounds);
+            hw-&gt;undefinedRegion.subtractSelf(tr.transform(opaqueRegion));
+            hw-&gt;dirtyRegion.orSelf(dirtyRegion);
+        &#125;
+    &#125;
+&#125;</code></pre></div>
+<p>最重要的是<code>computeVisibleRegions</code>-对Layer的<code>dirtyRegion</code>和<code>opaqueRegion</code>的计算。</p>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//frameworks/native/services/surfaceflinger/SurfaceFlinger.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">SurfaceFlinger::computeVisibleRegions</span><span class="hljs-params">(
+        <span class="hljs-keyword">const</span> LayerVector&amp; currentLayers, <span class="hljs-keyword">uint32_t</span> layerStack,
+        Region&amp; outDirtyRegion, Region&amp; outOpaqueRegion)</span>
+</span>&#123;
+ <span class="hljs-keyword">size_t</span> i = currentLayers.size();
+    <span class="hljs-keyword">while</span> (i--) &#123;
+        <span class="hljs-keyword">const</span> sp&lt;Layer&gt;&amp; layer = currentLayers[i];
+
+        <span class="hljs-comment">// start with the whole surface at its current location</span>
+        <span class="hljs-function"><span class="hljs-keyword">const</span> Layer::State&amp; <span class="hljs-title">s</span><span class="hljs-params">(layer-&gt;getDrawingState())</span></span>;
+
+        <span class="hljs-comment">// only consider the layers on the given layer stack</span>
+        <span class="hljs-keyword">if</span> (s.layerStack != layerStack)
+            <span class="hljs-keyword">continue</span>;
+      <span class="hljs-comment">//非透明区域</span>
+        Region opaqueRegion;
+      <span class="hljs-comment">//可见区域</span>
+        Region visibleRegion;
+      <span class="hljs-comment">//被遮盖区域</span>
+        Region coveredRegion;
+      <span class="hljs-comment">//透明区域</span>
+        Region transparentRegion;
+
+        <span class="hljs-comment">// handle hidden surfaces by setting the visible region to empty</span>
+        <span class="hljs-keyword">if</span> (CC_LIKELY(layer-&gt;isVisible())) &#123;
+            <span class="hljs-keyword">const</span> <span class="hljs-keyword">bool</span> translucent = !layer-&gt;isOpaque(s);
+            <span class="hljs-function">Rect <span class="hljs-title">bounds</span><span class="hljs-params">(s.transform.transform(layer-&gt;computeBounds()))</span></span>;
+            visibleRegion.<span class="hljs-built_in">set</span>(bounds);
+            <span class="hljs-keyword">if</span> (!visibleRegion.isEmpty()) &#123;
+                <span class="hljs-comment">// Remove the transparent area from the visible region</span>
+                <span class="hljs-keyword">if</span> (translucent) &#123;
+                    <span class="hljs-function"><span class="hljs-keyword">const</span> Transform <span class="hljs-title">tr</span><span class="hljs-params">(s.transform)</span></span>;
+                    <span class="hljs-keyword">if</span> (tr.transformed()) &#123;
+                        <span class="hljs-keyword">if</span> (tr.preserveRects()) &#123;
+                            <span class="hljs-comment">// transform the transparent region</span>
+                            transparentRegion = tr.transform(s.activeTransparentRegion);
+                        &#125; <span class="hljs-keyword">else</span> &#123;
+                            <span class="hljs-comment">// transformation too complex, can't do the</span>
+                            <span class="hljs-comment">// transparent region optimization.</span>
+                            transparentRegion.clear();
+                        &#125;
+                    &#125; <span class="hljs-keyword">else</span> &#123;
+                        transparentRegion = s.activeTransparentRegion;
+                    &#125;
+                &#125;
+
+                <span class="hljs-comment">// compute the opaque region</span>
+                <span class="hljs-keyword">const</span> <span class="hljs-keyword">int32_t</span> layerOrientation = s.transform.getOrientation();
+                <span class="hljs-keyword">if</span> (s.alpha==<span class="hljs-number">255</span> &amp;&amp; !translucent &amp;&amp;
+                        ((layerOrientation &amp; Transform::ROT_INVALID) == <span class="hljs-literal">false</span>)) &#123;
+                    <span class="hljs-comment">// the opaque region is the layer's footprint</span>
+                    opaqueRegion = visibleRegion;
+                &#125;
+            &#125;
+        &#125;
+
+        <span class="hljs-comment">// Clip the covered region to the visible region</span>
+        coveredRegion = aboveCoveredLayers.intersect(visibleRegion);
+
+        <span class="hljs-comment">// 累加当前Layer和上层Layer的可见区域</span>
+        aboveCoveredLayers.orSelf(visibleRegion);
+
+        <span class="hljs-comment">// 可见区域减去非透明区域</span>
+        visibleRegion.subtractSelf(aboveOpaqueLayers);
+
+        <span class="hljs-comment">// 计算脏区</span>
+        <span class="hljs-keyword">if</span> (layer-&gt;contentDirty) &#123;
+            <span class="hljs-comment">// we need to invalidate the whole region</span>
+            dirty = visibleRegion;
+            <span class="hljs-comment">// as well, as the old visible region</span>
+            dirty.orSelf(layer-&gt;visibleRegion);
+            layer-&gt;contentDirty = <span class="hljs-literal">false</span>;
+        &#125; <span class="hljs-keyword">else</span> &#123;
+            <span class="hljs-keyword">const</span> Region newExposed = visibleRegion - coveredRegion;
+            <span class="hljs-keyword">const</span> Region oldVisibleRegion = layer-&gt;visibleRegion;
+            <span class="hljs-keyword">const</span> Region oldCoveredRegion = layer-&gt;coveredRegion;
+            <span class="hljs-keyword">const</span> Region oldExposed = oldVisibleRegion - oldCoveredRegion;
+            dirty = (visibleRegion&amp;oldCoveredRegion) | (newExposed-oldExposed);
+        &#125;
+        dirty.subtractSelf(aboveOpaqueLayers);
+       <span class="hljs-comment">//累加脏区</span>
+        outDirtyRegion.orSelf(dirty);
+       <span class="hljs-comment">//添加非透明区域</span>
+        aboveOpaqueLayers.orSelf(opaqueRegion);
+       <span class="hljs-comment">//存储可见区域</span>
+        layer-&gt;setVisibleRegion(visibleRegion);
+        layer-&gt;setCoveredRegion(coveredRegion);
+        layer-&gt;setVisibleNonTransparentRegion(
+                visibleRegion.subtract(transparentRegion));
+    &#125;
+
+    outOpaqueRegion = aboveOpaqueLayers;
+&#125;</code></pre></div>
+<p>按照上述源码，界面显示区域分为如下几种：</p>
+<ul>
+<li><code>opaqueRegion</code>：非透明区域——表示不完全透明的区域</li>
+<li><code>dirtyRegion</code>：需要重绘的区域</li>
+<li><code>visibleRegion</code>：可见区域——表示完全不透明的区域</li>
+<li><code>coveredRegion</code>：被覆盖区域——被完全不透明区域覆盖的区域</li>
+<li><code>transparentRegion</code>：完全透明的区域——一般需要从合成列表中移除</li>
+<li><code>aboveOpaqueLayers</code>：所有<code>非透明区域</code>的叠加</li>
+<li><code>aboveCoveredLayers</code>：所有<code>可见区域</code>的叠加</li>
+</ul>
+<p>以平常的应用界面来举例。</p>
+<p><code>opaqueRegion</code>：状态栏通常都是半透明的，可以看到时间等信息</p>
+<p><code>visibleRegion</code>：当前显示的应用界面，就完全遮盖了后面的内容</p>
+<p><code>coveredRegion</code>：桌面应用设置的壁纸。</p>
+<blockquote>
+<p><code>computeVisibleRegions</code>主要完成了以下几步：</p>
+<ol>
+<li>在<code>Layer的Z轴</code>从上向下遍历该显示设备中的<code>Layer</code></li>
+<li>计算被覆盖区域：<code>aboveCoveredLayers</code>与<code>opaqueRegion</code>的交集</li>
+<li>计算可见区域：去除<code>opaqueRegion</code>和<code>aboveOpaqueLayers</code>的交集</li>
+<li>计算脏区域</li>
+<li>保存到<code>Layer</code>中</li>
+</ol>
+</blockquote>
+<h5 id="setUpHWComposer-构造硬件合成的任务"><a href="#setUpHWComposer-构造硬件合成的任务" class="headerlink" title="setUpHWComposer-构造硬件合成的任务"></a>setUpHWComposer-构造硬件合成的任务</h5><blockquote>
+<p><code>Layer</code>交给<code>HWComposer</code>去做图层混合。</p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">SurfaceFlinger::setUpHWComposer</span><span class="hljs-params">()</span> </span>&#123;
+  
+    <span class="hljs-keyword">for</span> (<span class="hljs-keyword">size_t</span> dpy=<span class="hljs-number">0</span> ; dpy&lt;mDisplays.size() ; dpy++) &#123;
+        <span class="hljs-keyword">bool</span> dirty = !mDisplays[dpy]-&gt;getDirtyRegion(<span class="hljs-literal">false</span>).isEmpty();
+        <span class="hljs-keyword">bool</span> empty = mDisplays[dpy]-&gt;getVisibleLayersSortedByZ().size() == <span class="hljs-number">0</span>;
+        <span class="hljs-keyword">bool</span> wasEmpty = !mDisplays[dpy]-&gt;lastCompositionHadVisibleLayers;
+       <span class="hljs-comment">//没有脏区域或者可见的Layer，就不需要进行合成</span>
+        <span class="hljs-keyword">bool</span> mustRecompose = dirty &amp;&amp; !(empty &amp;&amp; wasEmpty);
+      
+        mDisplays[dpy]-&gt;beginFrame(mustRecompose);
+
+        <span class="hljs-keyword">if</span> (mustRecompose) &#123;
+            mDisplays[dpy]-&gt;lastCompositionHadVisibleLayers = !empty;
+        &#125;      
+    &#125;
+  
+  <span class="hljs-comment">//构造HWComposer硬件任务</span>
+    <span class="hljs-function">HWComposer&amp; <span class="hljs-title">hwc</span><span class="hljs-params">(getHwComposer())</span></span>;
+    <span class="hljs-keyword">if</span> (hwc.initCheck() == NO_ERROR) &#123;
+        <span class="hljs-comment">// build the h/w work list</span>
+        <span class="hljs-keyword">if</span> (CC_UNLIKELY(mHwWorkListDirty)) &#123;
+            mHwWorkListDirty = <span class="hljs-literal">false</span>;
+            <span class="hljs-keyword">for</span> (<span class="hljs-keyword">size_t</span> dpy=<span class="hljs-number">0</span> ; dpy&lt;mDisplays.size() ; dpy++) &#123;
+                <span class="hljs-function">sp&lt;<span class="hljs-keyword">const</span> DisplayDevice&gt; <span class="hljs-title">hw</span><span class="hljs-params">(mDisplays[dpy])</span></span>;
+                <span class="hljs-keyword">const</span> <span class="hljs-keyword">int32_t</span> id = hw-&gt;getHwcDisplayId();
+                <span class="hljs-keyword">if</span> (id &gt;= <span class="hljs-number">0</span>) &#123;
+                    <span class="hljs-function"><span class="hljs-keyword">const</span> Vector&lt; sp&lt;Layer&gt; &gt;&amp; <span class="hljs-title">currentLayers</span><span class="hljs-params">(
+                        hw-&gt;getVisibleLayersSortedByZ())</span></span>;
+                    <span class="hljs-keyword">const</span> <span class="hljs-keyword">size_t</span> count = currentLayers.size();
+                  <span class="hljs-comment">//在HWC创建任务列表</span>
+                    <span class="hljs-keyword">if</span> (hwc.createWorkList(id, count) == NO_ERROR) &#123;
+                        HWComposer::LayerListIterator cur = hwc.begin(id);
+                        <span class="hljs-keyword">const</span> HWComposer::LayerListIterator end = hwc.end(id);
+                        <span class="hljs-keyword">for</span> (<span class="hljs-keyword">size_t</span> i=<span class="hljs-number">0</span> ; cur!=end &amp;&amp; i&lt;count ; ++i, ++cur) &#123;
+                            <span class="hljs-function"><span class="hljs-keyword">const</span> sp&lt;Layer&gt;&amp; <span class="hljs-title">layer</span><span class="hljs-params">(currentLayers[i])</span></span>;
+                            layer-&gt;setGeometry(hw, *cur);
+                            <span class="hljs-keyword">if</span> (mDebugDisableHWC || mDebugRegion || mDaltonize || mHasColorMatrix) &#123;
+                                cur-&gt;setSkip(<span class="hljs-literal">true</span>);
+                            &#125;
+                        &#125;
+                    &#125;
+                &#125;
+            &#125;
+        &#125;
+
+        <span class="hljs-comment">// 设置每帧的数据</span>
+        <span class="hljs-keyword">for</span> (<span class="hljs-keyword">size_t</span> dpy=<span class="hljs-number">0</span> ; dpy&lt;mDisplays.size() ; dpy++) &#123;
+            <span class="hljs-function">sp&lt;<span class="hljs-keyword">const</span> DisplayDevice&gt; <span class="hljs-title">hw</span><span class="hljs-params">(mDisplays[dpy])</span></span>;
+            <span class="hljs-keyword">const</span> <span class="hljs-keyword">int32_t</span> id = hw-&gt;getHwcDisplayId();
+            <span class="hljs-keyword">if</span> (id &gt;= <span class="hljs-number">0</span>) &#123;
+                <span class="hljs-function"><span class="hljs-keyword">const</span> Vector&lt; sp&lt;Layer&gt; &gt;&amp; <span class="hljs-title">currentLayers</span><span class="hljs-params">(
+                    hw-&gt;getVisibleLayersSortedByZ())</span></span>;
+                <span class="hljs-keyword">const</span> <span class="hljs-keyword">size_t</span> count = currentLayers.size();
+                HWComposer::LayerListIterator cur = hwc.begin(id);
+                <span class="hljs-keyword">const</span> HWComposer::LayerListIterator end = hwc.end(id);
+                <span class="hljs-keyword">for</span> (<span class="hljs-keyword">size_t</span> i=<span class="hljs-number">0</span> ; cur!=end &amp;&amp; i&lt;count ; ++i, ++cur) &#123;
+                    <span class="hljs-function"><span class="hljs-keyword">const</span> sp&lt;Layer&gt;&amp; <span class="hljs-title">layer</span><span class="hljs-params">(currentLayers[i])</span></span>;
+                    layer-&gt;setPerFrameData(hw, *cur);
+                &#125;
+            &#125;
+        &#125;
+
+        <span class="hljs-keyword">status_t</span> err = hwc.prepare();
+        ALOGE_IF(err, <span class="hljs-string">"HWComposer::prepare failed (%s)"</span>, strerror(-err));
+
+        <span class="hljs-keyword">for</span> (<span class="hljs-keyword">size_t</span> dpy=<span class="hljs-number">0</span> ; dpy&lt;mDisplays.size() ; dpy++) &#123;
+            <span class="hljs-function">sp&lt;<span class="hljs-keyword">const</span> DisplayDevice&gt; <span class="hljs-title">hw</span><span class="hljs-params">(mDisplays[dpy])</span></span>;
+            hw-&gt;prepareFrame(hwc);
+        &#125;
+    &#125;  
+  
+&#125;</code></pre></div>
+<h5 id="doComposition-执行合成任务"><a href="#doComposition-执行合成任务" class="headerlink" title="doComposition-执行合成任务"></a>doComposition-执行合成任务</h5><blockquote>
+<p>前面已经准备好了<code>合成Layer任务</code>和<code>需要合成的数据</code>，现在就需要做图像的混合工作。</p>
+</blockquote>
+<p><code>doComposition</code>  </p>
+<ul>
+<li><code>doDisplayComposition</code>：重绘<code>FrameBuffer</code></li>
+<li><code>postFrameBuffer</code>：将数据写入到<code>FrameBuffer</code>然后完成物理屏幕的图像显示</li>
+</ul>
+<h5 id="postComposition-合成图形结束后的处理"><a href="#postComposition-合成图形结束后的处理" class="headerlink" title="postComposition-合成图形结束后的处理"></a>postComposition-合成图形结束后的处理</h5><blockquote>
+<p>此时图层已经混合完成，图像数据也被送到了<code>帧缓冲(FrameBuffer)</code>，并且已经显示在屏幕上了，由<code>postComposition()</code>进行一些收尾工作的处理。</p>
+</blockquote>
+<h3 id="总结-2"><a href="#总结-2" class="headerlink" title="总结"></a>总结</h3><p>TODO</p>
+<h2 id="Surface处理"><a href="#Surface处理" class="headerlink" title="Surface处理"></a>Surface处理</h2><h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="https://androidperformance.com/2020/02/14/Android-Systrace-SurfaceFlinger/" target="_blank" rel="noopener">SurfaceFlinger 解读</a></p>
+<p><a href="https://blog.csdn.net/tyuiof/article/details/108434845" target="_blank" rel="noopener">掌握Android图像显示原理-上</a></p>
 
             </div>
             <hr>
