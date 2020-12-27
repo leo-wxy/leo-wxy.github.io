@@ -169,7 +169,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      5.2k 字
+      7.8k 字
     </span>
   
 
@@ -179,7 +179,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      88
+      133
        分钟
     </span>
   
@@ -213,7 +213,7 @@
             
             <div class="markdown-body">
               <blockquote>
-<p> 基于<code>Android 9.0</code>源码进行分析</p>
+<p> 基于<code>Android 6.0</code>源码进行分析</p>
 </blockquote>
 <p><code>SurfaceFlinger</code>是Android系统中最重要的<strong>图像消费者</strong>，Activity绘制的界面图像，都会传递到<code>SurfaceFlinger</code>中。</p>
 <p>主要作用：<strong>接收图像缓冲区数据，然后交给HWComposer或OpenGL合成，合成完毕后再返回。</strong></p>
@@ -1317,7 +1317,573 @@ DispSync::DispSync() :
 <p>此时图层已经混合完成，图像数据也被送到了<code>帧缓冲(FrameBuffer)</code>，并且已经显示在屏幕上了，由<code>postComposition()</code>进行一些收尾工作的处理。</p>
 </blockquote>
 <h3 id="总结-2"><a href="#总结-2" class="headerlink" title="总结"></a>总结</h3><p>TODO</p>
-<h2 id="Surface处理"><a href="#Surface处理" class="headerlink" title="Surface处理"></a>Surface处理</h2><h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="https://androidperformance.com/2020/02/14/Android-Systrace-SurfaceFlinger/" target="_blank" rel="noopener">SurfaceFlinger 解读</a></p>
+<h2 id="Android图形缓冲区"><a href="#Android图形缓冲区" class="headerlink" title="Android图形缓冲区"></a>Android图形缓冲区</h2><p>Android的图形缓冲区主要由以下几部分组成：</p>
+<ul>
+<li><code>Surface</code></li>
+<li><code>Layer</code></li>
+<li><code>GraphicBuffer</code></li>
+<li><code>BufferQueue</code></li>
+</ul>
+<h3 id="Surface相关"><a href="#Surface相关" class="headerlink" title="Surface相关"></a>Surface相关</h3><blockquote>
+<p><strong><code>Surface</code>是提供给<code>图形生产者</code>控制缓冲区的</strong></p>
+<p>在<code>软件绘制</code>中，调用<code>drawSoftware(surface)</code>传入<code>Surface缓冲区</code>到<code>native</code>层的<code>SkiaCanvas</code></p>
+<p>在<code>硬件绘制</code>中，调用<code>ThreadedRenderer.initalize(surface)</code>传入<code>Surface缓冲区</code>到OpenGL中进行渲染。</p>
+<p>当得到<code>Surface缓冲区</code>后，就可以存入<strong>需要绘制的内容</strong>到<code>Surface</code>中。</p>
+</blockquote>
+<p><code>Surface</code>内部持有<code>BufferQueue中的GraphicBufferProducer</code>，主要负责<strong>创建或获取可用的<code>GraphicBuffer</code>以及提交绘制后的<code>GraphicBuffer</code></strong>。</p>
+<h3 id="Layer相关"><a href="#Layer相关" class="headerlink" title="Layer相关"></a>Layer相关</h3><blockquote>
+<p><strong><code>Layer</code>是提供给<code>图形消费者</code>获取缓冲区的</strong></p>
+<p>在<code>SurfaceFlinger</code>需要消费图形数据，进行图层混合时，在<code>rebuildLayerStacks()</code>进行<code>Layer</code>遍历，取出<code>Layer</code>中的图形数据，进行数据合成处理。</p>
+</blockquote>
+<p><code>Layer</code>内部持有<code>BufferQueue中的GraphicBufferConsumer</code>，主要负责<strong>获取和释放<code>GraphicBuffer</code></strong></p>
+<h3 id="GraphicBuffer"><a href="#GraphicBuffer" class="headerlink" title="GraphicBuffer"></a>GraphicBuffer</h3><blockquote>
+<p>真正被分配内存，并能存储图形数据的缓冲区。</p>
+</blockquote>
+<h3 id="BufferQueue"><a href="#BufferQueue" class="headerlink" title="BufferQueue"></a>BufferQueue</h3><blockquote>
+<p>存放<code>GraphicBuffer</code>的数组结构，最多可以存储<strong>64</strong>个<code>GraphicBuffer</code></p>
+</blockquote>
+<p><img src="/images/BufferQueue执行流程.jpg" srcset="/img/loading.gif" alt="BufferQueue执行流程"></p>
+<blockquote>
+<p>当绘制图像时，首先去创建<code>Surface</code>和<code>Layer</code>，</p>
+<p>然后<code>图像生产者</code>通过<code>Surface</code>调用<code>dequeue()</code>申请一块<code>GraphicBuffer</code>，在其上绘制图像</p>
+<p>绘制完毕后，通过<code>Surface</code>调用<code>queue()</code>把绘制好的<code>GraphicBuffer</code>返回到<code>BufferQueue</code>中。</p>
+<p>收到<code>HWComposer</code>发出的<code>Vsync信号后</code>，<code>SurfaceFlinger</code>通过<code>Layer</code>调用<code>acquire()</code>获取绘制好的<code>GraphicBuffer</code>进行合成与处理</p>
+<p>处理完毕后通过<code>Layer</code>调用<code>release()</code>释放<code>GraphicBuffer</code>并返回到<code>BufferQueue</code>中。</p>
+</blockquote>
+<h3 id="缓冲区创建流程"><a href="#缓冲区创建流程" class="headerlink" title="缓冲区创建流程"></a>缓冲区创建流程</h3><h4 id="Activity创建图形缓冲区"><a href="#Activity创建图形缓冲区" class="headerlink" title="Activity创建图形缓冲区"></a>Activity创建图形缓冲区</h4><p>其中最常见的场景在<code>ViewRootImpl</code>的创建过程中，在其中执行了<code>Surface</code>的创建。</p>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//ViewRootImpl.java</span>
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">ViewRootImpl</span> <span class="hljs-keyword">implements</span> <span class="hljs-title">ViewParent</span>,
+        <span class="hljs-title">View</span>.<span class="hljs-title">AttachInfo</span>.<span class="hljs-title">Callbacks</span>, <span class="hljs-title">ThreadedRenderer</span>.<span class="hljs-title">DrawCallbacks</span> </span>&#123;
+          ...
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> Surface mSurface = <span class="hljs-keyword">new</span> Surface();
+          
+        &#125;</code></pre></div>
+<p>主要在<code>WindowManagerGlobal.addView()</code>构造的<code>ViewRootImpl</code>对象。</p>
+<p>此时创建的只是Java层的<code>Surface</code>，还需要绑定Native层的<code>Surface</code>。</p>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//ViewRootImpl.java</span>
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">setView</span><span class="hljs-params">(View view, WindowManager.LayoutParams attrs, View panelParentView)</span> </span>&#123;
+               <span class="hljs-comment">//执行绘制流程 测量-布局-绘制</span>
+                requestLayout();
+                <span class="hljs-keyword">if</span> ((mWindowAttributes.inputFeatures
+                        &amp; WindowManager.LayoutParams.INPUT_FEATURE_NO_INPUT_CHANNEL) == <span class="hljs-number">0</span>) &#123;
+                  <span class="hljs-comment">//触摸事件回调</span>
+                    mInputChannel = <span class="hljs-keyword">new</span> InputChannel();
+                &#125;
+                mForceDecorViewVisibility = (mWindowAttributes.privateFlags
+                        &amp; PRIVATE_FLAG_FORCE_DECOR_VIEW_VISIBILITY) != <span class="hljs-number">0</span>;
+                <span class="hljs-keyword">try</span> &#123;
+                    mOrigWindowType = mWindowAttributes.type;
+                    mAttachInfo.mRecomputeGlobalAttributes = <span class="hljs-keyword">true</span>;
+                    collectViewAttributes();
+                   <span class="hljs-comment">//添加窗口</span>
+                    res = mWindowSession.addToDisplay(mWindow, mSeq, mWindowAttributes,
+                            getHostVisibility(), mDisplay.getDisplayId(), mWinFrame,
+                            mAttachInfo.mContentInsets, mAttachInfo.mStableInsets,
+                            mAttachInfo.mOutsets, mAttachInfo.mDisplayCutout, mInputChannel);
+                &#125; <span class="hljs-keyword">catch</span> (RemoteException e) &#123;
+                   ...
+                &#125; <span class="hljs-keyword">finally</span> &#123;
+                    <span class="hljs-keyword">if</span> (restore) &#123;
+                        attrs.restore();
+                    &#125;
+                &#125;      
+    &#125;</code></pre></div>
+<p><code>setView()</code>主要做了两件事情：</p>
+<ul>
+<li><code>requestLayout</code>：主要是执行到<code>relayoutWindow</code>创建了<code>Surface</code>和<code>Layer</code></li>
+<li><code>addToDisplay</code>：创建了<code>SurfaceComponentClient</code></li>
+</ul>
+<p><code>requestLayout</code>需要在<code>addToDisplay</code>执行完毕后才可以执行。</p>
+<p><br></p>
+<h5 id="WS-addToDisplay"><a href="#WS-addToDisplay" class="headerlink" title="WS#addToDisplay"></a>WS#addToDisplay</h5><p><code>WS#addToDisplay()</code>执行过程</p>
+<p><code>WindowSession</code>表示<strong>Java层的Window和WMS通信的对象</strong>。</p>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//com.android.server.wm.Session</span>
+<span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">Session</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">IWindowSession</span>.<span class="hljs-title">Stub</span> <span class="hljs-keyword">implements</span> <span class="hljs-title">IBinder</span>.<span class="hljs-title">DeathRecipient</span> </span>&#123;
+    <span class="hljs-meta">@Override</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> <span class="hljs-title">addToDisplayWithoutInputChannel</span><span class="hljs-params">(IWindow window, <span class="hljs-keyword">int</span> seq, WindowManager.LayoutParams attrs,
+            <span class="hljs-keyword">int</span> viewVisibility, <span class="hljs-keyword">int</span> displayId, Rect outContentInsets, Rect outStableInsets)</span> </span>&#123;
+        <span class="hljs-keyword">return</span> mService.addWindow(<span class="hljs-keyword">this</span>, window, seq, attrs, viewVisibility, displayId,
+                <span class="hljs-keyword">new</span> Rect() <span class="hljs-comment">/* outFrame */</span>, outContentInsets, outStableInsets, <span class="hljs-keyword">null</span> <span class="hljs-comment">/* outOutsets */</span>,
+                <span class="hljs-keyword">new</span> DisplayCutout.ParcelableWrapper() <span class="hljs-comment">/* cutout */</span>, <span class="hljs-keyword">null</span> <span class="hljs-comment">/* outInputChannel */</span>);
+    &#125;  
+&#125;</code></pre></div>
+<p><code>mService</code>表示的就是<code>WindowManagerService</code></p>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//WindowManagerService.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> <span class="hljs-title">addWindow</span><span class="hljs-params">(Session session, IWindow client, <span class="hljs-keyword">int</span> seq,
+            LayoutParams attrs, <span class="hljs-keyword">int</span> viewVisibility, <span class="hljs-keyword">int</span> displayId, Rect outFrame,
+            Rect outContentInsets, Rect outStableInsets, Rect outOutsets,
+            DisplayCutout.ParcelableWrapper outDisplayCutout, InputChannel outInputChannel)</span> </span>&#123;
+      ...      
+      <span class="hljs-keyword">synchronized</span>(mWindowMap) &#123;
+            AppWindowToken atoken = <span class="hljs-keyword">null</span>;
+            <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> hasParent = parentWindow != <span class="hljs-keyword">null</span>;
+          <span class="hljs-comment">//创建WindowToken</span>
+            WindowToken token = displayContent.getWindowToken(
+                    hasParent ? parentWindow.mAttrs.token : attrs.token);        
+        ...
+          <span class="hljs-comment">//创建WindowState对象</span>
+            <span class="hljs-keyword">final</span> WindowState win = <span class="hljs-keyword">new</span> WindowState(<span class="hljs-keyword">this</span>, session, client, token, parentWindow,
+                    appOp[<span class="hljs-number">0</span>], seq, attrs, viewVisibility, session.mUid,
+                    session.mCanAddInternalSystemWindow); 
+        ...
+          <span class="hljs-comment">//附加窗口</span>
+            win.attach();
+            mWindowMap.put(client.asBinder(), win);          
+      &#125;
+    &#125;</code></pre></div>
+<p>这里重点关注<code>WindowState#attach</code></p>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//WindowState.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">attach</span><span class="hljs-params">()</span> </span>&#123;
+        <span class="hljs-keyword">if</span> (localLOGV) Slog.v(TAG, <span class="hljs-string">"Attaching "</span> + <span class="hljs-keyword">this</span> + <span class="hljs-string">" token="</span> + mToken);
+        mSession.windowAddedLocked(mAttrs.packageName);
+    &#125;
+
+<span class="hljs-comment">//Session.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">windowAddedLocked</span><span class="hljs-params">(String packageName)</span> </span>&#123;
+        mPackageName = packageName;
+        mRelayoutTag = <span class="hljs-string">"relayoutWindow: "</span> + mPackageName;
+        <span class="hljs-keyword">if</span> (mSurfaceSession == <span class="hljs-keyword">null</span>) &#123;
+            <span class="hljs-keyword">if</span> (WindowManagerService.localLOGV) Slog.v(
+                TAG_WM, <span class="hljs-string">"First window added to "</span> + <span class="hljs-keyword">this</span> + <span class="hljs-string">", creating SurfaceSession"</span>);
+            mSurfaceSession = <span class="hljs-keyword">new</span> SurfaceSession();
+          ...
+        &#125;
+        mNumWindow++;
+    &#125;
+
+<span class="hljs-comment">//SurfaceSession.java</span>
+<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">SurfaceSession</span><span class="hljs-params">()</span> </span>&#123;
+        mNativeClient = nativeCreate();
+    &#125;
+
+<span class="hljs-comment">//android_view_SurfaceSession.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">static</span> jlong <span class="hljs-title">nativeCreate</span><span class="hljs-params">(JNIEnv* env, jclass clazz)</span> </span>&#123;
+    SurfaceComposerClient* client = <span class="hljs-keyword">new</span> SurfaceComposerClient();
+    client-&gt;incStrong((<span class="hljs-keyword">void</span>*)nativeCreate);
+    <span class="hljs-keyword">return</span> reinterpret_cast&lt;jlong&gt;(client);
+&#125;</code></pre></div>
+<p>经过上述步骤最后创建了<code>SurfaceComponentClient</code></p>
+<p><code>addToDisplay</code>执行完毕后，回调到<code>performTraversals()</code></p>
+<h5 id="WS-relayoutWindow"><a href="#WS-relayoutWindow" class="headerlink" title="WS#relayoutWindow"></a>WS#relayoutWindow</h5><div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//ViewRootImpl.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">performTraversals</span><span class="hljs-params">()</span> </span>&#123;
+        <span class="hljs-keyword">boolean</span> layoutRequested = mLayoutRequested &amp;&amp; (!mStopped || mReportNextDraw);
+      ...
+        <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> surfaceGenerationId = mSurface.getGenerationId();
+
+        <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> isViewVisible = viewVisibility == View.VISIBLE;
+        <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> windowRelayoutWasForced = mForceNextWindowRelayout;
+        <span class="hljs-keyword">if</span> (mFirst || windowShouldResize || insetsChanged ||
+                viewVisibilityChanged || params != <span class="hljs-keyword">null</span> || mForceNextWindowRelayout) &#123;
+            mForceNextWindowRelayout = <span class="hljs-keyword">false</span>;
+          ...
+            <span class="hljs-keyword">try</span> &#123;            
+             relayoutResult = relayoutWindow(params, viewVisibility, insetsPending);
+              ...
+            &#125;<span class="hljs-keyword">catch</span>(RemoteException e)&#123;
+              
+            &#125;
+            <span class="hljs-keyword">if</span> (!mStopped || mReportNextDraw) &#123;
+                <span class="hljs-keyword">boolean</span> focusChangedDueToTouchMode = ensureTouchModeLocally(
+                        (relayoutResult&amp;WindowManagerGlobal.RELAYOUT_RES_IN_TOUCH_MODE) != <span class="hljs-number">0</span>);
+                <span class="hljs-keyword">if</span> (focusChangedDueToTouchMode || mWidth != host.getMeasuredWidth()
+                        || mHeight != host.getMeasuredHeight() || contentInsetsChanged ||
+                        updatedConfiguration) &#123;
+                    <span class="hljs-keyword">int</span> childWidthMeasureSpec = getRootMeasureSpec(mWidth, lp.width);
+                    <span class="hljs-keyword">int</span> childHeightMeasureSpec = getRootMeasureSpec(mHeight, lp.height);
+                  <span class="hljs-comment">//执行测量流程</span>
+                    performMeasure(childWidthMeasureSpec, childHeightMeasureSpec);  
+                  ...
+                &#125;
+            &#125;
+          
+        <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> didLayout = layoutRequested &amp;&amp; (!mStopped || mReportNextDraw);
+        <span class="hljs-keyword">if</span> (didLayout) &#123;
+          <span class="hljs-comment">//执行布局过程</span>
+            performLayout(lp, mWidth, mHeight);
+        &#125;
+      &#125;
+        <span class="hljs-keyword">boolean</span> cancelDraw = mAttachInfo.mTreeObserver.dispatchOnPreDraw() || !isViewVisible;
+        <span class="hljs-keyword">if</span> (!cancelDraw &amp;&amp; !newSurface) &#123;
+            <span class="hljs-keyword">if</span> (mPendingTransitions != <span class="hljs-keyword">null</span> &amp;&amp; mPendingTransitions.size() &gt; <span class="hljs-number">0</span>) &#123;
+                <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int</span> i = <span class="hljs-number">0</span>; i &lt; mPendingTransitions.size(); ++i) &#123;
+                    mPendingTransitions.get(i).startChangingAnimations();
+                &#125;
+                mPendingTransitions.clear();
+            &#125;
+           <span class="hljs-comment">//执行绘制流程</span>
+            performDraw();
+        &#125; 
+      ...
+    &#125;</code></pre></div>
+<p><code>performTraversals()</code>主要做了以下几步：</p>
+<ol>
+<li><code>relayoutWindow</code>——创建<code>Surface</code>和<code>Layout</code></li>
+<li><code>performMeasure</code>——测量过程</li>
+<li><code>performLayout</code>——布局过程</li>
+<li><code>performDraw</code>——绘制过程</li>
+</ol>
+<p>接下来主要分析<code>relayoutWindow</code></p>
+<div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//ViewRootImpl.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">int</span> <span class="hljs-title">relayoutWindow</span><span class="hljs-params">(WindowManager.LayoutParams params, <span class="hljs-keyword">int</span> viewVisibility,
+            <span class="hljs-keyword">boolean</span> insetsPending)</span> <span class="hljs-keyword">throws</span> RemoteException </span>&#123;
+      ...
+        <span class="hljs-keyword">int</span> relayoutResult = mWindowSession.relayout(mWindow, mSeq, params,
+                (<span class="hljs-keyword">int</span>) (mView.getMeasuredWidth() * appScale + <span class="hljs-number">0.5f</span>),
+                (<span class="hljs-keyword">int</span>) (mView.getMeasuredHeight() * appScale + <span class="hljs-number">0.5f</span>), viewVisibility,
+                insetsPending ? WindowManagerGlobal.RELAYOUT_INSETS_PENDING : <span class="hljs-number">0</span>, frameNumber,
+                mWinFrame, mPendingOverscanInsets, mPendingContentInsets, mPendingVisibleInsets,
+                mPendingStableInsets, mPendingOutsets, mPendingBackDropFrame, mPendingDisplayCutout,
+                mPendingMergedConfiguration, mSurface);      
+    &#125;
+
+<span class="hljs-comment">//Session.java</span>
+    <span class="hljs-meta">@Override</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> <span class="hljs-title">relayout</span><span class="hljs-params">(IWindow window, <span class="hljs-keyword">int</span> seq, WindowManager.LayoutParams attrs,
+            <span class="hljs-keyword">int</span> requestedWidth, <span class="hljs-keyword">int</span> requestedHeight, <span class="hljs-keyword">int</span> viewFlags, <span class="hljs-keyword">int</span> flags, <span class="hljs-keyword">long</span> frameNumber,
+            Rect outFrame, Rect outOverscanInsets, Rect outContentInsets, Rect outVisibleInsets,
+            Rect outStableInsets, Rect outsets, Rect outBackdropFrame,
+            DisplayCutout.ParcelableWrapper cutout, MergedConfiguration mergedConfiguration,
+            Surface outSurface)</span> </span>&#123;
+      ...
+        <span class="hljs-keyword">int</span> res = mService.relayoutWindow(<span class="hljs-keyword">this</span>, window, seq, attrs,
+                requestedWidth, requestedHeight, viewFlags, flags, frameNumber,
+                outFrame, outOverscanInsets, outContentInsets, outVisibleInsets,
+                outStableInsets, outsets, outBackdropFrame, cutout,
+                mergedConfiguration, outSurface);
+      ...
+        <span class="hljs-keyword">return</span> res;
+    &#125;
+
+<span class="hljs-comment">//WindowManagerService.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> <span class="hljs-title">relayoutWindow</span><span class="hljs-params">(Session session, IWindow client, <span class="hljs-keyword">int</span> seq, LayoutParams attrs,
+            <span class="hljs-keyword">int</span> requestedWidth, <span class="hljs-keyword">int</span> requestedHeight, <span class="hljs-keyword">int</span> viewVisibility, <span class="hljs-keyword">int</span> flags,
+            <span class="hljs-keyword">long</span> frameNumber, Rect outFrame, Rect outOverscanInsets, Rect outContentInsets,
+            Rect outVisibleInsets, Rect outStableInsets, Rect outOutsets, Rect outBackdropFrame,
+            DisplayCutout.ParcelableWrapper outCutout, MergedConfiguration mergedConfiguration,
+            Surface outSurface)</span> </span>&#123;
+      ...
+            <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> shouldRelayout = viewVisibility == View.VISIBLE &amp;&amp;
+                    (win.mAppToken == <span class="hljs-keyword">null</span> || win.mAttrs.type == TYPE_APPLICATION_STARTING
+                            || !win.mAppToken.isClientHidden());        
+            <span class="hljs-keyword">if</span> (shouldRelayout) &#123;
+                <span class="hljs-keyword">try</span> &#123;
+                  <span class="hljs-comment">//创建SurfaceControl</span>
+                    result = createSurfaceControl(outSurface, result, win, winAnimator);
+                &#125; <span class="hljs-keyword">catch</span> (Exception e) &#123;
+                  ...
+                &#125;              
+            &#125;
+      
+    &#125;</code></pre></div>
+<p>接下来执行到<code>createSurfaceControl</code></p>
+<h6 id="WMS-createSurfaceControl"><a href="#WMS-createSurfaceControl" class="headerlink" title="WMS#createSurfaceControl"></a>WMS#createSurfaceControl</h6><div class="hljs"><pre><code class="hljs java"><span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">int</span> <span class="hljs-title">createSurfaceControl</span><span class="hljs-params">(Surface outSurface, <span class="hljs-keyword">int</span> result, WindowState win,
+        WindowStateAnimator winAnimator)</span> </span>&#123;
+    <span class="hljs-keyword">if</span> (!win.mHasSurface) &#123;
+        result |= RELAYOUT_RES_SURFACE_CHANGED;
+    &#125;
+
+    WindowSurfaceController surfaceController;
+    <span class="hljs-keyword">try</span> &#123;
+        Trace.traceBegin(TRACE_TAG_WINDOW_MANAGER, <span class="hljs-string">"createSurfaceControl"</span>);
+      <span class="hljs-comment">//创建SurfaceControl</span>
+        surfaceController = winAnimator.createSurfaceLocked(win.mAttrs.type, win.mOwnerUid);
+    &#125; <span class="hljs-keyword">finally</span> &#123;
+        Trace.traceEnd(TRACE_TAG_WINDOW_MANAGER);
+    &#125;
+    <span class="hljs-keyword">if</span> (surfaceController != <span class="hljs-keyword">null</span>) &#123;
+      <span class="hljs-comment">//创建Surface</span>
+        surfaceController.getSurface(outSurface);
+        <span class="hljs-keyword">if</span> (SHOW_TRANSACTIONS) Slog.i(TAG_WM, <span class="hljs-string">"  OUT SURFACE "</span> + outSurface + <span class="hljs-string">": copied"</span>);
+    &#125; <span class="hljs-keyword">else</span> &#123;
+        <span class="hljs-comment">// For some reason there isn't a surface.  Clear the</span>
+        <span class="hljs-comment">// caller's object so they see the same state.</span>
+        Slog.w(TAG_WM, <span class="hljs-string">"Failed to create surface control for "</span> + win);
+        outSurface.release();
+    &#125;
+
+    <span class="hljs-keyword">return</span> result;
+&#125;</code></pre></div>
+<p><code>createSurfaceControl()</code>主要执行了两步：</p>
+<ul>
+<li><code>createSurfaceLocked</code>——创建Layer</li>
+<li><code>SurfaceControl#getSurface</code>——创建Surface</li>
+</ul>
+<h6 id="WMS-createSurfaceLocked"><a href="#WMS-createSurfaceLocked" class="headerlink" title="WMS#createSurfaceLocked"></a>WMS#createSurfaceLocked</h6><div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//com/android/server/wm/WindowStateAnimator.java</span>
+    <span class="hljs-function">WindowSurfaceController <span class="hljs-title">createSurfaceLocked</span><span class="hljs-params">(<span class="hljs-keyword">int</span> windowType, <span class="hljs-keyword">int</span> ownerUid)</span> </span>&#123;
+      ...
+            mSurfaceController = <span class="hljs-keyword">new</span> WindowSurfaceController(mSession.mSurfaceSession,
+                    attrs.getTitle().toString(), width, height, format, flags, <span class="hljs-keyword">this</span>,
+                    windowType, ownerUid);      
+      ...
+    &#125;
+
+<span class="hljs-comment">//WindowSurfaceController.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">WindowSurfaceController</span><span class="hljs-params">(SurfaceSession s, String name, <span class="hljs-keyword">int</span> w, <span class="hljs-keyword">int</span> h, <span class="hljs-keyword">int</span> format,
+            <span class="hljs-keyword">int</span> flags, WindowStateAnimator animator, <span class="hljs-keyword">int</span> windowType, <span class="hljs-keyword">int</span> ownerUid)</span> </span>&#123;
+      ...
+        <span class="hljs-keyword">final</span> SurfaceControl.Builder b = win.makeSurface()
+                .setParent(win.getSurfaceControl())
+                .setName(name)
+                .setSize(w, h)
+                .setFormat(format)
+                .setFlags(flags)
+                .setMetadata(windowType, ownerUid);
+        mSurfaceControl = b.build();      
+      ...
+    &#125;
+
+<span class="hljs-comment">//SurfaceControl.java</span>
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">Builder</span> </span>&#123;
+      ...
+        <span class="hljs-function"><span class="hljs-keyword">public</span> SurfaceControl <span class="hljs-title">build</span><span class="hljs-params">()</span> </span>&#123;
+            <span class="hljs-keyword">if</span> (mWidth &lt;= <span class="hljs-number">0</span> || mHeight &lt;= <span class="hljs-number">0</span>) &#123;
+                <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> IllegalArgumentException(
+                        <span class="hljs-string">"width and height must be set"</span>);
+            &#125;
+            <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> SurfaceControl(mSession, mName, mWidth, mHeight, mFormat,
+                    mFlags, mParent, mWindowType, mOwnerUid);
+        &#125;      
+    &#125;
+
+    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-title">SurfaceControl</span><span class="hljs-params">(SurfaceSession session, String name, <span class="hljs-keyword">int</span> w, <span class="hljs-keyword">int</span> h, <span class="hljs-keyword">int</span> format, <span class="hljs-keyword">int</span> flags,
+            SurfaceControl parent, <span class="hljs-keyword">int</span> windowType, <span class="hljs-keyword">int</span> ownerUid)</span>
+                    <span class="hljs-keyword">throws</span> OutOfResourcesException, IllegalArgumentException </span>&#123;
+      ...
+        mNativeObject = nativeCreate(session, name, w, h, format, flags,
+            parent != <span class="hljs-keyword">null</span> ? parent.mNativeObject : <span class="hljs-number">0</span>, windowType, ownerUid);
+      ...
+    &#125;</code></pre></div>
+<p>执行<code>nativeCreate</code>切换到Native层执行</p>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//base/core/jni/android_view_SurfaceControl.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">static</span> jlong <span class="hljs-title">nativeCreate</span><span class="hljs-params">(JNIEnv* env, jclass clazz, jobject sessionObj,
+        jstring nameStr, jint w, jint h, jint format, jint flags, jlong parentObject,
+        jint windowType, jint ownerUid)</span> </span>&#123;
+    <span class="hljs-function">ScopedUtfChars <span class="hljs-title">name</span><span class="hljs-params">(env, nameStr)</span></span>;
+    <span class="hljs-function">sp&lt;SurfaceComposerClient&gt; <span class="hljs-title">client</span><span class="hljs-params">(android_view_SurfaceSession_getClient(env, sessionObj))</span></span>;
+    SurfaceControl *parent = <span class="hljs-keyword">reinterpret_cast</span>&lt;SurfaceControl*&gt;(parentObject);
+    sp&lt;SurfaceControl&gt; surface;
+    <span class="hljs-keyword">status_t</span> err = client-&gt;createSurfaceChecked(
+            String8(name.c_str()), w, h, format, &amp;surface, flags, parent, windowType, ownerUid);
+  ...
+
+    surface-&gt;incStrong((<span class="hljs-keyword">void</span> *)nativeCreate);
+    <span class="hljs-keyword">return</span> <span class="hljs-keyword">reinterpret_cast</span>&lt;jlong&gt;(surface.get());
+&#125;</code></pre></div>
+<p>在<code>createSurfaceChecked()</code>后续的流程会创建<code>Layer</code></p>
+<h6 id="SurfaceControl-getSurface"><a href="#SurfaceControl-getSurface" class="headerlink" title="SurfaceControl#getSurface"></a>SurfaceControl#getSurface</h6><div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//WindowSurfaceController.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">getSurface</span><span class="hljs-params">(Surface outSurface)</span> </span>&#123;
+        outSurface.copyFrom(mSurfaceControl);
+    &#125;
+
+<span class="hljs-comment">//Surface.java</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">copyFrom</span><span class="hljs-params">(SurfaceControl other)</span> </span>&#123;
+      ...
+        <span class="hljs-comment">//创建Surface</span>
+        <span class="hljs-keyword">long</span> newNativeObject = nativeGetFromSurfaceControl(surfaceControlPtr);
+
+    &#125;</code></pre></div>
+<p>在<code>nativeGetFromSurfaceControl()</code>创建<code>Surface</code></p>
+<h5 id="总结-3"><a href="#总结-3" class="headerlink" title="总结"></a>总结</h5><blockquote>
+<p>先执行<code>ViewRootImpl#setView()</code>，其中会执行</p>
+<ul>
+<li><p><code>requestLayout</code></p>
+<p>内部执行<code>ViewRootImpl#performTraversals()</code>，接下去执行<code>WMS#relayoutWindow()</code>，然后是<code>WMS#createSurfaceControl</code>，分为两步：</p>
+<ul>
+<li><code>createSurfaceLocked</code>：创建<code>SurfaceControl</code>，内部执行<code>android_view_surfaceControl#nativeCreate</code>，执行<code>SurfaceComponentClient#createSurface</code>，创建<code>Layer</code>对象。</li>
+<li><code>WindowSurfaceController#getSurface</code>：执行到<code>Surface#copyFrom()</code>，调用到<code>nativeGetFromSurfaceControl()</code>，内部调用到<code>SurfaceControl#getSurface()</code>去创建<code>Surface</code></li>
+</ul>
+<p>创建<code>Surface</code>和<code>Layer</code>完毕后，继续执行View的绘制流程<code>measure-&gt;layout-&gt;draw</code></p>
+</li>
+<li><p><code>WindowSession#addToDisplay()</code></p>
+<p>执行到<code>WMS#addWindow()</code>，继续到<code>Session#windowAddedLocked()</code>，切换到<code>Native</code>层执行<code>android_view_surfaceSession#native_create()</code>在其中创建了<code>SurfaceComponentClient</code>。</p>
+</li>
+</ul>
+</blockquote>
+<h4 id="Surface、Layer的创建"><a href="#Surface、Layer的创建" class="headerlink" title="Surface、Layer的创建"></a>Surface、Layer的创建</h4><p>根据上节源码分析可以知道，<code>Surface、Layer</code>的创建主要分为以下几步</p>
+<h5 id="创建SurfaceComponentClient"><a href="#创建SurfaceComponentClient" class="headerlink" title="创建SurfaceComponentClient"></a>创建SurfaceComponentClient</h5><div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//native/libs/gui/SurfaceComposerClient.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">SurfaceComposerClient::onFirstRef</span><span class="hljs-params">()</span> </span>&#123;
+    <span class="hljs-function">sp&lt;ISurfaceComposer&gt; <span class="hljs-title">sf</span><span class="hljs-params">(ComposerService::getComposerService())</span></span>;
+    <span class="hljs-keyword">if</span> (sf != <span class="hljs-number">0</span> &amp;&amp; mStatus == NO_INIT) &#123;
+        <span class="hljs-keyword">auto</span> rootProducer = mParent.promote();
+        sp&lt;ISurfaceComposerClient&gt; conn;
+        conn = (rootProducer != <span class="hljs-literal">nullptr</span>) ? sf-&gt;createScopedConnection(rootProducer) :
+                sf-&gt;createConnection();
+      ...
+    &#125;
+&#125;</code></pre></div>
+<p>其中<code>ComposerService</code>就是<code>SurfaceFlinger</code>的Binder代理对象，<code>SurfaceComponentClient</code>通过<code>ComposerService</code>与<code>SurfaceFlinger</code>进行通信。</p>
+<h6 id="ComposerService"><a href="#ComposerService" class="headerlink" title="ComposerService"></a>ComposerService</h6><div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//native/libs/gui/SurfaceComposerClient.cpp</span>
+<span class="hljs-comment">/*static*/</span> <span class="hljs-function">sp&lt;ISurfaceComposer&gt; <span class="hljs-title">ComposerService::getComposerService</span><span class="hljs-params">()</span> </span>&#123;
+    ComposerService&amp; instance = ComposerService::getInstance();
+    <span class="hljs-keyword">if</span> (instance.mComposerService == <span class="hljs-literal">NULL</span>) &#123;
+        ComposerService::getInstance().connectLocked();
+    &#125;
+    <span class="hljs-keyword">return</span> instance.mComposerService;
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">ComposerService::connectLocked</span><span class="hljs-params">()</span> </span>&#123;
+    <span class="hljs-function"><span class="hljs-keyword">const</span> String16 <span class="hljs-title">name</span><span class="hljs-params">(<span class="hljs-string">"SurfaceFlinger"</span>)</span></span>;
+  <span class="hljs-comment">//获取SurfaceFlinger 服务</span>
+    <span class="hljs-keyword">while</span> (getService(name, &amp;mComposerService) != NO_ERROR) &#123;
+        usleep(<span class="hljs-number">250000</span>);
+    &#125;
+    assert(mComposerService != <span class="hljs-literal">NULL</span>);
+&#125;
+
+<span class="hljs-comment">//native/libs/binder/include/binder/IServiceManager.h</span>
+<span class="hljs-function"><span class="hljs-keyword">status_t</span> <span class="hljs-title">getService</span><span class="hljs-params">(<span class="hljs-keyword">const</span> String16&amp; name, sp&lt;INTERFACE&gt;* outService)</span>
+</span>&#123;
+    <span class="hljs-keyword">const</span> sp&lt;IServiceManager&gt; sm = defaultServiceManager();
+    <span class="hljs-keyword">if</span> (sm != <span class="hljs-literal">NULL</span>) &#123;
+        *outService = interface_cast&lt;INTERFACE&gt;(sm-&gt;getService(name));
+        <span class="hljs-keyword">if</span> ((*outService) != <span class="hljs-literal">NULL</span>) <span class="hljs-keyword">return</span> NO_ERROR;
+    &#125;
+    <span class="hljs-keyword">return</span> NAME_NOT_FOUND;
+&#125;</code></pre></div>
+<h6 id="SurfaceFlinger-createConnection"><a href="#SurfaceFlinger-createConnection" class="headerlink" title="SurfaceFlinger#createConnection"></a>SurfaceFlinger#createConnection</h6><div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//native/services/surfaceflinger/SurfaceFlinger.cpp</span>
+<span class="hljs-function">sp&lt;ISurfaceComposerClient&gt; <span class="hljs-title">SurfaceFlinger::createConnection</span><span class="hljs-params">()</span> </span>&#123;
+    <span class="hljs-keyword">return</span> initClient(<span class="hljs-keyword">new</span> Client(<span class="hljs-keyword">this</span>));
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">static</span> sp&lt;ISurfaceComposerClient&gt; <span class="hljs-title">initClient</span><span class="hljs-params">(<span class="hljs-keyword">const</span> sp&lt;Client&gt;&amp; client)</span> </span>&#123;
+  <span class="hljs-comment">//检查Client是否合法</span>
+    <span class="hljs-keyword">status_t</span> err = client-&gt;initCheck();
+    <span class="hljs-keyword">if</span> (err == NO_ERROR) &#123;
+        <span class="hljs-keyword">return</span> client;
+    &#125;
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">nullptr</span>;
+&#125;</code></pre></div>
+<p>其中<code>Client</code>内部封装的是<strong>创建和销毁Layer和Surface的操作函数。</strong></p>
+<h5 id="创建SurfaceControl并创建Layer"><a href="#创建SurfaceControl并创建Layer" class="headerlink" title="创建SurfaceControl并创建Layer"></a>创建SurfaceControl并创建Layer</h5><div class="hljs"><pre><code class="hljs cpp"><span class="hljs-function"><span class="hljs-keyword">status_t</span> <span class="hljs-title">SurfaceComposerClient::createSurfaceChecked</span><span class="hljs-params">(
+        <span class="hljs-keyword">const</span> String8&amp; name,
+        <span class="hljs-keyword">uint32_t</span> w,
+        <span class="hljs-keyword">uint32_t</span> h,
+        PixelFormat format,
+        sp&lt;SurfaceControl&gt;* outSurface,
+        <span class="hljs-keyword">uint32_t</span> flags,
+        SurfaceControl* parent,
+        <span class="hljs-keyword">int32_t</span> windowType,
+        <span class="hljs-keyword">int32_t</span> ownerUid)</span>
+</span>&#123;
+    sp&lt;SurfaceControl&gt; sur;
+    <span class="hljs-keyword">status_t</span> err = mStatus;
+      
+        err = mClient-&gt;createSurface(name, w, h, format, flags, parentHandle,
+                windowType, ownerUid, &amp;handle, &amp;gbp);
+        <span class="hljs-keyword">if</span> (err == NO_ERROR) &#123;
+            *outSurface = <span class="hljs-keyword">new</span> SurfaceControl(<span class="hljs-keyword">this</span>, handle, gbp, <span class="hljs-literal">true</span> <span class="hljs-comment">/* owned */</span>);
+        &#125;
+    &#125;
+    <span class="hljs-keyword">return</span> err;
+&#125;</code></pre></div>
+<h6 id="Client-createSurface"><a href="#Client-createSurface" class="headerlink" title="Client#createSurface"></a>Client#createSurface</h6><div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//native/services/surfaceflinger/Client.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">status_t</span> <span class="hljs-title">Client::createSurface</span><span class="hljs-params">(
+        <span class="hljs-keyword">const</span> String8&amp; name,
+        <span class="hljs-keyword">uint32_t</span> w, <span class="hljs-keyword">uint32_t</span> h, PixelFormat format, <span class="hljs-keyword">uint32_t</span> flags,
+        <span class="hljs-keyword">const</span> sp&lt;IBinder&gt;&amp; parentHandle, <span class="hljs-keyword">int32_t</span> windowType, <span class="hljs-keyword">int32_t</span> ownerUid,
+        sp&lt;IBinder&gt;* handle,
+        sp&lt;IGraphicBufferProducer&gt;* gbp)</span>
+</span>&#123;
+    <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">MessageCreateLayer</span> :</span> <span class="hljs-keyword">public</span> MessageBase &#123;
+        SurfaceFlinger* flinger;
+        Client* client;
+        sp&lt;IBinder&gt;* handle;
+        sp&lt;IGraphicBufferProducer&gt;* gbp;
+        <span class="hljs-keyword">status_t</span> result;
+        <span class="hljs-keyword">const</span> String8&amp; name;
+        <span class="hljs-keyword">uint32_t</span> w, h;
+        PixelFormat format;
+        <span class="hljs-keyword">uint32_t</span> flags;
+        sp&lt;Layer&gt;* parent;
+        <span class="hljs-keyword">int32_t</span> windowType;
+        <span class="hljs-keyword">int32_t</span> ownerUid;
+    <span class="hljs-keyword">public</span>:
+        <span class="hljs-function"><span class="hljs-keyword">virtual</span> <span class="hljs-keyword">bool</span> <span class="hljs-title">handler</span><span class="hljs-params">()</span> </span>&#123;
+            result = flinger-&gt;createLayer(name, client, w, h, format, flags,
+                    windowType, ownerUid, handle, gbp, parent);
+            <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;
+        &#125;
+    &#125;;
+  
+    sp&lt;MessageBase&gt; msg = <span class="hljs-keyword">new</span> MessageCreateLayer(mFlinger.get(),
+            name, <span class="hljs-keyword">this</span>, w, h, format, flags, handle,
+            windowType, ownerUid, gbp, &amp;parent);
+    mFlinger-&gt;postMessageSync(msg);
+    <span class="hljs-keyword">return</span> <span class="hljs-keyword">static_cast</span>&lt;MessageCreateLayer*&gt;( msg.get() )-&gt;getResult();  
+&#125;</code></pre></div>
+<p>通过<code>postMessageSync()</code>发送消息，处理后回调到<code>handler()</code>，继续执行<code>createLayer()</code></p>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//native/services/surfaceflinger/SurfaceFlinger.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">status_t</span> <span class="hljs-title">SurfaceFlinger::createLayer</span><span class="hljs-params">(
+        <span class="hljs-keyword">const</span> String8&amp; name,
+        <span class="hljs-keyword">const</span> sp&lt;Client&gt;&amp; client,
+        <span class="hljs-keyword">uint32_t</span> w, <span class="hljs-keyword">uint32_t</span> h, PixelFormat format, <span class="hljs-keyword">uint32_t</span> flags,
+        <span class="hljs-keyword">int32_t</span> windowType, <span class="hljs-keyword">int32_t</span> ownerUid, sp&lt;IBinder&gt;* handle,
+        sp&lt;IGraphicBufferProducer&gt;* gbp, sp&lt;Layer&gt;* parent)</span>
+</span>&#123;
+  ...
+    <span class="hljs-keyword">switch</span> (flags &amp; ISurfaceComposerClient::eFXSurfaceMask) &#123;
+        <span class="hljs-keyword">case</span> ISurfaceComposerClient::eFXSurfaceNormal:
+            result = createBufferLayer(client,
+                    uniqueName, w, h, flags, format,
+                    handle, gbp, &amp;layer);
+
+            <span class="hljs-keyword">break</span>;
+        <span class="hljs-keyword">case</span> ISurfaceComposerClient::eFXSurfaceColor:
+            result = createColorLayer(client,
+                    uniqueName, w, h, flags,
+                    handle, &amp;layer);
+            <span class="hljs-keyword">break</span>;
+        <span class="hljs-keyword">default</span>:
+            result = BAD_VALUE;
+            <span class="hljs-keyword">break</span>;
+    &#125;
+  ...  
+  
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">status_t</span> <span class="hljs-title">SurfaceFlinger::createBufferLayer</span><span class="hljs-params">(<span class="hljs-keyword">const</span> sp&lt;Client&gt;&amp; client,
+        <span class="hljs-keyword">const</span> String8&amp; name, <span class="hljs-keyword">uint32_t</span> w, <span class="hljs-keyword">uint32_t</span> h, <span class="hljs-keyword">uint32_t</span> flags, PixelFormat&amp; format,
+        sp&lt;IBinder&gt;* handle, sp&lt;IGraphicBufferProducer&gt;* gbp, sp&lt;Layer&gt;* outLayer)</span>
+</span>&#123;
+ ...
+   <span class="hljs-comment">//创建Layer对象</span>
+    sp&lt;BufferLayer&gt; layer = <span class="hljs-keyword">new</span> BufferLayer(<span class="hljs-keyword">this</span>, client, name, w, h, flags);   
+ ...
+&#125;</code></pre></div>
+<p><code>createSurface</code>执行到最后，构建出<code>Layer</code>对象。</p>
+<h6 id="new-SurfaceControl"><a href="#new-SurfaceControl" class="headerlink" title="new SurfaceControl"></a>new SurfaceControl</h6><blockquote>
+<p><code>SurfaceControl</code>主要作用就是<strong>维护Surface</strong>。</p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//native/libs/gui/SurfaceControl.cpp</span>
+SurfaceControl::SurfaceControl(
+        <span class="hljs-keyword">const</span> sp&lt;SurfaceComposerClient&gt;&amp; client,
+        <span class="hljs-keyword">const</span> sp&lt;IBinder&gt;&amp; handle,
+        <span class="hljs-keyword">const</span> sp&lt;IGraphicBufferProducer&gt;&amp; gbp,
+        <span class="hljs-keyword">bool</span> owned)
+    : mClient(client), mHandle(handle), mGraphicBufferProducer(gbp), mOwned(owned)
+&#123;
+&#125;</code></pre></div>
+<p>创建SurfaceControl之后，仅仅是设置了<code>mClient</code>以及创建了<code>GraphicBufferProducer</code>对象。</p>
+<h5 id="通过SurfaceControl创建Surface"><a href="#通过SurfaceControl创建Surface" class="headerlink" title="通过SurfaceControl创建Surface"></a>通过SurfaceControl创建Surface</h5><p>此时已经创建完毕<code>Surfacecontrol</code>和<code>Layer</code>对象。</p>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//</span>
+<span class="hljs-function">sp&lt;Surface&gt; <span class="hljs-title">SurfaceControl::getSurface</span><span class="hljs-params">()</span> <span class="hljs-keyword">const</span>
+</span>&#123;
+    Mutex::Autolock _l(mLock);
+    <span class="hljs-keyword">if</span> (mSurfaceData == <span class="hljs-number">0</span>) &#123;
+        <span class="hljs-keyword">return</span> generateSurfaceLocked();
+    &#125;
+    <span class="hljs-keyword">return</span> mSurfaceData;
+&#125;
+
+<span class="hljs-function">sp&lt;Surface&gt; <span class="hljs-title">SurfaceControl::generateSurfaceLocked</span><span class="hljs-params">()</span> <span class="hljs-keyword">const</span>
+</span>&#123;
+  <span class="hljs-comment">//构造Surface对象</span>
+    mSurfaceData = <span class="hljs-keyword">new</span> Surface(mGraphicBufferProducer, <span class="hljs-literal">false</span>);
+
+    <span class="hljs-keyword">return</span> mSurfaceData;
+&#125;</code></pre></div>
+<p><code>Native</code>层的<code>Surface</code>创建完毕后，返回到<code>Java</code>层进行赋值。</p>
+<h4 id="BufferQueue的创建"><a href="#BufferQueue的创建" class="headerlink" title="BufferQueue的创建"></a>BufferQueue的创建</h4><h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="https://androidperformance.com/2020/02/14/Android-Systrace-SurfaceFlinger/" target="_blank" rel="noopener">SurfaceFlinger 解读</a></p>
 <p><a href="https://blog.csdn.net/tyuiof/article/details/108434845" target="_blank" rel="noopener">掌握Android图像显示原理-上</a></p>
 
             </div>
