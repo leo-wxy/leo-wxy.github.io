@@ -169,7 +169,7 @@
     
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      8.9k 字
+      10.6k 字
     </span>
   
 
@@ -179,7 +179,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      151
+      177
        分钟
     </span>
   
@@ -1955,11 +1955,11 @@ SurfaceControl::SurfaceControl(
 <p>主要有以下几个对象：</p>
 <ul>
 <li><code>mSlots</code>：大小为<code>NUM_BUFFER_SLOTS(64)</code>的数组，存储数据为<code>BufferSlot</code></li>
-<li><code>mQueue</code>：以<code>先进先出对了</code>存放<code>生产者生产的数据</code>，保证按照顺序取出</li>
-<li><code>mFreeSlots</code>：尚未绑定<code>GraphicBuffer</code>且<code>state = FREE</code>的<code>BufferSlot</code>集合</li>
-<li><code>mFreeBuffers</code>：已经绑定了<code>GraphicBuffer</code>且<code>state = FREE</code>的<code>BufferSlot</code>集合</li>
-<li><code>mActiveBuffers</code>：已经绑定了<code>GraphicBuffer</code>且<code>state!=FREE</code>的<code>BufferSlot</code>集合</li>
-<li><code>mUnusedSlots</code>：没有绑定<code>GraphicBuffer</code>且没有状态的<code>BufferSlot</code>集合</li>
+<li><code>mQueue</code>：以<code>先进先出对了</code>存放<code>生产者生产的数据-BufferItem</code>，保证按照顺序取出</li>
+<li><code>mFreeSlots</code>：尚未绑定<code>GraphicBuffer</code>且<code>state = FREE</code>的<code>BufferSlot</code>的<code>index</code>集合</li>
+<li><code>mFreeBuffers</code>：已经绑定了<code>GraphicBuffer</code>且<code>state = FREE</code>的<code>BufferSlot</code>的<code>index</code>集合</li>
+<li><code>mActiveBuffers</code>：已经绑定了<code>GraphicBuffer</code>且<code>state!=FREE</code>的<code>BufferSlot</code>的<code>index</code>集合</li>
+<li><code>mUnusedSlots</code>：没有绑定<code>GraphicBuffer</code>且没有状态的<code>BufferSlot</code>的<code>index</code>集合</li>
 </ul>
 <p>主要介绍<code>BufferSlot</code>，<code>BufferQueueCore</code>基本是<code>BufferSlot</code>的各种集合</p>
 <div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//</span>
@@ -2045,14 +2045,26 @@ BufferQueueProducer::BufferQueueProducer(<span class="hljs-keyword">const</span>
                     &amp;found);
            ...     
         &#125;
+      <span class="hljs-comment">//判断寻找的 BufferSlot是否与 申请的宽高、格式一致</span>
+        <span class="hljs-function"><span class="hljs-keyword">const</span> sp&lt;GraphicBuffer&gt;&amp; <span class="hljs-title">buffer</span><span class="hljs-params">(mSlots[found].mGraphicBuffer)</span></span>;
+        <span class="hljs-keyword">if</span> (mCore-&gt;mSharedBufferSlot == found &amp;&amp;
+                buffer-&gt;needsReallocation(width, height, format, BQ_LAYER_COUNT, usage)) &#123;
+            BQ_LOGE(<span class="hljs-string">"dequeueBuffer: cannot re-allocate a shared"</span>
+                    <span class="hljs-string">"buffer"</span>);
+
+            <span class="hljs-keyword">return</span> BAD_VALUE;
+        &#125;  
   ...
         <span class="hljs-keyword">if</span> (mCore-&gt;mSharedBufferSlot != found) &#123;
+          <span class="hljs-comment">//添加 GraphicBuffer 的index到 mActiveBuffers</span>
             mCore-&gt;mActiveBuffers.insert(found);
         &#125;
         *outSlot = found;  
   ...
+      <span class="hljs-comment">//标记 选中的BufferSlot状态为 DEQUEUED</span>
         mSlots[found].mBufferState.dequeue();
 
+      <span class="hljs-comment">//找到了空的 GraphicBuffer，就进行初始化。</span>
         <span class="hljs-keyword">if</span> ((buffer == <span class="hljs-literal">NULL</span>) ||
                 buffer-&gt;needsReallocation(width, height, format, BQ_LAYER_COUNT, usage))
         &#123;
@@ -2075,6 +2087,7 @@ BufferQueueProducer::BufferQueueProducer(<span class="hljs-keyword">const</span>
       &#123;
             <span class="hljs-keyword">if</span> (error == NO_ERROR &amp;&amp; !mCore-&gt;mIsAbandoned) &#123;
                 graphicBuffer-&gt;setGenerationNumber(mCore-&gt;mGenerationNumber);
+              <span class="hljs-comment">//将新创建的GraphicBuffer放到 BufferSlot中</span>
                 mSlots[*outSlot].mGraphicBuffer = graphicBuffer;
             &#125;      
       &#125;
@@ -2086,20 +2099,20 @@ BufferQueueProducer::BufferQueueProducer(<span class="hljs-keyword">const</span>
         <span class="hljs-keyword">int</span>* found)</span> <span class="hljs-keyword">const</span> </span>&#123;
   ...
         <span class="hljs-keyword">const</span> <span class="hljs-keyword">int</span> maxBufferCount = mCore-&gt;getMaxBufferCountLocked();
+       <span class="hljs-comment">//请求是否太多</span>
         <span class="hljs-keyword">bool</span> tooManyBuffers = mCore-&gt;mQueue.size()
                             &gt; <span class="hljs-keyword">static_cast</span>&lt;<span class="hljs-keyword">size_t</span>&gt;(maxBufferCount);
         <span class="hljs-keyword">if</span> (tooManyBuffers) &#123;
+          <span class="hljs-comment">//请求过多时，就会进入阻塞状态</span>
             BQ_LOGV(<span class="hljs-string">"%s: queue size is %zu, waiting"</span>, callerString,
                     mCore-&gt;mQueue.size());
         &#125; <span class="hljs-keyword">else</span> &#123;
-            <span class="hljs-comment">// If in shared buffer mode and a shared buffer exists, always</span>
-            <span class="hljs-comment">// return it.</span>
             <span class="hljs-keyword">if</span> (mCore-&gt;mSharedBufferMode &amp;&amp; mCore-&gt;mSharedBufferSlot !=
                     BufferQueueCore::INVALID_BUFFER_SLOT) &#123;
                 *found = mCore-&gt;mSharedBufferSlot;
             &#125; <span class="hljs-keyword">else</span> &#123;
                 <span class="hljs-keyword">if</span> (caller == FreeSlotCaller::Dequeue) &#123;
-                    <span class="hljs-comment">// If we're calling this from dequeue, prefer free buffers</span>
+                    <span class="hljs-comment">// 寻找已经绑定GraphicBuffer 但 State = FREE的 BufferSlot</span>
                     <span class="hljs-keyword">int</span> slot = getFreeBufferLocked();
                     <span class="hljs-keyword">if</span> (slot != BufferQueueCore::INVALID_BUFFER_SLOT) &#123;
                         *found = slot;
@@ -2107,7 +2120,7 @@ BufferQueueProducer::BufferQueueProducer(<span class="hljs-keyword">const</span>
                         *found = getFreeSlotLocked();
                     &#125;
                 &#125; <span class="hljs-keyword">else</span> &#123;
-                    <span class="hljs-comment">// If we're calling this from attach, prefer free slots</span>
+                    <span class="hljs-comment">// 寻找尚未绑定GraphicBuffer 但 State = FREE 的BufferSlot</span>
                     <span class="hljs-keyword">int</span> slot = getFreeSlotLocked();
                     <span class="hljs-keyword">if</span> (slot != BufferQueueCore::INVALID_BUFFER_SLOT) &#123;
                         *found = slot;
@@ -2118,24 +2131,324 @@ BufferQueueProducer::BufferQueueProducer(<span class="hljs-keyword">const</span>
             &#125;
         &#125;
   ...
-  
 &#125;</code></pre></div>
+<p><code>dequeueBuffer</code>主要做了以下几步：</p>
+<ul>
+<li><p>通过<code>waitForFreeSlotThenRelock</code>寻找空闲的<code>BufferSlot</code>，需要判断当前是否与申请<code>width、height、format</code>一致，不一致则需要重新请求</p>
+<p><code>waitForFreeSlotThenRelock</code>主要实现了以下几步：</p>
+<ul>
+<li><code>getFreeBufferLocked</code>：直接使用已经绑定的<code>GraphicBuffer</code></li>
+<li><code>getFreeSlotLocked</code>：需要新建一个<code>GraphicBuffer</code>与其绑定</li>
+</ul>
+</li>
+<li><p>把找到的<code>BufferSlot</code>的<code>index</code>放到<code>mActiveSlots</code>中</p>
+</li>
+<li><p>如果找到的<code>BufferSlot</code>中的<code>GraphicBuffer</code>为null，需要初始化<code>BufferSlot</code></p>
+</li>
+<li><p>如果需要重新创建<code>GraphicBuffer</code>，并把新建的<code>GraphicBuffer</code>放在找到的<code>BufferSlot</code>中</p>
+</li>
+</ul>
+<blockquote>
+<p>尝试寻找一个<code>BufferSlot</code>，并且<code>width,height,format</code>都符合要求，如果没有绑定<code>GraphicBuffer</code>，就需要新建一个并且进行绑定，然后设置<code>BufferSlot</code>的<code>BufferState</code>为<code>DEQUEUED</code>，最后返回在<code>mSlots</code>的<code>index</code>回去。</p>
+</blockquote>
 <h6 id="queueBuffer"><a href="#queueBuffer" class="headerlink" title="queueBuffer"></a>queueBuffer</h6><blockquote>
 <p>在<code>生产者</code>填充数据到<code>GraphicBuffer</code>完毕后，通过<code>queueBuffer</code>把<code>GraphicBuffer</code>放回到<code>BufferQueue</code>。</p>
 <p>标记<code>BufferSlot</code>的<code>BufferState</code>标记为<code>QUEUED</code>。</p>
 </blockquote>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//native/libs/gui/BufferQueueProducer.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">status_t</span> <span class="hljs-title">BufferQueueProducer::queueBuffer</span><span class="hljs-params">(<span class="hljs-keyword">int</span> slot,
+        <span class="hljs-keyword">const</span> QueueBufferInput &amp;input, QueueBufferOutput *output)</span> </span>&#123;
+  ...
+    <span class="hljs-comment">//消费者回调</span>
+    sp&lt;IConsumerListener&gt; frameAvailableListener;
+    sp&lt;IConsumerListener&gt; frameReplacedListener;
+    <span class="hljs-keyword">int</span> callbackTicket = <span class="hljs-number">0</span>;
+    <span class="hljs-keyword">uint64_t</span> currentFrameNumber = <span class="hljs-number">0</span>;
+  <span class="hljs-comment">//需要插入mQueue的 数据结构</span>
+    BufferItem item;
+  ...
+  &#123;
+    ...
+        <span class="hljs-function"><span class="hljs-keyword">const</span> sp&lt;GraphicBuffer&gt;&amp; <span class="hljs-title">graphicBuffer</span><span class="hljs-params">(mSlots[slot].mGraphicBuffer)</span></span>;    
+        mSlots[slot].mBufferState.<span class="hljs-built_in">queue</span>();
+       <span class="hljs-comment">//构造BufferItem对象</span>
+        item.mAcquireCalled = mSlots[slot].mAcquireCalled;
+        item.mGraphicBuffer = mSlots[slot].mGraphicBuffer;
+        item.mCrop = crop;
+        item.mTransform = transform &amp;
+                ~<span class="hljs-keyword">static_cast</span>&lt;<span class="hljs-keyword">uint32_t</span>&gt;(NATIVE_WINDOW_TRANSFORM_INVERSE_DISPLAY);
+        item.mTransformToDisplayInverse =
+                (transform &amp; NATIVE_WINDOW_TRANSFORM_INVERSE_DISPLAY) != <span class="hljs-number">0</span>;
+        item.mScalingMode = <span class="hljs-keyword">static_cast</span>&lt;<span class="hljs-keyword">uint32_t</span>&gt;(scalingMode);
+        item.mTimestamp = requestedPresentTimestamp;
+        item.mIsAutoTimestamp = isAutoTimestamp;
+        item.mDataSpace = dataSpace;
+        item.mHdrMetadata = hdrMetadata;
+        item.mFrameNumber = currentFrameNumber;
+        item.mSlot = slot;
+        item.mFence = acquireFence;
+        item.mFenceTime = acquireFenceTime;
+        item.mIsDroppable = mCore-&gt;mAsyncMode ||
+                mCore-&gt;mDequeueBufferCannotBlock ||
+                (mCore-&gt;mSharedBufferMode &amp;&amp; mCore-&gt;mSharedBufferSlot == slot);
+        item.mSurfaceDamage = surfaceDamage;
+        item.mQueuedBuffer = <span class="hljs-literal">true</span>;
+        item.mAutoRefresh = mCore-&gt;mSharedBufferMode &amp;&amp; mCore-&gt;mAutoRefresh;
+        item.mApi = mCore-&gt;mConnectedApi;    
+    
+        <span class="hljs-keyword">if</span> (mCore-&gt;mQueue.empty()) &#123;
+          <span class="hljs-comment">//添加BufferItem</span>
+            mCore-&gt;mQueue.push_back(item);
+            frameAvailableListener = mCore-&gt;mConsumerListener;
+        &#125; <span class="hljs-keyword">else</span> &#123;
+            <span class="hljs-keyword">const</span> BufferItem&amp; last = mCore-&gt;mQueue.itemAt(
+                    mCore-&gt;mQueue.size() - <span class="hljs-number">1</span>);
+            <span class="hljs-keyword">if</span> (last.mIsDroppable) &#123;
+              <span class="hljs-comment">//替换mQueue最后一位 为新的BufferItem</span>
+                mCore-&gt;mQueue.editItemAt(mCore-&gt;mQueue.size() - <span class="hljs-number">1</span>) = item;
+                frameReplacedListener = mCore-&gt;mConsumerListener;
+            &#125; <span class="hljs-keyword">else</span> &#123;
+              <span class="hljs-comment">//添加 BufferItem</span>
+                mCore-&gt;mQueue.push_back(item);
+                frameAvailableListener = mCore-&gt;mConsumerListener;
+            &#125;               
+        &#125;
+    ...
+      
+        <span class="hljs-keyword">if</span> (frameAvailableListener != <span class="hljs-literal">NULL</span>) &#123;
+          <span class="hljs-comment">//回调 onFrameAvaliaable 通知消费者有新的数据入队</span>
+            frameAvailableListener-&gt;onFrameAvailable(item);
+        &#125; <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (frameReplacedListener != <span class="hljs-literal">NULL</span>) &#123;
+            frameReplacedListener-&gt;onFrameReplaced(item);
+        &#125;      
+  &#125;
+&#125;</code></pre></div>
+<p><code>queueBuffer</code>主要执行了以下几步：</p>
+<ul>
+<li>根据传入的<code>slot</code>从<code>mSlots</code>获取对应的<code>BufferSlot</code>，并设置对应的<code>BufferState</code>为<code>QUEUED</code></li>
+<li>根据获取的<code>BufferSlot</code>构造出<code>BufferItem</code>，并添加到<code>mQueues</code>中</li>
+<li>最后回调到<code>frameAvaliableListener.onFrameAvaliable()</code>通知<code>消费者</code>有新数据入队，可以进行获取。</li>
+</ul>
 <h5 id="BufferQueueConsumer"><a href="#BufferQueueConsumer" class="headerlink" title="BufferQueueConsumer"></a>BufferQueueConsumer</h5><blockquote>
 <p><code>SurfaceFlinger</code>通过<code>BufferQueueConsumer</code>来获取以及释放<code>GraphicBuffer</code></p>
 </blockquote>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//native/libs/gui/BufferQueueConsumer.cpp</span>
+BufferQueueConsumer::BufferQueueConsumer(<span class="hljs-keyword">const</span> sp&lt;BufferQueueCore&gt;&amp; core) :
+    mCore(core),
+    mSlots(core-&gt;mSlots),
+    mConsumerName() &#123;&#125;</code></pre></div>
+<p><code>BufferQueueConsumer</code>只是设置了<code>mCore</code>和<code>mSlots</code>的两个参数。</p>
 <h6 id="acquireBuffer"><a href="#acquireBuffer" class="headerlink" title="acquireBuffer"></a>acquireBuffer</h6><blockquote>
 <p><code>消费者</code>向<code>BufferQueue</code>申请<code>已被填充数据的GraphicBuffer</code>进行消费。</p>
 <p>标记<code>BufferSlot</code>的<code>BufferState</code>标记为<code>ACQUIRED</code>。</p>
 </blockquote>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//native/libs/gui/BufferQueueConsumer.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">status_t</span> <span class="hljs-title">BufferQueueConsumer::acquireBuffer</span><span class="hljs-params">(BufferItem* outBuffer,
+        <span class="hljs-keyword">nsecs_t</span> expectedPresent, <span class="hljs-keyword">uint64_t</span> maxFrameNumber)</span> </span>&#123;
+ ... 
+      <span class="hljs-comment">//生产者注册回调</span>
+       sp&lt;IProducerListener&gt; listener;
+   <span class="hljs-comment">//如果队列为空则返回空</span>
+        <span class="hljs-keyword">if</span> (mCore-&gt;mQueue.empty() &amp;&amp; !sharedBufferAvailable) &#123;
+            <span class="hljs-keyword">return</span> NO_BUFFER_AVAILABLE;
+        &#125;
+    <span class="hljs-comment">//获取队列的第一条数据</span>
+        BufferQueueCore::<span class="hljs-function">Fifo::iterator <span class="hljs-title">front</span><span class="hljs-params">(mCore-&gt;mQueue.begin())</span></span>; 
+        <span class="hljs-keyword">if</span> (sharedBufferAvailable &amp;&amp; mCore-&gt;mQueue.empty()) &#123;
+            <span class="hljs-comment">//共享Buffer模式</span>
+        &#125; <span class="hljs-keyword">else</span> &#123;
+            <span class="hljs-comment">//从front获取对应的slot</span>
+            slot = front-&gt;mSlot;
+            *outBuffer = *front;
+        &#125;
+  ...
+                <span class="hljs-keyword">if</span> (!front-&gt;mIsStale) &#123;
+                    <span class="hljs-comment">// Front buffer is still in mSlots, so mark the slot as free</span>
+                    mSlots[front-&gt;mSlot].mBufferState.freeQueued();
+                  <span class="hljs-comment">//存在已经被消费的BufferSlot</span>
+                    listener = mCore-&gt;mConnectedProducerListener;                  
+                &#125;
+        <span class="hljs-keyword">if</span> (!outBuffer-&gt;mIsStale) &#123;
+            mSlots[slot].mAcquireCalled = <span class="hljs-literal">true</span>;
+            <span class="hljs-comment">// Don't decrease the queue count if the BufferItem wasn't</span>
+            <span class="hljs-comment">// previously in the queue. This happens in shared buffer mode when</span>
+            <span class="hljs-comment">// the queue is empty and the BufferItem is created above.</span>
+            <span class="hljs-keyword">if</span> (mCore-&gt;mQueue.empty()) &#123;
+                mSlots[slot].mBufferState.acquireNotInQueue();
+            &#125; <span class="hljs-keyword">else</span> &#123;
+              <span class="hljs-comment">//更新BufferState 为 ACQUIRED</span>
+                mSlots[slot].mBufferState.acquire();
+            &#125;
+            mSlots[slot].mFence = Fence::NO_FENCE;
+        &#125;    
+       <span class="hljs-comment">//从队列中移除</span>
+        mCore-&gt;mQueue.erase(front);   
+  
+      <span class="hljs-keyword">if</span> (listener != <span class="hljs-literal">NULL</span>) &#123;
+        <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int</span> i = <span class="hljs-number">0</span>; i &lt; numDroppedBuffers; ++i) &#123;
+          <span class="hljs-comment">//回调生产者 有数据被消费</span>
+            listener-&gt;onBufferReleased();
+        &#125;
+    &#125;
+&#125;</code></pre></div>
+<p><code>acquireBuffer</code>主要有以下几步：</p>
+<ul>
+<li>从<code>mQueue</code>中获取第一个元素</li>
+<li>改变第一个<code>BufferSlot</code>的<code>BufferState</code>为<code>ACQUIRED</code></li>
+<li>再将该<code>BufferSlot</code>从<code>mQueue</code>中移除</li>
+<li>如果存在数据被消费则回调<code>onBufferReleased</code></li>
+</ul>
 <h6 id="releaseBuffer"><a href="#releaseBuffer" class="headerlink" title="releaseBuffer"></a>releaseBuffer</h6><blockquote>
 <p><code>消费者</code>消费完毕后，通知<code>BufferQueueCore</code>已消费完毕，并返回<code>空GraphicBuffer</code>到<code>BufferQueue</code></p>
 <p>标记<code>BufferSlot</code>的<code>BufferState</code>标记为<code>FREE</code>。</p>
 </blockquote>
-<h4 id="GraphicBuffer的创建"><a href="#GraphicBuffer的创建" class="headerlink" title="GraphicBuffer的创建"></a>GraphicBuffer的创建</h4><h4 id="图像缓冲区的使用场景"><a href="#图像缓冲区的使用场景" class="headerlink" title="图像缓冲区的使用场景"></a>图像缓冲区的使用场景</h4><h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="https://androidperformance.com/2020/02/14/Android-Systrace-SurfaceFlinger/" target="_blank" rel="noopener">SurfaceFlinger 解读</a></p>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//native/libs/gui/BufferQueueConsumer.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">status_t</span> <span class="hljs-title">BufferQueueConsumer::releaseBuffer</span><span class="hljs-params">(<span class="hljs-keyword">int</span> slot, <span class="hljs-keyword">uint64_t</span> frameNumber,
+        <span class="hljs-keyword">const</span> sp&lt;Fence&gt;&amp; releaseFence, EGLDisplay eglDisplay,
+        EGLSyncKHR eglFence)</span> </span>&#123;
+  ...
+    sp&lt;IProducerListener&gt; listener;
+    &#123; <span class="hljs-comment">// Autolock scope</span>
+      ...
+        mSlots[slot].mEglDisplay = eglDisplay;
+        mSlots[slot].mEglFence = eglFence;
+        mSlots[slot].mFence = releaseFence;
+      <span class="hljs-comment">//设置 BufferSlot状态为 FREE</span>
+        mSlots[slot].mBufferState.release();     
+      ...
+        <span class="hljs-keyword">if</span> (!mSlots[slot].mBufferState.isShared()) &#123;
+            mCore-&gt;mActiveBuffers.erase(slot);
+          <span class="hljs-comment">//将BufferSlot放入 mFreeBuffers</span>
+            mCore-&gt;mFreeBuffers.push_back(slot);
+        &#125;
+
+        listener = mCore-&gt;mConnectedProducerListener;        
+    &#125;
+    <span class="hljs-keyword">if</span> (listener != <span class="hljs-literal">NULL</span>) &#123;
+      <span class="hljs-comment">//通知生产者有数据被消费</span>
+        listener-&gt;onBufferReleased();
+    &#125;  
+&#125;</code></pre></div>
+<p><code>releaseBuffer</code>主要有以下几步：</p>
+<ul>
+<li>将使用完的<code>BufferSlot</code>的<code>BufferState</code>转换为<code>FREE</code></li>
+<li>被消费完的<code>BufferSlot</code>的<code>index</code>放回到<code>mFreeBuffers</code>供后续的<code>生产者</code>继续获取</li>
+<li>最后通知生产者有数据被消费，生产者可以准备生产数据。</li>
+</ul>
+<h5 id="总结-4"><a href="#总结-4" class="headerlink" title="总结"></a>总结</h5><p><img src="/images/BufferSlot状态转变过程.jpg" srcset="/img/loading.gif" alt="BufferSlot状态转变过程"></p>
+<h4 id="GraphicBuffer的创建"><a href="#GraphicBuffer的创建" class="headerlink" title="GraphicBuffer的创建"></a>GraphicBuffer的创建</h4><blockquote>
+<p><code>GraphicBuffer</code>是基本单元，所有的交互都是基于它进行的。</p>
+</blockquote>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//native/libs/gui/BufferQueueProducer.cpp</span>
+<span class="hljs-function"><span class="hljs-keyword">status_t</span> <span class="hljs-title">BufferQueueProducer::dequeueBuffer</span><span class="hljs-params">(<span class="hljs-keyword">int</span>* outSlot, sp&lt;android::Fence&gt;* outFence,
+                                            <span class="hljs-keyword">uint32_t</span> width, <span class="hljs-keyword">uint32_t</span> height, PixelFormat format,
+                                            <span class="hljs-keyword">uint64_t</span> usage, <span class="hljs-keyword">uint64_t</span>* outBufferAge,
+                                            FrameEventHistoryDelta* outTimestamps)</span> </span>&#123;
+  ...
+        sp&lt;GraphicBuffer&gt; graphicBuffer = <span class="hljs-keyword">new</span> GraphicBuffer(
+                width, height, format, BQ_LAYER_COUNT, usage,
+                &#123;mConsumerName.<span class="hljs-built_in">string</span>(), mConsumerName.size()&#125;);
+  ...
+  
+&#125;</code></pre></div>
+<p>主要在<code>dequeueBuffer</code>进行的创建过程。在<code>生产者</code>的使用场景下</p>
+<div class="hljs"><pre><code class="hljs cpp"><span class="hljs-comment">//native/libs/ui/GraphicBuffer.cpp</span>
+GraphicBuffer::GraphicBuffer(<span class="hljs-keyword">uint32_t</span> inWidth, <span class="hljs-keyword">uint32_t</span> inHeight,
+        PixelFormat inFormat, <span class="hljs-keyword">uint32_t</span> inLayerCount, <span class="hljs-keyword">uint64_t</span> usage, <span class="hljs-built_in">std</span>::<span class="hljs-built_in">string</span> requestorName)
+    : GraphicBuffer()
+&#123;
+    mInitCheck = initWithSize(inWidth, inHeight, inFormat, inLayerCount,
+            usage, <span class="hljs-built_in">std</span>::move(requestorName));
+&#125;
+
+<span class="hljs-function"><span class="hljs-keyword">status_t</span> <span class="hljs-title">GraphicBuffer::initWithSize</span><span class="hljs-params">(<span class="hljs-keyword">uint32_t</span> inWidth, <span class="hljs-keyword">uint32_t</span> inHeight,
+        PixelFormat inFormat, <span class="hljs-keyword">uint32_t</span> inLayerCount, <span class="hljs-keyword">uint64_t</span> inUsage,
+        <span class="hljs-built_in">std</span>::<span class="hljs-built_in">string</span> requestorName)</span>
+</span>&#123;
+  <span class="hljs-comment">//GraphicBuffer的内存分配器</span>
+    GraphicBufferAllocator&amp; allocator = GraphicBufferAllocator::get();
+    <span class="hljs-keyword">uint32_t</span> outStride = <span class="hljs-number">0</span>;
+  <span class="hljs-comment">//为GraphicBuffer分配内存</span>
+    <span class="hljs-keyword">status_t</span> err = allocator.allocate(inWidth, inHeight, inFormat, inLayerCount,
+            inUsage, &amp;handle, &amp;outStride, mId,
+            <span class="hljs-built_in">std</span>::move(requestorName));
+    <span class="hljs-keyword">if</span> (err == NO_ERROR) &#123;
+        mBufferMapper.getTransportSize(handle, &amp;mTransportNumFds, &amp;mTransportNumInts);
+
+        width = <span class="hljs-keyword">static_cast</span>&lt;<span class="hljs-keyword">int</span>&gt;(inWidth);
+        height = <span class="hljs-keyword">static_cast</span>&lt;<span class="hljs-keyword">int</span>&gt;(inHeight);
+        format = inFormat;
+        layerCount = inLayerCount;
+        usage = inUsage;
+        usage_deprecated = <span class="hljs-keyword">int</span>(usage);
+        stride = <span class="hljs-keyword">static_cast</span>&lt;<span class="hljs-keyword">int</span>&gt;(outStride);
+    &#125;
+    <span class="hljs-keyword">return</span> err;
+&#125;</code></pre></div>
+<p><code>GraphicBuffer</code>创建过程主要执行了以下几步：</p>
+<ul>
+<li>获取<code>GraphicBufferAllocator</code>，这个是<code>GraphicBuffer</code>的内存分配器</li>
+<li>在调用<code>allocate()</code>进行内存分配</li>
+</ul>
+<p>其中<code>GraphicBufferAllocator</code>的实现如下：</p>
+<div class="hljs"><pre><code class="hljs cpp">//native/libs/ui/GraphicBufferAllocator.cpp
+GraphicBufferAllocator::GraphicBufferAllocator()
+  : mMapper(GraphicBufferMapper::getInstance()),
+    mAllocator(std::make_unique&lt;Gralloc2::Allocator&gt;(
+                mMapper.getGrallocMapper()))
+&#123;
+&#125;
+
+status_t GraphicBufferAllocator::allocate(uint32_t width, uint32_t height,
+        PixelFormat format, uint32_t layerCount, uint64_t usage,
+        buffer_handle_t* handle, uint32_t* stride,
+        uint64_t /*graphicBufferId*/, std::string requestorName)
+&#123;
+    ATRACE_CALL();
+
+    // make sure to not allocate a N x 0 or 0 x N buffer, since this is
+    // allowed from an API stand-point allocate a 1x1 buffer instead.
+    if (!width || !height)
+        width = height = 1;
+
+    // Ensure that layerCount is valid.
+    if (layerCount &lt; 1)
+        layerCount = 1;
+
+    Gralloc2::IMapper::BufferDescriptorInfo info = &#123;&#125;;
+    info.width = width;
+    info.height = height;
+    info.layerCount = layerCount;
+    info.format = static_cast&lt;Gralloc2::PixelFormat&gt;(format);
+    info.usage = usage;
+
+    Gralloc2::Error error = mAllocator-&gt;allocate(info, stride, handle);
+    if (error == Gralloc2::Error::NONE) &#123;
+        Mutex::Autolock _l(sLock);
+        KeyedVector&lt;buffer_handle_t, alloc_rec_t&gt;&amp; list(sAllocList);
+        uint32_t bpp = bytesPerPixel(format);
+        alloc_rec_t rec;
+        rec.width = width;
+        rec.height = height;
+        rec.stride = *stride;
+        rec.format = format;
+        rec.layerCount = layerCount;
+        rec.usage = usage;
+        rec.size = static_cast&lt;size_t&gt;(height * (*stride) * bpp);
+        rec.requestorName = std::move(requestorName);
+        list.add(*handle, rec);
+
+        return NO_ERROR;
+    &#125; else &#123;
+        ALOGE("Failed to allocate (%u x %u) layerCount %u format %d "
+                "usage %" PRIx64 ": %d",
+                width, height, layerCount, format, usage,
+                error);
+        return NO_MEMORY;
+    &#125;
+&#125;</code></pre></div>
+<p>//TODO 对<code>GraphicBufferAllocator</code>进行分析</p>
+<h4 id="图像缓冲区的使用场景"><a href="#图像缓冲区的使用场景" class="headerlink" title="图像缓冲区的使用场景"></a>图像缓冲区的使用场景</h4><h5 id="软件绘制"><a href="#软件绘制" class="headerlink" title="软件绘制"></a>软件绘制</h5><h5 id="硬件绘制"><a href="#硬件绘制" class="headerlink" title="硬件绘制"></a>硬件绘制</h5><h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="https://androidperformance.com/2020/02/14/Android-Systrace-SurfaceFlinger/" target="_blank" rel="noopener">SurfaceFlinger 解读</a></p>
 <p><a href="https://blog.csdn.net/tyuiof/article/details/108434845" target="_blank" rel="noopener">掌握Android图像显示原理-上</a></p>
 
             </div>
