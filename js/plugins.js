@@ -1,4 +1,4 @@
-/* global Fluid, CONFIG, ClipboardJS */
+/* global Fluid, CONFIG */
 
 HTMLElement.prototype.wrap = function(wrapper) {
   this.parentNode.insertBefore(wrapper, this);
@@ -108,13 +108,12 @@ Fluid.plugins = {
   },
 
   registerCopyCode: function() {
-    function getBgClass() {
-      var ele = $('div.hljs, pre');
+    if (!window.ClipboardJS) { return; }
+    function getBgClass(ele) {
       if (ele.length === 0) {
         return 'copy-btn-dark';
       }
-      var rgbArr = ele.css('background-color').replace(
-        /rgba*\(/, '').replace(')', '').split(',');
+      var rgbArr = ele.css('background-color').replace(/rgba*\(/, '').replace(')', '').split(',');
       var color = (0.213 * rgbArr[0]) + (0.715 * rgbArr[1]) + (0.072 * rgbArr[2]) > 255 / 2;
       return color ? 'copy-btn-dark' : 'copy-btn-light';
     }
@@ -123,19 +122,20 @@ Fluid.plugins = {
     copyHtml += '<button class="copy-btn" data-clipboard-snippet="">';
     copyHtml += '<i class="iconfont icon-copy"></i><span>Copy</span>';
     copyHtml += '</button>';
-    $('.markdown-body pre').each(function() {
+    var blockElement = $('.markdown-body pre');
+    blockElement.each(function() {
       const pre = $(this);
       if (pre.find('code.mermaid').length > 0) {
         return;
       }
       pre.append(copyHtml);
     });
-    var clipboard = new ClipboardJS('.copy-btn', {
+    var clipboard = new window.ClipboardJS('.copy-btn', {
       target: function(trigger) {
         return trigger.previousElementSibling;
       }
     });
-    $('.copy-btn').addClass(getBgClass());
+    $('.copy-btn').addClass(getBgClass(blockElement));
     clipboard.on('success', function(e) {
       e.clearSelection();
       var tmp = e.trigger.outerHTML;
@@ -144,6 +144,37 @@ Fluid.plugins = {
         e.trigger.outerHTML = tmp;
       }, 2000);
     });
+  },
+
+  registerImageLoaded: function() {
+    var bg = document.getElementById('banner');
+    if (bg) {
+      var src = bg.style.backgroundImage;
+      var url = src.match(/\((.*?)\)/)[1].replace(/(['"])/g, '');
+      var img = new Image();
+      img.onload = function() {
+        window.NProgress && window.NProgress.inc(0.2);
+      };
+      img.src = url;
+      if (img.complete) { img.onload(); }
+    }
+
+    var images = $('main img:not([srcset])');
+    var notLazyImages = [];
+    for (const img of images) {
+      if (!img.srcset) {
+        notLazyImages.push(img);
+      }
+    }
+    var total = notLazyImages.length;
+    for (const img of notLazyImages) {
+      const old = img.onload;
+      img.onload = function() {
+        old && old();
+        window.NProgress && window.NProgress.inc(0.5 / total);
+      };
+      if (img.complete) { img.onload(); }
+    }
   }
 
 };

@@ -18,22 +18,22 @@
   <meta name="keywords" content>
   <title>ThreadLocal原理分析 - Wxy的个人博客</title>
 
-  <link rel="stylesheet" href="https://cdn.staticfile.org/twitter-bootstrap/4.5.3/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css">
 
 
-  <link rel="stylesheet" href="https://cdn.staticfile.org/github-markdown-css/4.0.0/github-markdown.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@4.0.0/github-markdown.min.css">
   <link rel="stylesheet" href="/lib/hint/hint.min.css">
 
   
     
     
       
-      <link rel="stylesheet" href="https://cdn.staticfile.org/highlight.js/10.1.2/styles/dracula.min.css">
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@10.4.0/styles/github-gist.min.css">
     
   
 
   
-    <link rel="stylesheet" href="https://cdn.staticfile.org/fancybox/3.5.7/jquery.fancybox.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.css">
   
 
 
@@ -50,7 +50,7 @@
 
   <script id="fluid-configs">
     var Fluid = window.Fluid || {};
-    var CONFIG = {"hostname":"leo-wxy.github.io","root":"/","version":"1.8.5","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false},"toc":{"enable":true,"headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"right","visible":"hover","icon":""},"copy_btn":true,"image_zoom":{"enable":true},"lazyload":{"enable":true,"onlypost":false},"web_analytics":{"enable":false,"baidu":null,"google":null,"gtag":null,"tencent":{"sid":null,"cid":null},"woyaola":null,"cnzz":null,"leancloud":{"app_id":null,"app_key":null,"server_url":null},"tajs":null}};
+    var CONFIG = {"hostname":"leo-wxy.github.io","root":"/","version":"1.8.7","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"right","visible":"hover","icon":""},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"copy_btn":true,"image_zoom":{"enable":true},"toc":{"enable":true,"headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"onlypost":false},"web_analytics":{"enable":false,"baidu":null,"google":null,"gtag":null,"tencent":{"sid":null,"cid":null},"woyaola":null,"cnzz":null,"leancloud":{"app_id":null,"app_key":null,"server_url":null},"tajs":null}};
   </script>
   <script src="/js/utils.js"></script>
   <script src="/js/color-schema.js"></script>
@@ -139,7 +139,7 @@
   </div>
 </nav>
 
-    <div class="banner intro-2" id="background" parallax=true
+    <div class="banner" id="banner" parallax=true
          style="background: url('/img/default.png') no-repeat center center;
            background-size: cover;">
       <div class="full-bg-img">
@@ -201,11 +201,11 @@
     
       
 
-<div class="container-fluid">
-  <div class="row">
+<div class="container-fluid nopadding-x">
+  <div class="row nomargin-x">
     <div class="d-none d-lg-block col-lg-2"></div>
-    <div class="col-lg-8 nopadding-md">
-      <div class="container nopadding-md" id="board-ctn">
+    <div class="col-lg-8 nopadding-x-md">
+      <div class="container nopadding-x-md" id="board-ctn">
         <div class="py-5" id="board">
           <article class="post-content mx-auto">
             <!-- SEO header -->
@@ -222,38 +222,7 @@
 <blockquote>
 <p>ThreadLocal保证的是多线程环境下的独立性，同步机制则保证多线程下数据的一致性。</p>
 </blockquote>
-<h2 id="2-使用样例"><a href="#2-使用样例" class="headerlink" title="2.使用样例"></a>2.使用样例</h2><div class="hljs"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">ThreadLocalTest</span> </span>&#123;
-    <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> String label;
-    <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> ThreadLocal&lt;String&gt; threadLocal = <span class="hljs-keyword">new</span> ThreadLocal&lt;&gt;();
-
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">main</span><span class="hljs-params">(String[] args)</span> </span>&#123;
-        label = <span class="hljs-string">"main"</span>;
-        threadLocal.set(<span class="hljs-string">"main"</span>);
-        <span class="hljs-comment">//new Thread</span>
-        Thread thread = <span class="hljs-keyword">new</span> Thread() &#123;
-            <span class="hljs-meta">@Override</span>
-            <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">run</span><span class="hljs-params">()</span> </span>&#123;
-                <span class="hljs-keyword">super</span>.run();
-                label = <span class="hljs-string">"new"</span>;
-                threadLocal.set(<span class="hljs-string">"new"</span>);
-            &#125;
-        &#125;;
-        thread.start();
-
-        <span class="hljs-keyword">try</span> &#123;
-            thread.join();
-        &#125; <span class="hljs-keyword">catch</span> (InterruptedException e) &#123;
-            e.printStackTrace();
-        &#125;
-
-        System.err.println(<span class="hljs-string">"label = "</span> + label);
-        System.err.println(<span class="hljs-string">"threadLocal = "</span> + threadLocal.get());
-    &#125;
-&#125;
-
-<span class="hljs-comment">//console.log</span>
-label = <span class="hljs-keyword">new</span>
-threadLocal = main</code></pre></div>
+<h2 id="2-使用样例"><a href="#2-使用样例" class="headerlink" title="2.使用样例"></a>2.使用样例</h2><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">ThreadLocalTest</span> </span>&#123;<br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> String label;<br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> ThreadLocal&lt;String&gt; threadLocal = <span class="hljs-keyword">new</span> ThreadLocal&lt;&gt;();<br><br>    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">main</span><span class="hljs-params">(String[] args)</span> </span>&#123;<br>        label = <span class="hljs-string">"main"</span>;<br>        threadLocal.set(<span class="hljs-string">"main"</span>);<br>        <span class="hljs-comment">//new Thread</span><br>        Thread thread = <span class="hljs-keyword">new</span> Thread() &#123;<br>            <span class="hljs-meta">@Override</span><br>            <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">run</span><span class="hljs-params">()</span> </span>&#123;<br>                <span class="hljs-keyword">super</span>.run();<br>                label = <span class="hljs-string">"new"</span>;<br>                threadLocal.set(<span class="hljs-string">"new"</span>);<br>            &#125;<br>        &#125;;<br>        thread.start();<br><br>        <span class="hljs-keyword">try</span> &#123;<br>            thread.join();<br>        &#125; <span class="hljs-keyword">catch</span> (InterruptedException e) &#123;<br>            e.printStackTrace();<br>        &#125;<br><br>        System.err.println(<span class="hljs-string">"label = "</span> + label);<br>        System.err.println(<span class="hljs-string">"threadLocal = "</span> + threadLocal.get());<br>    &#125;<br>&#125;<br><br><span class="hljs-comment">//console.log</span><br>label = <span class="hljs-keyword">new</span><br>threadLocal = main<br></code></pre></td></tr></table></figure>
 <p>对于ThreadLocal中的变量，在一个线程中修改它的值，并不会影响到在其他线程中的值。<strong>ThreadLocal中的值在每个线程中都是独立的。</strong></p>
 <h2 id="3-深入理解ThreadLocal"><a href="#3-深入理解ThreadLocal" class="headerlink" title="3.深入理解ThreadLocal"></a>3.深入理解ThreadLocal</h2><p>ThreadLocal类中提供了以下几个方法来进行变量的操作：</p>
 <ul>
@@ -263,258 +232,43 @@ threadLocal = main</code></pre></div>
 <li><code>protected T initialValue()</code>设置ThreadLocal的初始值，该方法为延迟加载</li>
 </ul>
 <p>接下来具体查看上述方法的内部实现。加深理解</p>
-<h3 id="get"><a href="#get" class="headerlink" title="get()"></a><code>get()</code></h3><div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//返回当前线程中存储的变量副本</span>
-<span class="hljs-function"><span class="hljs-keyword">public</span> T <span class="hljs-title">get</span><span class="hljs-params">()</span> </span>&#123;
-        <span class="hljs-comment">//获取当前线程</span>
-        Thread t = Thread.currentThread();
-        <span class="hljs-comment">//获取到持有变量副本的map</span>
-        ThreadLocalMap map = getMap(t);
-        <span class="hljs-comment">//map存在则返回存储值</span>
-        <span class="hljs-keyword">if</span> (map != <span class="hljs-keyword">null</span>) &#123;
-            <span class="hljs-comment">//该map key为ThreadLocal 故获取value用的是this</span>
-            ThreadLocalMap.Entry e = map.getEntry(<span class="hljs-keyword">this</span>);
-            <span class="hljs-keyword">if</span> (e != <span class="hljs-keyword">null</span>) &#123;
-                <span class="hljs-meta">@SuppressWarnings</span>(<span class="hljs-string">"unchecked"</span>)
-                T result = (T)e.value;
-                <span class="hljs-keyword">return</span> result;
-            &#125;
-        &#125;
-        <span class="hljs-comment">//不存在则返回默认值</span>
-        <span class="hljs-keyword">return</span> setInitialValue();
-    &#125;</code></pre></div>
-<h3 id="set-T-value"><a href="#set-T-value" class="headerlink" title="set(T value)"></a><code>set(T value)</code></h3><div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//设置当前线程的变量副本</span>
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">set</span><span class="hljs-params">(T value)</span></span>&#123;
-   Thread t = Thread.currentThread();
-   ThreadLocalMap map = getMap(t);
-    <span class="hljs-comment">//map不为null 则保存value</span>
-    <span class="hljs-keyword">if</span>(map!=<span class="hljs-keyword">null</span>)&#123;
-        map.set(<span class="hljs-keyword">this</span>,value);
-    &#125;
-    <span class="hljs-comment">//否则创建一个ThreadLocalMap后保存value</span>
-    <span class="hljs-keyword">else</span>&#123;
-        createMap(t,value);
-    &#125;
-&#125;</code></pre></div>
-<h3 id="remove"><a href="#remove" class="headerlink" title="remove()"></a><code>remove()</code></h3><div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//移除保存的变量副本</span>
-<span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">remove</span><span class="hljs-params">()</span></span>&#123;
-    ThreadLocalMap map = getMap(Thread.currentThread);
-    <span class="hljs-comment">//map不为空 则移除当前ThreadLocal对应的变量副本</span>
-    <span class="hljs-keyword">if</span>(map!=<span class="hljs-keyword">null</span>)
-        map.remove(<span class="hljs-keyword">this</span>);
-&#125;</code></pre></div>
-<h3 id="initialValue"><a href="#initialValue" class="headerlink" title="initialValue()"></a><code>initialValue()</code></h3><div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//子类可重写该方法 进行默认值的设置</span>
-<span class="hljs-function"><span class="hljs-keyword">protected</span> T <span class="hljs-title">initialValue</span><span class="hljs-params">()</span> </span>&#123;
-        <span class="hljs-keyword">return</span> <span class="hljs-keyword">null</span>;
-    &#125;
-
-对应有setInitialValue()
-<span class="hljs-function"><span class="hljs-keyword">private</span> T <span class="hljs-title">setInitialValue</span><span class="hljs-params">()</span></span>&#123;
-   T value = initialValue();
-   Thread t = Thread.currentThread();
-   ThreadLocalMap map = getMap(t);
-    <span class="hljs-keyword">if</span>(map!=<span class="hljs-keyword">null</span>)&#123;
-        map.set(<span class="hljs-keyword">this</span>,value);
-    &#125;<span class="hljs-keyword">else</span>&#123;
-        createMap(t,value);
-    &#125;
-    <span class="hljs-keyword">return</span> value;
-&#125;</code></pre></div>
+<h3 id="get"><a href="#get" class="headerlink" title="get()"></a><code>get()</code></h3><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">//返回当前线程中存储的变量副本</span><br><span class="hljs-function"><span class="hljs-keyword">public</span> T <span class="hljs-title">get</span><span class="hljs-params">()</span> </span>&#123;<br>        <span class="hljs-comment">//获取当前线程</span><br>        Thread t = Thread.currentThread();<br>        <span class="hljs-comment">//获取到持有变量副本的map</span><br>        ThreadLocalMap map = getMap(t);<br>        <span class="hljs-comment">//map存在则返回存储值</span><br>        <span class="hljs-keyword">if</span> (map != <span class="hljs-keyword">null</span>) &#123;<br>            <span class="hljs-comment">//该map key为ThreadLocal 故获取value用的是this</span><br>            ThreadLocalMap.Entry e = map.getEntry(<span class="hljs-keyword">this</span>);<br>            <span class="hljs-keyword">if</span> (e != <span class="hljs-keyword">null</span>) &#123;<br>                <span class="hljs-meta">@SuppressWarnings</span>(<span class="hljs-string">"unchecked"</span>)<br>                T result = (T)e.value;<br>                <span class="hljs-keyword">return</span> result;<br>            &#125;<br>        &#125;<br>        <span class="hljs-comment">//不存在则返回默认值</span><br>        <span class="hljs-keyword">return</span> setInitialValue();<br>    &#125;<br></code></pre></td></tr></table></figure>
+<h3 id="set-T-value"><a href="#set-T-value" class="headerlink" title="set(T value)"></a><code>set(T value)</code></h3><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">//设置当前线程的变量副本</span><br><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">set</span><span class="hljs-params">(T value)</span></span>&#123;<br>   Thread t = Thread.currentThread();<br>   ThreadLocalMap map = getMap(t);<br>    <span class="hljs-comment">//map不为null 则保存value</span><br>    <span class="hljs-keyword">if</span>(map!=<span class="hljs-keyword">null</span>)&#123;<br>        map.set(<span class="hljs-keyword">this</span>,value);<br>    &#125;<br>    <span class="hljs-comment">//否则创建一个ThreadLocalMap后保存value</span><br>    <span class="hljs-keyword">else</span>&#123;<br>        createMap(t,value);<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+<h3 id="remove"><a href="#remove" class="headerlink" title="remove()"></a><code>remove()</code></h3><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">//移除保存的变量副本</span><br><span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">remove</span><span class="hljs-params">()</span></span>&#123;<br>    ThreadLocalMap map = getMap(Thread.currentThread);<br>    <span class="hljs-comment">//map不为空 则移除当前ThreadLocal对应的变量副本</span><br>    <span class="hljs-keyword">if</span>(map!=<span class="hljs-keyword">null</span>)<br>        map.remove(<span class="hljs-keyword">this</span>);<br>&#125;<br></code></pre></td></tr></table></figure>
+<h3 id="initialValue"><a href="#initialValue" class="headerlink" title="initialValue()"></a><code>initialValue()</code></h3><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">//子类可重写该方法 进行默认值的设置</span><br><span class="hljs-function"><span class="hljs-keyword">protected</span> T <span class="hljs-title">initialValue</span><span class="hljs-params">()</span> </span>&#123;<br>        <span class="hljs-keyword">return</span> <span class="hljs-keyword">null</span>;<br>    &#125;<br><br>对应有setInitialValue()<br><span class="hljs-function"><span class="hljs-keyword">private</span> T <span class="hljs-title">setInitialValue</span><span class="hljs-params">()</span></span>&#123;<br>   T value = initialValue();<br>   Thread t = Thread.currentThread();<br>   ThreadLocalMap map = getMap(t);<br>    <span class="hljs-keyword">if</span>(map!=<span class="hljs-keyword">null</span>)&#123;<br>        map.set(<span class="hljs-keyword">this</span>,value);<br>    &#125;<span class="hljs-keyword">else</span>&#123;<br>        createMap(t,value);<br>    &#125;<br>    <span class="hljs-keyword">return</span> value;<br>&#125;<br></code></pre></td></tr></table></figure>
 <p>在上述四个方法中都会涉及到一个类<strong><code>ThreadLocalMap</code></strong>，该类是ThreadLocal的核心机制实现。<code>在使用ThreadLocal的方法对存储变量进行操作时都需要获得当前线程对应的ThreadLocalMap来对变量进行操作</code>。<strong>每个线程都会有专属的ThreadLocalMap，其中维护的value也是对应当前线程的。就保证了ThreadLocal中存储的变量都是相互独立的，不会受到多线程环境的影响。</strong></p>
 <h3 id="ThreadLocalMap"><a href="#ThreadLocalMap" class="headerlink" title="ThreadLocalMap"></a><strong><code>ThreadLocalMap</code></strong></h3><blockquote>
 <p>该类为ThreadLocal中的内部类，没有实现Map接口，内部自己实现了Map的功能。</p>
 </blockquote>
 <ol>
 <li><p>构造方法</p>
-<div class="hljs"><pre><code class="hljs java">ThreadLocalMap(ThreadLocal&lt;?&gt; firstKey, Object firstValue) &#123;
-           table = <span class="hljs-keyword">new</span> Entry[INITIAL_CAPACITY];
-           <span class="hljs-keyword">int</span> i = firstKey.threadLocalHashCode &amp; (INITIAL_CAPACITY - <span class="hljs-number">1</span>);
-           table[i] = <span class="hljs-keyword">new</span> Entry(firstKey, firstValue);
-           size = <span class="hljs-number">1</span>;
-           setThreshold(INITIAL_CAPACITY);
-       &#125;</code></pre></div>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><code class="hljs java">ThreadLocalMap(ThreadLocal&lt;?&gt; firstKey, Object firstValue) &#123;<br>           table = <span class="hljs-keyword">new</span> Entry[INITIAL_CAPACITY];<br>           <span class="hljs-keyword">int</span> i = firstKey.threadLocalHashCode &amp; (INITIAL_CAPACITY - <span class="hljs-number">1</span>);<br>           table[i] = <span class="hljs-keyword">new</span> Entry(firstKey, firstValue);<br>           size = <span class="hljs-number">1</span>;<br>           setThreshold(INITIAL_CAPACITY);<br>       &#125;<br></code></pre></td></tr></table></figure>
 </li>
 <li><p>初始对象</p>
-<div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">// 初始容量，必须是 2 的幂</span>
-<span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> INITIAL_CAPACITY = <span class="hljs-number">16</span>;
-
-<span class="hljs-comment">// 存储数据的哈希表</span>
-<span class="hljs-keyword">private</span> Entry[] table;
-
-<span class="hljs-comment">// table 中已存储的条目数</span>
-<span class="hljs-keyword">private</span> <span class="hljs-keyword">int</span> size = <span class="hljs-number">0</span>;
-
-<span class="hljs-comment">// 表示一个阈值，当 table 中存储的对象达到该值时就会扩容</span>
-<span class="hljs-keyword">private</span> <span class="hljs-keyword">int</span> threshold;
-
-<span class="hljs-comment">// 设置 threshold 的值</span>
-<span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">setThreshold</span><span class="hljs-params">(<span class="hljs-keyword">int</span> len)</span> </span>&#123;
-    threshold = len * <span class="hljs-number">2</span> / <span class="hljs-number">3</span>;
-&#125;</code></pre></div>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">// 初始容量，必须是 2 的幂</span><br><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> INITIAL_CAPACITY = <span class="hljs-number">16</span>;<br><br><span class="hljs-comment">// 存储数据的哈希表</span><br><span class="hljs-keyword">private</span> Entry[] table;<br><br><span class="hljs-comment">// table 中已存储的条目数</span><br><span class="hljs-keyword">private</span> <span class="hljs-keyword">int</span> size = <span class="hljs-number">0</span>;<br><br><span class="hljs-comment">// 表示一个阈值，当 table 中存储的对象达到该值时就会扩容</span><br><span class="hljs-keyword">private</span> <span class="hljs-keyword">int</span> threshold;<br><br><span class="hljs-comment">// 设置 threshold 的值</span><br><span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">setThreshold</span><span class="hljs-params">(<span class="hljs-keyword">int</span> len)</span> </span>&#123;<br>    threshold = len * <span class="hljs-number">2</span> / <span class="hljs-number">3</span>;<br>&#125;<br></code></pre></td></tr></table></figure>
 <p>由内部实现了一套Map机制</p>
 </li>
 <li><p>Entry</p>
 <blockquote>
 <p>table中存储的都为Entry对象，用于保存K-V数据结构</p>
 </blockquote>
-<div class="hljs"><pre><code class="hljs java"><span class="hljs-keyword">static</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">Entry</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">WeakReference</span>&lt;<span class="hljs-title">ThreadLocal</span>&lt;?&gt;&gt; </span>&#123;
-    <span class="hljs-comment">/** The value associated with this ThreadLocal. */</span>
-    Object value;
-   
-    Entry(ThreadLocal&lt;?&gt; k, Object v) &#123;
-        <span class="hljs-keyword">super</span>(k);
-        value = v;
-    &#125;
-&#125;</code></pre></div>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">static</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">Entry</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">WeakReference</span>&lt;<span class="hljs-title">ThreadLocal</span>&lt;?&gt;&gt; </span>&#123;<br>    <span class="hljs-comment">/** The value associated with this ThreadLocal. */</span><br>    Object value;<br>   <br>    Entry(ThreadLocal&lt;?&gt; k, Object v) &#123;<br>        <span class="hljs-keyword">super</span>(k);<br>        value = v;<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
 <p>Entry继承自<code>WeakRefrence&lt;ThreadLocal&lt;?&gt;&gt;</code>为弱引用类型并且限制了<code>K</code>只能为ThreadLocal对象，但是对应的<code>V</code>为强引用类型，则可能导致<strong>内存泄漏</strong>。</p>
 </li>
 <li><p>保存key-value</p>
-<div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//调用set方法将 key-value类型进行存储</span>
-<span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">set</span><span class="hljs-params">(ThreadLocal&lt;?&gt; key, Object value)</span> </span>&#123;
-
-            <span class="hljs-comment">// We don't use a fast path as with get() because it is at</span>
-            <span class="hljs-comment">// least as common to use set() to create new entries as</span>
-            <span class="hljs-comment">// it is to replace existing ones, in which case, a fast</span>
-            <span class="hljs-comment">// path would fail more often than not.</span>
-
-            Entry[] tab = table;
-            <span class="hljs-keyword">int</span> len = tab.length;
-            <span class="hljs-comment">//计算要存储的索引位置</span>
-            <span class="hljs-keyword">int</span> i = key.threadLocalHashCode &amp; (len-<span class="hljs-number">1</span>);
-            <span class="hljs-comment">//判断要存储的索引位置是否已经存在Entry 存在则继续向下</span>
-            <span class="hljs-keyword">for</span> (Entry e = tab[i];
-                 e != <span class="hljs-keyword">null</span>;
-                 e = tab[i = nextIndex(i, len)]) &#123;
-                ThreadLocal&lt;?&gt; k = e.get();
-                <span class="hljs-comment">//key相同则更新</span>
-                <span class="hljs-keyword">if</span> (k == key) &#123;
-                    e.value = value;
-                    <span class="hljs-keyword">return</span>;
-                &#125;
-                <span class="hljs-comment">//key为空 代表该位置对应的Entry已失效，需要直接进行替换</span>
-                <span class="hljs-keyword">if</span> (k == <span class="hljs-keyword">null</span>) &#123;
-                    replaceStaleEntry(key, value, i);
-                    <span class="hljs-keyword">return</span>;
-                &#125;
-            &#125;
-            <span class="hljs-comment">//若不存在 则将Entry保存到该位置</span>
-            tab[i] = <span class="hljs-keyword">new</span> Entry(key, value);
-            <span class="hljs-keyword">int</span> sz = ++size;
-            <span class="hljs-comment">//超过当前负载 则需进行扩容机制 重新调整table</span>
-            <span class="hljs-keyword">if</span> (!cleanSomeSlots(i, sz) &amp;&amp; sz &gt;= threshold)
-                rehash();
-        &#125;</code></pre></div>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">//调用set方法将 key-value类型进行存储</span><br><span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">set</span><span class="hljs-params">(ThreadLocal&lt;?&gt; key, Object value)</span> </span>&#123;<br><br>            <span class="hljs-comment">// We don't use a fast path as with get() because it is at</span><br>            <span class="hljs-comment">// least as common to use set() to create new entries as</span><br>            <span class="hljs-comment">// it is to replace existing ones, in which case, a fast</span><br>            <span class="hljs-comment">// path would fail more often than not.</span><br><br>            Entry[] tab = table;<br>            <span class="hljs-keyword">int</span> len = tab.length;<br>            <span class="hljs-comment">//计算要存储的索引位置</span><br>            <span class="hljs-keyword">int</span> i = key.threadLocalHashCode &amp; (len-<span class="hljs-number">1</span>);<br>            <span class="hljs-comment">//判断要存储的索引位置是否已经存在Entry 存在则继续向下</span><br>            <span class="hljs-keyword">for</span> (Entry e = tab[i];<br>                 e != <span class="hljs-keyword">null</span>;<br>                 e = tab[i = nextIndex(i, len)]) &#123;<br>                ThreadLocal&lt;?&gt; k = e.get();<br>                <span class="hljs-comment">//key相同则更新</span><br>                <span class="hljs-keyword">if</span> (k == key) &#123;<br>                    e.value = value;<br>                    <span class="hljs-keyword">return</span>;<br>                &#125;<br>                <span class="hljs-comment">//key为空 代表该位置对应的Entry已失效，需要直接进行替换</span><br>                <span class="hljs-keyword">if</span> (k == <span class="hljs-keyword">null</span>) &#123;<br>                    replaceStaleEntry(key, value, i);<br>                    <span class="hljs-keyword">return</span>;<br>                &#125;<br>            &#125;<br>            <span class="hljs-comment">//若不存在 则将Entry保存到该位置</span><br>            tab[i] = <span class="hljs-keyword">new</span> Entry(key, value);<br>            <span class="hljs-keyword">int</span> sz = ++size;<br>            <span class="hljs-comment">//超过当前负载 则需进行扩容机制 重新调整table</span><br>            <span class="hljs-keyword">if</span> (!cleanSomeSlots(i, sz) &amp;&amp; sz &gt;= threshold)<br>                rehash();<br>        &#125;<br></code></pre></td></tr></table></figure>
 <p>使用当前的ThreadLocal中对应的threadLocalHashCode来计算该键值对要存储的索引位置。该值是由ThreadLocal对象自动生成的，创建时就会进行赋值。</p>
-<div class="hljs"><pre><code class="hljs java"><span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> threadLocalHashCode = nextHashCode();
-
-    <span class="hljs-comment">/**
-     * The next hash code to be given out. Updated atomically. Starts at
-     * zero.
-     * 使用AtomicInteger用来保证多线程环境下不会受到影响
-     */</span>
-    <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> AtomicInteger nextHashCode =
-        <span class="hljs-keyword">new</span> AtomicInteger();
-
-    <span class="hljs-comment">/**
-     * The difference between successively generated hash codes - turns
-     * implicit sequential thread-local IDs into near-optimally spread
-     * multiplicative hash values for power-of-two-sized tables.
-     */</span>
-    <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> HASH_INCREMENT = <span class="hljs-number">0x61c88647</span>;
-
-    <span class="hljs-comment">/**
-     * Returns the next hash code.
-     */</span>
-    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">int</span> <span class="hljs-title">nextHashCode</span><span class="hljs-params">()</span> </span>&#123;
-        <span class="hljs-keyword">return</span> nextHashCode.getAndAdd(HASH_INCREMENT);
-    &#125;</code></pre></div>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> threadLocalHashCode = nextHashCode();<br><br>    <span class="hljs-comment">/**<br>     * The next hash code to be given out. Updated atomically. Starts at<br>     * zero.<br>     * 使用AtomicInteger用来保证多线程环境下不会受到影响<br>     */</span><br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> AtomicInteger nextHashCode =<br>        <span class="hljs-keyword">new</span> AtomicInteger();<br><br>    <span class="hljs-comment">/**<br>     * The difference between successively generated hash codes - turns<br>     * implicit sequential thread-local IDs into near-optimally spread<br>     * multiplicative hash values for power-of-two-sized tables.<br>     */</span><br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> HASH_INCREMENT = <span class="hljs-number">0x61c88647</span>;<br><br>    <span class="hljs-comment">/**<br>     * Returns the next hash code.<br>     */</span><br>    <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">int</span> <span class="hljs-title">nextHashCode</span><span class="hljs-params">()</span> </span>&#123;<br>        <span class="hljs-keyword">return</span> nextHashCode.getAndAdd(HASH_INCREMENT);<br>    &#125;<br></code></pre></td></tr></table></figure>
 <p>当table中的条目超出阈值时就需要进行扩容</p>
-<div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//扩容是 新table的容量为原先的两倍 触发条件为table中的条目数超出了阈值的3/4</span>
-<span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">resize</span><span class="hljs-params">()</span></span>&#123;
-    Entry[] oldTab = table;
-    <span class="hljs-keyword">int</span> oldLen = oldTab.length;
-    <span class="hljs-keyword">int</span> newLen = oldLen * <span class="hljs-number">2</span>;
-    Entry[] newTab = <span class="hljs-keyword">new</span> Entry[newLen];
-    <span class="hljs-keyword">int</span> count = <span class="hljs-number">0</span>;
-    <span class="hljs-keyword">for</span>(<span class="hljs-keyword">int</span> j = <span class="hljs-number">0</span>;j&lt;oldLen;++j)&#123;
-        Entry e = oldTab[j];
-        <span class="hljs-keyword">if</span>(e!=<span class="hljs-keyword">null</span>)&#123;
-           ThreadLocal&lt;?&gt; k =e.get();
-            <span class="hljs-keyword">if</span>(k == <span class="hljs-keyword">null</span>)&#123;
-                e.value = <span class="hljs-keyword">null</span>;
-            &#125; <span class="hljs-keyword">else</span>&#123;
-                <span class="hljs-comment">//重新计算扩容后的Hash值</span>
-                <span class="hljs-keyword">int</span> h = k.threadLocalHashCode &amp; (newLen - <span class="hljs-number">1</span>);
-                <span class="hljs-keyword">while</span>(newTab[h]!=<span class="hljs-keyword">null</span>)&#123;
-                    h = nextIndex(h,newLen);
-                &#125;
-                newTab[h] = e;
-                count ++;
-            &#125;
-        &#125;
-    &#125;
-    <span class="hljs-comment">//重新设定当前容量</span>
-    setThreshold(newLen);
-    size = count;
-    table = newTab;
-&#125;</code></pre></div>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">//扩容是 新table的容量为原先的两倍 触发条件为table中的条目数超出了阈值的3/4</span><br><span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">resize</span><span class="hljs-params">()</span></span>&#123;<br>    Entry[] oldTab = table;<br>    <span class="hljs-keyword">int</span> oldLen = oldTab.length;<br>    <span class="hljs-keyword">int</span> newLen = oldLen * <span class="hljs-number">2</span>;<br>    Entry[] newTab = <span class="hljs-keyword">new</span> Entry[newLen];<br>    <span class="hljs-keyword">int</span> count = <span class="hljs-number">0</span>;<br>    <span class="hljs-keyword">for</span>(<span class="hljs-keyword">int</span> j = <span class="hljs-number">0</span>;j&lt;oldLen;++j)&#123;<br>        Entry e = oldTab[j];<br>        <span class="hljs-keyword">if</span>(e!=<span class="hljs-keyword">null</span>)&#123;<br>           ThreadLocal&lt;?&gt; k =e.get();<br>            <span class="hljs-keyword">if</span>(k == <span class="hljs-keyword">null</span>)&#123;<br>                e.value = <span class="hljs-keyword">null</span>;<br>            &#125; <span class="hljs-keyword">else</span>&#123;<br>                <span class="hljs-comment">//重新计算扩容后的Hash值</span><br>                <span class="hljs-keyword">int</span> h = k.threadLocalHashCode &amp; (newLen - <span class="hljs-number">1</span>);<br>                <span class="hljs-keyword">while</span>(newTab[h]!=<span class="hljs-keyword">null</span>)&#123;<br>                    h = nextIndex(h,newLen);<br>                &#125;<br>                newTab[h] = e;<br>                count ++;<br>            &#125;<br>        &#125;<br>    &#125;<br>    <span class="hljs-comment">//重新设定当前容量</span><br>    setThreshold(newLen);<br>    size = count;<br>    table = newTab;<br>&#125;<br></code></pre></td></tr></table></figure>
 </li>
 <li><p>获取Entry对象</p>
-<div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//根据传递进来的ThreadLocal 获取对应的entry</span>
-<span class="hljs-function"><span class="hljs-keyword">private</span> Entry <span class="hljs-title">getEntry</span><span class="hljs-params">(ThreadLocal&lt;?&gt; key)</span> </span>&#123;
-           <span class="hljs-comment">//重新计算threadLocal对应的index</span>
-            <span class="hljs-keyword">int</span> i = key.threadLocalHashCode &amp; (table.length - <span class="hljs-number">1</span>);
-            Entry e = table[i];
-            <span class="hljs-keyword">if</span> (e != <span class="hljs-keyword">null</span> &amp;&amp; e.get() == key)
-            <span class="hljs-comment">//entry不为空且对应位置key相同 则返回Entry</span>
-                <span class="hljs-keyword">return</span> e;
-            <span class="hljs-keyword">else</span>
-            <span class="hljs-comment">//否则 寻找临近的位置是否存在对应的值</span>
-                <span class="hljs-keyword">return</span> getEntryAfterMiss(key, i, e);
-        &#125;
-
-<span class="hljs-function"><span class="hljs-keyword">private</span> Entry <span class="hljs-title">getEntryAfterMiss</span><span class="hljs-params">(ThreadLocal&lt;?&gt; key, <span class="hljs-keyword">int</span> i, Entry e)</span> </span>&#123;
-    Entry[] tab = table;
-    <span class="hljs-keyword">int</span> len = tab.length;
-    <span class="hljs-comment">//当前传递的entry不为空 则开始循环</span>
-    <span class="hljs-keyword">while</span> (e != <span class="hljs-keyword">null</span>) &#123;
-        ThreadLocal&lt;?&gt; k = e.get();
-        <span class="hljs-keyword">if</span> (k == key)
-            <span class="hljs-comment">//相同则返回对应的 entry</span>
-            <span class="hljs-keyword">return</span> e;
-        <span class="hljs-keyword">if</span> (k == <span class="hljs-keyword">null</span>)
-            <span class="hljs-comment">//key消失 则移除对应的Entry</span>
-            expungeStaleEntry(i);
-        <span class="hljs-keyword">else</span>
-            <span class="hljs-comment">//继续向下寻找</span>
-            i = nextIndex(i, len);
-        e = tab[i];
-    &#125;
-    <span class="hljs-keyword">return</span> <span class="hljs-keyword">null</span>;
-&#125;
-
-<span class="hljs-comment">//寻找到最后也没找到就从头部开始重新匹配</span>
-        <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">int</span> <span class="hljs-title">nextIndex</span><span class="hljs-params">(<span class="hljs-keyword">int</span> i, <span class="hljs-keyword">int</span> len)</span> </span>&#123;
-            <span class="hljs-keyword">return</span> ((i + <span class="hljs-number">1</span> &lt; len) ? i + <span class="hljs-number">1</span> : <span class="hljs-number">0</span>);
-        &#125;</code></pre></div>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">//根据传递进来的ThreadLocal 获取对应的entry</span><br><span class="hljs-function"><span class="hljs-keyword">private</span> Entry <span class="hljs-title">getEntry</span><span class="hljs-params">(ThreadLocal&lt;?&gt; key)</span> </span>&#123;<br>           <span class="hljs-comment">//重新计算threadLocal对应的index</span><br>            <span class="hljs-keyword">int</span> i = key.threadLocalHashCode &amp; (table.length - <span class="hljs-number">1</span>);<br>            Entry e = table[i];<br>            <span class="hljs-keyword">if</span> (e != <span class="hljs-keyword">null</span> &amp;&amp; e.get() == key)<br>            <span class="hljs-comment">//entry不为空且对应位置key相同 则返回Entry</span><br>                <span class="hljs-keyword">return</span> e;<br>            <span class="hljs-keyword">else</span><br>            <span class="hljs-comment">//否则 寻找临近的位置是否存在对应的值</span><br>                <span class="hljs-keyword">return</span> getEntryAfterMiss(key, i, e);<br>        &#125;<br><br><span class="hljs-function"><span class="hljs-keyword">private</span> Entry <span class="hljs-title">getEntryAfterMiss</span><span class="hljs-params">(ThreadLocal&lt;?&gt; key, <span class="hljs-keyword">int</span> i, Entry e)</span> </span>&#123;<br>    Entry[] tab = table;<br>    <span class="hljs-keyword">int</span> len = tab.length;<br>    <span class="hljs-comment">//当前传递的entry不为空 则开始循环</span><br>    <span class="hljs-keyword">while</span> (e != <span class="hljs-keyword">null</span>) &#123;<br>        ThreadLocal&lt;?&gt; k = e.get();<br>        <span class="hljs-keyword">if</span> (k == key)<br>            <span class="hljs-comment">//相同则返回对应的 entry</span><br>            <span class="hljs-keyword">return</span> e;<br>        <span class="hljs-keyword">if</span> (k == <span class="hljs-keyword">null</span>)<br>            <span class="hljs-comment">//key消失 则移除对应的Entry</span><br>            expungeStaleEntry(i);<br>        <span class="hljs-keyword">else</span><br>            <span class="hljs-comment">//继续向下寻找</span><br>            i = nextIndex(i, len);<br>        e = tab[i];<br>    &#125;<br>    <span class="hljs-keyword">return</span> <span class="hljs-keyword">null</span>;<br>&#125;<br><br><span class="hljs-comment">//寻找到最后也没找到就从头部开始重新匹配</span><br>        <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">int</span> <span class="hljs-title">nextIndex</span><span class="hljs-params">(<span class="hljs-keyword">int</span> i, <span class="hljs-keyword">int</span> len)</span> </span>&#123;<br>            <span class="hljs-keyword">return</span> ((i + <span class="hljs-number">1</span> &lt; len) ? i + <span class="hljs-number">1</span> : <span class="hljs-number">0</span>);<br>        &#125;<br></code></pre></td></tr></table></figure>
 <p>调用<code>getEntryAfterMiss()</code>时，大部分由于哈希冲突(<code>Hash slot</code>)导致的。由于ThreadLocalMap没有使用链表的方式实现,所以解决Hash冲突的方式也只能使用一种<strong>线性探测</strong>的方式。<code>线性探测意为根据初始key的hashcode来确定元素在表中的位置，若发现位置已被占用，则会利用固定算法找到下一个位置，直到找到可以存放的位置。</code></p>
 <p>ThreadLocalMap解决Hash冲突的方法就是 <code>步长+1或-1</code>,寻找下一个相邻的位置。</p>
 </li>
 <li><p>移除指定的Entry</p>
-<div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//根据threadLocal移除对应位置的Entry</span>
-<span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">remove</span><span class="hljs-params">(ThreadLocal&lt;?&gt; key)</span> </span>&#123;
-    Entry[] tab = table;
-    <span class="hljs-keyword">int</span> len = tab.length;
-    <span class="hljs-keyword">int</span> i = key.threadLocalHashCode &amp; (len-<span class="hljs-number">1</span>);
-    <span class="hljs-keyword">for</span> (Entry e = tab[i];
-         e != <span class="hljs-keyword">null</span>;
-         e = tab[i = nextIndex(i, len)]) &#123;
-        <span class="hljs-keyword">if</span> (e.get() == key) &#123;
-            e.clear();
-            expungeStaleEntry(i);
-            <span class="hljs-keyword">return</span>;
-        &#125;
-    &#125;
-&#125;</code></pre></div>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">//根据threadLocal移除对应位置的Entry</span><br><span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">remove</span><span class="hljs-params">(ThreadLocal&lt;?&gt; key)</span> </span>&#123;<br>    Entry[] tab = table;<br>    <span class="hljs-keyword">int</span> len = tab.length;<br>    <span class="hljs-keyword">int</span> i = key.threadLocalHashCode &amp; (len-<span class="hljs-number">1</span>);<br>    <span class="hljs-keyword">for</span> (Entry e = tab[i];<br>         e != <span class="hljs-keyword">null</span>;<br>         e = tab[i = nextIndex(i, len)]) &#123;<br>        <span class="hljs-keyword">if</span> (e.get() == key) &#123;<br>            e.clear();<br>            expungeStaleEntry(i);<br>            <span class="hljs-keyword">return</span>;<br>        &#125;<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
 </li>
 <li><p>其他知识点</p>
 <p>在上述<code>set(),get(),remove()</code>方法中都涉及到了一个点，都会去进行一次判断当前位置的Entry是否无效并清除的操作，主要是为了<strong>降低内存泄漏发生的可能性</strong>。</p>
@@ -531,34 +285,7 @@ threadLocal = main</code></pre></div>
 <h2 id="拓展"><a href="#拓展" class="headerlink" title="拓展"></a>拓展</h2><h3 id="InheritableThreadLocal"><a href="#InheritableThreadLocal" class="headerlink" title="InheritableThreadLocal"></a>InheritableThreadLocal</h3><blockquote>
 <p><code>ThreadLocal</code>中变量副本是线程私有的即其他线程无法对其进行访问。<code>InheritableThreadLocal</code>是可以支持<strong>在子线程中访问到父线程的变量副本</strong>。</p>
 </blockquote>
-<div class="hljs"><pre><code class="hljs java"> <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> ThreadLocal&lt;String&gt; threadLocal = <span class="hljs-keyword">new</span> ThreadLocal&lt;&gt;();
-<span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> InheritableThreadLocal&lt;Integer&gt; integerInheritableThreadLocal =
-            <span class="hljs-keyword">new</span> InheritableThreadLocal&lt;&gt;();
-
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">main</span><span class="hljs-params">(String[] args)</span> </span>&#123;
-        threadLocal.set(<span class="hljs-string">"main"</span>);
-        integerInheritableThreadLocal.set(<span class="hljs-number">123</span>);
-
-        Thread thread = <span class="hljs-keyword">new</span> Thread() &#123;
-            <span class="hljs-meta">@Override</span>
-            <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">run</span><span class="hljs-params">()</span> </span>&#123;
-                <span class="hljs-keyword">super</span>.run();
-                System.err.println(<span class="hljs-string">"threadLocal "</span>+ threadLocal.get());
-                System.err.println(<span class="hljs-string">"inheritableThreadLocal "</span>+ integerInheritableThreadLocal.get());
-            &#125;
-        &#125;;
-        thread.start();
-
-        <span class="hljs-keyword">try</span> &#123;
-            thread.join();
-        &#125; <span class="hljs-keyword">catch</span> (InterruptedException e) &#123;
-            e.printStackTrace();
-        &#125;
-    &#125;
-
-运行结果：
-threadLocal <span class="hljs-keyword">null</span>
-inheritableThreadLocal <span class="hljs-number">123</span></code></pre></div>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><code class="hljs java"> <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> ThreadLocal&lt;String&gt; threadLocal = <span class="hljs-keyword">new</span> ThreadLocal&lt;&gt;();<br><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> InheritableThreadLocal&lt;Integer&gt; integerInheritableThreadLocal =<br>            <span class="hljs-keyword">new</span> InheritableThreadLocal&lt;&gt;();<br><br>    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">main</span><span class="hljs-params">(String[] args)</span> </span>&#123;<br>        threadLocal.set(<span class="hljs-string">"main"</span>);<br>        integerInheritableThreadLocal.set(<span class="hljs-number">123</span>);<br><br>        Thread thread = <span class="hljs-keyword">new</span> Thread() &#123;<br>            <span class="hljs-meta">@Override</span><br>            <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">run</span><span class="hljs-params">()</span> </span>&#123;<br>                <span class="hljs-keyword">super</span>.run();<br>                System.err.println(<span class="hljs-string">"threadLocal "</span>+ threadLocal.get());<br>                System.err.println(<span class="hljs-string">"inheritableThreadLocal "</span>+ integerInheritableThreadLocal.get());<br>            &#125;<br>        &#125;;<br>        thread.start();<br><br>        <span class="hljs-keyword">try</span> &#123;<br>            thread.join();<br>        &#125; <span class="hljs-keyword">catch</span> (InterruptedException e) &#123;<br>            e.printStackTrace();<br>        &#125;<br>    &#125;<br><br>运行结果：<br>threadLocal <span class="hljs-keyword">null</span><br>inheritableThreadLocal <span class="hljs-number">123</span><br></code></pre></td></tr></table></figure>
 <p>实现原理：</p>
 <p>在线程进行初始化时，子线程会拷贝父线程的<code>inheritableThreadLocals</code>到自己的变量中，故调用<code>get()</code>时，会读取到父线程所存储的变量副本。</p>
 <h3 id="堆与栈的区别"><a href="#堆与栈的区别" class="headerlink" title="堆与栈的区别"></a>堆与栈的区别</h3><p>在Java中，栈内存归属于单个线程，每个线程都会有一个栈内存，储存的是<strong>局部变量和方法调用</strong>。<strong>存储对象仅线程中可见</strong></p>
@@ -598,7 +325,7 @@ inheritableThreadLocal <span class="hljs-number">123</span></code></pre></div>
                 <p class="note note-warning">本博客所有文章除特别声明外，均采用 <a href="https://zh.wikipedia.org/wiki/Wikipedia:CC_BY-SA_3.0%E5%8D%8F%E8%AE%AE%E6%96%87%E6%9C%AC" rel="nofollow noopener">CC BY-SA 3.0协议</a> 。转载请注明出处！</p>
               
               
-                <div class="post-prevnext row">
+                <div class="post-prevnext">
                   <article class="post-prev col-6">
                     
                     
@@ -691,23 +418,20 @@ inheritableThreadLocal <span class="hljs-number">123</span></code></pre></div>
 
 <!-- SCRIPTS -->
 
-  <script  src="https://cdn.staticfile.org/nprogress/0.2.0/nprogress.min.js" ></script>
-  <link  rel="stylesheet" href="https://cdn.staticfile.org/nprogress/0.2.0/nprogress.min.css" />
+  <script  src="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.js" ></script>
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.css" />
 
   <script>
-    NProgress.configure({"showSpinner":false,"trickleSpeed":200})
+    NProgress.configure({"showSpinner":false,"trickleSpeed":100})
     NProgress.start()
-    document.addEventListener('DOMContentLoaded', function() {
-      window.NProgress && window.NProgress.inc();
-    })
     window.addEventListener('load', function() {
       NProgress.done();
     })
   </script>
 
 
-<script  src="https://cdn.staticfile.org/jquery/3.5.1/jquery.min.js" ></script>
-<script  src="https://cdn.staticfile.org/twitter-bootstrap/4.5.3/js/bootstrap.min.js" ></script>
+<script  src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" ></script>
+<script  src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.min.js" ></script>
 <script  src="/js/debouncer.js" ></script>
 <script  src="/js/events.js" ></script>
 <script  src="/js/plugins.js" ></script>
@@ -725,19 +449,20 @@ inheritableThreadLocal <span class="hljs-number">123</span></code></pre></div>
 
 
 
-  <script  src="https://cdn.staticfile.org/tocbot/4.12.0/tocbot.min.js" ></script>
+  <script  src="https://cdn.jsdelivr.net/npm/tocbot@4.12.0/dist/tocbot.min.js" ></script>
 
 
 
-  <script  src="https://cdn.staticfile.org/fancybox/3.5.7/jquery.fancybox.min.js" ></script>
+  <script  src="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.js" ></script>
 
 
 
-  <script  src="https://cdn.staticfile.org/anchor-js/4.3.0/anchor.min.js" ></script>
+  <script  src="https://cdn.jsdelivr.net/npm/anchor-js@4.3.0/anchor.min.js" ></script>
 
 
 
-  <script defer src="https://cdn.staticfile.org/clipboard.js/2.0.6/clipboard.min.js" ></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/clipboard@2.0.6/dist/clipboard.min.js" ></script>
+
 
 
 

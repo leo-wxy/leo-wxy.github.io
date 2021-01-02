@@ -18,22 +18,22 @@
   <meta name="keywords" content>
   <title>ANR分析 - Wxy的个人博客</title>
 
-  <link rel="stylesheet" href="https://cdn.staticfile.org/twitter-bootstrap/4.5.3/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css">
 
 
-  <link rel="stylesheet" href="https://cdn.staticfile.org/github-markdown-css/4.0.0/github-markdown.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@4.0.0/github-markdown.min.css">
   <link rel="stylesheet" href="/lib/hint/hint.min.css">
 
   
     
     
       
-      <link rel="stylesheet" href="https://cdn.staticfile.org/highlight.js/10.1.2/styles/dracula.min.css">
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@10.4.0/styles/github-gist.min.css">
     
   
 
   
-    <link rel="stylesheet" href="https://cdn.staticfile.org/fancybox/3.5.7/jquery.fancybox.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.css">
   
 
 
@@ -50,7 +50,7 @@
 
   <script id="fluid-configs">
     var Fluid = window.Fluid || {};
-    var CONFIG = {"hostname":"leo-wxy.github.io","root":"/","version":"1.8.5","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false},"toc":{"enable":true,"headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"right","visible":"hover","icon":""},"copy_btn":true,"image_zoom":{"enable":true},"lazyload":{"enable":true,"onlypost":false},"web_analytics":{"enable":false,"baidu":null,"google":null,"gtag":null,"tencent":{"sid":null,"cid":null},"woyaola":null,"cnzz":null,"leancloud":{"app_id":null,"app_key":null,"server_url":null},"tajs":null}};
+    var CONFIG = {"hostname":"leo-wxy.github.io","root":"/","version":"1.8.7","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"right","visible":"hover","icon":""},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"copy_btn":true,"image_zoom":{"enable":true},"toc":{"enable":true,"headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"onlypost":false},"web_analytics":{"enable":false,"baidu":null,"google":null,"gtag":null,"tencent":{"sid":null,"cid":null},"woyaola":null,"cnzz":null,"leancloud":{"app_id":null,"app_key":null,"server_url":null},"tajs":null}};
   </script>
   <script src="/js/utils.js"></script>
   <script src="/js/color-schema.js"></script>
@@ -139,7 +139,7 @@
   </div>
 </nav>
 
-    <div class="banner intro-2" id="background" parallax=true
+    <div class="banner" id="banner" parallax=true
          style="background: url('/img/default.png') no-repeat center center;
            background-size: cover;">
       <div class="full-bg-img">
@@ -201,11 +201,11 @@
     
       
 
-<div class="container-fluid">
-  <div class="row">
+<div class="container-fluid nopadding-x">
+  <div class="row nomargin-x">
     <div class="d-none d-lg-block col-lg-2"></div>
-    <div class="col-lg-8 nopadding-md">
-      <div class="container nopadding-md" id="board-ctn">
+    <div class="col-lg-8 nopadding-x-md">
+      <div class="container nopadding-x-md" id="board-ctn">
         <div class="py-5" id="board">
           <article class="post-content mx-auto">
             <!-- SEO header -->
@@ -240,68 +240,7 @@
 <p>在<code>Activity.onCreate()</code>执行耗时操作，不管用户如何操作都不会发生ANR，因为输入事件相关监听机制尚未建立起来。</p>
 <p>输入事件由<code>InputDispatcher</code>调度，待处理的输入输出事件都会进入队列中等待，设计了一个等待超时的判断。</p>
 <h3 id="Service超时监测"><a href="#Service超时监测" class="headerlink" title="Service超时监测"></a>Service超时监测</h3><p>本身有分析过<code>Service的启动流程</code>，在其中了解到<code>ActiveServices.realStartServiceLocked()</code>是真正的Service启动流程。</p>
-<div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">// ../core/java/com/android/server/am/ActiveServices.java  </span>
-<span class="hljs-comment">// How long we wait for a service to finish executing.</span>
-    <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> SERVICE_TIMEOUT = <span class="hljs-number">20</span>*<span class="hljs-number">1000</span>;
-
-    <span class="hljs-comment">// How long we wait for a service to finish executing.</span>
-    <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> SERVICE_BACKGROUND_TIMEOUT = SERVICE_TIMEOUT * <span class="hljs-number">10</span>;
-
-<span class="hljs-comment">//真正启动Service</span>
-<span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">void</span> <span class="hljs-title">realStartServiceLocked</span><span class="hljs-params">(ServiceRecord r,
-            ProcessRecord app, <span class="hljs-keyword">boolean</span> execInFg)</span> <span class="hljs-keyword">throws</span> RemoteException </span>&#123;
-        ...
-        <span class="hljs-comment">// 主要是为了设置ANR超时，可以看出在正式启动Service之前开始ANR监测；</span>
-        bumpServiceExecutingLocked(r, execInFg, <span class="hljs-string">"create"</span>);
-       <span class="hljs-comment">// 启动过程调用scheduleCreateService方法,最终会调用Service.onCreate方法；</span>
-        app.thread.scheduleCreateService(r, r.serviceInfo,
-        <span class="hljs-comment">// 绑定过程中，这个方法中会调用app.thread.scheduleBindService方法</span>
-        requestServiceBindingsLocked(r, execInFg);
-        <span class="hljs-comment">// 调动Service的其他方法，如onStartCommand，也是IPC通讯</span>
-        sendServiceArgsLocked(r, execInFg, <span class="hljs-keyword">true</span>);
-    &#125;
-
-<span class="hljs-comment">//设置超时监测                                         </span>
-<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">scheduleServiceTimeoutLocked</span><span class="hljs-params">(ProcessRecord proc)</span> </span>&#123;
-        <span class="hljs-keyword">if</span> (proc.executingServices.size() == <span class="hljs-number">0</span> || proc.thread == <span class="hljs-keyword">null</span>) &#123;
-            <span class="hljs-keyword">return</span>;
-        &#125;
-        Message msg = mAm.mHandler.obtainMessage(
-                ActivityManagerService.SERVICE_TIMEOUT_MSG);
-        msg.obj = proc;
-        <span class="hljs-comment">// 在serviceDoneExecutingLocked中会remove该SERVICE_TIMEOUT_MSG消息，</span>
-        <span class="hljs-comment">// 当超时后仍没有remove SERVICE_TIMEOUT_MSG消息，则执行ActiveServices. serviceTimeout()方法；</span>
-        mAm.mHandler.sendMessageDelayed(msg,
-                proc.execServicesFg ? SERVICE_TIMEOUT : SERVICE_BACKGROUND_TIMEOUT);
-        <span class="hljs-comment">// 前台进程中执行Service，SERVICE_TIMEOUT=20s；后台进程中执行Service，SERVICE_BACKGROUND_TIMEOUT=200s</span>
-    &#125;
-
-<span class="hljs-comment">//在AMS中收到了  SERVICE_TIMEOUT_MSG Message就会触发该方法                                       </span>
-<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">serviceTimeout</span><span class="hljs-params">(ProcessRecord proc)</span> </span>&#123;
-    ...
-    <span class="hljs-keyword">final</span> <span class="hljs-keyword">long</span> maxTime =  now -
-              (proc.execServicesFg ? SERVICE_TIMEOUT : SERVICE_BACKGROUND_TIMEOUT);
-    ...
-    <span class="hljs-comment">// 寻找运行超时的Service</span>
-    <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int</span> i=proc.executingServices.size()-<span class="hljs-number">1</span>; i&gt;=<span class="hljs-number">0</span>; i--) &#123;
-        ServiceRecord sr = proc.executingServices.valueAt(i);
-        <span class="hljs-keyword">if</span> (sr.executingStart &lt; maxTime) &#123;
-            timeout = sr;
-            <span class="hljs-keyword">break</span>;
-        &#125;
-       ...
-    &#125;
-    ...
-    <span class="hljs-comment">// 判断执行Service超时的进程是否在最近运行进程列表，如果不在，则忽略这个ANR</span>
-    <span class="hljs-keyword">if</span> (timeout != <span class="hljs-keyword">null</span> &amp;&amp; mAm.mLruProcesses.contains(proc)) &#123;
-        anrMessage = <span class="hljs-string">"executing service "</span> + timeout.shortName;
-    &#125;
-    ...
-    <span class="hljs-keyword">if</span> (anrMessage != <span class="hljs-keyword">null</span>) &#123;
-        <span class="hljs-comment">// 当存在timeout的service，则执行appNotResponding，报告ANR</span>
-        mAm.appNotResponding(proc, <span class="hljs-keyword">null</span>, <span class="hljs-keyword">null</span>, <span class="hljs-keyword">false</span>, anrMessage);
-    &#125;
-&#125;</code></pre></div>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">// ../core/java/com/android/server/am/ActiveServices.java  </span><br><span class="hljs-comment">// How long we wait for a service to finish executing.</span><br>    <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> SERVICE_TIMEOUT = <span class="hljs-number">20</span>*<span class="hljs-number">1000</span>;<br><br>    <span class="hljs-comment">// How long we wait for a service to finish executing.</span><br>    <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> SERVICE_BACKGROUND_TIMEOUT = SERVICE_TIMEOUT * <span class="hljs-number">10</span>;<br><br><span class="hljs-comment">//真正启动Service</span><br><span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">void</span> <span class="hljs-title">realStartServiceLocked</span><span class="hljs-params">(ServiceRecord r,<br>            ProcessRecord app, <span class="hljs-keyword">boolean</span> execInFg)</span> <span class="hljs-keyword">throws</span> RemoteException </span>&#123;<br>        ...<br>        <span class="hljs-comment">// 主要是为了设置ANR超时，可以看出在正式启动Service之前开始ANR监测；</span><br>        bumpServiceExecutingLocked(r, execInFg, <span class="hljs-string">"create"</span>);<br>       <span class="hljs-comment">// 启动过程调用scheduleCreateService方法,最终会调用Service.onCreate方法；</span><br>        app.thread.scheduleCreateService(r, r.serviceInfo,<br>        <span class="hljs-comment">// 绑定过程中，这个方法中会调用app.thread.scheduleBindService方法</span><br>        requestServiceBindingsLocked(r, execInFg);<br>        <span class="hljs-comment">// 调动Service的其他方法，如onStartCommand，也是IPC通讯</span><br>        sendServiceArgsLocked(r, execInFg, <span class="hljs-keyword">true</span>);<br>    &#125;<br><br><span class="hljs-comment">//设置超时监测                                         </span><br><span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">scheduleServiceTimeoutLocked</span><span class="hljs-params">(ProcessRecord proc)</span> </span>&#123;<br>        <span class="hljs-keyword">if</span> (proc.executingServices.size() == <span class="hljs-number">0</span> || proc.thread == <span class="hljs-keyword">null</span>) &#123;<br>            <span class="hljs-keyword">return</span>;<br>        &#125;<br>        Message msg = mAm.mHandler.obtainMessage(<br>                ActivityManagerService.SERVICE_TIMEOUT_MSG);<br>        msg.obj = proc;<br>        <span class="hljs-comment">// 在serviceDoneExecutingLocked中会remove该SERVICE_TIMEOUT_MSG消息，</span><br>        <span class="hljs-comment">// 当超时后仍没有remove SERVICE_TIMEOUT_MSG消息，则执行ActiveServices. serviceTimeout()方法；</span><br>        mAm.mHandler.sendMessageDelayed(msg,<br>                proc.execServicesFg ? SERVICE_TIMEOUT : SERVICE_BACKGROUND_TIMEOUT);<br>        <span class="hljs-comment">// 前台进程中执行Service，SERVICE_TIMEOUT=20s；后台进程中执行Service，SERVICE_BACKGROUND_TIMEOUT=200s</span><br>    &#125;<br><br><span class="hljs-comment">//在AMS中收到了  SERVICE_TIMEOUT_MSG Message就会触发该方法                                       </span><br><span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">serviceTimeout</span><span class="hljs-params">(ProcessRecord proc)</span> </span>&#123;<br>    ...<br>    <span class="hljs-keyword">final</span> <span class="hljs-keyword">long</span> maxTime =  now -<br>              (proc.execServicesFg ? SERVICE_TIMEOUT : SERVICE_BACKGROUND_TIMEOUT);<br>    ...<br>    <span class="hljs-comment">// 寻找运行超时的Service</span><br>    <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int</span> i=proc.executingServices.size()-<span class="hljs-number">1</span>; i&gt;=<span class="hljs-number">0</span>; i--) &#123;<br>        ServiceRecord sr = proc.executingServices.valueAt(i);<br>        <span class="hljs-keyword">if</span> (sr.executingStart &lt; maxTime) &#123;<br>            timeout = sr;<br>            <span class="hljs-keyword">break</span>;<br>        &#125;<br>       ...<br>    &#125;<br>    ...<br>    <span class="hljs-comment">// 判断执行Service超时的进程是否在最近运行进程列表，如果不在，则忽略这个ANR</span><br>    <span class="hljs-keyword">if</span> (timeout != <span class="hljs-keyword">null</span> &amp;&amp; mAm.mLruProcesses.contains(proc)) &#123;<br>        anrMessage = <span class="hljs-string">"executing service "</span> + timeout.shortName;<br>    &#125;<br>    ...<br>    <span class="hljs-keyword">if</span> (anrMessage != <span class="hljs-keyword">null</span>) &#123;<br>        <span class="hljs-comment">// 当存在timeout的service，则执行appNotResponding，报告ANR</span><br>        mAm.appNotResponding(proc, <span class="hljs-keyword">null</span>, <span class="hljs-keyword">null</span>, <span class="hljs-keyword">false</span>, anrMessage);<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
 <p>Service启动前会先启动超时监测，如果在指定时间内(<em>前台20s后台200s</em>)没有启动完毕，就会调用到<code>ActiveServices.serviceTimeout()</code>报告ANR；如果执行完毕，会调用到<code>ActiveServices.serviceDoneExecutingLocked()</code>在其中<code>removeMessages(SERVICE_TIMEOUT_MSG)</code>移除超时消息。</p>
 <h3 id="ANR报告机制"><a href="#ANR报告机制" class="headerlink" title="ANR报告机制"></a>ANR报告机制</h3><p>无论哪种类型的ANR发生后，最终都会调用到<code>AppErrors.appNotResponding()</code>。这个方法主要的功能就是<strong>向用户或开发者报告ANR发生了。</strong>最终的表现就是弹出一个对话框，告诉用户当前程序无法响应；并且会输出ANR日志，以供开发者分析。</p>
 <ul>
@@ -365,7 +304,7 @@
                 <p class="note note-warning">本博客所有文章除特别声明外，均采用 <a href="https://zh.wikipedia.org/wiki/Wikipedia:CC_BY-SA_3.0%E5%8D%8F%E8%AE%AE%E6%96%87%E6%9C%AC" rel="nofollow noopener">CC BY-SA 3.0协议</a> 。转载请注明出处！</p>
               
               
-                <div class="post-prevnext row">
+                <div class="post-prevnext">
                   <article class="post-prev col-6">
                     
                     
@@ -458,23 +397,20 @@
 
 <!-- SCRIPTS -->
 
-  <script  src="https://cdn.staticfile.org/nprogress/0.2.0/nprogress.min.js" ></script>
-  <link  rel="stylesheet" href="https://cdn.staticfile.org/nprogress/0.2.0/nprogress.min.css" />
+  <script  src="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.js" ></script>
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.css" />
 
   <script>
-    NProgress.configure({"showSpinner":false,"trickleSpeed":200})
+    NProgress.configure({"showSpinner":false,"trickleSpeed":100})
     NProgress.start()
-    document.addEventListener('DOMContentLoaded', function() {
-      window.NProgress && window.NProgress.inc();
-    })
     window.addEventListener('load', function() {
       NProgress.done();
     })
   </script>
 
 
-<script  src="https://cdn.staticfile.org/jquery/3.5.1/jquery.min.js" ></script>
-<script  src="https://cdn.staticfile.org/twitter-bootstrap/4.5.3/js/bootstrap.min.js" ></script>
+<script  src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" ></script>
+<script  src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.min.js" ></script>
 <script  src="/js/debouncer.js" ></script>
 <script  src="/js/events.js" ></script>
 <script  src="/js/plugins.js" ></script>
@@ -492,19 +428,20 @@
 
 
 
-  <script  src="https://cdn.staticfile.org/tocbot/4.12.0/tocbot.min.js" ></script>
+  <script  src="https://cdn.jsdelivr.net/npm/tocbot@4.12.0/dist/tocbot.min.js" ></script>
 
 
 
-  <script  src="https://cdn.staticfile.org/fancybox/3.5.7/jquery.fancybox.min.js" ></script>
+  <script  src="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.js" ></script>
 
 
 
-  <script  src="https://cdn.staticfile.org/anchor-js/4.3.0/anchor.min.js" ></script>
+  <script  src="https://cdn.jsdelivr.net/npm/anchor-js@4.3.0/anchor.min.js" ></script>
 
 
 
-  <script defer src="https://cdn.staticfile.org/clipboard.js/2.0.6/clipboard.min.js" ></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/clipboard@2.0.6/dist/clipboard.min.js" ></script>
+
 
 
 

@@ -18,22 +18,22 @@
   <meta name="keywords" content>
   <title>JVM相关及其拓展(三) -- 虚拟机类加载器 - Wxy的个人博客</title>
 
-  <link rel="stylesheet" href="https://cdn.staticfile.org/twitter-bootstrap/4.5.3/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css">
 
 
-  <link rel="stylesheet" href="https://cdn.staticfile.org/github-markdown-css/4.0.0/github-markdown.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@4.0.0/github-markdown.min.css">
   <link rel="stylesheet" href="/lib/hint/hint.min.css">
 
   
     
     
       
-      <link rel="stylesheet" href="https://cdn.staticfile.org/highlight.js/10.1.2/styles/dracula.min.css">
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@10.4.0/styles/github-gist.min.css">
     
   
 
   
-    <link rel="stylesheet" href="https://cdn.staticfile.org/fancybox/3.5.7/jquery.fancybox.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.css">
   
 
 
@@ -50,7 +50,7 @@
 
   <script id="fluid-configs">
     var Fluid = window.Fluid || {};
-    var CONFIG = {"hostname":"leo-wxy.github.io","root":"/","version":"1.8.5","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false},"toc":{"enable":true,"headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"right","visible":"hover","icon":""},"copy_btn":true,"image_zoom":{"enable":true},"lazyload":{"enable":true,"onlypost":false},"web_analytics":{"enable":false,"baidu":null,"google":null,"gtag":null,"tencent":{"sid":null,"cid":null},"woyaola":null,"cnzz":null,"leancloud":{"app_id":null,"app_key":null,"server_url":null},"tajs":null}};
+    var CONFIG = {"hostname":"leo-wxy.github.io","root":"/","version":"1.8.7","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"right","visible":"hover","icon":""},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"copy_btn":true,"image_zoom":{"enable":true},"toc":{"enable":true,"headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"onlypost":false},"web_analytics":{"enable":false,"baidu":null,"google":null,"gtag":null,"tencent":{"sid":null,"cid":null},"woyaola":null,"cnzz":null,"leancloud":{"app_id":null,"app_key":null,"server_url":null},"tajs":null}};
   </script>
   <script src="/js/utils.js"></script>
   <script src="/js/color-schema.js"></script>
@@ -139,7 +139,7 @@
   </div>
 </nav>
 
-    <div class="banner intro-2" id="background" parallax=true
+    <div class="banner" id="banner" parallax=true
          style="background: url('/img/default.png') no-repeat center center;
            background-size: cover;">
       <div class="full-bg-img">
@@ -201,11 +201,11 @@
     
       
 
-<div class="container-fluid">
-  <div class="row">
+<div class="container-fluid nopadding-x">
+  <div class="row nomargin-x">
     <div class="d-none d-lg-block col-lg-2"></div>
-    <div class="col-lg-8 nopadding-md">
-      <div class="container nopadding-md" id="board-ctn">
+    <div class="col-lg-8 nopadding-x-md">
+      <div class="container nopadding-x-md" id="board-ctn">
         <div class="py-5" id="board">
           <article class="post-content mx-auto">
             <!-- SEO header -->
@@ -242,48 +242,7 @@
 </li>
 <li>代码模型实现：</li>
 </ul>
-<div class="hljs"><pre><code class="hljs java"><span class="hljs-keyword">protected</span> Class&lt;?&gt; loadClass(String name, <span class="hljs-keyword">boolean</span> resolve)
-       <span class="hljs-keyword">throws</span> ClassNotFoundException
-   &#123;
-       <span class="hljs-keyword">synchronized</span> (getClassLoadingLock(name)) &#123;
-           <span class="hljs-comment">// 检查请求的类是否已被加载过</span>
-           Class&lt;?&gt; c = findLoadedClass(name);
-           <span class="hljs-comment">//对应的类已被加载则不会往下进行</span>
-           <span class="hljs-keyword">if</span> (c == <span class="hljs-keyword">null</span>) &#123;
-               <span class="hljs-keyword">long</span> t0 = System.nanoTime();
-               <span class="hljs-keyword">try</span> &#123;
-                   <span class="hljs-keyword">if</span> (parent != <span class="hljs-keyword">null</span>) &#123;
-                   <span class="hljs-comment">//父加载器不为null，调用父加载器的load方法</span>
-                       c = parent.loadClass(name, <span class="hljs-keyword">false</span>);
-                   &#125; <span class="hljs-keyword">else</span> &#123;
-                   <span class="hljs-comment">//父加载器为null，则调用系统的BootstrapClassLoader</span>
-                       c = findBootstrapClassOrNull(name);
-                   &#125;
-               &#125; <span class="hljs-keyword">catch</span> (ClassNotFoundException e) &#123;
-                   <span class="hljs-comment">// ClassNotFoundException thrown if class not found</span>
-                   <span class="hljs-comment">// from the non-null parent class loader</span>
-                   <span class="hljs-comment">//父类加载器无法加载则抛出ClassNotFoundException异常</span>
-               &#125;
-
-               <span class="hljs-keyword">if</span> (c == <span class="hljs-keyword">null</span>) &#123;
-                   <span class="hljs-comment">// If still not found, then invoke findClass in order</span>
-                   <span class="hljs-comment">// to find the class.</span>
-                   <span class="hljs-comment">//父类加载器无法加载则调用本身的findClass()方法去加载</span>
-                   <span class="hljs-keyword">long</span> t1 = System.nanoTime();
-                   c = findClass(name);
-
-                   <span class="hljs-comment">// this is the defining class loader; record the stats</span>
-                   sun.misc.PerfCounter.getParentDelegationTime().addTime(t1 - t0);
-                   sun.misc.PerfCounter.getFindClassTime().addElapsedTimeFrom(t1);
-                   sun.misc.PerfCounter.getFindClasses().increment();
-               &#125;
-           &#125;
-           <span class="hljs-keyword">if</span> (resolve) &#123;
-               resolveClass(c);
-           &#125;
-           <span class="hljs-keyword">return</span> c;
-       &#125;
-   &#125;</code></pre></div>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">protected</span> Class&lt;?&gt; loadClass(String name, <span class="hljs-keyword">boolean</span> resolve)<br>       <span class="hljs-keyword">throws</span> ClassNotFoundException<br>   &#123;<br>       <span class="hljs-keyword">synchronized</span> (getClassLoadingLock(name)) &#123;<br>           <span class="hljs-comment">// 检查请求的类是否已被加载过</span><br>           Class&lt;?&gt; c = findLoadedClass(name);<br>           <span class="hljs-comment">//对应的类已被加载则不会往下进行</span><br>           <span class="hljs-keyword">if</span> (c == <span class="hljs-keyword">null</span>) &#123;<br>               <span class="hljs-keyword">long</span> t0 = System.nanoTime();<br>               <span class="hljs-keyword">try</span> &#123;<br>                   <span class="hljs-keyword">if</span> (parent != <span class="hljs-keyword">null</span>) &#123;<br>                   <span class="hljs-comment">//父加载器不为null，调用父加载器的load方法</span><br>                       c = parent.loadClass(name, <span class="hljs-keyword">false</span>);<br>                   &#125; <span class="hljs-keyword">else</span> &#123;<br>                   <span class="hljs-comment">//父加载器为null，则调用系统的BootstrapClassLoader</span><br>                       c = findBootstrapClassOrNull(name);<br>                   &#125;<br>               &#125; <span class="hljs-keyword">catch</span> (ClassNotFoundException e) &#123;<br>                   <span class="hljs-comment">// ClassNotFoundException thrown if class not found</span><br>                   <span class="hljs-comment">// from the non-null parent class loader</span><br>                   <span class="hljs-comment">//父类加载器无法加载则抛出ClassNotFoundException异常</span><br>               &#125;<br><br>               <span class="hljs-keyword">if</span> (c == <span class="hljs-keyword">null</span>) &#123;<br>                   <span class="hljs-comment">// If still not found, then invoke findClass in order</span><br>                   <span class="hljs-comment">// to find the class.</span><br>                   <span class="hljs-comment">//父类加载器无法加载则调用本身的findClass()方法去加载</span><br>                   <span class="hljs-keyword">long</span> t1 = System.nanoTime();<br>                   c = findClass(name);<br><br>                   <span class="hljs-comment">// this is the defining class loader; record the stats</span><br>                   sun.misc.PerfCounter.getParentDelegationTime().addTime(t1 - t0);<br>                   sun.misc.PerfCounter.getFindClassTime().addElapsedTimeFrom(t1);<br>                   sun.misc.PerfCounter.getFindClasses().increment();<br>               &#125;<br>           &#125;<br>           <span class="hljs-keyword">if</span> (resolve) &#123;<br>               resolveClass(c);<br>           &#125;<br>           <span class="hljs-keyword">return</span> c;<br>       &#125;<br>   &#125;<br></code></pre></td></tr></table></figure>
 <ul>
 <li>好处：<ul>
 <li>避免重复加载，若该Class已加载则从缓存中直接读取</li>
@@ -299,129 +258,20 @@
 </ul>
 <h3 id="4-自定义ClassLoader"><a href="#4-自定义ClassLoader" class="headerlink" title="4.自定义ClassLoader"></a>4.自定义ClassLoader</h3><ul>
 <li><p>自定义需要加载的类</p>
-<div class="hljs"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">Jobs</span> </span>&#123;
-        <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">say</span><span class="hljs-params">()</span> </span>&#123;
-        System.err.println(<span class="hljs-string">"自定义加载器加载"</span>);
-    &#125;
-&#125;</code></pre></div>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">Jobs</span> </span>&#123;<br>        <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">say</span><span class="hljs-params">()</span> </span>&#123;<br>        System.err.println(<span class="hljs-string">"自定义加载器加载"</span>);<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
 <p>自定义完成后需调用<code>javac Jobs.java</code>去生成对应的<code>Jobs.class</code>文件以用来加载。</p>
 </li>
 <li><p>实现自定义的ClassLoader</p>
-<div class="hljs"><pre><code class="hljs java"><span class="hljs-keyword">import</span> java.io.*;
-
-<span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">DiskClassLoader</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">ClassLoader</span> </span>&#123;
-    <span class="hljs-keyword">private</span> String path;
-
-    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">DiskClassLoader</span><span class="hljs-params">(String path)</span> </span>&#123;
-        <span class="hljs-keyword">this</span>.path = path;
-    &#125;
-
-    <span class="hljs-meta">@Override</span>
-    <span class="hljs-keyword">protected</span> Class&lt;?&gt; findClass(String name) <span class="hljs-keyword">throws</span> ClassNotFoundException &#123;
-        Class clazz = <span class="hljs-keyword">null</span>;
-        <span class="hljs-keyword">byte</span>[] classData = loadClassData(name);
-        <span class="hljs-keyword">if</span> (classData == <span class="hljs-keyword">null</span>) &#123;
-            <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> ClassNotFoundException();
-        &#125; <span class="hljs-keyword">else</span> &#123;
-            <span class="hljs-comment">//用来将获取的字节码数组转为class的实例</span>
-            clazz = defineClass(name, classData, <span class="hljs-number">0</span>, classData.length);
-        &#125;
-        <span class="hljs-keyword">return</span> clazz;
-    &#125;
-
-    <span class="hljs-comment">/**
-     * 获得class文件的字节码数组
-     * <span class="hljs-doctag">@param</span> name
-     * <span class="hljs-doctag">@return</span>
-     */</span>
-    <span class="hljs-keyword">private</span> <span class="hljs-keyword">byte</span>[] loadClassData(String name) &#123;
-        String fileName = getFileName(name);
-        File file = <span class="hljs-keyword">new</span> File(path, fileName);
-        System.err.println(fileName);
-        InputStream inputStream = <span class="hljs-keyword">null</span>;
-        ByteArrayOutputStream byteArrayOutputStream = <span class="hljs-keyword">null</span>;
-        <span class="hljs-keyword">try</span> &#123;
-            inputStream = <span class="hljs-keyword">new</span> FileInputStream(file);
-            byteArrayOutputStream = <span class="hljs-keyword">new</span> ByteArrayOutputStream();
-            <span class="hljs-keyword">byte</span>[] buffer = <span class="hljs-keyword">new</span> <span class="hljs-keyword">byte</span>[<span class="hljs-number">1024</span>];
-            <span class="hljs-keyword">int</span> length = <span class="hljs-number">0</span>;
-            <span class="hljs-keyword">while</span> ((length = inputStream.read(buffer)) != -<span class="hljs-number">1</span>) &#123;
-                byteArrayOutputStream.write(buffer, <span class="hljs-number">0</span>, length);
-            &#125;
-            <span class="hljs-keyword">return</span> byteArrayOutputStream.toByteArray();
-        &#125; <span class="hljs-keyword">catch</span> (IOException e) &#123;
-            e.printStackTrace();
-        &#125; <span class="hljs-keyword">finally</span> &#123;
-            <span class="hljs-comment">//读取流后需要关闭，以免造成内存泄露</span>
-            <span class="hljs-keyword">try</span> &#123;
-                <span class="hljs-keyword">if</span> (inputStream != <span class="hljs-keyword">null</span>) &#123;
-                    inputStream.close();
-                &#125;
-            &#125; <span class="hljs-keyword">catch</span> (IOException e) &#123;
-                e.printStackTrace();
-            &#125;
-            <span class="hljs-keyword">try</span> &#123;
-                <span class="hljs-keyword">if</span> (byteArrayOutputStream != <span class="hljs-keyword">null</span>) &#123;
-                    byteArrayOutputStream.close();
-                &#125;
-            &#125; <span class="hljs-keyword">catch</span> (IOException e) &#123;
-                e.printStackTrace();
-            &#125;
-        &#125;
-        <span class="hljs-keyword">return</span> <span class="hljs-keyword">null</span>;
-    &#125;
-
-    <span class="hljs-function"><span class="hljs-keyword">private</span> String <span class="hljs-title">getFileName</span><span class="hljs-params">(String name)</span> </span>&#123;
-        <span class="hljs-keyword">int</span> index = name.indexOf(<span class="hljs-string">'.'</span>);
-        <span class="hljs-keyword">if</span> (index == -<span class="hljs-number">1</span>) &#123;
-            <span class="hljs-keyword">return</span> name + <span class="hljs-string">".class"</span>;
-        &#125; <span class="hljs-keyword">else</span> &#123;
-            <span class="hljs-keyword">return</span> name.substring(index + <span class="hljs-number">1</span>) + <span class="hljs-string">".class"</span>;
-        &#125;
-    &#125;
-&#125;</code></pre></div>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">import</span> java.io.*;<br><br><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">DiskClassLoader</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">ClassLoader</span> </span>&#123;<br>    <span class="hljs-keyword">private</span> String path;<br><br>    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">DiskClassLoader</span><span class="hljs-params">(String path)</span> </span>&#123;<br>        <span class="hljs-keyword">this</span>.path = path;<br>    &#125;<br><br>    <span class="hljs-meta">@Override</span><br>    <span class="hljs-keyword">protected</span> Class&lt;?&gt; findClass(String name) <span class="hljs-keyword">throws</span> ClassNotFoundException &#123;<br>        Class clazz = <span class="hljs-keyword">null</span>;<br>        <span class="hljs-keyword">byte</span>[] classData = loadClassData(name);<br>        <span class="hljs-keyword">if</span> (classData == <span class="hljs-keyword">null</span>) &#123;<br>            <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> ClassNotFoundException();<br>        &#125; <span class="hljs-keyword">else</span> &#123;<br>            <span class="hljs-comment">//用来将获取的字节码数组转为class的实例</span><br>            clazz = defineClass(name, classData, <span class="hljs-number">0</span>, classData.length);<br>        &#125;<br>        <span class="hljs-keyword">return</span> clazz;<br>    &#125;<br><br>    <span class="hljs-comment">/**<br>     * 获得class文件的字节码数组<br>     * <span class="hljs-doctag">@param</span> name<br>     * <span class="hljs-doctag">@return</span><br>     */</span><br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">byte</span>[] loadClassData(String name) &#123;<br>        String fileName = getFileName(name);<br>        File file = <span class="hljs-keyword">new</span> File(path, fileName);<br>        System.err.println(fileName);<br>        InputStream inputStream = <span class="hljs-keyword">null</span>;<br>        ByteArrayOutputStream byteArrayOutputStream = <span class="hljs-keyword">null</span>;<br>        <span class="hljs-keyword">try</span> &#123;<br>            inputStream = <span class="hljs-keyword">new</span> FileInputStream(file);<br>            byteArrayOutputStream = <span class="hljs-keyword">new</span> ByteArrayOutputStream();<br>            <span class="hljs-keyword">byte</span>[] buffer = <span class="hljs-keyword">new</span> <span class="hljs-keyword">byte</span>[<span class="hljs-number">1024</span>];<br>            <span class="hljs-keyword">int</span> length = <span class="hljs-number">0</span>;<br>            <span class="hljs-keyword">while</span> ((length = inputStream.read(buffer)) != -<span class="hljs-number">1</span>) &#123;<br>                byteArrayOutputStream.write(buffer, <span class="hljs-number">0</span>, length);<br>            &#125;<br>            <span class="hljs-keyword">return</span> byteArrayOutputStream.toByteArray();<br>        &#125; <span class="hljs-keyword">catch</span> (IOException e) &#123;<br>            e.printStackTrace();<br>        &#125; <span class="hljs-keyword">finally</span> &#123;<br>            <span class="hljs-comment">//读取流后需要关闭，以免造成内存泄露</span><br>            <span class="hljs-keyword">try</span> &#123;<br>                <span class="hljs-keyword">if</span> (inputStream != <span class="hljs-keyword">null</span>) &#123;<br>                    inputStream.close();<br>                &#125;<br>            &#125; <span class="hljs-keyword">catch</span> (IOException e) &#123;<br>                e.printStackTrace();<br>            &#125;<br>            <span class="hljs-keyword">try</span> &#123;<br>                <span class="hljs-keyword">if</span> (byteArrayOutputStream != <span class="hljs-keyword">null</span>) &#123;<br>                    byteArrayOutputStream.close();<br>                &#125;<br>            &#125; <span class="hljs-keyword">catch</span> (IOException e) &#123;<br>                e.printStackTrace();<br>            &#125;<br>        &#125;<br>        <span class="hljs-keyword">return</span> <span class="hljs-keyword">null</span>;<br>    &#125;<br><br>    <span class="hljs-function"><span class="hljs-keyword">private</span> String <span class="hljs-title">getFileName</span><span class="hljs-params">(String name)</span> </span>&#123;<br>        <span class="hljs-keyword">int</span> index = name.indexOf(<span class="hljs-string">'.'</span>);<br>        <span class="hljs-keyword">if</span> (index == -<span class="hljs-number">1</span>) &#123;<br>            <span class="hljs-keyword">return</span> name + <span class="hljs-string">".class"</span>;<br>        &#125; <span class="hljs-keyword">else</span> &#123;<br>            <span class="hljs-keyword">return</span> name.substring(index + <span class="hljs-number">1</span>) + <span class="hljs-string">".class"</span>;<br>        &#125;<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
 <p>自定义的ClassLoader需要读取对应Class的字节流数组，以便产生实例。注意不要忘记对流的关闭。</p>
 </li>
 <li><p>使用自定义的ClassLoader去加载类</p>
-<div class="hljs"><pre><code class="hljs java"><span class="hljs-keyword">import</span> java.lang.reflect.InvocationTargetException;
-<span class="hljs-keyword">import</span> java.lang.reflect.Method;
-
-<span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">CustomClassLoaderTest</span></span>&#123;
-     <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">main</span><span class="hljs-params">(String[] args)</span> </span>&#123;
-      DiskClassLoader diskClassLoader = <span class="hljs-keyword">new</span> DiskClassLoader(<span class="hljs-string">"需要加载的class的地址"</span>);
-        <span class="hljs-keyword">try</span> &#123;
-            <span class="hljs-comment">//对class文件进行加载</span>
-            Class c = diskClassLoader.loadClass(<span class="hljs-string">"Jobs"</span>);
-            <span class="hljs-keyword">if</span> (c != <span class="hljs-keyword">null</span>) &#123;
-                <span class="hljs-keyword">try</span> &#123;
-                    Object object = c.newInstance();
-                    System.err.println(object.getClass().getClassLoader());
-                    Method method = c.getDeclaredMethod(<span class="hljs-string">"say"</span>, <span class="hljs-keyword">null</span>);
-                    method.invoke(object, <span class="hljs-keyword">null</span>);
-                &#125; <span class="hljs-keyword">catch</span> (IllegalAccessException e) &#123;
-                    e.printStackTrace();
-                &#125; <span class="hljs-keyword">catch</span> (InstantiationException e) &#123;
-                    e.printStackTrace();
-                &#125; <span class="hljs-keyword">catch</span> (NoSuchMethodException e) &#123;
-                    e.printStackTrace();
-                &#125; <span class="hljs-keyword">catch</span> (InvocationTargetException e) &#123;
-                    e.printStackTrace();
-                &#125;
-            &#125;
-        &#125; <span class="hljs-keyword">catch</span> (ClassNotFoundException e) &#123;
-            e.printStackTrace();
-        &#125;
-     &#125;
-&#125;</code></pre></div>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">import</span> java.lang.reflect.InvocationTargetException;<br><span class="hljs-keyword">import</span> java.lang.reflect.Method;<br><br><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">CustomClassLoaderTest</span></span>&#123;<br>     <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">main</span><span class="hljs-params">(String[] args)</span> </span>&#123;<br>      DiskClassLoader diskClassLoader = <span class="hljs-keyword">new</span> DiskClassLoader(<span class="hljs-string">"需要加载的class的地址"</span>);<br>        <span class="hljs-keyword">try</span> &#123;<br>            <span class="hljs-comment">//对class文件进行加载</span><br>            Class c = diskClassLoader.loadClass(<span class="hljs-string">"Jobs"</span>);<br>            <span class="hljs-keyword">if</span> (c != <span class="hljs-keyword">null</span>) &#123;<br>                <span class="hljs-keyword">try</span> &#123;<br>                    Object object = c.newInstance();<br>                    System.err.println(object.getClass().getClassLoader());<br>                    Method method = c.getDeclaredMethod(<span class="hljs-string">"say"</span>, <span class="hljs-keyword">null</span>);<br>                    method.invoke(object, <span class="hljs-keyword">null</span>);<br>                &#125; <span class="hljs-keyword">catch</span> (IllegalAccessException e) &#123;<br>                    e.printStackTrace();<br>                &#125; <span class="hljs-keyword">catch</span> (InstantiationException e) &#123;<br>                    e.printStackTrace();<br>                &#125; <span class="hljs-keyword">catch</span> (NoSuchMethodException e) &#123;<br>                    e.printStackTrace();<br>                &#125; <span class="hljs-keyword">catch</span> (InvocationTargetException e) &#123;<br>                    e.printStackTrace();<br>                &#125;<br>            &#125;<br>        &#125; <span class="hljs-keyword">catch</span> (ClassNotFoundException e) &#123;<br>            e.printStackTrace();<br>        &#125;<br>     &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
 <p>在对应的文件夹下是否已存在Jobs.java文件：</p>
 <ul>
-<li><div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//存在要加载的Java文件</span>
-sun.misc.Launcher$AppClassLoader@<span class="hljs-number">18</span>b4aac2
-自定义加载器加载</code></pre></div>
+<li><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">//存在要加载的Java文件</span><br>sun.misc.Launcher$AppClassLoader@<span class="hljs-number">18</span>b4aac2<br>自定义加载器加载<br></code></pre></td></tr></table></figure>
 </li>
-<li><div class="hljs"><pre><code class="hljs java"><span class="hljs-comment">//不存在对应的Java文件</span>
-DiskClassLoader<span class="hljs-meta">@d</span>716361
-自定义加载器加载</code></pre></div>
+<li><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">//不存在对应的Java文件</span><br>DiskClassLoader<span class="hljs-meta">@d</span>716361<br>自定义加载器加载<br></code></pre></td></tr></table></figure>
 </li>
 </ul>
 </li>
@@ -446,7 +296,7 @@ DiskClassLoader<span class="hljs-meta">@d</span>716361
                 <p class="note note-warning">本博客所有文章除特别声明外，均采用 <a href="https://zh.wikipedia.org/wiki/Wikipedia:CC_BY-SA_3.0%E5%8D%8F%E8%AE%AE%E6%96%87%E6%9C%AC" rel="nofollow noopener">CC BY-SA 3.0协议</a> 。转载请注明出处！</p>
               
               
-                <div class="post-prevnext row">
+                <div class="post-prevnext">
                   <article class="post-prev col-6">
                     
                     
@@ -539,23 +389,20 @@ DiskClassLoader<span class="hljs-meta">@d</span>716361
 
 <!-- SCRIPTS -->
 
-  <script  src="https://cdn.staticfile.org/nprogress/0.2.0/nprogress.min.js" ></script>
-  <link  rel="stylesheet" href="https://cdn.staticfile.org/nprogress/0.2.0/nprogress.min.css" />
+  <script  src="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.js" ></script>
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.css" />
 
   <script>
-    NProgress.configure({"showSpinner":false,"trickleSpeed":200})
+    NProgress.configure({"showSpinner":false,"trickleSpeed":100})
     NProgress.start()
-    document.addEventListener('DOMContentLoaded', function() {
-      window.NProgress && window.NProgress.inc();
-    })
     window.addEventListener('load', function() {
       NProgress.done();
     })
   </script>
 
 
-<script  src="https://cdn.staticfile.org/jquery/3.5.1/jquery.min.js" ></script>
-<script  src="https://cdn.staticfile.org/twitter-bootstrap/4.5.3/js/bootstrap.min.js" ></script>
+<script  src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" ></script>
+<script  src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.min.js" ></script>
 <script  src="/js/debouncer.js" ></script>
 <script  src="/js/events.js" ></script>
 <script  src="/js/plugins.js" ></script>
@@ -573,19 +420,20 @@ DiskClassLoader<span class="hljs-meta">@d</span>716361
 
 
 
-  <script  src="https://cdn.staticfile.org/tocbot/4.12.0/tocbot.min.js" ></script>
+  <script  src="https://cdn.jsdelivr.net/npm/tocbot@4.12.0/dist/tocbot.min.js" ></script>
 
 
 
-  <script  src="https://cdn.staticfile.org/fancybox/3.5.7/jquery.fancybox.min.js" ></script>
+  <script  src="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.js" ></script>
 
 
 
-  <script  src="https://cdn.staticfile.org/anchor-js/4.3.0/anchor.min.js" ></script>
+  <script  src="https://cdn.jsdelivr.net/npm/anchor-js@4.3.0/anchor.min.js" ></script>
 
 
 
-  <script defer src="https://cdn.staticfile.org/clipboard.js/2.0.6/clipboard.min.js" ></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/clipboard@2.0.6/dist/clipboard.min.js" ></script>
+
 
 
 
