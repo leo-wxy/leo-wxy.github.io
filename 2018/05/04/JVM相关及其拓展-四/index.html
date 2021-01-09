@@ -12,10 +12,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no">
   <meta http-equiv="x-ua-compatible" content="ie=edge">
   
-  <meta name="theme-color" content="#9b868d">
+  <meta name="theme-color" content="#11527b">
   <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
   <meta name="author" content="Leo-Wxy">
-  <meta name="keywords" content>
+  <meta name="keywords" content="">
   <title>JVM相关及其拓展(四) -- 垃圾收集器与内存分配策略 - Wxy的个人博客</title>
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css">
@@ -28,7 +28,7 @@
     
     
       
-      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@10.4.0/styles/github-gist.min.css">
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@10.4.0/styles/atom-one-light.min.css">
     
   
 
@@ -240,7 +240,7 @@
 </blockquote>
 </li>
 </ul>
-<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/gc_reachability_analysis.png" srcset="/img/loading.gif" class="full-image" alt="可达性分析算法" title="可达性分析算法"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/gc_reachability_analysis.png" srcset="/img/loading.gif" class="full-image" alt="可达性分析算法" title="可达性分析算法"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
 <p>在Java语言中，可作为GC Roots的对象包括以下几种：</p>
 <ul>
 <li>虚拟机栈（栈帧中的本地变量表）中引用的对象</li>
@@ -276,13 +276,13 @@
 </ul>
 </li>
 </ul>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">FinalizeEscapeGC</span> </span>&#123;<br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> FinalizeEscapeGC SAVE_HOOK = <span class="hljs-keyword">null</span>;<br><br>    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">isAlive</span><span class="hljs-params">()</span> </span>&#123;<br>        System.err.println(<span class="hljs-string">"It is live"</span>);<br>    &#125;<br><br>    <span class="hljs-meta">@Override</span><br>    <span class="hljs-function"><span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> <span class="hljs-title">finalize</span><span class="hljs-params">()</span> <span class="hljs-keyword">throws</span> Throwable </span>&#123;<br>        <span class="hljs-keyword">super</span>.finalize();<br>        System.err.println(<span class="hljs-string">"finalize is executed"</span>);<br>        FinalizeEscapeGC.SAVE_HOOK = <span class="hljs-keyword">this</span>;<br>    &#125;<br><br>    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">main</span><span class="hljs-params">(String[] args)</span> <span class="hljs-keyword">throws</span> Throwable </span>&#123;<br>        SAVE_HOOK = <span class="hljs-keyword">new</span> FinalizeEscapeGC();<br><br>        SAVE_HOOK = <span class="hljs-keyword">null</span>;<br>        System.gc();<br>        Thread.sleep(<span class="hljs-number">500</span>);<br>        <span class="hljs-keyword">if</span> (SAVE_HOOK != <span class="hljs-keyword">null</span>) &#123;<br>            SAVE_HOOK.isAlive();<br>        &#125; <span class="hljs-keyword">else</span> &#123;<br>            System.err.println(<span class="hljs-string">"It is over"</span>);<br>        &#125;<br>        <span class="hljs-comment">//将对象的引用链重新置为null，则拯救失败</span><br>        SAVE_HOOK = <span class="hljs-keyword">null</span>;<br>        System.gc();<br>        Thread.sleep(<span class="hljs-number">500</span>);<br>        <span class="hljs-keyword">if</span> (SAVE_HOOK != <span class="hljs-keyword">null</span>) &#123;<br>            SAVE_HOOK.isAlive();<br>        &#125; <span class="hljs-keyword">else</span> &#123;<br>            System.err.println(<span class="hljs-string">"It is over"</span>);<br>        &#125;<br>        <br>    &#125;<br>    <br>&#125;<br></code></pre></td></tr></table></figure>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> class FinalizeEscapeGC &#123;<br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> FinalizeEscapeGC SAVE_HOOK = <span class="hljs-keyword">null</span>;<br><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> isAlive() &#123;<br>        System.err.println("It is live");<br>    &#125;<br><br>    @Override<br>    <span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> finalize() <span class="hljs-keyword">throws</span> Throwable &#123;<br>        <span class="hljs-keyword">super</span>.finalize();<br>        System.err.println("finalize is executed");<br>        FinalizeEscapeGC.SAVE_HOOK = <span class="hljs-keyword">this</span>;<br>    &#125;<br><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> main(String[] args) <span class="hljs-keyword">throws</span> Throwable &#123;<br>        SAVE_HOOK = new FinalizeEscapeGC();<br><br>        SAVE_HOOK = <span class="hljs-keyword">null</span>;<br>        System.gc();<br>        Thread.sleep(500);<br>        <span class="hljs-keyword">if</span> (SAVE_HOOK != <span class="hljs-keyword">null</span>) &#123;<br>            SAVE_HOOK.isAlive();<br>        &#125; <span class="hljs-keyword">else</span> &#123;<br>            System.err.println("It is over");<br>        &#125;<br>        //将对象的引用链重新置为<span class="hljs-keyword">null</span>，则拯救失败<br>        SAVE_HOOK = <span class="hljs-keyword">null</span>;<br>        System.gc();<br>        Thread.sleep(500);<br>        <span class="hljs-keyword">if</span> (SAVE_HOOK != <span class="hljs-keyword">null</span>) &#123;<br>            SAVE_HOOK.isAlive();<br>        &#125; <span class="hljs-keyword">else</span> &#123;<br>            System.err.println("It is over");<br>        &#125;<br>        <br>    &#125;<br>    <br>&#125;<br></code></pre></td></tr></table></figure>
 <ul>
 <li><p><strong><code>finalize()</code></strong></p>
 <p>运行代价高昂，不确定性大，无法保证各个对象的调用顺序。</p>
 </li>
 </ul>
-<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/判断Java对象是否存活.png" srcset="/img/loading.gif" class="full-image" alt="判断Java对象是否存活" title="判断Java对象是否存活"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/判断Java对象是否存活.png" srcset="/img/loading.gif" class="full-image" alt="判断Java对象是否存活" title="判断Java对象是否存活"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
 <h3 id="4-回收方法区"><a href="#4-回收方法区" class="headerlink" title="4.回收方法区"></a>4.回收方法区</h3><blockquote>
 <p>永久代的垃圾收集主要分为两部分：<strong>废弃常量和无用的类</strong></p>
 <p><strong>废弃常量</strong>：假如常量池中存在一个常量，但是没有任何对象引用该常量，在发生回收的时候，该常量就会被系统清理出常量池，常量池中的其他类（接口）、方法、字段的符号引用类似。</p>
@@ -296,12 +296,12 @@
 <h3 id="5-垃圾收集算法"><a href="#5-垃圾收集算法" class="headerlink" title="5.垃圾收集算法"></a>5.垃圾收集算法</h3><h4 id="标记-清除算法-Mark-Sweep-最基础的收集算法"><a href="#标记-清除算法-Mark-Sweep-最基础的收集算法" class="headerlink" title="标记-清除算法(Mark-Sweep)  最基础的收集算法"></a><strong>标记-清除算法(Mark-Sweep)  最基础的收集算法</strong></h4><blockquote>
 <p>算法分为<code>标记</code>和<code>清除</code>两个阶段，<strong>首先标记出所有需要回收的对象，在标记完成后统一回收所有被标记的对象</strong>。主要不足有两个：一个是效率问题（<code>标记和清除两个过程的效率都不高</code>）；另一个是空间问题（<code>标记清除后会产生大量不连续的内存碎片，空间碎片太多可能会导致以后在程序运行过程中需要分配较大对象时，无法找到足够的连续内存而不得不提前出发另一次垃圾收集动作</code>）。</p>
 </blockquote>
-<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/gc_mark_sweep.png " srcset="/img/loading.gif" class="full-image" alt="标记-清除算法" title="标记-清除算法"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/gc_mark_sweep.png " srcset="/img/loading.gif" class="full-image" alt="标记-清除算法" title="标记-清除算法"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
 <h4 id="复制算法-Copying"><a href="#复制算法-Copying" class="headerlink" title="复制算法(Copying)"></a><strong>复制算法(Copying)</strong></h4><blockquote>
 <p>将可用内存划分为大小相等的两块，每次只使用其中的一块。当这一块内存用完了，就将还存活着的对象移到另一块上面，然后把已使用过的内存空间一次清理掉，这样使得每次都是对整个半区进行内存回收，内存分配时就不需考虑内存碎片等情况。</p>
 <p>缺点：可用内存会减少一半；效率会随存活对象的升高而降低（当对象存活率较高的时候，需要更多的copy操作，导致效率降低）</p>
 </blockquote>
-<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/gc_copying.png" srcset="/img/loading.gif" class="full-image" alt="整理算法" title="整理算法"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/gc_copying.png" srcset="/img/loading.gif" class="full-image" alt="整理算法" title="整理算法"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
 <p>现在的商业虚拟机都采用这种收集算法来回收新生代。</p>
 <p>提供了改良算法（基于<strong>弱代理论①</strong>）：不是按照1:1的比例去划分内存空间，而是分为较大的Eden空间和两块较小的Survivor空间，在回收时将Eden和Survivor存活的对象移至到另一块Survivor空间上。<strong>HotSpot中Eden和Survivor的大小比例为8:1。</strong><code>在一般场景下足够使用，当Survivor空间不够使用时，需要依赖其他内存(代指老年代)进行分配担保②</code>。</p>
 <blockquote>
@@ -311,7 +311,7 @@
 <h4 id="标记-整理算法-Mark-Compact"><a href="#标记-整理算法-Mark-Compact" class="headerlink" title="标记-整理算法(Mark-Compact)"></a><strong>标记-整理算法(Mark-Compact)</strong></h4><blockquote>
 <p>标记过程与“标记-清除”算法一致，但后续步骤不是直接对可回收对象进行清理，而是让所有存活的对象向一端移动，然后直接清理端边界以外的内存。</p>
 </blockquote>
-<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/gc_mark_compact.png" srcset="/img/loading.gif" class="full-image" alt="标记-整理算法" title="标记-整理算法"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/gc_mark_compact.png" srcset="/img/loading.gif" class="full-image" alt="标记-整理算法" title="标记-整理算法"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
 <blockquote>
 <p>优点：1. 效率不随对象存活率升高而降低。 2. 不像标记-清除算法会产生大量的内存碎片（因为会进行一次整理，将存活对象集中到一端）。</p>
 <p>缺点：除了需要进行标记，还需要整理过程，执行效率更低。</p>
@@ -340,11 +340,11 @@
 <li><p><strong>Full GC:</strong> 对象不断地移至老年代，最终老年代也被填满，JVM需要找到老年代不再使用的对象并进行回收。会导致长时间停顿。</p>
 </li>
 </ul>
-<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/gc_java_heap_memory.png" srcset="/img/loading.gif" class="full-image" alt="Java堆内存" title="Java堆内存"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/gc_java_heap_memory.png" srcset="/img/loading.gif" class="full-image" alt="Java堆内存" title="Java堆内存"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
 <h3 id="6-垃圾收集器"><a href="#6-垃圾收集器" class="headerlink" title="6.垃圾收集器"></a>6.垃圾收集器</h3><blockquote>
 <p>收集算法是内存回收的方法论，垃圾收集器就为内存回收的具体实现。</p>
 </blockquote>
-<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/gc_collectors.png" srcset="/img/loading.gif" class="full-image" alt="垃圾收集器" title="垃圾收集器"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/gc_collectors.png" srcset="/img/loading.gif" class="full-image" alt="垃圾收集器" title="垃圾收集器"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
 <p>根据上图分析新生代收集器主要是：<strong>Serial收集器,ParNew收集器,Parallel Scavenge收集器和G1收集器</strong>。老年代收集器为<strong>CMS收集器，Serial Old收集器，Parallel收集器和G1收集器</strong>。</p>
 <p>在两个收集器之间存在连线，则意味着他们之间可以搭配使用。</p>
 <h4 id="Serial收集器"><a href="#Serial收集器" class="headerlink" title="Serial收集器"></a><code>Serial收集器</code></h4><blockquote>
@@ -401,7 +401,7 @@
 <h4 id="CMS收集器（Concurrent-Mark-Sweep）"><a href="#CMS收集器（Concurrent-Mark-Sweep）" class="headerlink" title="CMS收集器（Concurrent Mark Sweep）"></a><strong><code>CMS收集器（Concurrent Mark Sweep）</code></strong></h4><blockquote>
 <p>以获取最短回收停顿时间为目标的收集器。基于“<strong>标记-清除算法</strong>”实现。整体上来说内存回收过程是与用户线程一起并发执行的。</p>
 </blockquote>
-<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/CMS收集器.png" srcset="/img/loading.gif" class="full-image" alt="CMS收集器" title="CMS收集器"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/CMS收集器.png" srcset="/img/loading.gif" class="full-image" alt="CMS收集器" title="CMS收集器"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
 <p>运作过程比较复杂，分为4个步骤：</p>
 <ul>
 <li><strong>初始标记</strong>：仅仅标记一下GC Roots能关联到的对象，速度很快  <code>触发Stop The World</code></li>
@@ -409,7 +409,7 @@
 <li><strong>重新标记</strong>：修正并发标记期间因用户程序继续运做而导致标记产生变动的那一部分对象的标记记录，停顿时间比初始标记长一些，但短于并发标记时间  <code>触发Stop The World</code></li>
 <li><strong>并发清除</strong>：可以和用户线程一起工作</li>
 </ul>
-<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/gc_collectors_CMS.png" srcset="/img/loading.gif" class="full-image" alt="CMS" title="CMS"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/gc_collectors_CMS.png" srcset="/img/loading.gif" class="full-image" alt="CMS" title="CMS"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
 <p>CMS收集器有3个明显的缺点：</p>
 <ol>
 <li><p><strong>对CPU资源非常敏感</strong></p>
@@ -432,7 +432,7 @@
 <h4 id="G1收集器"><a href="#G1收集器" class="headerlink" title="G1收集器"></a><strong><code>G1收集器</code></strong></h4><blockquote>
 <p>全称Garbage-First收集器，通过-XX:+UseG1GC参数来启用，在JDK9中，被提议为默认收集器。<code>在JDK10中，把单线程的Full GC改良为了多线程Full GC</code></p>
 </blockquote>
-<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/G1收集器.png" srcset="/img/loading.gif" class="full-image" alt="G1收集器" title="G1收集器"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/G1收集器.png" srcset="/img/loading.gif" class="full-image" alt="G1收集器" title="G1收集器"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
 <p>G1收集器是一款面向服务端的垃圾收集器，设计目标是为了取代CMS收集器。具备如下特点：</p>
 <ul>
 <li><strong>并行与并发</strong>：使用多个CPU来缩短停顿时间，也会通过并发的方式让Java程序继续运行</li>
@@ -658,6 +658,13 @@
 
 
 
+
+  <script  src="https://cdn.jsdelivr.net/npm/mermaid@8.8.3/dist/mermaid.min.js" ></script>
+  <script>
+    if (window.mermaid) {
+      mermaid.initialize({"theme":"default"});
+    }
+  </script>
 
 
 
