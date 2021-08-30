@@ -1,0 +1,579 @@
+
+
+<!DOCTYPE html>
+<html lang="zh-CN" data-default-color-scheme=&#34;auto&#34;>
+
+
+
+<head><meta name="generator" content="Hexo 3.9.0">
+  <meta charset="UTF-8">
+  <link rel="apple-touch-icon" sizes="76x76" href="/img/favicon.png">
+  <link rel="icon" type="image/png" href="/img/favicon.png">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  
+  <meta name="theme-color" content="#11527b">
+  <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
+  <meta name="author" content="Leo-Wxy">
+  <meta name="keywords" content="">
+  <title>Java-synchronized原理及解析 - Wxy的个人博客</title>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css">
+
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@4.0.0/github-markdown.min.css">
+  <link rel="stylesheet" href="/lib/hint/hint.min.css">
+
+  
+    
+    
+      
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@10.4.0/styles/atom-one-light.min.css">
+    
+  
+
+  
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.css">
+  
+
+
+
+<!-- 主题依赖的图标库，不要自行修改 -->
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1749284_ba1fz6golrf.css">
+
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1736178_kmeydafke9r.css">
+
+<link rel="stylesheet" href="/css/main.css">
+
+<!-- 自定义样式保持在最底部 -->
+
+
+  <script id="fluid-configs">
+    var Fluid = window.Fluid || {};
+    var CONFIG = {"hostname":"leo-wxy.github.io","root":"/","version":"1.8.7","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"copy_btn":true,"image_zoom":{"enable":true},"toc":{"enable":true,"headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"onlypost":false},"web_analytics":{"enable":false,"baidu":null,"google":null,"gtag":null,"tencent":{"sid":null,"cid":null},"woyaola":null,"cnzz":null,"leancloud":{"app_id":null,"app_key":null,"server_url":null}}};
+  </script>
+  <script src="/js/utils.js"></script>
+  <script src="/js/color-schema.js"></script>
+</head>
+
+
+<body>
+  <header style="height: 30vh;">
+    <nav id="navbar" class="navbar fixed-top  navbar-expand-lg navbar-dark scrolling-navbar">
+  <div class="container">
+    <a class="navbar-brand"
+       href="/">&nbsp;<strong>Wxy's Blog</strong>&nbsp;</a>
+
+    <button id="navbar-toggler-btn" class="navbar-toggler" type="button" data-toggle="collapse"
+            data-target="#navbarSupportedContent"
+            aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+      <div class="animated-icon"><span></span><span></span><span></span></div>
+    </button>
+
+    <!-- Collapsible content -->
+    <div class="collapse navbar-collapse" id="navbarSupportedContent">
+      <ul class="navbar-nav ml-auto text-center">
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/">
+                <i class="iconfont icon-home-fill"></i>
+                首页
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/archives/">
+                <i class="iconfont icon-archive-fill"></i>
+                归档
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/tags/">
+                <i class="iconfont icon-tags-fill"></i>
+                标签
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/about/">
+                <i class="iconfont icon-user-fill"></i>
+                关于
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/links/">
+                <i class="iconfont icon-link-fill"></i>
+                友链
+              </a>
+            </li>
+          
+        
+        
+          <li class="nav-item" id="search-btn">
+            <a class="nav-link" data-toggle="modal" data-target="#modalSearch">&nbsp;<i
+                class="iconfont icon-search"></i>&nbsp;</a>
+          </li>
+        
+        
+          <li class="nav-item" id="color-toggle-btn">
+            <a class="nav-link" href="javascript:">&nbsp;<i
+                class="iconfont icon-dark" id="color-toggle-icon"></i>&nbsp;</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    <div class="banner" id="banner" parallax=true
+         style="background: url('/img/default.png') no-repeat center center;
+           background-size: cover;">
+      <div class="full-bg-img">
+        <div class="mask flex-center" style="background-color: rgba(0, 0, 0, 0.3)">
+          <div class="page-header text-center fade-in-up">
+            <span class="h2" id="subtitle" title="Java-synchronized原理及解析">
+              
+                Java-synchronized原理及解析
+              
+            </span>
+
+            
+              <div class="mt-3">
+  
+  
+    <span class="post-meta">
+      <i class="iconfont icon-date-fill" aria-hidden="true"></i>
+      <time datetime="2018-12-18 15:07" pubdate>
+        2018年12月18日 下午
+      </time>
+    </span>
+  
+</div>
+
+<div class="mt-1">
+  
+    
+    <span class="post-meta mr-2">
+      <i class="iconfont icon-chart"></i>
+      2.9k 字
+    </span>
+  
+
+  
+    
+    <span class="post-meta mr-2">
+      <i class="iconfont icon-clock-fill"></i>
+      
+      
+      36
+       分钟
+    </span>
+  
+
+  
+  
+</div>
+
+            
+          </div>
+
+          
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    
+      
+
+<div class="container-fluid nopadding-x">
+  <div class="row nomargin-x">
+    <div class="d-none d-lg-block col-lg-2"></div>
+    <div class="col-lg-8 nopadding-x-md">
+      <div class="container nopadding-x-md" id="board-ctn">
+        <div class="py-5" id="board">
+          <article class="post-content mx-auto">
+            <!-- SEO header -->
+            <h1 style="display: none">Java-synchronized原理及解析</h1>
+            
+            <div class="markdown-body">
+              <h1 id="synchronized"><a href="#synchronized" class="headerlink" title="synchronized"></a>synchronized</h1><h2 id="synchronized场景"><a href="#synchronized场景" class="headerlink" title="synchronized场景"></a><code>synchronized</code>场景</h2><p>一般用在以下场景</p>
+<h3 id="修饰实例方法（锁定当前对象实例）"><a href="#修饰实例方法（锁定当前对象实例）" class="headerlink" title="修饰实例方法（锁定当前对象实例）"></a>修饰实例方法（锁定当前对象实例）</h3><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> class SynchronizedInstance&#123;<br>  <span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> <span class="hljs-keyword">void</span> test()&#123;<br>    //...<br>  &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+<blockquote>
+<p>锁定的是访问该方法的实例对象，如果在多个线程中的不同对象访问该方法，则不可保证互斥同步效果</p>
+</blockquote>
+<h3 id="修饰静态方法-锁定当前类Class对象"><a href="#修饰静态方法-锁定当前类Class对象" class="headerlink" title="修饰静态方法(锁定当前类Class对象)"></a>修饰静态方法(锁定当前类Class对象)</h3><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> class SynchronizedStatic&#123;<br>  <span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> test()&#123;<br>    //...<br>  &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+<blockquote>
+<p>由于静态方法是类方法，所以锁的是包含这个方法的类，也就是类对象；如果多个线程调用不同实例对象，也会有互斥同步效果</p>
+</blockquote>
+<h3 id="修饰代码块-锁定指定对象"><a href="#修饰代码块-锁定指定对象" class="headerlink" title="修饰代码块(锁定指定对象)"></a>修饰代码块(锁定指定对象)</h3><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> class Singleton&#123;<br>  <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">volatile</span> Suingleton mInstance;<br>  <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Singleton getInstance()&#123;<br>    <span class="hljs-keyword">if</span>(mInstance==<span class="hljs-keyword">null</span>)&#123;<br>      <span class="hljs-keyword">synchronized</span>(Singleton.class)&#123;<br>        <span class="hljs-keyword">if</span>(mInstance==<span class="hljs-keyword">null</span>)&#123;<br>          mInstance = new Singleton();<br>        &#125;<br>      &#125;<br>    &#125;<br>    return mInstance;<br>  &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+<blockquote>
+</blockquote>
+<blockquote>
+<p><code>synchronized</code>可作用于一段代码或方法，既可以保证可见性也可以保证原子性。</p>
+<p><strong>可见性</strong>：通过<code>synchronized</code>能保证同一个时刻只有一个线程获取锁然后执行同步代码，并且在释放锁之前将会对变量的修改刷新到主存中。</p>
+<p><strong>原子性</strong>：要么不执行，要么执行到底。</p>
+<p>锁类型为：<strong>可重入锁，非公平锁，独占锁，互斥锁</strong></p>
+</blockquote>
+{% fullimage /images/synchronized.png,synchronized关键字,synchronized关键字%}
+<h2 id="synchronized作用"><a href="#synchronized作用" class="headerlink" title="synchronized作用"></a><code>synchronized</code>作用</h2><ul>
+<li>确保线程互斥的访问代码块，同一时刻只有一个方法进入临界区，其他线程必须等到当前线程执行完毕才能使用。</li>
+<li>保证共享变量的修改能即时可见</li>
+<li>有效解决重排序问题</li>
+</ul>
+<h2 id="synchronized使用"><a href="#synchronized使用" class="headerlink" title="synchronized使用"></a><code>synchronized</code>使用</h2><h3 id="修饰实例方法，锁的是当前对象实例-this"><a href="#修饰实例方法，锁的是当前对象实例-this" class="headerlink" title="修饰实例方法，锁的是当前对象实例(this)"></a>修饰实例方法，锁的是当前对象实例(this)</h3><blockquote>
+<p>一个对象中的加锁方法只允许一个线程访问。但要注意这种情况下锁的是访问该方法的实例对象， 如果多个线程不同对象访问该方法，则无法保证同步。</p>
+</blockquote>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> class SynchronizedMethodTest &#123; <br>   <span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> <span class="hljs-keyword">void</span> method1()&#123;<br>        <span class="hljs-keyword">try</span> &#123;<br>            Thread.sleep(1000);<br>        &#125; <span class="hljs-keyword">catch</span> (InterruptedException e) &#123;<br>            e.printStackTrace();<br>        &#125;<br>        System.err.println("method1 finish" + System.currentTimeMillis());<br>    &#125;<br><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> <span class="hljs-keyword">void</span> method2()&#123;<br>        <span class="hljs-keyword">try</span> &#123;<br>            Thread.sleep(2000);<br>        &#125; <span class="hljs-keyword">catch</span> (InterruptedException e) &#123;<br>            e.printStackTrace();<br>        &#125;<br>        System.err.println("method2 finish"+ System.currentTimeMillis());<br>    &#125;<br><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> main(String[] args)&#123;<br>        <span class="hljs-keyword">final</span> SynchronizedMethodTest test =new SynchronizedMethodTest();<br>        new Thread(test::method1).start();<br>        new Thread(test::method2).start();<br>    &#125;<br>&#125;<br><br>输出结果：<br>method1 finish 1545188801152<br>method2 finish 1545188803157<br></code></pre></td></tr></table></figure>
+<h3 id="修饰静态方法，锁的是当前Class对象-静态方法属于类，而不是对象"><a href="#修饰静态方法，锁的是当前Class对象-静态方法属于类，而不是对象" class="headerlink" title="修饰静态方法，锁的是当前Class对象(静态方法属于类，而不是对象)"></a>修饰静态方法，锁的是当前Class对象(静态方法属于类，而不是对象)</h3><blockquote>
+<p>由于静态方法是类方法， 所以这种情况下锁的是包含这个方法的类，也就是类对象；这样如果多个线程不同对象访问该静态方法，也是可以保证同步的。</p>
+</blockquote>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> class SynchronizedStaticMethodTest &#123;<br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> method1() &#123;<br>        <span class="hljs-keyword">try</span> &#123;<br>            Thread.sleep(1000);<br>        &#125; <span class="hljs-keyword">catch</span> (InterruptedException e) &#123;<br>            e.printStackTrace();<br>        &#125;<br>        System.err.println("method1 finish" + System.currentTimeMillis());<br>    &#125;<br><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> method2() &#123;<br>        <span class="hljs-keyword">try</span> &#123;<br>            Thread.sleep(2000);<br>        &#125; <span class="hljs-keyword">catch</span> (InterruptedException e) &#123;<br>            e.printStackTrace();<br>        &#125;<br>        System.err.println("method2 finish" + System.currentTimeMillis());<br>    &#125;<br><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> main(String[] args) &#123;<br>        new Thread(SynchronizedStaticMethodTest::method1).start();<br>        new Thread(SynchronizedStaticMethodTest::method2).start();<br>    &#125;<br>&#125;<br><br>输出结果<br>method1 finish 1545189344322<br>method2 finish 1545189346327<br></code></pre></td></tr></table></figure>
+<h3 id="修饰代码块，锁的是括号里的对象"><a href="#修饰代码块，锁的是括号里的对象" class="headerlink" title="修饰代码块，锁的是括号里的对象"></a>修饰代码块，锁的是括号里的对象</h3><blockquote>
+<p>修饰代码块 其中普通代码块 如<code>synchronized（obj）</code> 这里的obj 可以为类中的一个属性、也可以是当前的对象，它的同步效果和修饰普通方法一样；<br>Synchronized方法控制范围较大， 它会同步对象中所有Synchronized方法的代码。<br>Synchronized代码块控制范围较小， 它只会同步代码块中的代码， 而位于代码块之外的代码是可以被多个线程访问的。</p>
+<p><strong>就是 Synchronized代码块更加灵活精确。</strong></p>
+</blockquote>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> class SynchronizedCodeBlockTest &#123;<br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> method1() &#123;<br>        <span class="hljs-keyword">synchronized</span> (<span class="hljs-keyword">this</span>) &#123;<br>            <span class="hljs-keyword">try</span> &#123;<br>                Thread.sleep(1000);<br>            &#125; <span class="hljs-keyword">catch</span> (InterruptedException e) &#123;<br>                e.printStackTrace();<br>            &#125;<br>            System.err.println("method1 finish" + System.currentTimeMillis());<br>        &#125;<br>    &#125;<br><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> method2() &#123;<br>        <span class="hljs-keyword">synchronized</span> (<span class="hljs-keyword">this</span>) &#123;<br>            <span class="hljs-keyword">try</span> &#123;<br>                Thread.sleep(2000);<br>            &#125; <span class="hljs-keyword">catch</span> (InterruptedException e) &#123;<br>                e.printStackTrace();<br>            &#125;<br>            System.err.println("method2 finish" + System.currentTimeMillis());<br>        &#125;<br>    &#125;<br><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> main(String[] args) &#123;<br>        <span class="hljs-keyword">final</span> SynchronizedCodeBlockTest test =new SynchronizedCodeBlockTest();<br>        new Thread(test::method1).start();<br>        new Thread(test::method2).start();<br>    &#125;<br>&#125;<br><br>输出结果：<br>method1 finish 1545189694303<br>method2 finish 1545189696308<br></code></pre></td></tr></table></figure>
+<h3 id="修饰代码块，但是指定了修饰类，此时锁的是括号里的Class类对象"><a href="#修饰代码块，但是指定了修饰类，此时锁的是括号里的Class类对象" class="headerlink" title="修饰代码块，但是指定了修饰类，此时锁的是括号里的Class类对象"></a>修饰代码块，但是指定了修饰类，此时锁的是括号里的Class类对象</h3><blockquote>
+<p>Synchronized方法 （obj.class）静态代码块它的同步效果和修饰静态方法类似。</p>
+</blockquote>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> class Test&#123;<br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> method()&#123;<br>        <span class="hljs-keyword">synchronized</span>(Test.class)&#123;<br>            <span class="hljs-keyword">try</span>&#123;<br>                Thread.sleep(500);<br>            &#125;<span class="hljs-keyword">catch</span>(Exception e)&#123;<br>                e.printStackTrace();<br>            &#125;<br>        &#125;<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+<h2 id="synchronized锁的区别"><a href="#synchronized锁的区别" class="headerlink" title="synchronized锁的区别"></a><code>synchronized</code>锁的区别</h2><h3 id="对象锁"><a href="#对象锁" class="headerlink" title="对象锁"></a>对象锁</h3><blockquote>
+<p>类似<code>synchronized(this)</code>就为对象锁的一种，其他的还包括<code>synchronized</code>修饰的实例方法<code>public synchronized void method()</code>。</p>
+</blockquote>
+<p><strong>控制方法间的同步。</strong>Java中的所有对象都包含一个<code>互斥锁</code>，这个锁由JVM自动获取和释放。当线程进入<code>synchronized</code>的时候会获取该对象的锁，如果有其他线程已经获得了这个对象锁，当前线程就需要等待其他线程执行完毕——<code>synchronized</code>正常返回或者抛出异常终止。JVM就会自动释放该锁。</p>
+<h3 id="类锁"><a href="#类锁" class="headerlink" title="类锁"></a>类锁</h3><blockquote>
+<p>类似<code>synchronized(obj.class)</code>就为类锁的一种，其他还包括<code>synchronized</code>修饰的静态方法<code>public synchronized static void method()</code>。</p>
+</blockquote>
+<p><strong>控制静态方法之间的同步。</strong>由于Java类中只会有一个Class对象，类的不同实例之间共享该类的Class对象。类锁对应的锁数量也就只有一个，就是锁住Class对象。</p>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>锁对象</th>
+<th>锁的数量</th>
+<th>实现形式</th>
+<th>使用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>对象锁(包括实例方法锁)</td>
+<td>实例对象</td>
+<td>多个<br>类的对象实例可以有多个</td>
+<td><code>synchronized void method()</code><br><code>synchronized(this){}</code></td>
+<td>控制方法间的同步</td>
+</tr>
+<tr>
+<td>类锁(包括静态方法锁)</td>
+<td>类对象</td>
+<td>1个<br>一个类只会有一个类对象</td>
+<td><code>synchronized static void method()</code><br><code>synchronized(obj.class)</code></td>
+<td>控制静态方法间的同步</td>
+</tr>
+</tbody>
+</table>
+<h2 id="synchronized原理"><a href="#synchronized原理" class="headerlink" title="synchronized原理"></a><code>synchronized</code>原理</h2><p>JVM基于进入和退出<code>monitor</code>对象来实现<strong>代码块同步</strong>和<strong>方法同步</strong>。</p>
+<ul>
+<li><p><strong>代码块同步</strong></p>
+<p>在编译后通过<code>monitorenter</code>插入到同步代码的开始处，将<code>monitorexit</code>插入到代码结束处和异常处，反编译字节码时就可以看到相关指令。<strong>JVM要保证每个monitorenter必须有对应的monitorexit。</strong></p>
+<p><code>monitorenter</code>：每个对象都有一个监视器锁(<code>monitor</code>)，当某个monitir被某个线程占用时就会处于锁定状态，线程执行<code>monitorenter</code>指令时会尝试获取<code>monitor</code>的所有权，尝试获取对象的锁。</p>
+<ul>
+<li>monitor进入数为0，则该进程进入monitor，然后将进入数置为1，该进程即为monitor的持有者</li>
+<li>如果线程已占有monitor，只是重新进入，则monitor进入数+1</li>
+<li>如果其他线程已占用monitor，则该线程处于堵塞状态，直至monitor进入数为0，在尝试重新获取monitor的所有权</li>
+</ul>
+<p><code>monitorexit</code>：执行<code>monitorexit</code>的线程必须是objectref所对应的monitor持有者。指令执行时，monitor进入数-1，如果-1后进入数为0，则线程退出monitor，不再是monitor持有者。其他被这个monitor阻塞的线程就可以尝试去获取monitor。</p>
+<blockquote>
+<p>反编译命令 <code>javap -v **.class</code></p>
+</blockquote>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><code class="hljs java"> 3: monitorenter<br> 4: ldc2_w        #16                 // <span class="hljs-keyword">long</span> 2000l<br> 7: invokestatic  #4                  // Method java/lang/Thread.sleep:(J)V<br>  ...<br>45: aload_1<br>46: monitorexit<br>47: goto          55<br>50: astore_3<br>51: aload_1<br>52: monitorexit<br></code></pre></td></tr></table></figure>
+</li>
+<li><p><strong>方法同步</strong></p>
+<p><code>synchronized</code>在<code>method_info</code>会添加<code>ACC_synchronized</code>标记，线程执行会识别该标记，获取对应的锁。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> <span class="hljs-keyword">void</span> method2();<br>    descriptor: ()V<br>    flags: ACC_PUBLIC, ACC_SYNCHRONIZED<br>    Code:<br>      stack=4, locals=2, args_size=1<br>         0: ldc2_w        #16                 // <span class="hljs-keyword">long</span> 2000l<br>         3: invokestatic  #4                  // Method java/lang/Thread.sleep:(J)V<br></code></pre></td></tr></table></figure>
+</li>
+</ul>
+<p>两者实现细节不同，<strong>本质上都是对一个对象的监视器(monitor)获取，任意一个对象都拥有自己的监视器。</strong>当这个对象由代码块同步或者方法同步调用时，<strong>执行方法的线程必须先获取对象的监视器才能进入同步块或同步方法，没有获取到对象监视器的线程就会被堵塞在入口处，变为Blocked堵塞状态。当成功获取监视器线程释放了锁后，会唤醒堵塞的同步队列的线程，使其重新尝试获取监视器。</strong></p>
+{% fullimage /images/synchronized-monitor.png,同步方法关系,同步方法关系%}
+<p>理解Java中的synchronized关键字。<br>指标：理解synchronized的含义、明确synchronized关键字修饰普通方法、静态方法和代码块时锁对象的差异。</p>
+<p>有如下一个类A</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><code class="hljs java">class A &#123;<br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> <span class="hljs-keyword">void</span> a() &#123;<br>    &#125;<br><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> <span class="hljs-keyword">void</span> b() &#123;<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+<p>然后创建两个对象</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><code class="hljs java">A a1 = new A();<br>A a2 = new A();<br></code></pre></td></tr></table></figure>
+<p>然后在两个线程中并发访问如下代码：<br>Thread1                       Thread2<br>a1.a();                       a2.a();</p>
+<p>请问二者能否构成线程同步？</p>
+<p>如果A的定义是下面这种呢？</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><code class="hljs java">class A &#123;<br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">synchronized</span> <span class="hljs-keyword">void</span> a() &#123;<br>    &#125;<br><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">synchronized</span> <span class="hljs-keyword">void</span> b() &#123;<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+<h1 id="答案"><a href="#答案" class="headerlink" title="答案"></a>答案</h1><p>Java多线程中的同步机制会对资源进行加锁，保证在同一时间只有一个线程可以操作对应资源，避免多程同时访问相同资源发生冲突。Synchronized是Java中的关键字，它是一种同步锁，可以实现同步机制。</p>
+<blockquote>
+<p>Synchronized作用:</p>
+</blockquote>
+<ul>
+<li>确保线程互斥的访问同步代码块</li>
+<li>保证共享变量的修改能够及时可见</li>
+<li>有效解决重排序问题</li>
+</ul>
+<blockquote>
+<p>wait(),notify(),notifyAll(),sleep()作用</p>
+</blockquote>
+<ul>
+<li>wait 调用线程 释放锁，然后进入休眠</li>
+<li>sleep thread的一个操作方法，不释放锁直接进入休眠</li>
+<li>notify 唤醒等待队列中的第一个相关进程</li>
+<li>notifyAll 唤醒所有</li>
+</ul>
+<blockquote>
+<p>Synchronized主修修饰对象为以下三种：</p>
+</blockquote>
+<ol>
+<li>修饰普通方法 一个对象中的加锁方法只允许一个线程访问。但要注意这种情况下锁的是访问该方法的实例对象， 如果多个线程不同对象访问该方法，则无法保证同步。</li>
+<li>修饰静态方法 由于静态方法是类方法， 所以这种情况下锁的是包含这个方法的类，也就是类对象；这样如果多个线程不同对象访问该静态方法，也是可以保证同步的。</li>
+<li>修饰代码块 其中普通代码块 如Synchronized（obj） 这里的obj 可以为类中的一个属性、也可以是当前的对象，它的同步效果和修饰普通方法一样；Synchronized方法 （obj.class）静态代码块它的同步效果和修饰静态方法类似。<br>Synchronized方法控制范围较大， 它会同步对象中所有Synchronized方法的代码。<br>Synchronized代码块控制范围较小， 它只会同步代码块中的代码， 而位于代码块之外的代码是可以被多个线程访问的。</li>
+</ol>
+<p>简单来说 就是 Synchronized代码块更加灵活精确。</p>
+<blockquote>
+<p>示例代码</p>
+</blockquote>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> class SyncThread implements Runnable &#123;<br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">int</span> count;<br>    <span class="hljs-keyword">public</span> SyncThread() &#123;<br>        count = 0;<br>    &#125;<br>    @Override<br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> run() &#123;<br>        <span class="hljs-keyword">synchronized</span> (<span class="hljs-keyword">this</span>) &#123;<br>            <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int</span> i = 0; i &lt; 5; i++) &#123;<br>                <span class="hljs-keyword">try</span> &#123;<br>                    System.err.println(Thread.currentThread().getName() + " " + (count++));<br>                    Thread.sleep(100);<br>                &#125; <span class="hljs-keyword">catch</span> (InterruptedException e) &#123;<br>                    e.printStackTrace();<br>                &#125;<br>            &#125;<br>        &#125;<br>    &#125;<br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">int</span> getCount() &#123;<br>        return count;<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+<h1 id="修饰代码块"><a href="#修饰代码块" class="headerlink" title="修饰代码块"></a>修饰代码块</h1><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> main(String[] args) &#123;<br>       SyncThread syncThread = new SyncThread();<br>       Thread thread1 = new Thread(syncThread, "sync1");<br>       Thread thread2 = new Thread(syncThread, "sync2");<br>       thread1.start();<br>       thread2.start();<br>   &#125;<br></code></pre></td></tr></table></figure>
+<p>访问的同一个对象时，同一时刻只能有一个线程执行，执行代码块是会锁定当前对象，所以需要执行完才能释放，下一个线程才能继续执行并锁定对象</p>
+<blockquote>
+<p>运行结果</p>
+</blockquote>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><code class="hljs log">sync1 0<br>sync1 1<br>sync1 2<br>sync1 3<br>sync1 4<br>sync2 5<br>sync2 6<br>sync2 7<br>sync2 8<br>sync2 9<br></code></pre></td></tr></table></figure>
+<h1 id="修饰对象"><a href="#修饰对象" class="headerlink" title="修饰对象"></a>修饰对象</h1><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> main(String[] args) &#123;<br>       Thread thread1 = new Thread(new SyncThread(), "sync1");<br>       Thread thread2 = new Thread(new SyncThread(), "sync2");<br>       thread1.start();<br>       thread2.start();<br>   &#125;<br></code></pre></td></tr></table></figure>
+<p>这时创建了两个SyncThread对象，线程1执行对象1中的同步代码，线程2执行的是对象2的代码，这时两把锁分别锁定SyncThread1和SyncThread2对象，两把锁互不干扰也不互斥，所以同时执行。</p>
+<blockquote>
+<p>运行结果</p>
+</blockquote>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><code class="hljs log">sync1 0<br>sync2 1<br>sync1 2<br>sync2 3<br>sync1 4<br>sync2 5<br>sync1 6<br>sync2 7<br>sync1 8<br>sync2 9<br></code></pre></td></tr></table></figure>
+<p>问题1 ：不能同步</p>
+<ul>
+<li>a1.a()锁是a1 a2.b()锁是a2 不是同一把锁 所以不同步<br>问题2：能同步</li>
+<li>锁都为A.class对象，是统一把锁</li>
+</ul>
+
+            </div>
+            <hr>
+            <div>
+              <div class="post-metas mb-3">
+                
+                
+                  <div class="post-meta">
+                    <i class="iconfont icon-tags"></i>
+                    
+                      <a class="hover-with-bg" href="/tags/Java/">Java</a>
+                    
+                  </div>
+                
+              </div>
+              
+                <p class="note note-warning">本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-sa/4.0/deed.zh" rel="nofollow noopener">CC BY-SA 4.0 协议</a> ，转载请注明出处！</p>
+              
+              
+                <div class="post-prevnext">
+                  <article class="post-prev col-6">
+                    
+                    
+                      <a href="/2018/12/18/JVM相关及其拓展-六/">
+                        <i class="iconfont icon-arrowleft"></i>
+                        <span class="hidden-mobile">JVM相关及其拓展(六) -- Java与线程</span>
+                        <span class="visible-mobile">上一篇</span>
+                      </a>
+                    
+                  </article>
+                  <article class="post-next col-6">
+                    
+                    
+                      <a href="/2018/12/18/Atomic原子操作类分析/">
+                        <span class="hidden-mobile">CAS操作&Atomic原子操作类分析</span>
+                        <span class="visible-mobile">下一篇</span>
+                        <i class="iconfont icon-arrowright"></i>
+                      </a>
+                    
+                  </article>
+                </div>
+              
+            </div>
+
+            
+          </article>
+        </div>
+      </div>
+    </div>
+    
+      <div class="d-none d-lg-block col-lg-2 toc-container" id="toc-ctn">
+        <div id="toc">
+  <p class="toc-header"><i class="iconfont icon-list"></i>&nbsp;目录</p>
+  <div class="toc-body" id="toc-body"></div>
+</div>
+
+      </div>
+    
+  </div>
+</div>
+
+<!-- Custom -->
+
+
+    
+
+    
+      <a id="scroll-top-button" href="#" role="button">
+        <i class="iconfont icon-arrowup" aria-hidden="true"></i>
+      </a>
+    
+
+    
+      <div class="modal fade" id="modalSearch" tabindex="-1" role="dialog" aria-labelledby="ModalLabel"
+     aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header text-center">
+        <h4 class="modal-title w-100 font-weight-bold">搜索</h4>
+        <button type="button" id="local-search-close" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body mx-3">
+        <div class="md-form mb-5">
+          <input type="text" id="local-search-input" class="form-control validate">
+          <label data-error="x" data-success="v"
+                 for="local-search-input">关键词</label>
+        </div>
+        <div class="list-group" id="local-search-result"></div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+
+    
+  </main>
+
+  <footer class="text-center mt-5 py-3">
+  <div class="footer-content">
+     <a href="https://hexo.io" target="_blank" rel="nofollow noopener"><span>Hexo</span></a> <i class="iconfont icon-love"></i> <a href="https://github.com/fluid-dev/hexo-theme-fluid" target="_blank" rel="nofollow noopener"><span>Fluid</span></a> 
+  </div>
+  
+
+  
+
+  
+</footer>
+
+<!-- SCRIPTS -->
+
+  <script  src="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.js" ></script>
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.css" />
+
+  <script>
+    NProgress.configure({"showSpinner":false,"trickleSpeed":100})
+    NProgress.start()
+    window.addEventListener('load', function() {
+      NProgress.done();
+    })
+  </script>
+
+
+<script  src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" ></script>
+<script  src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.min.js" ></script>
+<script  src="/js/debouncer.js" ></script>
+<script  src="/js/events.js" ></script>
+<script  src="/js/plugins.js" ></script>
+
+<!-- Plugins -->
+
+
+  
+    <script  src="/js/lazyload.js" ></script>
+  
+
+
+
+  
+
+
+
+  <script  src="https://cdn.jsdelivr.net/npm/tocbot@4.12.0/dist/tocbot.min.js" ></script>
+
+
+
+  <script  src="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.js" ></script>
+
+
+
+  <script  src="https://cdn.jsdelivr.net/npm/anchor-js@4.3.0/anchor.min.js" ></script>
+
+
+
+  <script defer src="https://cdn.jsdelivr.net/npm/clipboard@2.0.6/dist/clipboard.min.js" ></script>
+
+
+
+
+
+
+
+
+  <script  src="/js/local-search.js" ></script>
+  <script>
+    (function () {
+      var path = "/local-search.xml";
+      var inputArea = document.querySelector("#local-search-input");
+      inputArea.onclick = function () {
+        searchFunc(path, 'local-search-input', 'local-search-result');
+        this.onclick = null
+      }
+    })()
+  </script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- 主题的启动项 保持在最底部 -->
+<script  src="/js/boot.js" ></script>
+
+
+
+</body>
+</html>

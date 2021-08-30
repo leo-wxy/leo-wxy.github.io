@@ -1,0 +1,706 @@
+
+
+<!DOCTYPE html>
+<html lang="zh-CN" data-default-color-scheme=&#34;auto&#34;>
+
+
+
+<head><meta name="generator" content="Hexo 3.9.0">
+  <meta charset="UTF-8">
+  <link rel="apple-touch-icon" sizes="76x76" href="/img/favicon.png">
+  <link rel="icon" type="image/png" href="/img/favicon.png">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  
+  <meta name="theme-color" content="#11527b">
+  <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
+  <meta name="author" content="Leo-Wxy">
+  <meta name="keywords" content="">
+  <title>JVM相关及其拓展(七) — 线程安全与锁优化 - Wxy的个人博客</title>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css">
+
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@4.0.0/github-markdown.min.css">
+  <link rel="stylesheet" href="/lib/hint/hint.min.css">
+
+  
+    
+    
+      
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@10.4.0/styles/atom-one-light.min.css">
+    
+  
+
+  
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.css">
+  
+
+
+
+<!-- 主题依赖的图标库，不要自行修改 -->
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1749284_ba1fz6golrf.css">
+
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1736178_kmeydafke9r.css">
+
+<link rel="stylesheet" href="/css/main.css">
+
+<!-- 自定义样式保持在最底部 -->
+
+
+  <script id="fluid-configs">
+    var Fluid = window.Fluid || {};
+    var CONFIG = {"hostname":"leo-wxy.github.io","root":"/","version":"1.8.7","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"copy_btn":true,"image_zoom":{"enable":true},"toc":{"enable":true,"headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"onlypost":false},"web_analytics":{"enable":false,"baidu":null,"google":null,"gtag":null,"tencent":{"sid":null,"cid":null},"woyaola":null,"cnzz":null,"leancloud":{"app_id":null,"app_key":null,"server_url":null}}};
+  </script>
+  <script src="/js/utils.js"></script>
+  <script src="/js/color-schema.js"></script>
+</head>
+
+
+<body>
+  <header style="height: 30vh;">
+    <nav id="navbar" class="navbar fixed-top  navbar-expand-lg navbar-dark scrolling-navbar">
+  <div class="container">
+    <a class="navbar-brand"
+       href="/">&nbsp;<strong>Wxy's Blog</strong>&nbsp;</a>
+
+    <button id="navbar-toggler-btn" class="navbar-toggler" type="button" data-toggle="collapse"
+            data-target="#navbarSupportedContent"
+            aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+      <div class="animated-icon"><span></span><span></span><span></span></div>
+    </button>
+
+    <!-- Collapsible content -->
+    <div class="collapse navbar-collapse" id="navbarSupportedContent">
+      <ul class="navbar-nav ml-auto text-center">
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/">
+                <i class="iconfont icon-home-fill"></i>
+                首页
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/archives/">
+                <i class="iconfont icon-archive-fill"></i>
+                归档
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/tags/">
+                <i class="iconfont icon-tags-fill"></i>
+                标签
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/about/">
+                <i class="iconfont icon-user-fill"></i>
+                关于
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/links/">
+                <i class="iconfont icon-link-fill"></i>
+                友链
+              </a>
+            </li>
+          
+        
+        
+          <li class="nav-item" id="search-btn">
+            <a class="nav-link" data-toggle="modal" data-target="#modalSearch">&nbsp;<i
+                class="iconfont icon-search"></i>&nbsp;</a>
+          </li>
+        
+        
+          <li class="nav-item" id="color-toggle-btn">
+            <a class="nav-link" href="javascript:">&nbsp;<i
+                class="iconfont icon-dark" id="color-toggle-icon"></i>&nbsp;</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    <div class="banner" id="banner" parallax=true
+         style="background: url('/img/default.png') no-repeat center center;
+           background-size: cover;">
+      <div class="full-bg-img">
+        <div class="mask flex-center" style="background-color: rgba(0, 0, 0, 0.3)">
+          <div class="page-header text-center fade-in-up">
+            <span class="h2" id="subtitle" title="JVM相关及其拓展(七) — 线程安全与锁优化">
+              
+                JVM相关及其拓展(七) — 线程安全与锁优化
+              
+            </span>
+
+            
+              <div class="mt-3">
+  
+  
+    <span class="post-meta">
+      <i class="iconfont icon-date-fill" aria-hidden="true"></i>
+      <time datetime="2018-12-19 12:15" pubdate>
+        2018年12月19日 中午
+      </time>
+    </span>
+  
+</div>
+
+<div class="mt-1">
+  
+    
+    <span class="post-meta mr-2">
+      <i class="iconfont icon-chart"></i>
+      4.3k 字
+    </span>
+  
+
+  
+    
+    <span class="post-meta mr-2">
+      <i class="iconfont icon-clock-fill"></i>
+      
+      
+      44
+       分钟
+    </span>
+  
+
+  
+  
+</div>
+
+            
+          </div>
+
+          
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    
+      
+
+<div class="container-fluid nopadding-x">
+  <div class="row nomargin-x">
+    <div class="d-none d-lg-block col-lg-2"></div>
+    <div class="col-lg-8 nopadding-x-md">
+      <div class="container nopadding-x-md" id="board-ctn">
+        <div class="py-5" id="board">
+          <article class="post-content mx-auto">
+            <!-- SEO header -->
+            <h1 style="display: none">JVM相关及其拓展(七) — 线程安全与锁优化</h1>
+            
+            <div class="markdown-body">
+              <h1 id="线程安全与锁优化"><a href="#线程安全与锁优化" class="headerlink" title="线程安全与锁优化"></a>线程安全与锁优化</h1><blockquote>
+<p>首先需要并发的正确性，然后在此基础上实现高效。</p>
+</blockquote>
+<h2 id="线程安全"><a href="#线程安全" class="headerlink" title="线程安全"></a>线程安全</h2><blockquote>
+<p>当多个线程访问一个对象时，如果不用考虑这些线程在运行时环境下的调度和交替执行，也不需要进行额外的同步，或者调用方法进行任何其他的协调操作，调用这个对象的行为都可以获得正确的结果，那这个对象就是线程安全的。</p>
+</blockquote>
+<p>线程安全的代码必须具备一个特征：<strong>代码本身封装了所有必要的正确保障性手段，令调用者无需关心多线程的问题，更无须自己采取任何措施来保证多线程的正确调用。</strong></p>
+<p>线程安全的“安全程度”由强至弱分为以下5类：</p>
+<ul>
+<li><h3 id="不可变"><a href="#不可变" class="headerlink" title="不可变"></a>不可变</h3><blockquote>
+<p>只要一个不可变的对象被正确的构建出来，那其外部的可见状态永远不会改变</p>
+<p><code>不发生 this引用逃逸 情况下成立 -- 在构造函数返回之前，其他线程已经取得了该对象的引用。</code></p>
+</blockquote>
+<p>实现方案：</p>
+<ul>
+<li>如果共享数据是一个<code>基本数据类型</code>，只要在定义时用<code>final</code>修饰</li>
+<li>如果共享数据是一个<code>对象</code>，最简单的就是 吧对象中带有状态的变量都声明为final</li>
+</ul>
+<p>符合不可变要求的类型：<code>String、枚举类(Enum)、Long，Double以及BigInteger等大数据类型</code></p>
+</li>
+<li><h3 id="绝对线程安全"><a href="#绝对线程安全" class="headerlink" title="绝对线程安全"></a>绝对线程安全</h3><blockquote>
+<p>完全满足线程安全的定义，即达到”不管运行环境如何，调用者都不需要任何额外的同步措施。”</p>
+</blockquote>
+</li>
+<li><h3 id="相对线程安全"><a href="#相对线程安全" class="headerlink" title="相对线程安全"></a>相对线程安全</h3><blockquote>
+<p>保证对这个对象单独的操作是线程安全的，调用时不需做额外的保障措施，但是对于一些特定顺序的连续调用，就需要在调用端使用额外的同步手段保证调用的正确性。</p>
+</blockquote>
+<p>大部分的线程安全类都属于这种类型，例如<code>Vector,HashTable,synchronizedCollection()</code></p>
+</li>
+<li><h3 id="线程兼容"><a href="#线程兼容" class="headerlink" title="线程兼容"></a>线程兼容</h3><blockquote>
+<p>对象本身并非线程安全，但是可以通过在调用端正确地使用同步手段来保证对象在并发环境中可以安全的使用。</p>
+</blockquote>
+<p>例如<code>ArrayList,HashMap</code></p>
+</li>
+<li><h3 id="线程对立"><a href="#线程对立" class="headerlink" title="线程对立"></a>线程对立</h3><blockquote>
+<p>无论调用端是否采取了同步措施，都无法在多线程环境中并发使用。<strong>应当尽量避免</strong></p>
+</blockquote>
+<p>例如<code>Thread中的suspend()和resume()</code>。</p>
+</li>
+</ul>
+<h2 id="线程安全的实现方法"><a href="#线程安全的实现方法" class="headerlink" title="线程安全的实现方法"></a>线程安全的实现方法</h2><blockquote>
+<p>①通过代码实现线程安全 ②通过虚拟机本身实现同步与锁</p>
+</blockquote>
+<h3 id="互斥同步-阻塞同步"><a href="#互斥同步-阻塞同步" class="headerlink" title="互斥同步 (阻塞同步)"></a>互斥同步 (阻塞同步)</h3><blockquote>
+<p><strong>同步</strong>：在多个线程并发访问共享数据时，保证共享数据在同一个时刻只能被一个线程使用。</p>
+<p><strong>互斥</strong>：实现同步的一种手段，<code>临界区、互斥量和信号量都是主要的互斥实现方法</code></p>
+</blockquote>
+<p><strong>互斥是因，同步是果；互斥是方法，同步是目的</strong></p>
+<p><strong>互斥同步属于一种悲观的并发策略，总是认为只要不去做正确的同步措施（例如加锁），就会出现问题，无论共享数据是否真的会出现数据竞争，都要进行加锁。</strong></p>
+<p>实现手段：</p>
+<ul>
+<li><p><strong>synchronized</strong></p>
+
+</li>
+<li><p><strong>ReentrantLock</strong></p>
+
+</li>
+</ul>
+<p><code>synchronized</code>和<code>ReentrantLock</code>的异同：</p>
+<ul>
+<li><p>两者都是<strong>可重入锁</strong>  <!--自己实现一个可重入锁--></p>
+<blockquote>
+<p><strong>可重入锁</strong>：当一个线程得到一个对象锁后，再次请求该对象锁时是可以再次得到该对象锁的。<strong>自己可以再次获得自己的内部锁。</strong></p>
+</blockquote>
+</li>
+<li><p><code>synchronized</code>依赖于JVM而<code>ReentrantLock</code>依赖于API</p>
+<p><code>synchronized</code>底层用<strong>Mutex(互斥量)</strong>实现，<code>ReentrantLock</code>继承自<code>Lock接口</code>,Lock接口又依赖于AQS实现</p>
+</li>
+<li><p><code>synchronized</code>的锁状态无法在代码中判断，<code>ReentrantLock</code>通过<code>isLocked()</code>判断</p>
+</li>
+<li><p><code>synchronized</code>非公平锁，另一个可以是公平也可以是非公平的</p>
+</li>
+<li><p><code>synchronized</code>不可被中断，另一个调用<code>lockInterrupbity()</code>即可中断</p>
+</li>
+<li><p><code>ReentrantLock</code>可以提高多个线程的读操作的效率</p>
+</li>
+</ul>
+<h3 id="非阻塞同步"><a href="#非阻塞同步" class="headerlink" title="非阻塞同步"></a>非阻塞同步</h3><blockquote>
+<p>基于冲突检测的乐观并发策略，即先进行操作，若无其他线程争用共享数据，操作成功；反之，产生了冲突再去采用其他的补偿措施（<strong>最常见自旋——不停重试，直到成功为止</strong>）。</p>
+</blockquote>
+<p>为了保证<strong>操作和冲突检测</strong>具备原子性，需要用到硬件指令集，比如：</p>
+<ul>
+<li>测试并设置</li>
+<li>获取并增加</li>
+<li>交换</li>
+<li><strong><em>比较并交换(CAS)</em></strong></li>
+<li>加载链接/条件存储</li>
+</ul>
+<a href="/2018/12/18/Atomic原子操作类分析/" title="CAS操作&Atomic原子操作类分析">CAS操作&Atomic原子操作类分析</a>
+<h3 id="无同步方案"><a href="#无同步方案" class="headerlink" title="无同步方案"></a>无同步方案</h3><blockquote>
+<p>不用同步的方式保证线程安全，因为有些天生就是安全的。</p>
+</blockquote>
+<p>有以下两类：</p>
+<ul>
+<li><h4 id="可重入代码-纯代码-Reentrant-Code-Pure-Code"><a href="#可重入代码-纯代码-Reentrant-Code-Pure-Code" class="headerlink" title="可重入代码/纯代码(Reentrant Code/Pure Code)"></a>可重入代码/纯代码(Reentrant Code/Pure Code)</h4><blockquote>
+<p>在代码执行的时候在任何时刻去中断，再去执行另外的代码，在控制权返回后，原来的程序不会出现任何的错误。</p>
+</blockquote>
+<p><strong>可重入性是它的基本特征，满足可重入性的代码一定是线程安全的，反之，满足线程安全的代码不一定是可重入的。</strong></p>
+<p>共同特征：不依赖存储在堆上的数据和公用的系统资源、用到的状态栏都由参数中传入、不调用非可重入的方法等</p>
+<p>判定依据：<strong>返回结果是可预测的，只要是输入了相同的数据就能返回相同的结果，就满足可重入性的要求。</strong></p>
+</li>
+<li><h4 id="线程本地存储-Thread-Local-Storage"><a href="#线程本地存储-Thread-Local-Storage" class="headerlink" title="线程本地存储(Thread Local Storage)"></a>线程本地存储(Thread Local Storage)</h4><blockquote>
+<p>把共享数据的可见范围限制在同一个进程之内，无须同步也可以保证线程之间不出现数据争用的情况。</p>
+</blockquote>
+<p>使用<code>ThreadLocal</code>类可实现本地存储的功能。</p>
+</li>
+</ul>
+<h2 id="锁优化"><a href="#锁优化" class="headerlink" title="锁优化"></a>锁优化</h2><blockquote>
+<p>锁优化是为了在线程之间更高效的共享数据，以及解决竞争性问题。</p>
+<p>锁的状态共分为4种：<strong>无锁状态、偏向锁、轻量级锁和重量级锁</strong>。锁随着竞争情况可以升级，<strong>但升级后不能降级</strong>。</p>
+<p><code>无锁状态-&gt;偏向锁-&gt;轻量级锁-&gt;重量级锁</code></p>
+</blockquote>
+<h3 id="1-自旋锁与适应性自旋"><a href="#1-自旋锁与适应性自旋" class="headerlink" title="1. 自旋锁与适应性自旋"></a>1. 自旋锁与适应性自旋</h3><p>互斥同步对性能最大的影响就是阻塞的实现，挂起线程和恢复线程的操作都需要转入内核态中完成，影响系统的并发性能。同时，共享数据的锁定状态只会持续很短的一段时间，不值得去挂起和恢复线程。</p>
+<p><strong>自旋锁</strong>：若物理机器有一个以上的处理器，能使多个线程同时并行执行，让后面的请求锁线程(通过自旋——<strong>CPU忙循环执行空指令</strong>)等待，但不放弃处理器的执行时间，看看持有锁的线程是否很快释放锁。</p>
+<p><code>自旋等待不能代替阻塞，虽然避开了线程切换的开销，但要占用处理器时间，因此自旋等待必须有一定的上限，若超过了次数没有成功，就需要去挂起线程。</code></p>
+<p><strong>自适应自旋锁</strong>：自旋时间不固定，由该锁上次的自旋时间及锁的拥有者状态决定。</p>
+<ul>
+<li>对于某个锁，自旋等待刚刚成功获得锁，并且持有锁的线程正在运行中，JVM就会认为这次自旋也会再次成功获得锁，进而允许等待持续相对更长的时间</li>
+<li>对于某个所，自选很少成功获得锁，以后再获取这个锁时可能忽略自旋过程，以避免浪费处理器资源。</li>
+</ul>
+<h3 id="2-锁消除"><a href="#2-锁消除" class="headerlink" title="2. 锁消除"></a>2. 锁消除</h3><blockquote>
+<p>JVM即时编译器在运行时，对一些代码上要求同步，但是被检测到不可能存在共享数据竞争的锁进行消除。</p>
+</blockquote>
+<p>判断在一段代码中，堆上的所有数据都不会逃逸出去从而被其他线程访问到，那就可以把它们当做栈上数据对待，认为他们是线程私有的，同步加锁操作自然就无须进行。</p>
+<p>例如<code>StringBuffer</code>对象的连续<code>append()</code></p>
+<h3 id="3-锁粗化"><a href="#3-锁粗化" class="headerlink" title="3. 锁粗化"></a>3. 锁粗化</h3><blockquote>
+<p>JVM探测到一串零碎的操作都对同一对象进行加锁，将会把加锁同步的范围扩展（<strong>粗化</strong>）到整个操作序列的外代码</p>
+</blockquote>
+<h3 id="4-轻量级锁"><a href="#4-轻量级锁" class="headerlink" title="4. 轻量级锁"></a>4. 轻量级锁</h3><blockquote>
+<p>在没有多线程竞争的前提下，减少传统的重量级锁使用操作系统互斥量产生的性能消耗。<strong>轻量级锁并不是用来代替重量级锁的</strong></p>
+</blockquote>
+<p>必须先了解 HotSpot虚拟机的对象(<strong>对象头部分</strong>)的内存布局：分为两部分</p>
+<ul>
+<li><strong><em>Mark Word</em></strong>：存储自身的运行时数据，如：<code>HashCode、GC分代年龄和锁信息</code>，这部分数据的长度在32和64位中的JVM中分别为32bit和64bit。<strong>它是实现轻量级锁和偏向锁的关键。</strong></li>
+<li>存储指向方法区对象类型数据的指针，如果是数组对象的话，额外会存储数据的长度。</li>
+</ul>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/MarkWord.png" srcset="/img/loading.gif" class="full-image" alt="Mark Word" title="Mark Word"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<blockquote>
+<p>加锁过程</p>
+</blockquote>
+<p>代码进入同步块时，如果同步对象未锁定(标记位为<code>01</code>)，虚拟机会在当前线程的栈帧中建立一个<code>锁记录(Lock Record)</code>的空间，用于存储对象目前的<code>Mark Word</code>拷贝（<strong>Displaced Mark Word</strong>）。</p>
+<p>然后虚拟机将使用CAS操作尝试将对象的Mark Word更新为指向Lock Record的指针。</p>
+<ul>
+<li>更新成功，那么当前线程拥有了该对象的锁，且对象Mark Word的锁标志位为<code>00</code> ，处于轻量级锁定状态。</li>
+<li>更新失败，JVM首先会检查对象的Mark Word是否指向当前线程的栈帧<ul>
+<li>已指向表明当前线程已经拥有了这个对象的锁，可以直接进入同步块继续执行</li>
+<li>没指向表明该对象已被其他线程抢占。</li>
+</ul>
+</li>
+</ul>
+<p><strong>如果有两条以上的线程竞争同一个锁，轻量级锁就无法使用，需要膨胀为重量级锁，Mark Word的锁标志位变为<code>10</code>,存储的是指向重量级的指针，后面等待锁的也会进入阻塞状态。</strong></p>
+<blockquote>
+<p>解锁过程</p>
+</blockquote>
+<p>若对象的Mark Word仍然指向线程的Lock Record，那就用CAS操作把对象当前的Mark Word和Displaced Mark Word替换回来</p>
+<ul>
+<li>替换成功，就完成了整个同步过程</li>
+<li>替换失败，说明有其他线程尝试获取锁，就要在释放锁的同时，唤醒被挂起的线程</li>
+</ul>
+<blockquote>
+<p><code>栈帧</code>：用于支持虚拟西进行方法调用和方法执行的数据结构。栈帧存储了方法的局部变量表，操作数栈，动态链接和方法返回地址信息。第一个方法从调用开始到执行完成，就是一个栈帧从入栈到出栈的过程。</p>
+</blockquote>
+<h3 id="5-偏向锁"><a href="#5-偏向锁" class="headerlink" title="5. 偏向锁"></a>5. 偏向锁</h3><blockquote>
+<p>消除数据在无竞争情况下的同步原语，进一步提高程序的运行性能。<strong>提高一个对象在很长一段时间内都只被一个线程用做锁对象场景下的性能。</strong></p>
+<p><em>偏向锁可以提高带有同步但无竞争的程序性能。</em></p>
+</blockquote>
+<p>这个锁会偏向于第一个获得它的线程，如果后续该锁没有被其他线程获取，则持有偏向锁的线程将永远不会进行同步。</p>
+<blockquote>
+<p>加锁过程</p>
+</blockquote>
+<p>JVM启用了<code>偏向锁</code>模式，当锁对象第一次被线程获取的时候，JVM会把锁标记位置为<code>01</code>,即偏向模式。使用CAS操作记录锁的线程ID到Mark Word中。</p>
+<ul>
+<li>CAS操作成功。持有偏向锁的线程在每次进入和退出同步块是，只要比较一下Mark Word存储的线程ID是否相同。<ul>
+<li>相同代表线程已经获得了锁，不需要再用CAS操作加锁和解锁</li>
+<li>不同，就需要CAS操作竞争锁，竞争成功，替换Mark Word中的ThreadID为当前竞争线程的ID</li>
+</ul>
+</li>
+</ul>
+<blockquote>
+<p>解锁过程</p>
+</blockquote>
+<p>当有另一个线程去尝试获取偏向锁时，CAS替换ThreadID失败，就要撤销偏向锁。(撤销偏向锁，需要等待原持有偏向锁的线程到达全局安全点<code>所有线程都是暂停的，没有字节码正在执行</code>，暂停线程，并检查状态)。判断原持有偏向锁的线程是否处于活动状态</p>
+<ul>
+<li>无活动则置为无锁状态(锁标志为<code>01</code>，是否偏向锁状态<code>0</code>)</li>
+<li>还处于活动状态，则升级为轻量锁(标志位为<code>00</code>)</li>
+</ul>
+<blockquote>
+<p>关闭偏向锁模式</p>
+</blockquote>
+<p>使用JVM参数 <code>-XX:BlasedLockingStartupDelay=0</code>可以关闭延迟，因为偏向锁需要应用启动后过几秒激活</p>
+<p><code>-XX:UseBlasedLocking=false</code>关闭偏向锁</p>
+<p>三种锁的升级</p>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/lock-upgrade.png" srcset="/img/loading.gif" class="full-image" alt="锁的升级，锁的升级"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<p>三种锁的比较</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:center">锁</th>
+<th>优点</th>
+<th>缺点</th>
+<th style="text-align:center">适用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center">偏向锁</td>
+<td>加锁和解锁不需要额外的消耗，与执行非同步方法相比仅存在纳秒级的差距</td>
+<td>线程间存在锁竞争，需要带来额外锁撤销的消耗</td>
+<td style="text-align:center">只有一个线程访问同步块场景</td>
+</tr>
+<tr>
+<td style="text-align:center">轻量级锁</td>
+<td>竞争的线程不会阻塞，提高程序的相应速度</td>
+<td>始终得不到锁竞争的线程，会使用自旋消耗CPU资源</td>
+<td style="text-align:center">追求相应时间，同步块执行速度非常快</td>
+</tr>
+<tr>
+<td style="text-align:center">重量级锁</td>
+<td>线程竞争不使用自旋，不会消耗CPU</td>
+<td>线程阻塞，响应时间缓慢</td>
+<td style="text-align:center">追求吞吐量，同步块执行时间较长</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>重量级锁</strong>：本质上是依赖操作系统的<code>Mutex Lock</code>互斥量来实现同步操作。由于线程间的切换需要从用户态转向核心态，转换成本较高，耗时相对较长。</p>
+</blockquote>
+<p><em>一个线程如何判断自己是否取得锁？</em></p>
+<blockquote>
+<p>线程在获取锁之前会判断对象的<code>Mark Word</code>中是否存放自己的<code>threadId</code>，存放且相同则重入；不同，则使用CAS进行切换，锁升级为<code>轻量级锁</code>，释放偏向锁，清空<code>Mark Word</code>，线程开始竞争，竞争成功的就存入自己的<code>ThreadId</code>，失败的开始自旋。</p>
+<p>调用<code>Thread.holdsLock()</code></p>
+</blockquote>
+<h2 id="其他锁类型及其概念"><a href="#其他锁类型及其概念" class="headerlink" title="其他锁类型及其概念"></a>其他锁类型及其概念</h2><h3 id="1-乐观锁"><a href="#1-乐观锁" class="headerlink" title="1.乐观锁"></a>1.乐观锁</h3><blockquote>
+<p>由于在进程挂起和恢复执行过程中需要很大的开销进行切换。所以有了乐观锁概念。</p>
+<p>每次去拿数据的时候都认为别人不会修改，但在更新的时候会去判断在此期间是否数据发生修改，没有被修改则进行数据更新。如果因为修改过产生冲突就失败就重试到成功为止(<strong>自旋</strong>)。</p>
+</blockquote>
+<p>实例：例如<code>Atomic原子类</code></p>
+<p>使用场景：适合读取操作比较频繁的场景</p>
+<h3 id="2-悲观锁"><a href="#2-悲观锁" class="headerlink" title="2.悲观锁"></a>2.悲观锁</h3><blockquote>
+<p>每次获取数据的时候，担心数据被修改，所以每次都要加锁，确保操作过程中数据不会发生改变，操作完成后再解锁让其他线程操作。</p>
+<p>在某个资源不可用的时候，就将CPU让出，把当前等待的线程切换为阻塞状态。等到资源可用，将阻塞线程唤醒，进入Runnable状态等待CPU调度。</p>
+</blockquote>
+<p>实例：例如<code>synchronized</code> </p>
+<p>使用场景：比较适合写入操作频繁的场景</p>
+<h3 id="3-互斥锁"><a href="#3-互斥锁" class="headerlink" title="3.互斥锁"></a>3.互斥锁</h3><blockquote>
+<p>通过<code>排他性</code>，同时只允许一个访问者对其进行访问来保证资源的有效同步，但无法限制线程对该资源的访问顺序</p>
+</blockquote>
+<h3 id="4-死锁"><a href="#4-死锁" class="headerlink" title="4.死锁"></a>4.<strong>死锁</strong></h3><blockquote>
+<p>两个或两个以上的进程在执行过程中，由于竞争资源或者由于彼此通信而造成的一种阻塞现象，若无外力作用，他们都将无法推进下去。</p>
+</blockquote>
+<p>死锁形成必须要求四个条件：</p>
+<ul>
+<li><p><strong>互斥条件</strong>：一个资源每次只能被一个线程使用</p>
+</li>
+<li><p><strong>请求与保持条件</strong>：一个线程引请求资源而阻塞时，对已获得的资源保持不放</p>
+</li>
+<li><strong>不剥夺条件</strong>：线程已获得的资源，在未使用完之前，不能强行剥夺</li>
+<li><strong>循环等待条件</strong>：若干进程之间形成一种头尾相接的循环等待资源关系</li>
+</ul>
+<p>常见死锁类型：</p>
+<ul>
+<li><p><strong>静态的锁顺序死锁</strong> <code>所有需要多个锁的线程，都要以相同的顺序获得锁</code></p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><code class="hljs java">class DeadLockTest&#123;<br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> Object lockA = new Object();<br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> Object lockB = new Object();<br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> a()&#123;<br>        <span class="hljs-keyword">synchronized</span>(lockA)&#123;<br>            <span class="hljs-keyword">synchronized</span>(lockB)&#123;<br>                System.out.println("func A")<br>            &#125;<br>        &#125;<br>    &#125;<br>    <br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> b()&#123;<br>        <span class="hljs-keyword">synchronized</span>(lockB)&#123;<br>            <span class="hljs-keyword">synchronized</span>(lockA)&#123;<br>                System.out.println("func b")<br>            &#125;<br>        &#125;<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+</li>
+<li><p><strong>动态的锁顺序死锁</strong> <code>自定义锁的顺序，确保所有线程以相同的顺序获得锁</code></p>
+</li>
+<li><p><strong>协作对象之间发生的死锁</strong> <code>避免在持有锁的情况下调用外部的方法</code></p>
+</li>
+</ul>
+<p>死锁预防：</p>
+<ul>
+<li><p>以确定的顺序获得锁</p>
+<p>将所有的锁都按照特定顺序进行获取，防止死锁发生。</p>
+<blockquote>
+<p><strong>银行家算法</strong>：允许进程动态的申请资源，但在系统进行资源分配之前，先计算此次资源分配的安全性，若分配不会导致进入不安全状态，则分配；否则等待。</p>
+</blockquote>
+</li>
+<li><p>超时放弃</p>
+<blockquote>
+<p>例如<code>synchronized</code>只要线程没有获得锁，就会永远等待下去，<code>Lock</code>提供了<code>tryLock()</code>可以实现超时放弃</p>
+</blockquote>
+</li>
+</ul>
+
+            </div>
+            <hr>
+            <div>
+              <div class="post-metas mb-3">
+                
+                
+                  <div class="post-meta">
+                    <i class="iconfont icon-tags"></i>
+                    
+                      <a class="hover-with-bg" href="/tags/JVM/">JVM</a>
+                    
+                  </div>
+                
+              </div>
+              
+                <p class="note note-warning">本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-sa/4.0/deed.zh" rel="nofollow noopener">CC BY-SA 4.0 协议</a> ，转载请注明出处！</p>
+              
+              
+                <div class="post-prevnext">
+                  <article class="post-prev col-6">
+                    
+                    
+                      <a href="/2018/12/19/Java-ReentrantLock原理及解析/">
+                        <i class="iconfont icon-arrowleft"></i>
+                        <span class="hidden-mobile">Java-ReentrantLock原理及解析</span>
+                        <span class="visible-mobile">上一篇</span>
+                      </a>
+                    
+                  </article>
+                  <article class="post-next col-6">
+                    
+                    
+                      <a href="/2018/12/19/Java-多线程基础/">
+                        <span class="hidden-mobile">Java多线程基础</span>
+                        <span class="visible-mobile">下一篇</span>
+                        <i class="iconfont icon-arrowright"></i>
+                      </a>
+                    
+                  </article>
+                </div>
+              
+            </div>
+
+            
+          </article>
+        </div>
+      </div>
+    </div>
+    
+      <div class="d-none d-lg-block col-lg-2 toc-container" id="toc-ctn">
+        <div id="toc">
+  <p class="toc-header"><i class="iconfont icon-list"></i>&nbsp;目录</p>
+  <div class="toc-body" id="toc-body"></div>
+</div>
+
+      </div>
+    
+  </div>
+</div>
+
+<!-- Custom -->
+
+
+    
+
+    
+      <a id="scroll-top-button" href="#" role="button">
+        <i class="iconfont icon-arrowup" aria-hidden="true"></i>
+      </a>
+    
+
+    
+      <div class="modal fade" id="modalSearch" tabindex="-1" role="dialog" aria-labelledby="ModalLabel"
+     aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header text-center">
+        <h4 class="modal-title w-100 font-weight-bold">搜索</h4>
+        <button type="button" id="local-search-close" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body mx-3">
+        <div class="md-form mb-5">
+          <input type="text" id="local-search-input" class="form-control validate">
+          <label data-error="x" data-success="v"
+                 for="local-search-input">关键词</label>
+        </div>
+        <div class="list-group" id="local-search-result"></div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+
+    
+  </main>
+
+  <footer class="text-center mt-5 py-3">
+  <div class="footer-content">
+     <a href="https://hexo.io" target="_blank" rel="nofollow noopener"><span>Hexo</span></a> <i class="iconfont icon-love"></i> <a href="https://github.com/fluid-dev/hexo-theme-fluid" target="_blank" rel="nofollow noopener"><span>Fluid</span></a> 
+  </div>
+  
+
+  
+
+  
+</footer>
+
+<!-- SCRIPTS -->
+
+  <script  src="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.js" ></script>
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.css" />
+
+  <script>
+    NProgress.configure({"showSpinner":false,"trickleSpeed":100})
+    NProgress.start()
+    window.addEventListener('load', function() {
+      NProgress.done();
+    })
+  </script>
+
+
+<script  src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" ></script>
+<script  src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.min.js" ></script>
+<script  src="/js/debouncer.js" ></script>
+<script  src="/js/events.js" ></script>
+<script  src="/js/plugins.js" ></script>
+
+<!-- Plugins -->
+
+
+  
+    <script  src="/js/lazyload.js" ></script>
+  
+
+
+
+  
+
+
+
+  <script  src="https://cdn.jsdelivr.net/npm/tocbot@4.12.0/dist/tocbot.min.js" ></script>
+
+
+
+  <script  src="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.js" ></script>
+
+
+
+  <script  src="https://cdn.jsdelivr.net/npm/anchor-js@4.3.0/anchor.min.js" ></script>
+
+
+
+  <script defer src="https://cdn.jsdelivr.net/npm/clipboard@2.0.6/dist/clipboard.min.js" ></script>
+
+
+
+
+
+
+
+
+  <script  src="/js/local-search.js" ></script>
+  <script>
+    (function () {
+      var path = "/local-search.xml";
+      var inputArea = document.querySelector("#local-search-input");
+      inputArea.onclick = function () {
+        searchFunc(path, 'local-search-input', 'local-search-result');
+        this.onclick = null
+      }
+    })()
+  </script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- 主题的启动项 保持在最底部 -->
+<script  src="/js/boot.js" ></script>
+
+
+
+</body>
+</html>

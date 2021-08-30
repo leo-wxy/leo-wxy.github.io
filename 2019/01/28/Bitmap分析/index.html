@@ -1,0 +1,584 @@
+
+
+<!DOCTYPE html>
+<html lang="zh-CN" data-default-color-scheme=&#34;auto&#34;>
+
+
+
+<head><meta name="generator" content="Hexo 3.9.0">
+  <meta charset="UTF-8">
+  <link rel="apple-touch-icon" sizes="76x76" href="/img/favicon.png">
+  <link rel="icon" type="image/png" href="/img/favicon.png">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  
+  <meta name="theme-color" content="#11527b">
+  <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
+  <meta name="author" content="Leo-Wxy">
+  <meta name="keywords" content="">
+  <title>Bitmap分析 - Wxy的个人博客</title>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css">
+
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@4.0.0/github-markdown.min.css">
+  <link rel="stylesheet" href="/lib/hint/hint.min.css">
+
+  
+    
+    
+      
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@10.4.0/styles/atom-one-light.min.css">
+    
+  
+
+  
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.css">
+  
+
+
+
+<!-- 主题依赖的图标库，不要自行修改 -->
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1749284_ba1fz6golrf.css">
+
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1736178_kmeydafke9r.css">
+
+<link rel="stylesheet" href="/css/main.css">
+
+<!-- 自定义样式保持在最底部 -->
+
+
+  <script id="fluid-configs">
+    var Fluid = window.Fluid || {};
+    var CONFIG = {"hostname":"leo-wxy.github.io","root":"/","version":"1.8.7","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"copy_btn":true,"image_zoom":{"enable":true},"toc":{"enable":true,"headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"onlypost":false},"web_analytics":{"enable":false,"baidu":null,"google":null,"gtag":null,"tencent":{"sid":null,"cid":null},"woyaola":null,"cnzz":null,"leancloud":{"app_id":null,"app_key":null,"server_url":null}}};
+  </script>
+  <script src="/js/utils.js"></script>
+  <script src="/js/color-schema.js"></script>
+</head>
+
+
+<body>
+  <header style="height: 30vh;">
+    <nav id="navbar" class="navbar fixed-top  navbar-expand-lg navbar-dark scrolling-navbar">
+  <div class="container">
+    <a class="navbar-brand"
+       href="/">&nbsp;<strong>Wxy's Blog</strong>&nbsp;</a>
+
+    <button id="navbar-toggler-btn" class="navbar-toggler" type="button" data-toggle="collapse"
+            data-target="#navbarSupportedContent"
+            aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+      <div class="animated-icon"><span></span><span></span><span></span></div>
+    </button>
+
+    <!-- Collapsible content -->
+    <div class="collapse navbar-collapse" id="navbarSupportedContent">
+      <ul class="navbar-nav ml-auto text-center">
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/">
+                <i class="iconfont icon-home-fill"></i>
+                首页
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/archives/">
+                <i class="iconfont icon-archive-fill"></i>
+                归档
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/tags/">
+                <i class="iconfont icon-tags-fill"></i>
+                标签
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/about/">
+                <i class="iconfont icon-user-fill"></i>
+                关于
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/links/">
+                <i class="iconfont icon-link-fill"></i>
+                友链
+              </a>
+            </li>
+          
+        
+        
+          <li class="nav-item" id="search-btn">
+            <a class="nav-link" data-toggle="modal" data-target="#modalSearch">&nbsp;<i
+                class="iconfont icon-search"></i>&nbsp;</a>
+          </li>
+        
+        
+          <li class="nav-item" id="color-toggle-btn">
+            <a class="nav-link" href="javascript:">&nbsp;<i
+                class="iconfont icon-dark" id="color-toggle-icon"></i>&nbsp;</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    <div class="banner" id="banner" parallax=true
+         style="background: url('/img/default.png') no-repeat center center;
+           background-size: cover;">
+      <div class="full-bg-img">
+        <div class="mask flex-center" style="background-color: rgba(0, 0, 0, 0.3)">
+          <div class="page-header text-center fade-in-up">
+            <span class="h2" id="subtitle" title="Bitmap分析">
+              
+                Bitmap分析
+              
+            </span>
+
+            
+              <div class="mt-3">
+  
+  
+    <span class="post-meta">
+      <i class="iconfont icon-date-fill" aria-hidden="true"></i>
+      <time datetime="2019-01-28 10:00" pubdate>
+        2019年1月28日 上午
+      </time>
+    </span>
+  
+</div>
+
+<div class="mt-1">
+  
+    
+    <span class="post-meta mr-2">
+      <i class="iconfont icon-chart"></i>
+      2.5k 字
+    </span>
+  
+
+  
+    
+    <span class="post-meta mr-2">
+      <i class="iconfont icon-clock-fill"></i>
+      
+      
+      33
+       分钟
+    </span>
+  
+
+  
+  
+</div>
+
+            
+          </div>
+
+          
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    
+      
+
+<div class="container-fluid nopadding-x">
+  <div class="row nomargin-x">
+    <div class="d-none d-lg-block col-lg-2"></div>
+    <div class="col-lg-8 nopadding-x-md">
+      <div class="container nopadding-x-md" id="board-ctn">
+        <div class="py-5" id="board">
+          <article class="post-content mx-auto">
+            <!-- SEO header -->
+            <h1 style="display: none">Bitmap分析</h1>
+            
+            <div class="markdown-body">
+              <!--Bitmap 压缩策略 Bitmap大小判断 bitmap的具体压缩过程 bitmap在缓存时的转码过程-->
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/Bitmap优化.png" srcset="/img/loading.gif" class="full-image" alt="Bitmap优化" title="Bitmap优化"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<h2 id="Bitmap简介"><a href="#Bitmap简介" class="headerlink" title="Bitmap简介"></a>Bitmap简介</h2><p>位图文件(Bitmap)，扩展名可以是<code>.bmp或.dlb</code>。它将图像定义为由像素组成，每个点可以由多种色彩表示，包括2、4、8、16、24和32位色彩。</p>
+<p>在安卓系统中bitmap图片一般是以<code>ARGB_8888</code>来进行存储的。</p>
+<table>
+<thead>
+<tr>
+<th>颜色格式</th>
+<th>每个像素占用内存(byte)</th>
+<th>每个像素占用内存(bit)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ARGB_8888(<code>默认</code>)</td>
+<td>4</td>
+<td>32</td>
+</tr>
+<tr>
+<td>ALPHA_8</td>
+<td>1</td>
+<td>8</td>
+</tr>
+<tr>
+<td>ARGB_4444</td>
+<td>2</td>
+<td>16</td>
+</tr>
+<tr>
+<td>RGB_565</td>
+<td>2</td>
+<td>16</td>
+</tr>
+</tbody>
+</table>
+<p><code>ARGB_8888</code>：分别代表<em>透明度，红色，绿色，蓝色</em>，每个值分别用8bit记录</p>
+<p><code>ALPHA_8</code>：该像素只保存透明度</p>
+<p><code>ARGB_4444</code>：每个值分别用4bit记录</p>
+<p><code>RGB_565</code>：不存在透明度</p>
+<p><strong>实际应用中建议使用ARGB_8888和RGB_565(<em>不需要存储透明度时使用</em>)。</strong></p>
+<h2 id="Bitmap占用内存"><a href="#Bitmap占用内存" class="headerlink" title="Bitmap占用内存"></a>Bitmap占用内存</h2><p>bitmap占用内存：<strong>所有像素的内存占用总和</strong>。</p>
+<p>Android系统提供了两个方法获取占用内存：<code>getByteCount()</code>和<code>getAllocationByteCount()</code>。</p>
+<p><code>getByteCount()</code>：在API12中加入的，代表存储Bitmap需要的最少内存。</p>
+<p><code>getAllocationByteCount()</code>：在API19中加入的，代表在内存中为Bitmap分配的内存大小</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> getAllocationByteCount()&#123;<br>  <span class="hljs-keyword">if</span>(mBuffer == <span class="hljs-keyword">null</span>)&#123;<br>    return getByteCount();<br>  &#125;<br>  return mBuffer.length;<br>&#125;<br></code></pre></td></tr></table></figure>
+<p>两者的区别：</p>
+<ul>
+<li>一般情况下两者是相等的</li>
+<li>如果通过Bitmap的复用去解码图片，那么被复用的Bitmap的内存比待分配内存的Bitmap大，即<code>getByteCount()</code>&lt;<code>getAllocationByteCount()</code>。<code>getByteCount()</code>表示新解码图片占用内存的大小(<em>并非实际占用内存大小</em>)，<code>getAllocationByteCount()</code>表示被复用的Bitmap占用的内存大小。</li>
+</ul>
+<p><br></p>
+<p>一般情况下Bitmap占用的内存大小都为：<strong>图片长度 x 图片宽度 x 单位像素占用的字节数</strong>。</p>
+<p><code>单位像素占用字节数</code>：指代的是上面描述的编码方式，常用的是<code>ARGB_8888</code>即用这个方式编码的Bitmap占用大小就为<em>图片长度 x 图片宽度 x 4</em>。</p>
+<p><br></p>
+<p>非一般情况下，例如从资源文件夹(<em>res/drawable/</em>)获取图片时，还需要额外考虑一个因素：<strong>Density</strong>。</p>
+<p><code>Density</code>：可以理解为相对屏幕密度，一个DIP在160dpi的屏幕上大约为1px，以160dpi为基准线，density的值即为相对于160dpi的相对屏幕密度。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><code class="hljs java">//从资源文件中读取 Bitmap <br><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Bitmap decodeResourceStream(@Nullable Resources res, @Nullable TypedValue value,<br>            @Nullable InputStream is, @Nullable Rect pad, @Nullable Options opts) &#123;<br>        validate(opts);<br>        <span class="hljs-keyword">if</span> (opts == <span class="hljs-keyword">null</span>) &#123;<br>            opts = new Options();<br>        &#125;<br><br>        <span class="hljs-keyword">if</span> (opts.inDensity == 0 &amp;&amp; value != <span class="hljs-keyword">null</span>) &#123;<br>            <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> density = value.density;<br>            <span class="hljs-keyword">if</span> (density == TypedValue.DENSITY_DEFAULT) &#123;<br>                opts.inDensity = DisplayMetrics.DENSITY_DEFAULT;<br>            &#125; <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (density != TypedValue.DENSITY_NONE) &#123;<br>                opts.inDensity = density;<br>            &#125;<br>        &#125;<br>        <br>        <span class="hljs-keyword">if</span> (opts.inTargetDensity == 0 &amp;&amp; res != <span class="hljs-keyword">null</span>) &#123;<br>            opts.inTargetDensity = res.getDisplayMetrics().densityDpi;<br>        &#125;<br>        <br>        return decodeStream(is, pad, opts);<br>    &#125;<br></code></pre></td></tr></table></figure>
+<p>从源码中可以看出：<strong>加载一张本地资源图片，那么它占用的内存 = 图片长度 x 图片宽度 x inTargetDensity/inDensity x inTargetDensity/inDensity x 单位像素占用字节数。</strong></p>
+<p>其中 <code>inDensity</code>代表图片所在文件夹对应的密度；<code>inTargetDensity</code>代表了当前的系统密度。</p>
+<p><em>可以通过设置 <code>Options</code>对inTargetDensity 、inDensity进行修改，避免自动计算。 </em></p>
+<h2 id="Bitmap复用"><a href="#Bitmap复用" class="headerlink" title="Bitmap复用"></a>Bitmap复用</h2><h3 id="利用LruCache和DiskLruCache做内存和磁盘缓存"><a href="#利用LruCache和DiskLruCache做内存和磁盘缓存" class="headerlink" title="利用LruCache和DiskLruCache做内存和磁盘缓存"></a>利用<code>LruCache</code>和<code>DiskLruCache</code>做内存和磁盘缓存</h3><a href="/2018/12/14/LRUCache原理/" title="LruCache原理">LruCache原理</a>
+<h3 id="使用Bitmap复用-多个Bitmap复用同一块内存"><a href="#使用Bitmap复用-多个Bitmap复用同一块内存" class="headerlink" title="使用Bitmap复用 -多个Bitmap复用同一块内存"></a>使用Bitmap复用 -多个Bitmap复用同一块内存</h3><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><code class="hljs java">BitmapFactory.Options options = new BitmapFactory.Options();<br>// 图片复用，这个属性必须设置；<br>options.inMutable = <span class="hljs-keyword">true</span>;<br>// 手动设置缩放比例，使其取整数，方便计算、观察数据；<br>options.inDensity = 320;<br>options.inTargetDensity = 320;<br>//生成复用的Bitmap<br>Bitmap bitmap = BitmapFactory.decodeResource(getResources(), R.drawable.resbitmap, options);<br><br>// 使用inBitmap属性，这个属性必须设置；设置要复用的Bitmap<br>options.inBitmap = bitmap;<br>options.inDensity = 320;<br>// 设置缩放宽高为原始宽高一半；<br>options.inTargetDensity = 160;<br>options.inMutable = <span class="hljs-keyword">true</span>;<br>Bitmap bitmapReuse = BitmapFactory.decodeResource(getResources(), R.drawable.resbitmap_reuse, options);<br></code></pre></td></tr></table></figure>
+<p>使用<code>inBitmap</code>参数实现Bitmap的复用，但复用存在一些限制：<em>在Android4.4之前只能重用相同大小的Bitmap的内存，4.4之后的只要后来的Bitmap比之前的小即可。</em></p>
+<h2 id="Bitmap高效加载"><a href="#Bitmap高效加载" class="headerlink" title="Bitmap高效加载"></a>Bitmap高效加载</h2><blockquote>
+<p>核心思想：采用<code>BitmapFactory.Options</code>来加载所需尺寸的图片，使其按照一定的采样率将图片缩小后再进行加载。</p>
+<p><strong>防止直接加载大容量的高清Bitmap导致OOM的出现。</strong></p>
+</blockquote>
+<h3 id="BitmapFactory"><a href="#BitmapFactory" class="headerlink" title="BitmapFactory"></a>BitmapFactory</h3><blockquote>
+<p>提供方法生成Bitmap对象。</p>
+</blockquote>
+<ul>
+<li><code>decodeFile()</code>：从文件中加载出一个Bitmap对象</li>
+<li><code>decodeResource()</code>：从资源文件夹中加载出一个Bitmap对象</li>
+<li><code>decodeStream()</code>：从输入流中加载出一个Bitmap对象</li>
+<li><code>decodeByteArray()</code>：从字节数组中加载出一个Bitmap对象</li>
+</ul>
+<blockquote>
+<p><code>decodeFile()</code>和<code>decodeResource()</code>间接调用到了<code>decodeStream()</code>，最终都是在Native层实现的。</p>
+</blockquote>
+<h3 id="BitmapFactory-Options"><a href="#BitmapFactory-Options" class="headerlink" title="BitmapFactory.Options"></a>BitmapFactory.Options</h3><blockquote>
+<p>里面配置的参数可以实现高效的加载Bitmap。</p>
+</blockquote>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> class Options &#123;<br>    <span class="hljs-keyword">public</span> Options() &#123;<br>        inDither = <span class="hljs-keyword">false</span>;<br>        inScaled = <span class="hljs-keyword">true</span>;<br>        inPremultiplied = <span class="hljs-keyword">true</span>;<br>    &#125;<br>    ...      <br>   <span class="hljs-keyword">public</span> Bitmap inBitmap; //用于实现Bitmap的复用，上文有介绍<br>   <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> inSampleSize;  //采样率 <br>   <span class="hljs-keyword">public</span> <span class="hljs-keyword">boolean</span> inJustDecodeBounds; //<br>   <span class="hljs-keyword">public</span> <span class="hljs-keyword">boolean</span> inPremultiplied;   <br>   <span class="hljs-keyword">public</span> <span class="hljs-keyword">boolean</span> inDither;  //是否开启抖动<br>   <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> inDensity; // 图片所属文件夹对应的dpi<br>   <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> inTargetDensity;  // 目标设备屏幕的dpi           <br>   <span class="hljs-keyword">public</span> <span class="hljs-keyword">boolean</span> inScaled;    //是否支持缩放<br>   <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> outWidth;   //图片的原始宽度<br>   <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> outHeight;  //图片的原始高度<br>   ...<br>&#125;<br></code></pre></td></tr></table></figure>
+<h4 id="inPreferredConfig"><a href="#inPreferredConfig" class="headerlink" title="inPreferredConfig"></a>inPreferredConfig</h4><blockquote>
+<p>根据需求选择合适的解码方式，可以有效减小占用内存</p>
+</blockquote>
+<p><code>inPreferredConfig</code>指的就是上面描述到的<code>ARGB_8888、ARGB_4444、RGB_565、ALPHA_8</code>，默认用的是<code>ARGB_8888</code>。</p>
+<h4 id="inScaled"><a href="#inScaled" class="headerlink" title="inScaled"></a>inScaled</h4><blockquote>
+<p>表示是否支持缩放。<em>默认为true</em></p>
+</blockquote>
+<p>缩放系数的计算方法：<code>inDensity / inTargetDensity</code>计算得出。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><code class="hljs java">BitmapFactory.Options options = new BitmapFactory.Options();<br>options.inDensity = 160;<br>options.inTargetDensity = 320;<br>Bitmap bitmap = BitmapFactory.decodeResource(getResources(), R.drawable.size, options);<br><span class="hljs-keyword">int</span> size = bitmap.getByteCount();<br></code></pre></td></tr></table></figure>
+<p>可以手动的设置<code>inDensity，inTargetDensity</code>控制缩放系数。</p>
+<h4 id="inJustDecodeBounds"><a href="#inJustDecodeBounds" class="headerlink" title="inJustDecodeBounds"></a>inJustDecodeBounds</h4><blockquote>
+<p>是否去加载图片</p>
+</blockquote>
+<p>当此参数设置为<code>true</code>：BitmapFactory只会加载图片的原始宽高信息，而不会真正的加载图片到内存。</p>
+<p>设置为<code>false</code>：BitmapFactory加载图片至内存。</p>
+<blockquote>
+<p>BitmapFactory获取的图片宽高信息会和图片的位置以及程序运行的设备有关，会导致获取到不同结果。</p>
+</blockquote>
+<h4 id="inSampleSize"><a href="#inSampleSize" class="headerlink" title="inSampleSize"></a>inSampleSize</h4><blockquote>
+<p>采样率，同时作用于宽/高。</p>
+</blockquote>
+<p>当<code>inSampleSize == 1</code>，采样后的图片和原来大小一样；为2时，采样后的图片宽高均变为原来的1/2，占用内存大小也就变成了1/4。</p>
+<p><code>inSampleSize</code>的取值应该总是<strong>2的指数(2、4、8、16 …)</strong>，如果传递的<code>inSampleSize</code>不为2的指数，那么系统会向下取整并选择一个最接近于2的指数来代替。<em>传进来3，则对应为2</em>。</p>
+<blockquote>
+<p>注意：需要根据图片的宽高 <strong>实际大小和需要大小</strong>，去计算出需要的缩放比并尽可能取小，避免缩小的过多导致无法铺满控件被拉伸。</p>
+</blockquote>
+<h5 id="获取采样率"><a href="#获取采样率" class="headerlink" title="获取采样率"></a>获取采样率</h5><ol>
+<li>设置<code>BitmapFactory.Options.inJustDecodeBounds = true</code>并加载图片</li>
+<li>从<code>BitmapFactory.Options</code>获取图片的原始宽高信息，<code>outWidth和outHeight</code></li>
+<li>根据原始宽高并结合目标View的大小得到合适的采样率<code>inSampleSize</code></li>
+<li>重新设置<code>BitmapFactory.Options.inJustDecodeBounds = false</code>并重新加载图片</li>
+</ol>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Bitmap decodeSampledBitmapTromResource(Resource res,<span class="hljs-keyword">int</span> rresId,<span class="hljs-keyword">int</span> reqWidth,<span class="hljs-keyword">int</span> reqHeight)&#123;<br>  <span class="hljs-keyword">final</span> BitmapFactory.Options options = new BitmapFactory.Options();<br>  options.inJustDecodeBounds = <span class="hljs-keyword">true</span>;<br>  <br>  BitmapFacory.decodeResource(res,resId,options);<br>  options.inSampleSize = calculateInSampleSize(options,reqWidth,reqHeight);<br>  options.inJustDecodeBounds = <span class="hljs-keyword">false</span>;<br>  return BitmapFactory.decodeResource(res,resId,options);<br>&#125;<br><br><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">int</span> calculateInSampleSize(BitmapFactory.Options options,<span class="hljs-keyword">int</span> reqWidth,<span class="hljs-keyword">int</span> reqHeight)&#123;<br>  <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> height = options.outHeight;<br>  <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> width = options.outWidth;<br>  <span class="hljs-keyword">int</span> inSampleSize = 1;<br>  <br>  <span class="hljs-keyword">if</span>(height &gt; reqHeight || width &gt; reqWidth)&#123;<br>     <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> halfWidth = width /2;<br>     <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> halfHeight = height/2;<br>     <span class="hljs-keyword">while</span>((halfHeight / inSampleSize) &gt;= reqHeight <br>           &amp;&amp; (halfWidth / inSampleSize) &gt;= reqWidth)&#123;<br>       inSampleSize = inSampleSize &lt;&lt; 1;<br>     &#125;<br>  &#125;<br>  return inSampleSize;<br>&#125;<br><br>//使用示例<br>iv.setImageBitmap(decodeSampledBitmapTromResource(getResources(),R.drawable.bitmap,100,100))<br></code></pre></td></tr></table></figure>
+<h2 id="Bitmap压缩"><a href="#Bitmap压缩" class="headerlink" title="Bitmap压缩"></a>Bitmap压缩</h2><h3 id="质量压缩"><a href="#质量压缩" class="headerlink" title="质量压缩"></a>质量压缩</h3><blockquote>
+<p>保持像素的前提下改变图片的位深以及透明度等，来达到压缩图片的目的，<strong>不会减少图片的像素，经过质量压缩的图片文件大小会变小，但是解码成Bitmap占用内存不变。</strong></p>
+</blockquote>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Bitmap compressImage(Bitmap image , <span class="hljs-keyword">long</span> maxSize) &#123;<br>    ByteArrayOutputStream baos = new ByteArrayOutputStream();<br>    Bitmap bitmap = <span class="hljs-keyword">null</span>;<br>    // 质量压缩方法，options的值是0-100，这里100表示原来图片的质量，不压缩，把压缩后的数据存放到baos中<br>    image.compress(Bitmap.CompressFormat.JPEG, 100, baos);<br>    <span class="hljs-keyword">int</span> options = 90;<br>    // 循环判断如果压缩后图片是否大于maxSize,大于继续压缩<br>    <span class="hljs-keyword">while</span> (baos.toByteArray().length  &gt; maxSize) &#123;<br>        // 重置baos即清空baos<br>        baos.reset();<br>        // 这里压缩options%，把压缩后的数据存放到baos中<br>        image.compress(Bitmap.CompressFormat.JPEG, options, baos);<br>        // 每次都减少10，当为1的时候停止，options&lt;10的时候，递减1<br>        <span class="hljs-keyword">if</span>(options == 1)&#123;<br>            <span class="hljs-keyword">break</span>;<br>        &#125;<span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (options &lt;= 10) &#123;<br>            options -= 1;<br>        &#125; <span class="hljs-keyword">else</span> &#123;<br>            options -= 10;<br>        &#125;<br>    &#125;<br>    <span class="hljs-keyword">byte</span>[] bytes = baos.toByteArray();<br>    <span class="hljs-keyword">if</span> (bytes.length != 0) &#123;<br>        // 把压缩后的数据baos存放到bytes中<br>        bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);<br>    &#125;<br>    return bitmap;<br>&#125;<br></code></pre></td></tr></table></figure>
+<blockquote>
+<p>对于Png而言，设置<code>quality</code>无效</p>
+</blockquote>
+<h3 id="采样率压缩"><a href="#采样率压缩" class="headerlink" title="采样率压缩"></a>采样率压缩</h3><p><a href="#inSampleSize">采样率</a></p>
+<h3 id="缩放法压缩"><a href="#缩放法压缩" class="headerlink" title="缩放法压缩"></a>缩放法压缩</h3><blockquote>
+<p>Android使用Matrix对图像进行缩放(<em>减少图片的像素</em>)、旋转、平移、斜切等变换。Mairix是一个3*3的矩阵</p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th style="text-align:center">scaleX(控制缩放)</th>
+<th style="text-align:center">skewX(控制斜切)</th>
+<th style="text-align:center">translateX(控制位移)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center">skewY</td>
+<td style="text-align:center">scaleY</td>
+<td style="text-align:center">translateY</td>
+</tr>
+<tr>
+<td style="text-align:center">0</td>
+<td style="text-align:center">0</td>
+<td style="text-align:center">scale</td>
+</tr>
+</tbody>
+</table>
+<p>执行顺序是 ：  <code>preXXX() -&gt; setXXX() -&gt;postXXX()</code></p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> Bitmap scale(<span class="hljs-keyword">final</span> Bitmap src, <span class="hljs-keyword">final</span> <span class="hljs-keyword">float</span> scaleWidth, <span class="hljs-keyword">final</span> <span class="hljs-keyword">float</span> scaleHeight, <span class="hljs-keyword">final</span> <span class="hljs-keyword">boolean</span> recycle) &#123;<br>    <span class="hljs-keyword">if</span> (src == <span class="hljs-keyword">null</span> || src.getWidth() == 0 || src.getHeight() == 0) &#123;<br>        return <span class="hljs-keyword">null</span>;<br>    &#125;<br>    Matrix matrix = new Matrix();<br>    matrix.setScale(scaleWidth, scaleHeight);<br>    Bitmap ret = Bitmap.createBitmap(src, 0, 0, src.getWidth(), src.getHeight(), matrix, <span class="hljs-keyword">true</span>);<br>    <span class="hljs-keyword">if</span> (recycle &amp;&amp; !src.isRecycled()) &#123;<br>        src.recycle();<br>    &#125;<br>    return ret;<br>&#125;<br></code></pre></td></tr></table></figure>
+<h2 id="Bitmap加载高清大图"><a href="#Bitmap加载高清大图" class="headerlink" title="Bitmap加载高清大图"></a>Bitmap加载高清大图</h2><p>在开发过程中如果需要加载超大图或长图，就无法使用上述方案去进行加载，可能会导致图片细节大量丢失，无法查看。</p>
+<h3 id="BitmapRegionDecoder"><a href="#BitmapRegionDecoder" class="headerlink" title="BitmapRegionDecoder"></a>BitmapRegionDecoder</h3><p>需要通过<code>BitmapReginDecoder</code>去进行加载，该类支持加载图片的部分区域，可以有效的显示具体细节</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><code class="hljs java">BitmapRegionDecoder bitmapRegionDecoder = <span class="hljs-keyword">null</span>;<br><span class="hljs-keyword">try</span> &#123;<br>    bitmapRegionDecoder = BitmapRegionDecoder.newInstance(getAssets().open("world.jpg"),<br>                <span class="hljs-keyword">true</span>);<br>&#125; <span class="hljs-keyword">catch</span> (IOException e) &#123;<br>    e.printStackTrace();<br>&#125;<br><br><span class="hljs-keyword">int</span> screenWidth = getResources().getDisplayMetrics().widthPixels;<br><span class="hljs-keyword">int</span> screenHeight = getResources().getDisplayMetrics().heightPixels;<br>/*以手机屏幕宽高生成一个矩形区域*/<br>Rect rect = new Rect(0,0,screenWidth,screenHeight);<br><br>BitmapFactory.Options options = new BitmapFactory.Options();<br>/*设置RGB_565格式 取出透明的显示*/<br>options.inPreferredConfig = Bitmap.Config.RGB_565;<br><br>/*加载部分图片*/<br>Bitmap bitmap = bitmapRegionDecoder.decodeRegion(rect,options);<br>imageView.setImageBitmap(bitmap);<br></code></pre></td></tr></table></figure>
+<h3 id="subsampling-scale-image-view"><a href="#subsampling-scale-image-view" class="headerlink" title="subsampling-scale-image-view"></a>subsampling-scale-image-view</h3><h2 id="Bitmap内存回收"><a href="#Bitmap内存回收" class="headerlink" title="Bitmap内存回收"></a>Bitmap内存回收</h2><blockquote>
+<p>在Android2.3.3之前，Bitmap的像素数据存放在Native内存，Bitmap对象本身位于Dalvik Heap中。</p>
+<p>Android3.0之后，Bitmap的像素数据也被放进了Dalvik Heap中。</p>
+<p><code>Bitmap.recycle()</code>：释放与此位图关联的本地对象，并清除对像素数据的引用。这不会同步释放像素数据，只是允许它被垃圾收集，如果没有其他的情况。这个时候如果进行调用会抛出异常。</p>
+<p>Android3.0之后就不需要手动调用<code>recycle()</code>进行释放，由系统进行控制。</p>
+</blockquote>
+<h2 id="内容引用"><a href="#内容引用" class="headerlink" title="内容引用"></a>内容引用</h2><p><a href="https://juejin.im/post/5bfbd5406fb9a049be5d2a20#heading-0" target="_blank" rel="noopener">Bitmap优化详谈</a></p>
+<p><a href="https://mp.weixin.qq.com/s?__biz=MzI3OTU3OTQ1Mw==&amp;mid=2247483753&amp;idx=1&amp;sn=8b25e2915c72aacdf2e1cfa38aa1cb87&amp;chksm=eb44df3bdc33562d7784753776ba820361d71228b0081e66661c6070008c0038bbabf0558ab8&amp;mpshare=1&amp;scene=23&amp;srcid=0316pLW7Dlj2Y0bHTIUNHY2D%23rd" target="_blank" rel="noopener">Android性能优化（五）之细说Bitmap</a></p>
+
+            </div>
+            <hr>
+            <div>
+              <div class="post-metas mb-3">
+                
+                
+                  <div class="post-meta">
+                    <i class="iconfont icon-tags"></i>
+                    
+                      <a class="hover-with-bg" href="/tags/Android/">Android</a>
+                    
+                  </div>
+                
+              </div>
+              
+                <p class="note note-warning">本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-sa/4.0/deed.zh" rel="nofollow noopener">CC BY-SA 4.0 协议</a> ，转载请注明出处！</p>
+              
+              
+                <div class="post-prevnext">
+                  <article class="post-prev col-6">
+                    
+                    
+                      <a href="/2019/01/28/Android-SparseArray分析/">
+                        <i class="iconfont icon-arrowleft"></i>
+                        <span class="hidden-mobile">SparseArray简析</span>
+                        <span class="visible-mobile">上一篇</span>
+                      </a>
+                    
+                  </article>
+                  <article class="post-next col-6">
+                    
+                    
+                      <a href="/2019/01/28/Android性能优化-ANR分析/">
+                        <span class="hidden-mobile">ANR分析</span>
+                        <span class="visible-mobile">下一篇</span>
+                        <i class="iconfont icon-arrowright"></i>
+                      </a>
+                    
+                  </article>
+                </div>
+              
+            </div>
+
+            
+          </article>
+        </div>
+      </div>
+    </div>
+    
+      <div class="d-none d-lg-block col-lg-2 toc-container" id="toc-ctn">
+        <div id="toc">
+  <p class="toc-header"><i class="iconfont icon-list"></i>&nbsp;目录</p>
+  <div class="toc-body" id="toc-body"></div>
+</div>
+
+      </div>
+    
+  </div>
+</div>
+
+<!-- Custom -->
+
+
+    
+
+    
+      <a id="scroll-top-button" href="#" role="button">
+        <i class="iconfont icon-arrowup" aria-hidden="true"></i>
+      </a>
+    
+
+    
+      <div class="modal fade" id="modalSearch" tabindex="-1" role="dialog" aria-labelledby="ModalLabel"
+     aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header text-center">
+        <h4 class="modal-title w-100 font-weight-bold">搜索</h4>
+        <button type="button" id="local-search-close" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body mx-3">
+        <div class="md-form mb-5">
+          <input type="text" id="local-search-input" class="form-control validate">
+          <label data-error="x" data-success="v"
+                 for="local-search-input">关键词</label>
+        </div>
+        <div class="list-group" id="local-search-result"></div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+
+    
+  </main>
+
+  <footer class="text-center mt-5 py-3">
+  <div class="footer-content">
+     <a href="https://hexo.io" target="_blank" rel="nofollow noopener"><span>Hexo</span></a> <i class="iconfont icon-love"></i> <a href="https://github.com/fluid-dev/hexo-theme-fluid" target="_blank" rel="nofollow noopener"><span>Fluid</span></a> 
+  </div>
+  
+
+  
+
+  
+</footer>
+
+<!-- SCRIPTS -->
+
+  <script  src="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.js" ></script>
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.css" />
+
+  <script>
+    NProgress.configure({"showSpinner":false,"trickleSpeed":100})
+    NProgress.start()
+    window.addEventListener('load', function() {
+      NProgress.done();
+    })
+  </script>
+
+
+<script  src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" ></script>
+<script  src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.min.js" ></script>
+<script  src="/js/debouncer.js" ></script>
+<script  src="/js/events.js" ></script>
+<script  src="/js/plugins.js" ></script>
+
+<!-- Plugins -->
+
+
+  
+    <script  src="/js/lazyload.js" ></script>
+  
+
+
+
+  
+
+
+
+  <script  src="https://cdn.jsdelivr.net/npm/tocbot@4.12.0/dist/tocbot.min.js" ></script>
+
+
+
+  <script  src="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.js" ></script>
+
+
+
+  <script  src="https://cdn.jsdelivr.net/npm/anchor-js@4.3.0/anchor.min.js" ></script>
+
+
+
+  <script defer src="https://cdn.jsdelivr.net/npm/clipboard@2.0.6/dist/clipboard.min.js" ></script>
+
+
+
+
+
+
+
+
+  <script  src="/js/local-search.js" ></script>
+  <script>
+    (function () {
+      var path = "/local-search.xml";
+      var inputArea = document.querySelector("#local-search-input");
+      inputArea.onclick = function () {
+        searchFunc(path, 'local-search-input', 'local-search-result');
+        this.onclick = null
+      }
+    })()
+  </script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- 主题的启动项 保持在最底部 -->
+<script  src="/js/boot.js" ></script>
+
+
+
+</body>
+</html>

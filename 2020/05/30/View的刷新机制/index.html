@@ -1,0 +1,694 @@
+
+
+<!DOCTYPE html>
+<html lang="zh-CN" data-default-color-scheme=&#34;auto&#34;>
+
+
+
+<head><meta name="generator" content="Hexo 3.9.0">
+  <meta charset="UTF-8">
+  <link rel="apple-touch-icon" sizes="76x76" href="/img/favicon.png">
+  <link rel="icon" type="image/png" href="/img/favicon.png">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  
+  <meta name="theme-color" content="#11527b">
+  <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
+  <meta name="author" content="Leo-Wxy">
+  <meta name="keywords" content="">
+  <title>Android屏幕的刷新机制 - Wxy的个人博客</title>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css">
+
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@4.0.0/github-markdown.min.css">
+  <link rel="stylesheet" href="/lib/hint/hint.min.css">
+
+  
+    
+    
+      
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@10.4.0/styles/atom-one-light.min.css">
+    
+  
+
+  
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.css">
+  
+
+
+
+<!-- 主题依赖的图标库，不要自行修改 -->
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1749284_ba1fz6golrf.css">
+
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1736178_kmeydafke9r.css">
+
+<link rel="stylesheet" href="/css/main.css">
+
+<!-- 自定义样式保持在最底部 -->
+
+
+  <script id="fluid-configs">
+    var Fluid = window.Fluid || {};
+    var CONFIG = {"hostname":"leo-wxy.github.io","root":"/","version":"1.8.7","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"copy_btn":true,"image_zoom":{"enable":true},"toc":{"enable":true,"headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"onlypost":false},"web_analytics":{"enable":false,"baidu":null,"google":null,"gtag":null,"tencent":{"sid":null,"cid":null},"woyaola":null,"cnzz":null,"leancloud":{"app_id":null,"app_key":null,"server_url":null}}};
+  </script>
+  <script src="/js/utils.js"></script>
+  <script src="/js/color-schema.js"></script>
+</head>
+
+
+<body>
+  <header style="height: 30vh;">
+    <nav id="navbar" class="navbar fixed-top  navbar-expand-lg navbar-dark scrolling-navbar">
+  <div class="container">
+    <a class="navbar-brand"
+       href="/">&nbsp;<strong>Wxy's Blog</strong>&nbsp;</a>
+
+    <button id="navbar-toggler-btn" class="navbar-toggler" type="button" data-toggle="collapse"
+            data-target="#navbarSupportedContent"
+            aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+      <div class="animated-icon"><span></span><span></span><span></span></div>
+    </button>
+
+    <!-- Collapsible content -->
+    <div class="collapse navbar-collapse" id="navbarSupportedContent">
+      <ul class="navbar-nav ml-auto text-center">
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/">
+                <i class="iconfont icon-home-fill"></i>
+                首页
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/archives/">
+                <i class="iconfont icon-archive-fill"></i>
+                归档
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/tags/">
+                <i class="iconfont icon-tags-fill"></i>
+                标签
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/about/">
+                <i class="iconfont icon-user-fill"></i>
+                关于
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/links/">
+                <i class="iconfont icon-link-fill"></i>
+                友链
+              </a>
+            </li>
+          
+        
+        
+          <li class="nav-item" id="search-btn">
+            <a class="nav-link" data-toggle="modal" data-target="#modalSearch">&nbsp;<i
+                class="iconfont icon-search"></i>&nbsp;</a>
+          </li>
+        
+        
+          <li class="nav-item" id="color-toggle-btn">
+            <a class="nav-link" href="javascript:">&nbsp;<i
+                class="iconfont icon-dark" id="color-toggle-icon"></i>&nbsp;</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    <div class="banner" id="banner" parallax=true
+         style="background: url('/img/default.png') no-repeat center center;
+           background-size: cover;">
+      <div class="full-bg-img">
+        <div class="mask flex-center" style="background-color: rgba(0, 0, 0, 0.3)">
+          <div class="page-header text-center fade-in-up">
+            <span class="h2" id="subtitle" title="Android屏幕的刷新机制">
+              
+                Android屏幕的刷新机制
+              
+            </span>
+
+            
+              <div class="mt-3">
+  
+  
+    <span class="post-meta">
+      <i class="iconfont icon-date-fill" aria-hidden="true"></i>
+      <time datetime="2020-05-30 15:04" pubdate>
+        2020年5月30日 下午
+      </time>
+    </span>
+  
+</div>
+
+<div class="mt-1">
+  
+    
+    <span class="post-meta mr-2">
+      <i class="iconfont icon-chart"></i>
+      6.6k 字
+    </span>
+  
+
+  
+    
+    <span class="post-meta mr-2">
+      <i class="iconfont icon-clock-fill"></i>
+      
+      
+      98
+       分钟
+    </span>
+  
+
+  
+  
+</div>
+
+            
+          </div>
+
+          
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    
+      
+
+<div class="container-fluid nopadding-x">
+  <div class="row nomargin-x">
+    <div class="d-none d-lg-block col-lg-2"></div>
+    <div class="col-lg-8 nopadding-x-md">
+      <div class="container nopadding-x-md" id="board-ctn">
+        <div class="py-5" id="board">
+          <article class="post-content mx-auto">
+            <!-- SEO header -->
+            <h1 style="display: none">Android屏幕的刷新机制</h1>
+            
+            <div class="markdown-body">
+              <p><img src="/images/View屏幕刷新xmind.png" srcset="/img/loading.gif" alt="View屏幕刷新"></p>
+<h2 id="基础概念"><a href="#基础概念" class="headerlink" title="基础概念"></a>基础概念</h2><p>在显示系统中，一般包含三个部分<code>CPU、GPU，屏幕</code>。</p>
+<p><code>CPU</code>：执行View的绘制流程<code>measure,layout.draw</code></p>
+<p><code>GPU</code>：进一步处理数据，对图形数据进行渲染并放到<code>buffer缓冲区</code>中缓存</p>
+<p><code>屏幕</code>：将<code>buffer缓冲区</code>的数据取出来填充屏幕像素点</p>
+<p><strong>CPU绘制后提交数据，GPU进一步处理和缓存数据、最后屏幕从缓冲区获取数据并显示。</strong></p>
+<p><img src="/images/webp-20200911191007410" srcset="/img/loading.gif" alt="img"></p>
+<h3 id="屏幕刷新频率"><a href="#屏幕刷新频率" class="headerlink" title="屏幕刷新频率"></a>屏幕刷新频率</h3><blockquote>
+<p>一秒内屏幕刷新的次数也即显示了多少帧的图像，单位<code>Hz</code>。一般都是60Hz。<em>该值取决于屏幕参数</em></p>
+</blockquote>
+<h3 id="逐行扫描"><a href="#逐行扫描" class="headerlink" title="逐行扫描"></a>逐行扫描</h3><blockquote>
+<p>屏幕不是一次性进行画面显示，而是从左到右，从上到下的进行<code>逐行扫描</code>。</p>
+</blockquote>
+<h3 id="帧率"><a href="#帧率" class="headerlink" title="帧率"></a>帧率</h3><blockquote>
+<p><strong>GPU一秒内绘制操作的帧数。</strong>Android系统默认60fps</p>
+</blockquote>
+<p>帧率是动态变化的。</p>
+<h3 id="丢帧"><a href="#丢帧" class="headerlink" title="丢帧"></a>丢帧</h3><blockquote>
+<p>在下一个<code>Vsync</code>信号到来时，由于下一帧数据尚未准备就绪，缓存没有交换，此时显示的上一帧的数据。该情况就为<strong>丢帧(Jank)</strong></p>
+</blockquote>
+<p><img src="/images/丢帧.png" srcset="/img/loading.gif" alt="丢帧"></p>
+<h3 id="双缓冲-Double-Buffer"><a href="#双缓冲-Double-Buffer" class="headerlink" title="双缓冲(Double Buffer)"></a>双缓冲(<code>Double Buffer</code>)</h3><blockquote>
+<p>为了解决<code>画面撕裂</code>提出的概念</p>
+<p>画面撕裂：在GPU向缓冲区写入数据的同时，屏幕也在从<code>buffer缓冲区</code>读取数据，导致屏幕显示了不同帧的画面，产生<code>画面撕裂</code>。</p>
+</blockquote>
+<p>由绘制和屏幕拥有各自的<code>buffer缓冲区</code>：</p>
+<p><code>GPU</code>处理完数据后，将图形数据写入<code>Back Buffer</code>。</p>
+<p><code>屏幕</code>从<code>Frame Buffer</code>读取图形数据。</p>
+<p>当屏幕刷新(Vsync信号到来)时，<code>FrameBuffer</code>与<code>BackBuffer</code>的数据进行交换(<strong>交换各自的内存地址</strong>)，然后屏幕进行绘制。与<code>屏幕刷新频率</code>保持一个交换频率。</p>
+<p><img src="/images/双缓冲" srcset="/img/loading.gif" alt="双缓冲示意"></p>
+<h3 id="垂直同步-VSync"><a href="#垂直同步-VSync" class="headerlink" title="垂直同步(VSync)"></a>垂直同步(<code>VSync</code>)</h3><blockquote>
+<p><strong>通过屏幕硬件中断告诉系统应该什么时候刷新屏幕。</strong></p>
+<p>开启后GPU会等待显示器的VSync信号发出后再进行新的一帧渲染和缓冲区更新。</p>
+<p>在显卡帧率大于屏幕帧率时有效解决显示问题。</p>
+</blockquote>
+<p>配合<code>双缓冲</code>可以使<code>CPU/GPU</code>有充分时间处理数据，减少<code>jank(丢帧)</code></p>
+<p><img src="/images/VSync.png" srcset="/img/loading.gif" alt="VSync"></p>
+<p>每次收到<code>VSync</code>信号时，CPU开始处理各帧数据。</p>
+<h3 id="三缓冲-Triple-Buffer"><a href="#三缓冲-Triple-Buffer" class="headerlink" title="三缓冲(Triple Buffer)"></a>三缓冲(<code>Triple Buffer</code>)</h3><blockquote>
+<p>在<code>双缓冲</code>机制基础上增加了一个<code>Graphic Buffer</code>缓冲区，最大限度利用空闲时间，但是会多占用一个<code>Graphic buffer</code>缓冲区内存。</p>
+</blockquote>
+<p><img src="/images/三缓冲.png" srcset="/img/loading.gif" alt="三缓存"></p>
+<ol>
+<li>第一个<code>Jank</code>时无可避免的，在第二个时间段，CPU/GPU使用第三个<code>Graphic Buffer</code>完成<code>C帧</code>的计算，避免<code>Jank</code>问题频发</li>
+<li>在第三段时，<code>A帧</code>计算完成，需要到第四个<code>Vsync</code>信号才会显示。</li>
+<li>第二段中，<code>C帧</code>需要在第四段才可以显示，相当于多了16ms延迟。</li>
+</ol>
+<blockquote>
+<p><strong>三缓冲</strong>有效利用等待<code>vsync</code>的时间，减少了<code>jank</code>，但是增加了延迟。</p>
+<p><strong><code>Graphic Buffer</code>不是越多越好，一般还是两个，出现<code>jank</code>以后可以三个。</strong></p>
+</blockquote>
+<h3 id="Project-Buffer-黄油计划"><a href="#Project-Buffer-黄油计划" class="headerlink" title="Project Buffer(黄油计划)"></a>Project Buffer(黄油计划)</h3><p>前面提到的<code>VSYnc</code>、<code>双缓冲/三缓冲</code>都是<code>Project Buffer</code>的关键点，还有下面提到的<code>Choreographer</code>.</p>
+<ul>
+<li>核心关键：<strong>VSync</strong>实现定时中断</li>
+<li><code>双缓冲/三缓冲</code>：一般情况下<code>双缓冲</code>足矣，当出现<code>jank</code>时，可以添加一块<code>Graphic Buffer</code>缓冲区，实现<code>三缓冲</code></li>
+<li><code>Choreographer</code>：统一管理应用的绘制工作</li>
+</ul>
+<h2 id="Choreographer"><a href="#Choreographer" class="headerlink" title="Choreographer"></a>Choreographer</h2><p><img src="/images/View屏幕刷新-Choreographer.png" srcset="/img/loading.gif" alt="View屏幕刷新-Choreographer"></p>
+<blockquote>
+<p>Android4.1 之后加入的<code>Choreographer</code>控制<code>Input输入</code>、<code>Animation动画</code>，<code>Draw绘制</code>三个UI操作。</p>
+<p>每隔16.6ms，<code>VSync</code>信号到来时，马上开始下一帧的渲染，<strong>CPU和GPU立即开始计算把数据写入Buffer中。</strong></p>
+</blockquote>
+<p><img src="/images/15722752299458.jpg" srcset="/img/loading.gif" alt="img"></p>
+<h3 id="入口"><a href="#入口" class="headerlink" title="入口"></a>入口</h3><p>既然说<code>Choreographer</code>与<code>View</code>的显示有关，<code>View的绘制过程</code>起点位于<code>ViewRootImpl.setView()</code>，此处为<em>Activity执行到<code>onResume()</code>后，<code>window</code>添加到Activity上</em>。通过调用到<code>ViewRootImpl.setView()</code>开始绘制布局</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br></pre></td><td class="code"><pre><code class="hljs java">//ActivityThread.java<br><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> handleResumeActivity(IBinder token, <span class="hljs-keyword">boolean</span> finalStateRequest, <span class="hljs-keyword">boolean</span> isForward,<br>            String reason) &#123;<br>  ...<br>    <span class="hljs-keyword">if</span> (a.mVisibleFromClient) &#123;<br>                <span class="hljs-keyword">if</span> (!a.mWindowAdded) &#123;//尚未添加window<br>                    a.mWindowAdded = <span class="hljs-keyword">true</span>;<br>                    wm.addView(decor, l);//准备添加View<br>                &#125; <span class="hljs-keyword">else</span> &#123;<br>                    // The activity will get a callback <span class="hljs-keyword">for</span> <span class="hljs-keyword">this</span> &#123;@link LayoutParams&#125; change<br>                    // earlier. However, at that time the decor will not be set (<span class="hljs-keyword">this</span> is set<br>                    // in <span class="hljs-keyword">this</span> method), so no action will be taken. This call ensures the<br>                    // callback occurs with the decor set.<br>                    a.onWindowAttributesChanged(l);<br>                &#125;<br>            &#125;<br>  ...<br>  <br>&#125;<br><br>//WindowManagerGlobal.java WindowManager实现类<br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> addView(View view, ViewGroup.LayoutParams params,<br>            Display display, Window parentWindow) &#123;<br>      ...<br>        ViewRootImpl root;<br>      ...<br>        root = new ViewRootImpl(view.getContext(), display);<br>      ...<br>        <span class="hljs-keyword">try</span> &#123;<br>                root.setView(view, wparams, panelParentView);<br>            &#125; <span class="hljs-keyword">catch</span> (RuntimeException e) &#123;<br>                // BadTokenException or InvalidDisplayException, clean up.<br>                <span class="hljs-keyword">if</span> (index &gt;= 0) &#123;<br>                    removeViewLocked(index, <span class="hljs-keyword">true</span>);<br>                &#125;<br>                throw e;<br>            &#125;<br>      ...<br>    &#125;<br><br>//ViewRootImpl.java<br>   <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> setView(View view /*DecorView*/, WindowManager.LayoutParams attrs, View panelParentView) &#123;<br>     ...<br>       requestLayout();//刷新布局<br>     ...<br>       view.assignParent(<span class="hljs-keyword">this</span>); //设置DecorView 父类为 ViewRootImpl，此时将ViewRootImpl与DecorView进行绑定<br>     ...<br>   &#125;<br>//View.java<br>    <span class="hljs-keyword">void</span> assignParent(ViewParent parent) &#123;<br>        <span class="hljs-keyword">if</span> (mParent == <span class="hljs-keyword">null</span>) &#123;<br>            mParent = parent;<br>        &#125; <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (parent == <span class="hljs-keyword">null</span>) &#123;<br>            mParent = <span class="hljs-keyword">null</span>;<br>        &#125; <span class="hljs-keyword">else</span> &#123;<br>            throw new RuntimeException("view " + <span class="hljs-keyword">this</span> + " being added, but"<br>                    + " it already has a parent");<br>        &#125;<br>    &#125;<br><br>//ViewRootImpl.java<br>    @Override<br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> requestLayout() &#123;<br>        <span class="hljs-keyword">if</span> (!mHandlingLayoutInLayoutRequest) &#123;<br>            checkThread();<br>            mLayoutRequested = <span class="hljs-keyword">true</span>;<br>            scheduleTraversals();<br>        &#125;<br>    &#125;<br></code></pre></td></tr></table></figure>
+<p>根据上述源码可以得出以下结论：</p>
+<ul>
+<li>Activity走完<code>onResume()</code>之后会进行<code>window的添加</code></li>
+<li><code>window添加</code>过程中在<code>ViewRootImpl.setView()</code>中将<code>DecorView</code>与<code>ViewRootImpl</code>进行绑定</li>
+<li><code>ViewRootImpl</code>与<code>DecorView</code>绑定后开始进行View的绘制任务</li>
+</ul>
+<blockquote>
+<p>为什么<code>onCreate()</code>无法获取View宽高？</p>
+<p>此时未执行到<code>onResume()</code>尚未开始绘制，也还没开始执行<code>measure -&gt; layout -&gt; draw</code>过程，也就无法获取。</p>
+</blockquote>
+<p>以上只是<code>Activity启动</code>时相关的绘制过程，此外还有<code>属性动画、View.invalidate()</code>都会影响到<code>UI变化</code>。</p>
+<p><strong>所有的UI变化都是走到<code>ViewRootImpl.scheduleTraversals()</code>。</strong></p>
+<h4 id="ViewRootImpl-scheduleTraversals"><a href="#ViewRootImpl-scheduleTraversals" class="headerlink" title="ViewRootImpl.scheduleTraversals()"></a>ViewRootImpl.scheduleTraversals()</h4><p><code>UI变化</code>最终都会走到此处。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br></pre></td><td class="code"><pre><code class="hljs java">//ViewRootImpl.java<br>    <span class="hljs-keyword">final</span> ViewRootHandler mHandler = new ViewRootHandler();<br><br>    <span class="hljs-keyword">void</span> scheduleTraversals() &#123;<br>        <span class="hljs-keyword">if</span> (!mTraversalScheduled) &#123;<br>          //保证多次调用UI刷新，只走一次绘制流程<br>            mTraversalScheduled = <span class="hljs-keyword">true</span>;<br>          //添加同步屏障，屏蔽同步消息，保证Vsync到来时优先绘制流程<br>            mTraversalBarrier = mHandler.getLooper().getQueue().postSyncBarrier();<br>          //使用到了 Choreographer<br>            mChoreographer.postCallback(<br>                    Choreographer.CALLBACK_TRAVERSAL, mTraversalRunnable, <span class="hljs-keyword">null</span>);<br>            ...<br>        &#125;<br>    &#125;<br><br>    <span class="hljs-keyword">final</span> class TraversalRunnable implements Runnable &#123;<br>        @Override<br>        <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> run() &#123;<br>            doTraversal();<br>        &#125;<br>    &#125;<br>    <span class="hljs-keyword">final</span> TraversalRunnable mTraversalRunnable = new TraversalRunnable();<br><br>    <span class="hljs-keyword">void</span> doTraversal() &#123;<br>        <span class="hljs-keyword">if</span> (mTraversalScheduled) &#123;<br>          //执行任务时，恢复状态<br>            mTraversalScheduled = <span class="hljs-keyword">false</span>;<br>          //移除同步屏障<br>            mHandler.getLooper().getQueue().removeSyncBarrier(mTraversalBarrier);<br><br>            <span class="hljs-keyword">if</span> (mProfile) &#123;<br>                Debug.startMethodTracing("ViewAncestor");<br>            &#125;<br>           //开始View的绘制流程<br>            performTraversals();<br><br>            <span class="hljs-keyword">if</span> (mProfile) &#123;<br>                Debug.stopMethodTracing();<br>                mProfile = <span class="hljs-keyword">false</span>;<br>            &#125;<br>        &#125;<br>    &#125;<br></code></pre></td></tr></table></figure>
+<p><code>scheduleTraversals()</code>主要有以下逻辑：</p>
+<ol>
+<li>设置<code>mTraversalScheduled)</code>保证同时多次请求只会进行一次<code>View刷新</code></li>
+<li>在<code>getLooper().getQueue()当前消息队列</code>添加<strong>同步屏障</strong>，保证<code>Vsync信号</code>到来时，可以立即执行对应任务。暂时屏蔽掉<code>同步消息</code>的处理。</li>
+<li>调用<code>Choreographer.postCallback(,mTraversalRunnable,)</code>，在下一次<code>VSync信号到来时</code>，会执行<code>doTraversal()</code>，继续向下调用<code>performTraversals()</code>开始绘制流程。</li>
+</ol>
+<h3 id="构造函数"><a href="#构造函数" class="headerlink" title="构造函数"></a>构造函数</h3><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><code class="hljs java">//Choreographer.java<br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Choreographer getInstance() &#123;<br>        return sThreadInstance.get();<br>    &#125;<br><br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> ThreadLocal&lt;Choreographer&gt; sThreadInstance =<br>            new ThreadLocal&lt;Choreographer&gt;() &#123;<br>        @Override<br>        <span class="hljs-keyword">protected</span> Choreographer initialValue() &#123;<br>            //获取当前线程的Looper对象<br>            Looper looper = Looper.myLooper();<br>            <span class="hljs-keyword">if</span> (looper == <span class="hljs-keyword">null</span>) &#123;<br>                throw new IllegalStateException("The current thread must have a looper!");<br>            &#125;<br>            Choreographer choreographer = new Choreographer(looper, VSYNC_SOURCE_APP);<br>            <span class="hljs-keyword">if</span> (looper == Looper.getMainLooper()) &#123;<br>                mMainInstance = choreographer;<br>            &#125;<br>            return choreographer;<br>        &#125;<br>    &#125;;<br></code></pre></td></tr></table></figure>
+<p><code>Choreographer</code>和<code>Handler</code>中的<code>Looper</code>一致，都是每个线程持有一个<code>Choreographer</code>，通过<code>ThreadLocal</code>进行获取。</p>
+<p>接下来是<code>Choreographer</code>的构造方法</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><code class="hljs java">//Choreographer.java    <br><span class="hljs-keyword">private</span> Choreographer(Looper looper, <span class="hljs-keyword">int</span> vsyncSource) &#123;<br>        mLooper = looper;<br>       //创建Handler对象<br>        mHandler = new FrameHandler(looper);<br>       //接收Vsync信号<br>        mDisplayEventReceiver = USE_VSYNC //USE_VSYNC在4.1以上默认 <span class="hljs-keyword">true</span>，表示可以接收VSync信号<br>                ? new FrameDisplayEventReceiver(looper, vsyncSource)<br>                : <span class="hljs-keyword">null</span>;<br>        //上一次帧绘制的时间点<br>        mLastFrameTimeNanos = Long.MIN_VALUE;<br>        //每帧的差值，一般为16.6ms<br>        mFrameIntervalNanos = (<span class="hljs-keyword">long</span>)(1000000000 / getRefreshRate());<br>        //初始化回调队列<br>        mCallbackQueues = new CallbackQueue[CALLBACK_LAST + 1];<br>        <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int</span> i = 0; i &lt;= CALLBACK_LAST; i++) &#123;<br>            mCallbackQueues[i] = new CallbackQueue();<br>        &#125;<br>        // b/68769804: For low FPS experiments.<br>        setFPSDivisor(SystemProperties.getInt(ThreadedRenderer.DEBUG_FPS_DIVISOR, 1));<br>    &#125;<br></code></pre></td></tr></table></figure>
+<p><code>Choreographer</code>在构造时分别执行了以下几步：</p>
+<ul>
+<li>初始化<code>FrameHandler(接收并处理消息)</code></li>
+<li>初始化<code>FrameDisplayEventReceiver(接收VSync信号)</code></li>
+<li>初始化<code>mLastFrameTimeNanos(上一次绘制帧时间点)</code>、<code>mFrameIntervalNanos(帧率)</code></li>
+<li>初始化<code>mCallbackQueues(回调队列)</code></li>
+</ul>
+<h4 id="FrameHandler"><a href="#FrameHandler" class="headerlink" title="FrameHandler"></a>FrameHandler</h4><blockquote>
+<p>发送异步消息（设置了同步屏障）。有延迟的任务发送延迟消息，不在主线程的任务发到主线程。</p>
+</blockquote>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> class FrameHandler extends Handler &#123;<br>    <span class="hljs-keyword">public</span> FrameHandler(Looper looper) &#123;<br>        <span class="hljs-keyword">super</span>(looper);<br>    &#125;<br><br>    @Override<br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> handleMessage(Message msg) &#123;<br>        <span class="hljs-keyword">switch</span> (msg.what) &#123;<br>            <span class="hljs-keyword">case</span> MSG_DO_FRAME:<br>            //执行绘制过程<br>                doFrame(System.nanoTime(), 0);<br>                <span class="hljs-keyword">break</span>;<br>            <span class="hljs-keyword">case</span> MSG_DO_SCHEDULE_VSYNC:<br>            //当需要执行绘制任务时，申请VSync信号<br>                doScheduleVsync();<br>                <span class="hljs-keyword">break</span>;<br>            <span class="hljs-keyword">case</span> MSG_DO_SCHEDULE_CALLBACK:<br>            //执行需要延迟的任务<br>                doScheduleCallback(msg.arg1);<br>                <span class="hljs-keyword">break</span>;<br>        &#125;<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+<p>主要处理以下类型的消息：</p>
+<ul>
+<li><code>MSG_DO_FRAME</code>：开始绘制流程</li>
+<li><code>MSG_DO_SCHEDULE_VSYNC</code>：请求VSync信号</li>
+<li><code>MSG_DO_SCHEDULE_CALLBACK</code>：请求执行<code>Callback</code></li>
+</ul>
+<h4 id="FrameDisplayEventReceiver"><a href="#FrameDisplayEventReceiver" class="headerlink" title="FrameDisplayEventReceiver"></a>FrameDisplayEventReceiver</h4><blockquote>
+<p>主要用来接收<code>VSync信号</code>，控制系统的同步操作</p>
+</blockquote>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> class FrameDisplayEventReceiver extends DisplayEventReceiver<br>            implements Runnable &#123;<br>        <span class="hljs-keyword">private</span> <span class="hljs-keyword">boolean</span> mHavePendingVsync;<br>        <span class="hljs-keyword">private</span> <span class="hljs-keyword">long</span> mTimestampNanos;<br>        <span class="hljs-keyword">private</span> <span class="hljs-keyword">int</span> mFrame;<br><br>        <span class="hljs-keyword">public</span> FrameDisplayEventReceiver(Looper looper, <span class="hljs-keyword">int</span> vsyncSource) &#123;<br>            <span class="hljs-keyword">super</span>(looper, vsyncSource);<br>        &#125;<br><br>  //此处接收 VSync信号<br>        @Override<br>        <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> onVsync(<span class="hljs-keyword">long</span> timestampNanos, <span class="hljs-keyword">int</span> builtInDisplayId, <span class="hljs-keyword">int</span> frame) &#123;<br>            <span class="hljs-keyword">if</span> (builtInDisplayId != SurfaceControl.BUILT_IN_DISPLAY_ID_MAIN) &#123;<br>                Log.d(TAG, "Received vsync from secondary display, but we don't support "<br>                        + "<span class="hljs-keyword">this</span> <span class="hljs-keyword">case</span> yet.  Choreographer needs a way to explicitly request "<br>                        + "vsync <span class="hljs-keyword">for</span> a specific display to ensure it doesn't lose track "<br>                        + "of its scheduled vsync.");<br>                scheduleVsync();<br>                return;<br>            &#125;<br>          <br>            <span class="hljs-keyword">long</span> now = System.nanoTime();<br>            <span class="hljs-keyword">if</span> (timestampNanos &gt; now) &#123;<br>                Log.w(TAG, "Frame time is " + ((timestampNanos - now) * 0.000001f)<br>                        + " ms in the future!  Check that graphics HAL is generating vsync "<br>                        + "timestamps using the correct timebase.");<br>                timestampNanos = now;<br>            &#125;<br><br>            <span class="hljs-keyword">if</span> (mHavePendingVsync) &#123;<br>                Log.w(TAG, "Already have a pending vsync event.  There should only be "<br>                        + "one at a time.");<br>            &#125; <span class="hljs-keyword">else</span> &#123;<br>                mHavePendingVsync = <span class="hljs-keyword">true</span>;<br>            &#125;<br>          //VSync信号到来的时间<br>            mTimestampNanos = timestampNanos;<br>            mFrame = frame;<br>          //构建异步消息，传入本身作为任务的执行者，需要执行的任务就是 run()<br>            Message msg = Message.obtain(mHandler, <span class="hljs-keyword">this</span>);<br>            msg.setAsynchronous(<span class="hljs-keyword">true</span>);<br>            mHandler.sendMessageAtTime(msg, timestampNanos / TimeUtils.NANOS_PER_MS);<br>        &#125;<br><br>  //需要执行的任务<br>        @Override<br>        <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> run() &#123;<br>            mHavePendingVsync = <span class="hljs-keyword">false</span>;<br>            doFrame(mTimestampNanos, mFrame);<br>        &#125;<br>    &#125;<br></code></pre></td></tr></table></figure>
+<p>接收到<code>VSync信号</code>后，回调到<code>onVsync()</code>方法，在其中构造一个<code>异步消息</code>，传入<code>FrameDisplayEventReceiver</code>为<code>runnable</code>，通过<code>FrameHandler</code>发送该消息，等到消息触发时就执行<code>doFrame()</code>。</p>
+<h4 id="CallbackQueue"><a href="#CallbackQueue" class="headerlink" title="CallbackQueue"></a>CallbackQueue</h4><blockquote>
+<p>存储对应任务类型的队列，在执行任务时从对应队列中获取任务</p>
+</blockquote>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> class CallbackQueue &#123;<br>    <span class="hljs-keyword">private</span> CallbackRecord mHead;<br><br>  //当前是否有等待执行的任务<br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">boolean</span> hasDueCallbacksLocked(<span class="hljs-keyword">long</span> now) &#123;<br>        return mHead != <span class="hljs-keyword">null</span> &amp;&amp; mHead.dueTime &lt;= now;<br>    &#125;<br><br>  //获取队列任务<br>    <span class="hljs-keyword">public</span> CallbackRecord extractDueCallbacksLocked(<span class="hljs-keyword">long</span> now) &#123;<br>        CallbackRecord callbacks = mHead;<br>        <span class="hljs-keyword">if</span> (callbacks == <span class="hljs-keyword">null</span> || callbacks.dueTime &gt; now) &#123;<br>            return <span class="hljs-keyword">null</span>;<br>        &#125;<br><br>        CallbackRecord last = callbacks;<br>        CallbackRecord next = last.next;<br>        <span class="hljs-keyword">while</span> (next != <span class="hljs-keyword">null</span>) &#123;<br>            <span class="hljs-keyword">if</span> (next.dueTime &gt; now) &#123;<br>                last.next = <span class="hljs-keyword">null</span>;<br>                <span class="hljs-keyword">break</span>;<br>            &#125;<br>            last = next;<br>            next = next.next;<br>        &#125;<br>        mHead = next;<br>        return callbacks;<br>    &#125;<br><br>  //添加消息<br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> addCallbackLocked(<span class="hljs-keyword">long</span> dueTime, Object action, Object token) &#123;<br>        CallbackRecord callback = obtainCallbackLocked(dueTime, action, token);<br>        CallbackRecord entry = mHead;<br>        <span class="hljs-keyword">if</span> (entry == <span class="hljs-keyword">null</span>) &#123;<br>            mHead = callback;<br>            return;<br>        &#125;<br>        <span class="hljs-keyword">if</span> (dueTime &lt; entry.dueTime) &#123;<br>            callback.next = entry;<br>            mHead = callback;<br>            return;<br>        &#125;<br>        <span class="hljs-keyword">while</span> (entry.next != <span class="hljs-keyword">null</span>) &#123;<br>            <span class="hljs-keyword">if</span> (dueTime &lt; entry.next.dueTime) &#123;<br>                callback.next = entry.next;<br>                <span class="hljs-keyword">break</span>;<br>            &#125;<br>            entry = entry.next;<br>        &#125;<br>        entry.next = callback;<br>    &#125;<br><br>  //删除消息<br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> removeCallbacksLocked(Object action, Object token) &#123;<br>        CallbackRecord predecessor = <span class="hljs-keyword">null</span>;<br>        <span class="hljs-keyword">for</span> (CallbackRecord callback = mHead; callback != <span class="hljs-keyword">null</span>;) &#123;<br>            <span class="hljs-keyword">final</span> CallbackRecord next = callback.next;<br>            <span class="hljs-keyword">if</span> ((action == <span class="hljs-keyword">null</span> || callback.action == action)<br>                    &amp;&amp; (token == <span class="hljs-keyword">null</span> || callback.token == token)) &#123;<br>                <span class="hljs-keyword">if</span> (predecessor != <span class="hljs-keyword">null</span>) &#123;<br>                    predecessor.next = next;<br>                &#125; <span class="hljs-keyword">else</span> &#123;<br>                    mHead = next;<br>                &#125;<br>                recycleCallbackLocked(callback);<br>            &#125; <span class="hljs-keyword">else</span> &#123;<br>                predecessor = callback;<br>            &#125;<br>            callback = next;<br>        &#125;<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+<p><code>CallbackQueue</code>存储的元素为<code>CallbackRecord</code></p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> class CallbackRecord &#123;<br>    <span class="hljs-keyword">public</span> CallbackRecord next;<br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">long</span> dueTime;<br>    <span class="hljs-keyword">public</span> Object action; // Runnable or FrameCallback<br>    <span class="hljs-keyword">public</span> Object token;<br><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> run(<span class="hljs-keyword">long</span> frameTimeNanos) &#123;<br>        <span class="hljs-keyword">if</span> (token == FRAME_CALLBACK_TOKEN) &#123;<br>          //执行了postFrameCallback()或 postFrameCallbackDelayed 执行此处<br>            ((FrameCallback)action).doFrame(frameTimeNanos);<br>        &#125; <span class="hljs-keyword">else</span> &#123;<br>          //否则执行 run<br>            ((Runnable)action).run();<br>        &#125;<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+<p>根据源码<code>CallbackRecord</code>执行<code>run()</code>有两种情况：</p>
+<ul>
+<li><p>token不为null且<code>FRAME_CALLBACK_TOKEN</code></p>
+<blockquote>
+<p>执行<code>doFrame()</code>，实际这种情况只会执行<code>postFrameCallback()</code>或<code>postFrameCallbackDelayed()</code>。</p>
+<p>这两个方法在都会被调用到</p>
+</blockquote>
+</li>
+<li><p>token为其他</p>
+<blockquote>
+<p>执行<code>run()</code>，此时<code>action</code>对应的就是<code>ViewRootImpl的mTraversalRunnable</code>也就会开始执行绘制流程</p>
+</blockquote>
+</li>
+</ul>
+<h3 id="设置任务-postCallback"><a href="#设置任务-postCallback" class="headerlink" title="设置任务-postCallback()"></a>设置任务-postCallback()</h3><p><code>ViewRootImpl.scheduleTraversals()</code>通过<code>postCallback(Choreographer.CALLBACK_TRAVERSAL, mTraversalRunnable, null)</code>添加绘制任务</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br></pre></td><td class="code"><pre><code class="hljs java">//Choreographer.java <br><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> postCallbackDelayedInternal(<span class="hljs-keyword">int</span> callbackType,<br>            Object action, Object token, <span class="hljs-keyword">long</span> delayMillis) &#123;<br>        ...<br>        <span class="hljs-keyword">synchronized</span> (mLock) &#123;<br>          //当前时间<br>            <span class="hljs-keyword">final</span> <span class="hljs-keyword">long</span> now = SystemClock.uptimeMillis();<br>          //延迟时间<br>            <span class="hljs-keyword">final</span> <span class="hljs-keyword">long</span> dueTime = now + delayMillis;<br>          //将任务添加到回调队列<br>            mCallbackQueues[callbackType].addCallbackLocked(dueTime, action, token);<br><br>            <span class="hljs-keyword">if</span> (dueTime &lt;= now) &#123;<br>              //任务立即开始执行<br>                scheduleFrameLocked(now);<br>            &#125; <span class="hljs-keyword">else</span> &#123;<br>              //封装异步消息等待执行<br>                Message msg = mHandler.obtainMessage(MSG_DO_SCHEDULE_CALLBACK, action);<br>                msg.arg1 = callbackType;<br>                msg.setAsynchronous(<span class="hljs-keyword">true</span>);<br>                mHandler.sendMessageAtTime(msg, dueTime);<br>            &#125;<br>        &#125;<br>    &#125;<br><br>  <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> class FrameHandler extends Handler &#123;<br>     ...<br>     @Override<br>     <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> handleMessage(Message msg) &#123;<br>       ...<br>        <span class="hljs-keyword">case</span> MSG_DO_SCHEDULE_CALLBACK:<br>           doScheduleCallback(msg.arg1);<br>           <span class="hljs-keyword">break</span>;<br>     &#125;<br>    &#125;<br><br>    <span class="hljs-keyword">void</span> doScheduleCallback(<span class="hljs-keyword">int</span> callbackType) &#123;<br>        <span class="hljs-keyword">synchronized</span> (mLock) &#123;<br>            <span class="hljs-keyword">if</span> (!mFrameScheduled) &#123;<br>                <span class="hljs-keyword">final</span> <span class="hljs-keyword">long</span> now = SystemClock.uptimeMillis();<br>                <span class="hljs-keyword">if</span> (mCallbackQueues[callbackType].hasDueCallbacksLocked(now)) &#123;<br>                    scheduleFrameLocked(now);<br>                &#125;<br>            &#125;<br>        &#125;<br>    &#125;<br></code></pre></td></tr></table></figure>
+<p><code>CallbackType</code>表示回调任务的类型，目前分为4种类型</p>
+<ul>
+<li><code>CALLBACK_INPUT</code>：输入回调，接收到<code>VSync信号</code>时首先运行，如处理Move事件</li>
+<li><code>CALLBACK_ANIMATION</code>：动画回调</li>
+<li><code>CALLBACK_TRAVERSAL</code>：Traversal回调，执行<code>measure-&gt;layout-&gt;draw</code></li>
+<li><code>CALLBACK_COMMIT</code>：Commit回调，处理帧绘制完成后的操作，如整理应用内存，属性动画起始时间调整</li>
+</ul>
+<p><code>postCallback()</code>最后都会执行到<code>scheduleFrameLocked()</code></p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> scheduleFrameLocked(<span class="hljs-keyword">long</span> now) &#123;<br>       <span class="hljs-keyword">if</span> (!mFrameScheduled) &#123;//当前是否有帧在执行<br>           mFrameScheduled = <span class="hljs-keyword">true</span>;<br>           <span class="hljs-keyword">if</span> (USE_VSYNC) &#123;//支持VSync，默认<span class="hljs-keyword">true</span><br>               <span class="hljs-keyword">if</span> (DEBUG_FRAMES) &#123;<br>                   Log.d(TAG, "Scheduling next frame on vsync.");<br>               &#125;<br>             <br>               //当前运行在Looper所在的线程，立即执行申请VSync信号<br>               <span class="hljs-keyword">if</span> (isRunningOnLooperThreadLocked()) &#123;<br>                   scheduleVsyncLocked();<br>               &#125; <span class="hljs-keyword">else</span> &#123;<br>                 //通过 mHandler发送异步消息到原线程，申请VSync信号<br>                   Message msg = mHandler.obtainMessage(MSG_DO_SCHEDULE_VSYNC);<br>                   msg.setAsynchronous(<span class="hljs-keyword">true</span>);<br>                   mHandler.sendMessageAtFrontOfQueue(msg);<br>               &#125;<br>           &#125; <span class="hljs-keyword">else</span> &#123;//不支持 VSync<br>               <span class="hljs-keyword">final</span> <span class="hljs-keyword">long</span> nextFrameTime = Math.max(<br>                       mLastFrameTimeNanos / TimeUtils.NANOS_PER_MS + sFrameDelay, now);<br>               <span class="hljs-keyword">if</span> (DEBUG_FRAMES) &#123;<br>                   Log.d(TAG, "Scheduling next frame in " + (nextFrameTime - now) + " ms.");<br>               &#125;<br>               //执行 doFrame()<br>               Message msg = mHandler.obtainMessage(MSG_DO_FRAME);<br>               msg.setAsynchronous(<span class="hljs-keyword">true</span>);<br>               mHandler.sendMessageAtTime(msg, nextFrameTime);<br>           &#125;<br>       &#125;<br>   &#125;<br><br>   <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> class FrameHandler extends Handler &#123;<br>     ...<br>       @Override<br>       <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> handleMessage(Message msg) &#123;<br>           <span class="hljs-keyword">switch</span> (msg.what) &#123;<br>               <span class="hljs-keyword">case</span> MSG_DO_FRAME:<br>                   doFrame(System.nanoTime(), 0);<br>                   <span class="hljs-keyword">break</span>;<br>               <span class="hljs-keyword">case</span> MSG_DO_SCHEDULE_VSYNC:<br>                   doScheduleVsync();<br>                   <span class="hljs-keyword">break</span>;<br>               ...<br>           &#125;<br>       &#125;<br>   &#125;<br><br>   <span class="hljs-keyword">void</span> doScheduleVsync() &#123;<br>       <span class="hljs-keyword">synchronized</span> (mLock) &#123;<br>           <span class="hljs-keyword">if</span> (mFrameScheduled) &#123;<br>               scheduleVsyncLocked();<br>           &#125;<br>       &#125;<br>   &#125;<br></code></pre></td></tr></table></figure>
+<p><code>postCallback()</code>主要执行了以下几步：</p>
+<ol>
+<li>实际执行的为<code>postCallbackDelayedInternal()</code>，先将任务通过<code>addCallbackLocked()</code>添加到<code>CallbackQueue</code>中</li>
+<li>判断任务执行时间与当前时间的差值<ul>
+<li>执行时间在当前时间之前：直接执行<code>scheduleFrameLocked()</code></li>
+<li>执行时间在当前时间之后：将任务封装成<code>异步消息</code>，通过<code>mHandler</code>发送消息，且消息为<code>MSG_CO_SCHEDULE_CALLBACK</code>。到达执行时间之后，也是执行<code>scheduleFrameLocked()</code></li>
+</ul>
+</li>
+<li>执行<code>scheduleFrameLocked()</code>，需要先判断<code>mFrameSchduled</code>，在执行跳过此次任务；未执行，继续判断<code>是否支持VSync</code><ul>
+<li>不支持<code>VSync</code>：封装异步消息，且消息为<code>MSG_DO_FRAME</code>，发送消息到主线程，执行<code>doFrame()</code></li>
+<li>支持<code>VSync</code>：需要判断当前是否为UI线程<ul>
+<li>是UI线程：立即执行<code>scheduleVsyncLocked()</code></li>
+<li>非UI线程：封装异步消息，且消息为<code>MSG_DO_SCHEDULE_VSYNC</code>，发送消息到主线程，后执行<code>scheduleVsyncLocked()</code></li>
+</ul>
+</li>
+</ul>
+</li>
+<li>执行<code>scheduleVsyncLocked()</code>去申请<code>Vsync信号</code>。</li>
+</ol>
+<blockquote>
+<p>简单总结<code>postCallback()</code></p>
+</blockquote>
+<h3 id="申请和接收信号-onVsync"><a href="#申请和接收信号-onVsync" class="headerlink" title="申请和接收信号-onVsync()"></a>申请和接收信号-onVsync()</h3><p>上一节调用的<code>scheduleVsyncLocked()</code>申请<code>VSync信号</code></p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><code class="hljs java">    <span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> scheduleVsyncLocked() &#123;<br>        mDisplayEventReceiver.scheduleVsync();<br>    &#125;<br><br>//DisplayEventReceiver.java<br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> scheduleVsync() &#123;<br>        <span class="hljs-keyword">if</span> (mReceiverPtr == 0) &#123;<br>            Log.w(TAG, "Attempted to schedule a vertical sync pulse but the display event "<br>                    + "receiver has already been disposed.");<br>        &#125; <span class="hljs-keyword">else</span> &#123;<br>            nativeScheduleVsync(mReceiverPtr);<br>        &#125;<br>    &#125;<br></code></pre></td></tr></table></figure>
+<p><code>nativeScheduleVsync()</code>调用native方法申请<code>VSync信号</code></p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><code class="hljs java">//DisplayEventReceiver.java<br>    // Called from <span class="hljs-keyword">native</span> code.<br>    @SuppressWarnings("unused")<br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> dispatchVsync(<span class="hljs-keyword">long</span> timestampNanos, <span class="hljs-keyword">int</span> builtInDisplayId, <span class="hljs-keyword">int</span> frame) &#123;<br>        onVsync(timestampNanos, builtInDisplayId, frame);<br>    &#125;<br></code></pre></td></tr></table></figure>
+<p>通过native调用<code>dispatchVsync()</code>回调<code>onVsync()</code></p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><code class="hljs java">//Chorgegrapher.FrameDisplayEventReceiver.java<br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> class FrameDisplayEventReceiver extends DisplayEventReceiver<br>            implements Runnable &#123;<br>      ...<br>      @Override<br>      <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> onVsync(<span class="hljs-keyword">long</span> timestampNanos, <span class="hljs-keyword">int</span> builtInDisplayId, <span class="hljs-keyword">int</span> frame) &#123;<br>       ...<br>            Message msg = Message.obtain(mHandler, <span class="hljs-keyword">this</span>);<br>            msg.setAsynchronous(<span class="hljs-keyword">true</span>);<br>            mHandler.sendMessageAtTime(msg, timestampNanos / TimeUtils.NANOS_PER_MS);<br>      &#125;<br>      <br>        @Override<br>        <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> run() &#123;<br>            mHavePendingVsync = <span class="hljs-keyword">false</span>;<br>            doFrame(mTimestampNanos, mFrame);<br>        &#125;<br>    &#125;<br></code></pre></td></tr></table></figure>
+<p>将本身作为<code>runnable</code>对象，执行的就是<code>run()</code>，最终执行的就是<code>doFrame()</code></p>
+<h3 id="执行任务-doFrame"><a href="#执行任务-doFrame" class="headerlink" title="执行任务-doFrame()"></a>执行任务-doFrame()</h3><blockquote>
+<p>最终在接收到<code>VSync</code>信号时，执行<code>doFrame()</code></p>
+</blockquote>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">void</span> doFrame(<span class="hljs-keyword">long</span> frameTimeNanos, <span class="hljs-keyword">int</span> frame) &#123;<br>    <span class="hljs-keyword">final</span> <span class="hljs-keyword">long</span> startNanos;<br>    <span class="hljs-keyword">synchronized</span> (mLock) &#123;//<br>        <span class="hljs-keyword">if</span> (!mFrameScheduled) &#123;//当前有任务在执行<br>            return; // no work to <span class="hljs-keyword">do</span><br>        &#125;<br>        ...<br>        //预期执行时间<br>        <span class="hljs-keyword">long</span> intendedFrameTimeNanos = frameTimeNanos;<br>        //实际frame执行时间<br>        startNanos = System.nanoTime();<br>        //预期与实际时间差<br>        <span class="hljs-keyword">final</span> <span class="hljs-keyword">long</span> jitterNanos = startNanos - frameTimeNanos;<br>        <span class="hljs-keyword">if</span> (jitterNanos &gt;= mFrameIntervalNanos) &#123;//时间差大于一帧执行时长，当前为16.6ms<br>            <span class="hljs-keyword">final</span> <span class="hljs-keyword">long</span> skippedFrames = jitterNanos / mFrameIntervalNanos;//计算跳过的帧数<br>            <span class="hljs-keyword">if</span> (skippedFrames &gt;= SKIPPED_FRAME_WARNING_LIMIT) &#123;//默认30<br>                //跳过的帧数超出了30时，打印日志<br>                Log.i(TAG, "Skipped " + skippedFrames + " frames!  "<br>                        + "The application may be doing too much work on its main thread.");<br>            &#125;<br>            //重新计算实际执行与当前时间的偏差值<br>            <span class="hljs-keyword">final</span> <span class="hljs-keyword">long</span> lastFrameOffset = jitterNanos % mFrameIntervalNanos;<br>            <span class="hljs-keyword">if</span> (DEBUG_JANK) &#123;<br>                Log.d(TAG, "Missed vsync by " + (jitterNanos * 0.000001f) + " ms "<br>                        + "which is more than the frame interval of "<br>                        + (mFrameIntervalNanos * 0.000001f) + " ms!  "<br>                        + "Skipping " + skippedFrames + " frames and setting frame "<br>                        + "time to " + (lastFrameOffset * 0.000001f) + " ms in the past.");<br>            &#125;<br>            //修正偏差值，方便后续同步工作<br>            frameTimeNanos = startNanos - lastFrameOffset;<br>        &#125;<br><br>      //当前时间小于上一次绘制时间，就等待下一次绘制时机到老<br>        <span class="hljs-keyword">if</span> (frameTimeNanos &lt; mLastFrameTimeNanos) &#123;<br>            <span class="hljs-keyword">if</span> (DEBUG_JANK) &#123;<br>                Log.d(TAG, "Frame time appears to be going backwards.  May be due to a "<br>                        + "previously skipped frame.  Waiting <span class="hljs-keyword">for</span> next vsync.");<br>            &#125;<br>            scheduleVsyncLocked();<br>            return;<br>        &#125;<br><br>        <span class="hljs-keyword">if</span> (mFPSDivisor &gt; 1) &#123;<br>            <span class="hljs-keyword">long</span> timeSinceVsync = frameTimeNanos - mLastFrameTimeNanos;<br>            <span class="hljs-keyword">if</span> (timeSinceVsync &lt; (mFrameIntervalNanos * mFPSDivisor) &amp;&amp; timeSinceVsync &gt; 0) &#123;<br>                scheduleVsyncLocked();<br>                return;<br>            &#125;<br>        &#125;<br><br>        mFrameInfo.setVsync(intendedFrameTimeNanos, frameTimeNanos);<br>        mFrameScheduled = <span class="hljs-keyword">false</span>;<br>      //记录上一次绘制时间<br>        mLastFrameTimeNanos = frameTimeNanos;<br>    &#125;<br><br>    <span class="hljs-keyword">try</span> &#123;<br>       //按类型顺序执行任务<br>        Trace.traceBegin(Trace.TRACE_TAG_VIEW, "Choreographer#doFrame");<br>        AnimationUtils.lockAnimationClock(frameTimeNanos / TimeUtils.NANOS_PER_MS);<br><br>        mFrameInfo.markInputHandlingStart();<br>        //输入<br>        doCallbacks(Choreographer.CALLBACK_INPUT, frameTimeNanos);<br><br>        mFrameInfo.markAnimationsStart();<br>        //动画<br>        doCallbacks(Choreographer.CALLBACK_ANIMATION, frameTimeNanos);<br><br>        mFrameInfo.markPerformTraversalsStart();<br>        //绘制<br>        doCallbacks(Choreographer.CALLBACK_TRAVERSAL, frameTimeNanos);<br>        //遍历完成的提交操作<br>        doCallbacks(Choreographer.CALLBACK_COMMIT, frameTimeNanos);<br>    &#125; <span class="hljs-keyword">finally</span> &#123;<br>        AnimationUtils.unlockAnimationClock();<br>        Trace.traceEnd(Trace.TRACE_TAG_VIEW);<br>    &#125;<br><br>    <span class="hljs-keyword">if</span> (DEBUG_FRAMES) &#123;<br>        <span class="hljs-keyword">final</span> <span class="hljs-keyword">long</span> endNanos = System.nanoTime();<br>        Log.d(TAG, "Frame " + frame + ": Finished, took "<br>                + (endNanos - startNanos) * 0.000001f + " ms, latency "<br>                + (startNanos - frameTimeNanos) * 0.000001f + " ms.");<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+<p><code>doFrame()</code>主要执行了两步：</p>
+<ol>
+<li>修正<code>frame</code>执行时间</li>
+<li>按照顺序，从<code>callbackQueue</code>获取<code>CallbackRecord</code>执行</li>
+</ol>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">void</span> doCallbacks(<span class="hljs-keyword">int</span> callbackType, <span class="hljs-keyword">long</span> frameTimeNanos) &#123;<br>        CallbackRecord callbacks;<br>        <span class="hljs-keyword">synchronized</span> (mLock) &#123;<br>            // We use "now" to determine when callbacks become due because it's possible<br>            // <span class="hljs-keyword">for</span> earlier processing phases in a frame to post callbacks that should run<br>            // in a following phase, such as an input event that causes an animation to start.<br>            <span class="hljs-keyword">final</span> <span class="hljs-keyword">long</span> now = System.nanoTime();<br>            //根据回调类型获取可执行回调(已到达执行时间)<br>            callbacks = mCallbackQueues[callbackType].extractDueCallbacksLocked(<br>                    now / TimeUtils.NANOS_PER_MS);<br>            <span class="hljs-keyword">if</span> (callbacks == <span class="hljs-keyword">null</span>) &#123;<br>                return;<br>            &#125;<br>            mCallbacksRunning = <span class="hljs-keyword">true</span>;<br><br>            ...<br>            //属于 提交任务类型<br>            <span class="hljs-keyword">if</span> (callbackType == Choreographer.CALLBACK_COMMIT) &#123;<br>                <span class="hljs-keyword">final</span> <span class="hljs-keyword">long</span> jitterNanos = now - frameTimeNanos;<br>                Trace.traceCounter(Trace.TRACE_TAG_VIEW, "jitterNanos", (<span class="hljs-keyword">int</span>) jitterNanos);<br>                <span class="hljs-keyword">if</span> (jitterNanos &gt;= 2 * mFrameIntervalNanos) &#123;<br>                    <span class="hljs-keyword">final</span> <span class="hljs-keyword">long</span> lastFrameOffset = jitterNanos % mFrameIntervalNanos<br>                            + mFrameIntervalNanos;<br>                    <span class="hljs-keyword">if</span> (DEBUG_JANK) &#123;<br>                        Log.d(TAG, "Commit callback delayed by " + (jitterNanos * 0.000001f)<br>                                + " ms which is more than twice the frame interval of "<br>                                + (mFrameIntervalNanos * 0.000001f) + " ms!  "<br>                                + "Setting frame time to " + (lastFrameOffset * 0.000001f)<br>                                + " ms in the past.");<br>                        mDebugPrintNextFrameTimeDelta = <span class="hljs-keyword">true</span>;<br>                    &#125;<br>                    frameTimeNanos = now - lastFrameOffset;<br>                    mLastFrameTimeNanos = frameTimeNanos;<br>                &#125;<br>            &#125;<br>        &#125;<br>        <span class="hljs-keyword">try</span> &#123;<br>            Trace.traceBegin(Trace.TRACE_TAG_VIEW, CALLBACK_TRACE_TITLES[callbackType]);<br>            //迭代执行对应 callbackType队列的任务<br>            <span class="hljs-keyword">for</span> (CallbackRecord c = callbacks; c != <span class="hljs-keyword">null</span>; c = c.next) &#123;<br>                <span class="hljs-keyword">if</span> (DEBUG_FRAMES) &#123;<br>                    Log.d(TAG, "RunCallback: type=" + callbackType<br>                            + ", action=" + c.action + ", token=" + c.token<br>                            + ", latencyMillis=" + (SystemClock.uptimeMillis() - c.dueTime));<br>                &#125;<br>              //回调CallbackRecord的run()<br>                c.run(frameTimeNanos);<br>            &#125;<br>        &#125; <span class="hljs-keyword">finally</span> &#123;<br>            <span class="hljs-keyword">synchronized</span> (mLock) &#123;<br>                mCallbacksRunning = <span class="hljs-keyword">false</span>;<br>                <span class="hljs-keyword">do</span> &#123;<br>                    <span class="hljs-keyword">final</span> CallbackRecord next = callbacks.next;<br>                    recycleCallbackLocked(callbacks);<br>                    callbacks = next;<br>                &#125; <span class="hljs-keyword">while</span> (callbacks != <span class="hljs-keyword">null</span>);<br>            &#125;<br>            Trace.traceEnd(Trace.TRACE_TAG_VIEW);<br>        &#125;<br>    &#125;<br><br><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> class CallbackRecord &#123;<br>        ...<br>        <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> run(<span class="hljs-keyword">long</span> frameTimeNanos) &#123;<br>            <span class="hljs-keyword">if</span> (token == FRAME_CALLBACK_TOKEN) &#123;<br>              //执行了postFrameCallback()或 postFrameCallbackDelayed 执行此处<br>                ((FrameCallback)action).doFrame(frameTimeNanos);<br>            &#125; <span class="hljs-keyword">else</span> &#123;<br>              //否则执行 run<br>                ((Runnable)action).run();<br>            &#125;<br>        &#125;<br>    &#125;<br></code></pre></td></tr></table></figure>
+<p><code>doCallbacks()</code>主要执行了以下几步：</p>
+<ol>
+<li><p><code>extractDueCallbacksLocked(now/TimeUtils.NANOS_PER_MS)</code>获取当前时间之前所有可执行的Callback，保存在单链表中。</p>
+</li>
+<li><p>关于<code>CALLBACK_COMMIT</code>的处理，如果当前<code>frame</code>渲染时间超出了两个<code>Vsync</code>间隔，将当前提交时间修正为上一次<code>VSync信号</code>发出时间。<strong>为了保证下一个frame的提交时间和当前frame的时间相差为1且不重复</strong>。</p>
+<p><code>CALLBACK_COMMIT</code>是为了解决<code>属性动画</code>的问题引入的，有时候可能因遍历时间或绘制时间过长，导致动画启动时间过长，发生跳帧，在此处<strong>修正动画的第一帧时间</strong>。</p>
+<p><img src="/images/CALLBACK_COMMIT作用" srcset="/img/loading.gif" alt="img"></p>
+<p>修正了动画启动时间，保证动画执行时间的正确性。</p>
+</li>
+<li><p>最后取出<code>CallbackRecord</code>，执行<code>run()</code></p>
+</li>
+</ol>
+<p><img src="/images/View刷新过程.jpg" srcset="/img/loading.gif" alt="View刷新过程"></p>
+<h2 id="Vsync申请和回调流程-Native"><a href="#Vsync申请和回调流程-Native" class="headerlink" title="Vsync申请和回调流程(Native)"></a>Vsync申请和回调流程(Native)</h2><h3 id="申请Vsync信号"><a href="#申请Vsync信号" class="headerlink" title="申请Vsync信号"></a>申请Vsync信号</h3><p><code>frameworks/base/core/jni/android_view_DisplayEventReceiver.cpp</code></p>
+<p><code>frameworks/native/libs/gui/DisplayEventDispatcher.cpp</code></p>
+<blockquote>
+<p>从<code>nativeScheduleVsync()</code>开始监听<code>VSync信号</code></p>
+</blockquote>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><code class="hljs java">//DisplayEventReceiver.java<br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">native</span> <span class="hljs-keyword">void</span> nativeScheduleVsync(<span class="hljs-keyword">long</span> receiverPtr);<br><br>    //初始化<br>    <span class="hljs-keyword">public</span> DisplayEventReceiver(Looper looper, <span class="hljs-keyword">int</span> vsyncSource) &#123;<br>        <span class="hljs-keyword">if</span> (looper == <span class="hljs-keyword">null</span>) &#123;<br>            throw new IllegalArgumentException("looper must not be <span class="hljs-keyword">null</span>");<br>        &#125;<br><br>        mMessageQueue = looper.getQueue();<br>        mReceiverPtr = nativeInit(new WeakReference&lt;DisplayEventReceiver&gt;(<span class="hljs-keyword">this</span>), mMessageQueue,<br>                vsyncSource);<br><br>        mCloseGuard.open("dispose");<br>    &#125;<br></code></pre></td></tr></table></figure>
+<blockquote>
+<p>执行<code>nativeInit()</code>初始化并创建<code>DisplayEventReceiver</code></p>
+</blockquote>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br></pre></td><td class="code"><pre><code class="hljs c++">//android_view_DisplayEventReceiver.cpp<br><span class="hljs-keyword">static</span> jlong nativeInit(JNIEnv* env, jclass clazz, jobject receiverWeak,<br>        jobject messageQueueObj, jint vsyncSource, jint configChanged) &#123;<br>    sp&lt;MessageQueue&gt; messageQueue = android_os_MessageQueue_getMessageQueue(env, messageQueueObj);<br>    <span class="hljs-keyword">if</span> (messageQueue == <span class="hljs-literal">NULL</span>) &#123;<br>        jniThrowRuntimeException(env, "MessageQueue is <span class="hljs-keyword">not</span> initialized.");<br>        <span class="hljs-keyword">return</span> 0;<br>    &#125;<br>    //创建NAtiveDisplayEventReceiver，与SurfaceFlinger建立连接<br>    sp&lt;NativeDisplayEventReceiver&gt; receiver = <span class="hljs-keyword">new</span> NativeDisplayEventReceiver(env,<br>            receiverWeak, messageQueue, vsyncSource, configChanged);<br>    status_t status = receiver-&gt;initialize();<br>    <span class="hljs-keyword">if</span> (status) &#123;<br>        String8 message;<br>        message.appendFormat("Failed to initialize display event receiver.  status=%d", status);<br>        jniThrowRuntimeException(env, message.<span class="hljs-built_in">string</span>());<br>        <span class="hljs-keyword">return</span> 0;<br>    &#125;<br><br>    receiver-&gt;incStrong(gDisplayEventReceiverClassInfo.clazz); // retain a reference <span class="hljs-keyword">for</span> the object<br>    <span class="hljs-keyword">return</span> <span class="hljs-keyword">reinterpret_cast</span>&lt;jlong&gt;(receiver.get());<br>&#125;<br><br>NativeDisplayEventReceiver::NativeDisplayEventReceiver(JNIEnv* env,<br>        jobject receiverWeak, <span class="hljs-keyword">const</span> sp&lt;MessageQueue&gt;&amp; messageQueue, jint vsyncSource,<br>        jint configChanged) :<br>        DisplayEventDispatcher(messageQueue-&gt;getLooper(),<br>                <span class="hljs-keyword">static_cast</span>&lt;ISurfaceComposer::VsyncSource&gt;(vsyncSource),<br>                <span class="hljs-keyword">static_cast</span>&lt;ISurfaceComposer::ConfigChanged&gt;(configChanged)),<br>        mReceiverWeakGlobal(env-&gt;NewGlobalRef(receiverWeak)),<br>        mMessageQueue(messageQueue) &#123;<br>    ALOGV("receiver %p ~ Initializing display event receiver.", <span class="hljs-keyword">this</span>);<br>&#125;<br></code></pre></td></tr></table></figure>
+<p>新建完<code>DisplayEventReceiver</code>，由<code>DisplayEventDispatcher</code>进行后续操作</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><code class="hljs c++">//DisplayEventReceiver.h<br>class DisplayEventDispatcher : <span class="hljs-keyword">public</span> LooperCallback &#123;<br>  <span class="hljs-keyword">public</span>:<br>    <span class="hljs-keyword">explicit</span> DisplayEventDispatcher(<br>            <span class="hljs-keyword">const</span> sp&lt;Looper&gt;&amp; looper,<br>            ISurfaceComposer::VsyncSource vsyncSource = ISurfaceComposer::eVsyncSourceApp,<br>            ISurfaceComposer::ConfigChanged configChanged =<br>                    ISurfaceComposer::eConfigChangedSuppress);<br>   ...<br>     <br>    <span class="hljs-keyword">private</span>:<br>    sp&lt;Looper&gt; mLooper;<br>    DisplayEventReceiver mReceiver;<br>    ...<br>      <br>&#125;<br><br><br>//DisplayEventDispatcher.cpp<br>DisplayEventDispatcher::DisplayEventDispatcher(<span class="hljs-keyword">const</span> sp&lt;Looper&gt;&amp; looper,<br>                                               ISurfaceComposer::VsyncSource vsyncSource,<br>                                               ISurfaceComposer::ConfigChanged configChanged)<br>      : mLooper(looper), mReceiver(vsyncSource, configChanged), mWaitingForVsync(<span class="hljs-literal">false</span>) &#123;<br>    ALOGV("dispatcher %p ~ Initializing display event dispatcher.", <span class="hljs-keyword">this</span>);<br>&#125;<br></code></pre></td></tr></table></figure>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><code class="hljs c++">//DisplayEventReceiver.cpp<br>DisplayEventReceiver::DisplayEventReceiver(ISurfaceComposer::VsyncSource vsyncSource,<br>                                           ISurfaceComposer::ConfigChanged configChanged) &#123;<br>    sp&lt;ISurfaceComposer&gt; sf(ComposerService::getComposerService());<br>    <span class="hljs-keyword">if</span> (sf != <span class="hljs-literal">nullptr</span>) &#123;<br>        //为客户端创建显示连接，通过该连接请求SurfaceFlinger发送及接收Vsync信号<br>        mEventConnection = sf-&gt;createDisplayEventConnection(vsyncSource, configChanged);<br>        <span class="hljs-keyword">if</span> (mEventConnection != <span class="hljs-literal">nullptr</span>) &#123;<br>            //创建BitTube<br>            mDataChannel = <span class="hljs-built_in">std</span>::make_unique&lt;gui::BitTube&gt;();<br>            //通过Binder获取对应Connection的Socket<br>            mEventConnection-&gt;stealReceiveChannel(mDataChannel.get());<br>        &#125;<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+<h4 id="createDisplayEventConnection"><a href="#createDisplayEventConnection" class="headerlink" title="createDisplayEventConnection"></a>createDisplayEventConnection</h4><p><code>createDisplayEventConnection()</code>是一个Binder IPC</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><code class="hljs c++">//ISurfaceComposer.cpp<br>    <span class="hljs-keyword">virtual</span> sp&lt;IDisplayEventConnection&gt; createDisplayEventConnection(VsyncSource vsyncSource,<br>                                                                     ConfigChanged configChanged) &#123;<br>        Parcel data, reply;<br>        sp&lt;IDisplayEventConnection&gt; result;<br>        <span class="hljs-keyword">int</span> err = data.writeInterfaceToken(<br>                ISurfaceComposer::getInterfaceDescriptor());<br>        <span class="hljs-keyword">if</span> (err != NO_ERROR) &#123;<br>            <span class="hljs-keyword">return</span> result;<br>        &#125;<br>        data.writeInt32(<span class="hljs-keyword">static_cast</span>&lt;int32_t&gt;(vsyncSource));<br>        data.writeInt32(<span class="hljs-keyword">static_cast</span>&lt;int32_t&gt;(configChanged));<br>        //请求SurfaceLinger处理 CREATE_DISPLAY_EVENT_CONNECTION<br>        err = remote()-&gt;transact(<br>                BnSurfaceComposer::CREATE_DISPLAY_EVENT_CONNECTION,<br>                data, &amp;reply);<br>        <span class="hljs-keyword">if</span> (err != NO_ERROR) &#123;<br>            ALOGE("ISurfaceComposer::createDisplayEventConnection: error performing "<br>                    "transaction: %s (%d)", strerror(-err), -err);<br>            <span class="hljs-keyword">return</span> result;<br>        &#125;<br>        result = interface_cast&lt;IDisplayEventConnection&gt;(reply.readStrongBinder());<br>        <span class="hljs-keyword">return</span> result;<br>    &#125;<br></code></pre></td></tr></table></figure>
+<p>在<code>onTransact()</code>处理发过来的<code>CREATE_DISPLAY_EVENT_CONNECTION</code></p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><code class="hljs c++">//ISurfaceComposer.cpp<br>status_t BnSurfaceComposer::onTransact(<br>    uint32_t code, <span class="hljs-keyword">const</span> Parcel&amp; data, Parcel* reply, uint32_t flags)<br>&#123;<br>  ...<br>          <span class="hljs-keyword">case</span> CREATE_DISPLAY_EVENT_CONNECTION: &#123;<br>            CHECK_INTERFACE(ISurfaceComposer, data, reply);<br>            <span class="hljs-keyword">auto</span> vsyncSource = <span class="hljs-keyword">static_cast</span>&lt;ISurfaceComposer::VsyncSource&gt;(data.readInt32());<br>            <span class="hljs-keyword">auto</span> configChanged = <span class="hljs-keyword">static_cast</span>&lt;ISurfaceComposer::ConfigChanged&gt;(data.readInt32());<br><br>            sp&lt;IDisplayEventConnection&gt; connection(<br>                    createDisplayEventConnection(vsyncSource, configChanged));<br>            reply-&gt;writeStrongBinder(IInterface::asBinder(connection));<br>            <span class="hljs-keyword">return</span> NO_ERROR;<br>        &#125;<br>  ...<br>&#125;<br></code></pre></td></tr></table></figure>
+<p>通过<code>SurfaceFlinger</code>处理请求</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><code class="hljs c++">sp&lt;IDisplayEventConnection&gt; SurfaceFlinger::createDisplayEventConnection(<br>        ISurfaceComposer::VsyncSource vsyncSource, ISurfaceComposer::ConfigChanged configChanged) &#123;<br>    <span class="hljs-keyword">const</span> <span class="hljs-keyword">auto</span>&amp; handle =<br>            vsyncSource == eVsyncSourceSurfaceFlinger ? mSfConnectionHandle : mAppConnectionHandle;<br><br>    <span class="hljs-keyword">return</span> mScheduler-&gt;createDisplayEventConnection(handle, configChanged);<br>&#125;<br></code></pre></td></tr></table></figure>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><code class="hljs c++">//EventThread.cpp<br>sp&lt;EventThreadConnection&gt; Scheduler::createConnectionInternal(<br>        EventThread* eventThread, ISurfaceComposer::ConfigChanged configChanged) &#123;<br>    <span class="hljs-keyword">return</span> eventThread-&gt;createEventConnection([&amp;] &#123; resync(); &#125;, configChanged);<br>&#125;<br><br>sp&lt;IDisplayEventConnection&gt; Scheduler::createDisplayEventConnection(<br>        ConnectionHandle handle, ISurfaceComposer::ConfigChanged configChanged) &#123;<br>    RETURN_IF_INVALID_HANDLE(handle, <span class="hljs-literal">nullptr</span>);<br>    <span class="hljs-keyword">return</span> createConnectionInternal(mConnections[handle].thread.get(), configChanged);<br>&#125;<br><br>sp&lt;EventThreadConnection&gt; EventThread::createEventConnection(<br>        ResyncCallback resyncCallback, ISurfaceComposer::ConfigChanged configChanged) <span class="hljs-keyword">const</span> &#123;<br>    <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> EventThreadConnection(<span class="hljs-keyword">const_cast</span>&lt;EventThread*&gt;(<span class="hljs-keyword">this</span>), <span class="hljs-built_in">std</span>::move(resyncCallback),<br>                                     configChanged);<br>&#125;<br></code></pre></td></tr></table></figure>
+<p>最后生成<code>EventConnection</code>对象，主要有两个作用：</p>
+<ul>
+<li>处理客户的的Vsync申请请求</li>
+<li>向客户端发送事件(Vsync)</li>
+</ul>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><code class="hljs c++">//EventThread.cpp<br>EventThreadConnection::EventThreadConnection(EventThread* eventThread,<br>                                             ResyncCallback resyncCallback,<br>                                             ISurfaceComposer::ConfigChanged configChanged)<br>      : resyncCallback(<span class="hljs-built_in">std</span>::move(resyncCallback)),<br>        mConfigChanged(configChanged),<br>        mEventThread(eventThread),<br>        mChannel(gui::BitTube::DefaultSize) &#123;&#125;<br></code></pre></td></tr></table></figure>
+<p><code>BitTube</code>是一个<code>Socket pair</code>，主要有两个作用：</p>
+<ul>
+<li>封装用于显示时间的Socket通信</li>
+<li>跨进程传递Socket文件描述符(<code>fd</code>)</li>
+</ul>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-keyword">void</span> EventThreadConnection::onFirstRef() &#123;<br>    // NOTE: mEventThread doesn't hold a strong reference on us<br>    mEventThread-&gt;registerDisplayEventConnection(<span class="hljs-keyword">this</span>);<br>&#125;<br><br>status_t EventThread::registerDisplayEventConnection(<span class="hljs-keyword">const</span> sp&lt;EventThreadConnection&gt;&amp; connection) &#123;<br>    <span class="hljs-built_in">std</span>::lock_guard&lt;<span class="hljs-built_in">std</span>::mutex&gt; lock(mMutex);<br><br>    // <span class="hljs-keyword">this</span> should never happen<br>    <span class="hljs-keyword">auto</span> it = <span class="hljs-built_in">std</span>::find(mDisplayEventConnections.cbegin(),<br>            mDisplayEventConnections.cend(), connection);<br>    <span class="hljs-keyword">if</span> (it != mDisplayEventConnections.cend()) &#123;<br>        ALOGW("DisplayEventConnection %p already exists", connection.get());<br>        mCondition.notify_all();<br>        <span class="hljs-keyword">return</span> ALREADY_EXISTS;<br>    &#125;<br>    //添加连接到集合中<br>    mDisplayEventConnections.push_back(connection);<br>    mCondition.notify_all();<br>    <span class="hljs-keyword">return</span> NO_ERROR;<br>&#125;<br></code></pre></td></tr></table></figure>
+<p><code>EventThread</code>与<code>EventThreadConnection</code>采用<code>观察者模式</code>，当有显示事件发生时，<code>EventThread</code>向<code>EventThreadConnection</code>传递事件。</p>
+<h4 id="stealReceiveChannel"><a href="#stealReceiveChannel" class="headerlink" title="stealReceiveChannel"></a>stealReceiveChannel</h4><p>通过一系列操作得到<code>EventConnection</code>，在向下执行到<code>stealReceiveChannel()</code></p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><code class="hljs c++">class BpDisplayEventConnection : <span class="hljs-keyword">public</span> SafeBpInterface&lt;IDisplayEventConnection&gt; &#123;<br>  ...<br>        status_t stealReceiveChannel(gui::BitTube* outChannel) override &#123;<br>        <span class="hljs-keyword">return</span> callRemote&lt;<span class="hljs-keyword">decltype</span>(<br>                &amp;IDisplayEventConnection::stealReceiveChannel)&gt;(Tag::STEAL_RECEIVE_CHANNEL,<br>                                                                outChannel);<br>    &#125;<br>  ...<br>&#125;<br>  <br>status_t BnDisplayEventConnection::onTransact(uint32_t code, <span class="hljs-keyword">const</span> Parcel&amp; data, Parcel* reply,<br>                                              uint32_t flags) &#123;<br>    <span class="hljs-keyword">if</span> (code &lt; IBinder::FIRST_CALL_TRANSACTION || code &gt; <span class="hljs-keyword">static_cast</span>&lt;uint32_t&gt;(Tag::LAST)) &#123;<br>        <span class="hljs-keyword">return</span> BBinder::onTransact(code, data, reply, flags);<br>    &#125;<br>    <span class="hljs-keyword">auto</span> tag = <span class="hljs-keyword">static_cast</span>&lt;Tag&gt;(code);<br>    <span class="hljs-keyword">switch</span> (tag) &#123;<br>        <span class="hljs-keyword">case</span> Tag::STEAL_RECEIVE_CHANNEL:<br>            <span class="hljs-keyword">return</span> callLocal(data, reply, &amp;IDisplayEventConnection::stealReceiveChannel);<br>        ...<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+<p>监听<code>mReceivcer</code>所获的文件句柄，一旦有数据到来，回调给<code>this</code>即<code>DisplayEventDispatcher</code>的<code>handleEvent()</code></p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><code class="hljs c++">status_t DisplayEventDispatcher::initialize() &#123;<br>    status_t result = mReceiver.initCheck();<br>    <span class="hljs-keyword">if</span> (result) &#123;<br>        ALOGW("Failed to initialize display event receiver, status=%d", result);<br>        <span class="hljs-keyword">return</span> result;<br>    &#125;<br><br>    <span class="hljs-keyword">if</span> (mLooper != <span class="hljs-literal">nullptr</span>) &#123;<br>        <span class="hljs-keyword">int</span> rc = mLooper-&gt;addFd(mReceiver.getFd(), 0, Looper::EVENT_INPUT, <span class="hljs-keyword">this</span>, <span class="hljs-literal">NULL</span>);<br>        <span class="hljs-keyword">if</span> (rc &lt; 0) &#123;<br>            <span class="hljs-keyword">return</span> UNKNOWN_ERROR;<br>        &#125;<br>    &#125;<br><br>    <span class="hljs-keyword">return</span> OK;<br>&#125;<br></code></pre></td></tr></table></figure>
+<h4 id="DisplayEventReceiver-scheduleVsync"><a href="#DisplayEventReceiver-scheduleVsync" class="headerlink" title="DisplayEventReceiver#scheduleVsync"></a>DisplayEventReceiver#scheduleVsync</h4><p><code>DisplayEventReceiver</code>初始化完毕后，继续执行<code>scheduleVsync()</code></p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><code class="hljs cpp">//libs/androidfw/DisplayEventDispatcher.cpp<br>status_t DisplayEventDispatcher::scheduleVsync() &#123;<br>    <span class="hljs-keyword">if</span> (!mWaitingForVsync) &#123;<br>        ALOGV("dispatcher %p ~ Scheduling vsync.", <span class="hljs-keyword">this</span>);<br>      <br>        status_t status = mReceiver.requestNextVsync();<br>        <span class="hljs-keyword">if</span> (status) &#123;<br>            ALOGW("Failed to request next vsync, status=%d", status);<br>            <span class="hljs-keyword">return</span> status;<br>        &#125;<br><br>        mWaitingForVsync = <span class="hljs-literal">true</span>;<br>    &#125;<br>    <span class="hljs-keyword">return</span> OK;<br>&#125;<br></code></pre></td></tr></table></figure>
+<p>回调到<code>DisplayEventReceiver</code></p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><code class="hljs cpp">//frameworks/native/libs/gui/DisplayEventReceiver.cpp<br>status_t DisplayEventReceiver::requestNextVsync() &#123;<br>    <span class="hljs-keyword">if</span> (mEventConnection != <span class="hljs-literal">NULL</span>) &#123;<br>        mEventConnection-&gt;requestNextVsync();<br>        <span class="hljs-keyword">return</span> NO_ERROR;<br>    &#125;<br>    <span class="hljs-keyword">return</span> NO_INIT;<br>&#125;<br></code></pre></td></tr></table></figure>
+<p><code>mEventConnection</code>指向了<code>EventThreadConnection</code></p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><code class="hljs cpp">//frameworks/native/services/surfaceflinger/Scheduler/EventThread.cpp<br><span class="hljs-keyword">void</span> EventThreadConnection::requestNextVsync() &#123;<br>    ATRACE_NAME("requestNextVsync");<br>    mEventThread-&gt;requestNextVsync(<span class="hljs-keyword">this</span>);<br>&#125;<br><br><span class="hljs-keyword">void</span> EventThread::requestNextVsync(<span class="hljs-keyword">const</span> sp&lt;EventThreadConnection&gt;&amp; connection) &#123;<br>    <span class="hljs-keyword">if</span> (connection-&gt;resyncCallback) &#123;<br>        connection-&gt;resyncCallback();<br>    &#125;<br><br>    <span class="hljs-built_in">std</span>::lock_guard&lt;<span class="hljs-built_in">std</span>::mutex&gt; lock(mMutex);<br><br>    <span class="hljs-keyword">if</span> (connection-&gt;vsyncRequest == VSyncRequest::None) &#123;<br>        connection-&gt;vsyncRequest = VSyncRequest::Single;<br>        mCondition.notify_all();<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+<p>调用<code>mCondition.notify_all()</code>唤醒了等待的<code>EventThread</code></p>
+<p>就去获取一次<code>Vsync信号</code></p>
+<h3 id="回调Vsync信号"><a href="#回调Vsync信号" class="headerlink" title="回调Vsync信号"></a>回调Vsync信号</h3><p>收到<code>Vsync信号</code>后，回调到<code>DisplayEventDispatcher.handleEvent()</code></p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-keyword">int</span> DisplayEventDispatcher::handleEvent(<span class="hljs-keyword">int</span>, <span class="hljs-keyword">int</span> events, <span class="hljs-keyword">void</span>*) &#123;<br>    <span class="hljs-keyword">if</span> (events &amp; (Looper::EVENT_ERROR | Looper::EVENT_HANGUP)) &#123;<br>        ALOGE("Display event receiver pipe was closed <span class="hljs-keyword">or</span> an error occurred.  "<br>              "events=0x%x",<br>              events);<br>        <span class="hljs-keyword">return</span> 0; // remove the callback<br>    &#125;<br><br>    <span class="hljs-keyword">if</span> (!(events &amp; Looper::EVENT_INPUT)) &#123;<br>        ALOGW("Received spurious callback <span class="hljs-keyword">for</span> unhandled poll event.  "<br>              "events=0x%x",<br>              events);<br>        <span class="hljs-keyword">return</span> 1; // keep the callback<br>    &#125;<br><br>    // Drain all pending events, keep the last vsync.<br>    nsecs_t vsyncTimestamp;<br>    PhysicalDisplayId vsyncDisplayId;<br>    uint32_t vsyncCount;<br>    <span class="hljs-keyword">if</span> (processPendingEvents(&amp;vsyncTimestamp, &amp;vsyncDisplayId, &amp;vsyncCount)) &#123;<br>        ALOGV("dispatcher %p ~ Vsync pulse: timestamp=%" PRId64<br>              ", displayId=%" ANDROID_PHYSICAL_DISPLAY_ID_FORMAT ", count=%d",<br>              <span class="hljs-keyword">this</span>, ns2ms(vsyncTimestamp), vsyncDisplayId, vsyncCount);<br>        mWaitingForVsync = <span class="hljs-literal">false</span>;<br>        dispatchVsync(vsyncTimestamp, vsyncDisplayId, vsyncCount);<br>    &#125;<br><br>    <span class="hljs-keyword">return</span> 1; // keep the callback<br>&#125;<br></code></pre></td></tr></table></figure>
+<p>回调到<code>handleEvent()</code>在向下执行到<code>dispatchVsync()</code></p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><code class="hljs c++">//android_view_DisplayEventReceiver.cpp<br><span class="hljs-keyword">void</span> NativeDisplayEventReceiver::dispatchVsync(nsecs_t timestamp, PhysicalDisplayId displayId,<br>                                               uint32_t count) &#123;<br>    JNIEnv* env = AndroidRuntime::getJNIEnv();<br><br>    ScopedLocalRef&lt;jobject&gt; receiverObj(env, jniGetReferent(env, mReceiverWeakGlobal));<br>    <span class="hljs-keyword">if</span> (receiverObj.get()) &#123;<br>        ALOGV("receiver %p ~ Invoking vsync handler.", <span class="hljs-keyword">this</span>);<br>        env-&gt;CallVoidMethod(receiverObj.get(),<br>                gDisplayEventReceiverClassInfo.dispatchVsync, timestamp, displayId, count);<br>        ALOGV("receiver %p ~ Returned from vsync handler.", <span class="hljs-keyword">this</span>);<br>    &#125;<br><br>    mMessageQueue-&gt;raiseAndClearException(env, "dispatchVsync");<br>&#125;<br></code></pre></td></tr></table></figure>
+<p>此处调用到<code>DisplayEventReceiver.dispatchVsync()</code></p>
+<h3 id="SurfaceFlinger监听Vsync信号"><a href="#SurfaceFlinger监听Vsync信号" class="headerlink" title="SurfaceFlinger监听Vsync信号"></a>SurfaceFlinger监听Vsync信号</h3><p>上面讲到的都是从<code>SurfaceFlinger</code>去监听到<code>Vsync</code>信号，但是<code>SurfaceFlinger</code>的Vsync信号又是从哪里来的？</p>
+<a href="/2020/12/21/Android-SurfaceFlinger解析/" title="Android-SurfaceFlinger解析">Android-SurfaceFlinger解析</a>
+<h2 id="Handler异步消息与同步屏障"><a href="#Handler异步消息与同步屏障" class="headerlink" title="Handler异步消息与同步屏障"></a>Handler异步消息与同步屏障</h2><p>在<code>ViewRootImpl.schdeuleTraversals()</code>执行<code>mHandler.getLooper().getQueue().postSyncBarrier()</code>添加<code>同步屏障</code>，在<code>doTraversal()</code>执行<code>removeSyncBarrier()</code>移除<code>同步屏障</code>。</p>
+<p><code>同步屏障</code>：为了<strong>提高异步消息优先级，保证Vsync信号和绘制的同步。</strong></p>
+<a href="/2018/05/14/Handler机制即源码解析/" title="Handler机制源码解析">Handler机制源码解析</a>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p><img src="/images/View屏幕刷新-总结.png" srcset="/img/loading.gif" alt="总结"></p>
+<p><strong>丢帧</strong>：这一帧的内容延迟显示，因为只有收到<code>VSync信号</code>才会进行Buffer交换。主要原因一般都是：<strong>布局层级较多或主线程耗时导致CPU/GPU执行时间变长，超出<code>16.6ms</code>就会导致丢帧</strong>。</p>
+<p>一般屏幕的固定刷新率是<code>60Hz</code>，换算就是<code>60帧</code>，即每<code>16.6ms</code>切换一帧。</p>
+<p>屏幕内容的绘制也是如此，没有绘制任务(没执行<code>scheduleTraversals()</code>)就不会执行绘制流程，但是<strong>底层仍然会每隔16.6ms切换下一帧画面，只不过一直显示相同的内容</strong>。当有绘制任务时，执行完<code>measure-&gt;layout-&gt;draw</code>流程后，依然需要等待收到<code>VSync信号</code>界面才会刷新。</p>
+<p><code>VSync信号</code>发生在<em>扫描完一个屏幕后，需要从最下面回到第一行继续循环，此时会发出该信号保证双缓冲(CPU/GPU)数据交换</em>。</p>
+<p>在同一时间多次调用<code>requestLayout()/invalidate()</code>不会导致多次页面刷新，由于<code>mTraversalScheduled</code>的设置，当存在任务的时候，就会过滤重复请求，因为<strong>最后的请求都会执行到<code>ViewRootImpl.scheduleTraversals()</code>，只要一次绘制就可以刷新所有View</strong>。</p>
+<p><code>Choreographer</code>主要为了<strong>在VSync信号到来时开始处理消息即CPU/GPU绘制</strong>。</p>
+<h2 id="其他"><a href="#其他" class="headerlink" title="其他"></a>其他</h2><p><img src="/images/View屏幕刷新-其他知识.png" srcset="/img/loading.gif" alt="其他"></p>
+<ol>
+<li><p>利用<code>Choreographer.postFrameCallback(frameCallback)</code>统计丢帧状况</p>
+<p><code>postFrameCallback()</code>会在每次frame渲染的时候回调一次，然后执行<code>frameCallback.doFrame()</code>，在<code>doFrame()</code>可以获取每一帧的渲染时间然后判断是否发生丢帧</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><code class="hljs java">Choreographer.getInstance().postFrameCallback(new TestFrameCallback())<br><br><span class="hljs-keyword">public</span> class TestFrameCallback implements Choreographer.FrameCallback &#123;<br>  @Override<br>  <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> doFrame(<span class="hljs-keyword">long</span> frameTimeNanos)&#123;<br>    ...<br>    //计算帧率 or others<br>      <br>    //注册下一帧回调  <br>    Choreographer.getInstance().postFrameCallback(<span class="hljs-keyword">this</span>);<br>  &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+</li>
+<li><p><code>Choreographer.CALLBACK_INPUT</code>使用场景？</p>
+
+</li>
+</ol>
+<h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><a href="/2018/12/14/View的工作原理/" title="View的工作原理">View的工作原理</a>
+<p><a href="http://gityuan.com/2017/02/25/choreographer/" target="_blank" rel="noopener">Choreographer原理</a></p>
+<p><a href="cs.android.com">Android Code Search</a></p>
+<p><a href="https://androidperformance.com/2019/10/22/Android-Choreographer/" target="_blank" rel="noopener">Android-Choreographer</a></p>
+<p><a href="https://www.jianshu.com/p/304f56f5d486" target="_blank" rel="noopener">Android与SurfaceFlinger建立连接过程</a></p>
+
+            </div>
+            <hr>
+            <div>
+              <div class="post-metas mb-3">
+                
+                
+                  <div class="post-meta">
+                    <i class="iconfont icon-tags"></i>
+                    
+                      <a class="hover-with-bg" href="/tags/Android/">Android</a>
+                    
+                  </div>
+                
+              </div>
+              
+                <p class="note note-warning">本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-sa/4.0/deed.zh" rel="nofollow noopener">CC BY-SA 4.0 协议</a> ，转载请注明出处！</p>
+              
+              
+                <div class="post-prevnext">
+                  <article class="post-prev col-6">
+                    
+                    
+                      <a href="/2020/08/03/LeetCode-Hot-100/">
+                        <i class="iconfont icon-arrowleft"></i>
+                        <span class="hidden-mobile">LeetCode Hot 100</span>
+                        <span class="visible-mobile">上一篇</span>
+                      </a>
+                    
+                  </article>
+                  <article class="post-next col-6">
+                    
+                    
+                      <a href="/2020/05/19/重学Binder/">
+                        <span class="hidden-mobile">重学Binder</span>
+                        <span class="visible-mobile">下一篇</span>
+                        <i class="iconfont icon-arrowright"></i>
+                      </a>
+                    
+                  </article>
+                </div>
+              
+            </div>
+
+            
+          </article>
+        </div>
+      </div>
+    </div>
+    
+      <div class="d-none d-lg-block col-lg-2 toc-container" id="toc-ctn">
+        <div id="toc">
+  <p class="toc-header"><i class="iconfont icon-list"></i>&nbsp;目录</p>
+  <div class="toc-body" id="toc-body"></div>
+</div>
+
+      </div>
+    
+  </div>
+</div>
+
+<!-- Custom -->
+
+
+    
+
+    
+      <a id="scroll-top-button" href="#" role="button">
+        <i class="iconfont icon-arrowup" aria-hidden="true"></i>
+      </a>
+    
+
+    
+      <div class="modal fade" id="modalSearch" tabindex="-1" role="dialog" aria-labelledby="ModalLabel"
+     aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header text-center">
+        <h4 class="modal-title w-100 font-weight-bold">搜索</h4>
+        <button type="button" id="local-search-close" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body mx-3">
+        <div class="md-form mb-5">
+          <input type="text" id="local-search-input" class="form-control validate">
+          <label data-error="x" data-success="v"
+                 for="local-search-input">关键词</label>
+        </div>
+        <div class="list-group" id="local-search-result"></div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+
+    
+  </main>
+
+  <footer class="text-center mt-5 py-3">
+  <div class="footer-content">
+     <a href="https://hexo.io" target="_blank" rel="nofollow noopener"><span>Hexo</span></a> <i class="iconfont icon-love"></i> <a href="https://github.com/fluid-dev/hexo-theme-fluid" target="_blank" rel="nofollow noopener"><span>Fluid</span></a> 
+  </div>
+  
+
+  
+
+  
+</footer>
+
+<!-- SCRIPTS -->
+
+  <script  src="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.js" ></script>
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.css" />
+
+  <script>
+    NProgress.configure({"showSpinner":false,"trickleSpeed":100})
+    NProgress.start()
+    window.addEventListener('load', function() {
+      NProgress.done();
+    })
+  </script>
+
+
+<script  src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" ></script>
+<script  src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.min.js" ></script>
+<script  src="/js/debouncer.js" ></script>
+<script  src="/js/events.js" ></script>
+<script  src="/js/plugins.js" ></script>
+
+<!-- Plugins -->
+
+
+  
+    <script  src="/js/lazyload.js" ></script>
+  
+
+
+
+  
+
+
+
+  <script  src="https://cdn.jsdelivr.net/npm/tocbot@4.12.0/dist/tocbot.min.js" ></script>
+
+
+
+  <script  src="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.js" ></script>
+
+
+
+  <script  src="https://cdn.jsdelivr.net/npm/anchor-js@4.3.0/anchor.min.js" ></script>
+
+
+
+  <script defer src="https://cdn.jsdelivr.net/npm/clipboard@2.0.6/dist/clipboard.min.js" ></script>
+
+
+
+
+
+
+
+
+  <script  src="/js/local-search.js" ></script>
+  <script>
+    (function () {
+      var path = "/local-search.xml";
+      var inputArea = document.querySelector("#local-search-input");
+      inputArea.onclick = function () {
+        searchFunc(path, 'local-search-input', 'local-search-result');
+        this.onclick = null
+      }
+    })()
+  </script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- 主题的启动项 保持在最底部 -->
+<script  src="/js/boot.js" ></script>
+
+
+
+</body>
+</html>

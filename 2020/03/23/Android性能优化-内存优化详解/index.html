@@ -1,0 +1,745 @@
+
+
+<!DOCTYPE html>
+<html lang="zh-CN" data-default-color-scheme=&#34;auto&#34;>
+
+
+
+<head><meta name="generator" content="Hexo 3.9.0">
+  <meta charset="UTF-8">
+  <link rel="apple-touch-icon" sizes="76x76" href="/img/favicon.png">
+  <link rel="icon" type="image/png" href="/img/favicon.png">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  
+  <meta name="theme-color" content="#11527b">
+  <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
+  <meta name="author" content="Leo-Wxy">
+  <meta name="keywords" content="">
+  <title>Android性能优化-内存优化详解 - Wxy的个人博客</title>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css">
+
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@4.0.0/github-markdown.min.css">
+  <link rel="stylesheet" href="/lib/hint/hint.min.css">
+
+  
+    
+    
+      
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@10.4.0/styles/atom-one-light.min.css">
+    
+  
+
+  
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.css">
+  
+
+
+
+<!-- 主题依赖的图标库，不要自行修改 -->
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1749284_ba1fz6golrf.css">
+
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1736178_kmeydafke9r.css">
+
+<link rel="stylesheet" href="/css/main.css">
+
+<!-- 自定义样式保持在最底部 -->
+
+
+  <script id="fluid-configs">
+    var Fluid = window.Fluid || {};
+    var CONFIG = {"hostname":"leo-wxy.github.io","root":"/","version":"1.8.7","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"copy_btn":true,"image_zoom":{"enable":true},"toc":{"enable":true,"headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"onlypost":false},"web_analytics":{"enable":false,"baidu":null,"google":null,"gtag":null,"tencent":{"sid":null,"cid":null},"woyaola":null,"cnzz":null,"leancloud":{"app_id":null,"app_key":null,"server_url":null}}};
+  </script>
+  <script src="/js/utils.js"></script>
+  <script src="/js/color-schema.js"></script>
+</head>
+
+
+<body>
+  <header style="height: 30vh;">
+    <nav id="navbar" class="navbar fixed-top  navbar-expand-lg navbar-dark scrolling-navbar">
+  <div class="container">
+    <a class="navbar-brand"
+       href="/">&nbsp;<strong>Wxy's Blog</strong>&nbsp;</a>
+
+    <button id="navbar-toggler-btn" class="navbar-toggler" type="button" data-toggle="collapse"
+            data-target="#navbarSupportedContent"
+            aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+      <div class="animated-icon"><span></span><span></span><span></span></div>
+    </button>
+
+    <!-- Collapsible content -->
+    <div class="collapse navbar-collapse" id="navbarSupportedContent">
+      <ul class="navbar-nav ml-auto text-center">
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/">
+                <i class="iconfont icon-home-fill"></i>
+                首页
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/archives/">
+                <i class="iconfont icon-archive-fill"></i>
+                归档
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/tags/">
+                <i class="iconfont icon-tags-fill"></i>
+                标签
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/about/">
+                <i class="iconfont icon-user-fill"></i>
+                关于
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/links/">
+                <i class="iconfont icon-link-fill"></i>
+                友链
+              </a>
+            </li>
+          
+        
+        
+          <li class="nav-item" id="search-btn">
+            <a class="nav-link" data-toggle="modal" data-target="#modalSearch">&nbsp;<i
+                class="iconfont icon-search"></i>&nbsp;</a>
+          </li>
+        
+        
+          <li class="nav-item" id="color-toggle-btn">
+            <a class="nav-link" href="javascript:">&nbsp;<i
+                class="iconfont icon-dark" id="color-toggle-icon"></i>&nbsp;</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    <div class="banner" id="banner" parallax=true
+         style="background: url('/img/default.png') no-repeat center center;
+           background-size: cover;">
+      <div class="full-bg-img">
+        <div class="mask flex-center" style="background-color: rgba(0, 0, 0, 0.3)">
+          <div class="page-header text-center fade-in-up">
+            <span class="h2" id="subtitle" title="Android性能优化-内存优化详解">
+              
+                Android性能优化-内存优化详解
+              
+            </span>
+
+            
+              <div class="mt-3">
+  
+  
+    <span class="post-meta">
+      <i class="iconfont icon-date-fill" aria-hidden="true"></i>
+      <time datetime="2020-03-23 21:04" pubdate>
+        2020年3月23日 晚上
+      </time>
+    </span>
+  
+</div>
+
+<div class="mt-1">
+  
+    
+    <span class="post-meta mr-2">
+      <i class="iconfont icon-chart"></i>
+      4.7k 字
+    </span>
+  
+
+  
+    
+    <span class="post-meta mr-2">
+      <i class="iconfont icon-clock-fill"></i>
+      
+      
+      55
+       分钟
+    </span>
+  
+
+  
+  
+</div>
+
+            
+          </div>
+
+          
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    
+      
+
+<div class="container-fluid nopadding-x">
+  <div class="row nomargin-x">
+    <div class="d-none d-lg-block col-lg-2"></div>
+    <div class="col-lg-8 nopadding-x-md">
+      <div class="container nopadding-x-md" id="board-ctn">
+        <div class="py-5" id="board">
+          <article class="post-content mx-auto">
+            <!-- SEO header -->
+            <h1 style="display: none">Android性能优化-内存优化详解</h1>
+            
+            <div class="markdown-body">
+              <h2 id="内存的概念"><a href="#内存的概念" class="headerlink" title="内存的概念"></a>内存的概念</h2><p>内存是计算机中最重要的部件之一，是硬盘与CPU之间沟通的桥梁，所有程序都是运行其上，会对程序的性能造成很大的影响。</p>
+<h2 id="Why-内存优化？"><a href="#Why-内存优化？" class="headerlink" title="Why 内存优化？"></a>Why 内存优化？</h2><h3 id="减少Crash"><a href="#减少Crash" class="headerlink" title="减少Crash"></a>减少Crash</h3><blockquote>
+<p>减少因为内存问题引起的Crash，其中最典型的就是<strong>OOM</strong></p>
+</blockquote>
+<h3 id="运行流畅"><a href="#运行流畅" class="headerlink" title="运行流畅"></a>运行流畅</h3><blockquote>
+<p>当内存紧张时，就会导致频繁触发<code>GC</code>。当触发<code>GC</code>时，所有线程都要停止，会导致所有运行被搁置，导致运行卡顿。</p>
+</blockquote>
+<h3 id="延长后台运行时间"><a href="#延长后台运行时间" class="headerlink" title="延长后台运行时间"></a>延长后台运行时间</h3><blockquote>
+<p>Android会按照特定的机制进行进程清理，按照<code>前台进程-可见进程-服务进程-后台进程-空进程</code>的顺序优先清理后面的进程。</p>
+<p>当应用占用内存过多时，切到后台时有更高的几率被Kill。</p>
+</blockquote>
+<h2 id="内存管理机制"><a href="#内存管理机制" class="headerlink" title="内存管理机制"></a>内存管理机制</h2><h3 id="系统层面"><a href="#系统层面" class="headerlink" title="系统层面"></a>系统层面</h3><!--进程优先级-->
+<p><code>LowMemoryKiller</code></p>
+<blockquote>
+<p>每隔一段时间检查一次，当系统剩余可用内存较低时，便会触发杀进程的策略。</p>
+<p>按照<code>进程优先级</code>来回收资源，如果进程优先级一致的情况下，会优先Kill消耗内存更多的进程。</p>
+</blockquote>
+<h4 id="进程优先级"><a href="#进程优先级" class="headerlink" title="进程优先级"></a>进程优先级</h4><h5 id="前台进程-Foreground-Process"><a href="#前台进程-Foreground-Process" class="headerlink" title="前台进程(Foreground Process)"></a>前台进程(Foreground Process)</h5><blockquote>
+<p><strong>优先级最高的进程</strong>，正处于用户交互的进程。</p>
+<p><em>优先级最高，基本不会被回收。</em></p>
+</blockquote>
+<p>判断条件：</p>
+<ul>
+<li>持有一个与用户交互的Activity</li>
+<li>持有一个Service(<code>startForeground() / 与可交互Activity绑定</code>)</li>
+</ul>
+<h5 id="可见进程-Visible-Process"><a href="#可见进程-Visible-Process" class="headerlink" title="可见进程(Visible Process)"></a>可见进程(Visible Process)</h5><blockquote>
+<p>不含任何前台组件，但是依然可见</p>
+<p><em>除非前台进程内存耗尽，否则不会轻易终止。</em></p>
+</blockquote>
+<p>判断条件：</p>
+<ul>
+<li>持有一个处于<code>pause</code>状态的Activity，例如显示了一个Dialog</li>
+<li>持有一个与可见Activity绑定的Service</li>
+</ul>
+<h5 id="服务进程-Service-Process"><a href="#服务进程-Service-Process" class="headerlink" title="服务进程(Service Process)"></a>服务进程(Service Process)</h5><blockquote>
+<p>可能在播放音乐或者下载文件</p>
+<p><em>除非系统内存不足，否则系统尽量维持服务进程运行</em></p>
+</blockquote>
+<p>判断条件：</p>
+<ul>
+<li>持有一个Service，且是通过<code>startService()</code>启动的</li>
+</ul>
+<h5 id="后台进程-Background-Process"><a href="#后台进程-Background-Process" class="headerlink" title="后台进程(Background Process)"></a>后台进程(Background Process)</h5><blockquote>
+<p>处于用户不可见的状态，例如切到后台的应用</p>
+<p><em>通过LruCache进行管理，系统会适当清理后台进程。占用内存越大越容易被清理</em></p>
+</blockquote>
+<p>判断条件：</p>
+<ul>
+<li>持有一个处于<code>stop</code>状态的Activity，但尚未调用<code>onDestroy()</code></li>
+</ul>
+<h5 id="空进程-Empty-Process"><a href="#空进程-Empty-Process" class="headerlink" title="空进程(Empty Process)"></a>空进程(Empty Process)</h5><blockquote>
+<p>不包含任何活跃的应用组件</p>
+</blockquote>
+<p>主要为了<code>加快下次启动进程的速度</code>。</p>
+<h3 id="进程层面"><a href="#进程层面" class="headerlink" title="进程层面"></a>进程层面</h3><blockquote>
+<p>每个进程都是一个单独的虚拟机，使用的内存空间都是独立的。</p>
+</blockquote>
+<p>不管是哪种虚拟机类型<a href="/2018/05/13/Android中的GC分析-Dalvik和ART虚拟机/" title="Dalvik和Art虚拟机">Dalvik和Art虚拟机</a>，当分配对象所占用的内存空间不足时会触发GC。</p>
+<h4 id="GC类型"><a href="#GC类型" class="headerlink" title="GC类型"></a>GC类型</h4><ul>
+<li><code>GC_FOR_MALLOC</code>：表示在堆上分配对象时内存不足触发的GC</li>
+<li><code>GC_CONCURRENT</code>：当应用程序的堆内存达到一定量时，系统自动触发的GC操作</li>
+<li><code>GC_EXPLICIT</code>：调用了<code>System.gc()</code>时触发的GC</li>
+<li><code>GC_BEFORE_OOM</code>：在准备抛出<code>OOM</code>异常前进行的GC</li>
+</ul>
+<h4 id="内存分配过程"><a href="#内存分配过程" class="headerlink" title="内存分配过程"></a>内存分配过程</h4><p>//TODO</p>
+<h2 id="内存监听"><a href="#内存监听" class="headerlink" title="内存监听"></a>内存监听</h2><h3 id="获取系统内存信息"><a href="#获取系统内存信息" class="headerlink" title="获取系统内存信息"></a>获取系统内存信息</h3><blockquote>
+<p>Android提供了<code>ActivityManager.getMemoryInfo()</code>去获取系统的内存信息。</p>
+</blockquote>
+<figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-keyword">private</span> <span class="hljs-keyword">fun</span> getSystemMemoryInfo():ActivityManager.MemoryInfo&#123;<br>        <span class="hljs-keyword">val</span> am: ActivityManager = context.getSystemService(Context.ACTIVITY_SERVICE) <span class="hljs-keyword">as</span> ActivityManager<br>        return ActivityManager.MemoryInfo().also &#123; mi -&gt;<br>            am.getMemoryInfo(mi)<br>        &#125;  <br>&#125;<br></code></pre></td></tr></table></figure>
+<p>最终得到的就是<code>MemoryInfo</code>对象</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> class MemoryInfo implements Parcelable &#123;<br>  //系统的可用内存<br>  <span class="hljs-keyword">public</span> <span class="hljs-keyword">long</span> availMem;<br>  //系统的总内存<br>  <span class="hljs-keyword">public</span> <span class="hljs-keyword">long</span> totalMem;<br>  //可用内存阈值，低于阈值会判断为低内存状态<br>  <span class="hljs-keyword">public</span> <span class="hljs-keyword">long</span> threshold;<br>  //当前是否处于 低内存状态<br>  <span class="hljs-keyword">public</span> <span class="hljs-keyword">boolean</span> lowMemory;<br>&#125;<br></code></pre></td></tr></table></figure>
+<h3 id="获取应用内存信息"><a href="#获取应用内存信息" class="headerlink" title="获取应用内存信息"></a>获取应用内存信息</h3><blockquote>
+<p>通过<code>ActivityManager</code>也可以获取到应用可用的内存信息</p>
+</blockquote>
+<figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-keyword">fun</span> getAppMemoryInfo(context: Application) &#123;<br>    <span class="hljs-keyword">val</span> runtime = Runtime.getRuntime()<br>    <span class="hljs-keyword">val</span> maxMemory = runtime.maxMemory().toMB() //应用可申请的最大内存<br><br>    <span class="hljs-keyword">val</span> am: ActivityManager = context.getSystemService(Context.ACTIVITY_SERVICE) <span class="hljs-keyword">as</span> ActivityManager<br>    <span class="hljs-keyword">val</span> canUseMemory = am.memoryClass //应用使用到的内存<br>    <span class="hljs-keyword">val</span> maxUseMemory = am.largeMemoryClass //应用使用的最大内存<br>  <br>&#125;<br></code></pre></td></tr></table></figure>
+<h5 id="实时获取应用使用内存"><a href="#实时获取应用使用内存" class="headerlink" title="实时获取应用使用内存"></a>实时获取应用使用内存</h5><p>上述操作获取的都是系统为应用配置的属性，但是无法实时的获取应用使用内存</p>
+<figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-keyword">fun</span> getAppMemoryUsage(context: Application):<span class="hljs-built_in">Float</span> &#123;<br>    <span class="hljs-keyword">var</span> mem = 0.0f<br>    <span class="hljs-keyword">val</span> am: ActivityManager = context.getSystemService(Context.ACTIVITY_SERVICE) <span class="hljs-keyword">as</span> ActivityManager<br>    <span class="hljs-keyword">try</span> &#123;<br>        <span class="hljs-keyword">var</span> memInfo: Debug.MemoryInfo? = <span class="hljs-literal">null</span><br>        //28 为Android P<br>        <span class="hljs-keyword">if</span> (Build.VERSION.SDK_INT &gt; 28) &#123;<br>            // 统计进程的内存信息 totalPss<br>            memInfo = Debug.MemoryInfo()<br>            Debug.getMemoryInfo(memInfo)<br>        &#125; <span class="hljs-keyword">else</span> &#123;<br>            //As of Android Q, <span class="hljs-keyword">for</span> regular apps this method will only return information about the memory info <span class="hljs-keyword">for</span> the processes running <span class="hljs-keyword">as</span> the caller's uid;<br>            // no other process memory info <span class="hljs-keyword">is</span> available and will be zero. Also of Android Q the sample rate allowed <span class="hljs-keyword">by</span> this API <span class="hljs-keyword">is</span> significantly limited, <span class="hljs-keyword">if</span> called faster the limit you will receive the same <span class="hljs-keyword">data</span> <span class="hljs-keyword">as</span> the previous call.<br>            <span class="hljs-keyword">val</span> memInfos: Array&lt;Debug.MemoryInfo&gt;? = am.getProcessMemoryInfo(intArrayOf(Process.myPid()))<br>            <span class="hljs-keyword">if</span> (memInfos != <span class="hljs-literal">null</span> &amp;&amp; memInfos.isNotEmpty()) &#123;<br>                memInfo = memInfos[0]<br>            &#125;<br>        &#125;<br>        <span class="hljs-keyword">val</span> totalPss = memInfo!!.totalPss<br>        <span class="hljs-keyword">if</span> (totalPss &gt;= 0) &#123;<br>            // Mem <span class="hljs-keyword">in</span> MB<br>            mem = totalPss / 1024.0f<br>        &#125;<br>    &#125; <span class="hljs-keyword">catch</span> (e: Exception) &#123;<br>        e.printStackTrace()<br>    &#125;<br>    return mem<br>&#125;<br></code></pre></td></tr></table></figure>
+<p>其中的<code>memInfo</code>结构如下：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> class MemoryInfo implements Parcelable &#123;<br>  //dalvik 使用的内存 Pss表示实际使用的物理内存<br>  <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> dalvikPss;<br>  //非共享内存，该部分内存不会被释放<br>  <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> dalvikPrivateDirty;<br>  //共享内存，该部分内存不会被释放<br>  <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> dalvikSharedDirty;<br>  //<span class="hljs-keyword">native</span>堆使用的内存 Pss表示实际使用的物理内存<br>  <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> nativePss;<br><br>  //除上述两者外使用的内存 Pss表示实际使用的物理内存<br>  <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> otherPss;<br>  <br>  //基本可以判断为应用使用的全部内存<br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> getTotalPss() &#123;<br>        return dalvikPss + nativePss + otherPss + getTotalSwappedOutPss();<br>    &#125;<br>  <br>&#125;<br></code></pre></td></tr></table></figure>
+<h3 id="获取应用内存状态"><a href="#获取应用内存状态" class="headerlink" title="获取应用内存状态"></a>获取应用内存状态</h3><p>实现需要获取状态的<code>Activity</code>或<code>Application</code>的<code>onTrimMemory()</code></p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">void</span> onTrimMemory(level:Int)&#123;<br>  //根据对应Level去执行操作<br>  when(level)&#123;<br>    <br>  &#125;<br>  <br>&#125;<br>//对应的level主要有以下几种<br>    @IntDef(prefix = &#123; "TRIM_MEMORY_" &#125;, value = &#123;<br>           //系统内存非常低，且应用位于 LRU的边缘，极有可能被回收<br>            TRIM_MEMORY_COMPLETE,<br>           //系统内存非常低，且应用位于 LRU的中间，有可能被回收<br>            TRIM_MEMORY_MODERATE,<br>           //系统内存非常低，应用刚进入后台，回收可能性低<br>            TRIM_MEMORY_BACKGROUND,<br>           //应用处于后台<br>            TRIM_MEMORY_UI_HIDDEN,<br>           //应用正常运行，但是系统内存非常低<br>            TRIM_MEMORY_RUNNING_CRITICAL,<br>           //应用正常运行，但是系统内存非常低<br>            TRIM_MEMORY_RUNNING_LOW,<br>           ////应用正常运行，但是系统内存有点低<br>            TRIM_MEMORY_RUNNING_MODERATE,<br>    &#125;)<br></code></pre></td></tr></table></figure>
+<h2 id="优化目标"><a href="#优化目标" class="headerlink" title="优化目标"></a>优化目标</h2><p><strong>减少内存的占用。</strong></p>
+<p>内存问题大致可以分为两类：</p>
+<ul>
+<li>无用的数据依然占用内存——<strong>内存泄漏</strong></li>
+<li>有用的数据占用内存过多——<strong>图片加载/内存抖动</strong></li>
+</ul>
+<p>上述两类问题最后都容易导致<strong>内存溢出(OOM)</strong></p>
+<h3 id="内存泄漏"><a href="#内存泄漏" class="headerlink" title="内存泄漏"></a>内存泄漏</h3><blockquote>
+<p>一般采用<code>可达性分析</code>做为内存对象是否存活的判断方式，通过与<code>GC Roots对象</code>是否有关联判断是否需要进行回收。</p>
+<p><code>内存泄漏</code>：当前的对象已经不再使用，但是依然被<code>GC Roots</code>对象所引用，导致无法进行回收，依然占用内存。</p>
+</blockquote>
+<h4 id="触发原因"><a href="#触发原因" class="headerlink" title="触发原因"></a>触发原因</h4><ul>
+<li><p><code>静态变量导致</code></p>
+<p>静态变量会一直持有外部类的引用，导致外部类对象无法被回收。</p>
+</li>
+<li><p><code>单例模式导致</code></p>
+<p>单例传入了外部参数，例如传入<code>Activity的context</code>，就会持有对<code>Activity</code>的引用</p>
+</li>
+<li><p><code>属性动画导致</code></p>
+<p>播放无限循环动画时，没有在Activity关闭时及时停止，导致View持有了Activity</p>
+</li>
+<li><p><code>Handler导致</code></p>
+<p>Handler的Message会持有Handler的引用，而Handler持有Looper的引用，Looper由<code>sThreadLocal 这个静态对象</code>管理。所以导致内存泄漏的<code>GC Roots</code>对象为<code>sThreadLocal</code>。</p>
+</li>
+<li><p><code>匿名内部类/非静态内部类</code></p>
+<p><code>匿名内部类</code>会隐式持有对所在Activity的引用</p>
+</li>
+<li><p><code>资源对象没关闭</code></p>
+<p>一般资源对象都使用了缓冲，不及时关闭的话，缓冲依然存在。</p>
+</li>
+</ul>
+<h3 id="图片加载"><a href="#图片加载" class="headerlink" title="图片加载"></a>图片加载</h3><blockquote>
+<p>图片资源基本是占用内存最多的，如果使用图片不当的话就很容易会导致OOM的发生。</p>
+<p>本地或者网络图片最终都会转换成<code>bitmap</code>。</p>
+</blockquote>
+<h4 id="支持图片格式"><a href="#支持图片格式" class="headerlink" title="支持图片格式"></a>支持图片格式</h4><p>目前移动端Android平台原生支持的图片格式主要有以下几种：</p>
+<ul>
+<li><p><code>JPEG</code></p>
+<blockquote>
+<p>广泛使用的有损压缩图像标准格式，不支持透明度和多帧动画，只有<code>RGB</code>三个通道。</p>
+</blockquote>
+</li>
+<li><p><code>PNG</code></p>
+<blockquote>
+<p>无损压缩图像标准格式，支持完整的透明通道。支持<code>ARGB</code>四个通道</p>
+</blockquote>
+</li>
+<li><p><code>WebP</code></p>
+<blockquote>
+<p>支持<code>有损压缩</code>和<code>无损压缩</code>，也支持透明度。</p>
+<p>在Andorid4.0之后添加的系统支持，在4.3之后支持了无损和透明的WebP展示。</p>
+</blockquote>
+</li>
+</ul>
+<h4 id="Bitmap占用内存"><a href="#Bitmap占用内存" class="headerlink" title="Bitmap占用内存"></a>Bitmap占用内存</h4><blockquote>
+<p><strong>所有像素的内存占用总和。</strong></p>
+</blockquote>
+<p>可以通过<code>getByteCount()</code>和<code>getAllocationByteCount()</code>去获取Bitmap所占用的内存。</p>
+<p>一般情况下Bitmap占用内存大小计算公式为：</p>
+<p><strong>图片长度 x 图片宽度 x 单位像素占用的字节数</strong>。</p>
+<p>其中<code>单位像素占用的字节数</code>来自<code>颜色深度</code>。</p>
+<blockquote>
+<p>颜色深度：每个像素显示的颜色数，显示的越多，色彩就越丰富。</p>
+<p>Android系统提供如下几种：</p>
+<table>
+<thead>
+<tr>
+<th>颜色深度</th>
+<th>每个像素占用内存</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ARGB_8888(<code>默认颜色深度</code>)</td>
+<td>4 byte / 32 bit</td>
+</tr>
+<tr>
+<td>ARGB_4444</td>
+<td>2 byte / 16 bit</td>
+</tr>
+<tr>
+<td>RGB_565</td>
+<td>2 byte / 16 bit</td>
+</tr>
+<tr>
+<td>ALPHA_8</td>
+<td>1 byte / 8 bit</td>
+</tr>
+</tbody>
+</table>
+<p>实际应用中建议使用<code>ARGB_8888(需要透明度)</code>和<code>RGB_565(不需要透明度)</code></p>
+<p>但<code>RGB565</code>在部分场景下显示效果较差，例如<code>大图展示</code>。</p>
+</blockquote>
+<h5 id="加载网络或者本地图片-非Drawable文件夹"><a href="#加载网络或者本地图片-非Drawable文件夹" class="headerlink" title="加载网络或者本地图片(非Drawable文件夹)"></a>加载网络或者本地图片(非Drawable文件夹)</h5><p>占用内存大小：<code>图片宽度 * 图片长度 * 单位像素占用字节数</code>。</p>
+<p>假设<code>100 * 100</code>且颜色深度为<code>ARGB_8888</code>的本地图片，转换Bitmap占用大小为<code>100 * 100 * 4</code>。</p>
+<h5 id="加载Drawable下文件资源-res-drawable"><a href="#加载Drawable下文件资源-res-drawable" class="headerlink" title="加载Drawable下文件资源(/res/drawable/)"></a>加载Drawable下文件资源(/res/drawable/)</h5><p>占用内存大小：<code>图片宽度 * 图片长度 * (inTargetDensity / inDensity) ^ 2 * 单位像素占用字节数</code>。</p>
+<p><code>inDensity</code>：图片所在文件夹对应的密度</p>
+<p><code>inTargetDensity</code>：当前系统的屏幕密度</p>
+<h5 id="占用内存存储位置"><a href="#占用内存存储位置" class="headerlink" title="占用内存存储位置"></a>占用内存存储位置</h5><p>在Android 2.3 之前 占用内存是在 native上分配的，并且生命周期不可控，还需要用户自己回收。</p>
+<p>在Android 2.3 - 7.1 之间，占用内存位于Java堆上</p>
+<p>在Android 8.0 之后，占用内存重新在native上分配，并且不需要主动执行回收。</p>
+<h3 id="内存抖动"><a href="#内存抖动" class="headerlink" title="内存抖动"></a>内存抖动</h3><blockquote>
+<p>短时间内有大量的对象被创建与回收，有短时间内快递的上升和下落的趋势，内存呈锯齿状。</p>
+<p><em>此时频繁触发GC，造成卡顿，甚至OOM</em></p>
+</blockquote>
+<h4 id="触发原因-1"><a href="#触发原因-1" class="headerlink" title="触发原因"></a>触发原因</h4><ol>
+<li>频繁创建对象，例如在<code>for循环</code>创建对象</li>
+</ol>
+<h4 id="解决方案"><a href="#解决方案" class="headerlink" title="解决方案"></a>解决方案</h4><ol>
+<li>尽量避免在循环体中创建对象</li>
+<li>尽量不要在<code>onDraw()</code>中创建对象</li>
+<li>对于能够复用的对象，考虑使用<code>对象池</code>进行缓存以便复用</li>
+</ol>
+<h3 id="内存溢出"><a href="#内存溢出" class="headerlink" title="内存溢出"></a>内存溢出</h3><blockquote>
+<p><code>OutOfMemoryError</code>，应用申请的内存超出单个应用的最大可用内存。<code>可用最大内存配置位于/system/build.prop下的 dalvik.vm.heapgrowthlimit</code></p>
+</blockquote>
+<h4 id="触发原因-2"><a href="#触发原因-2" class="headerlink" title="触发原因"></a>触发原因</h4><ol>
+<li>内存泄漏积累到一定量之后导致OOM</li>
+<li>一次性申请很多内存，例如<code>一次创建大的数组或者显示大型文件(图片)</code></li>
+</ol>
+<h3 id="其他问题"><a href="#其他问题" class="headerlink" title="其他问题"></a>其他问题</h3><h5 id="数据容器"><a href="#数据容器" class="headerlink" title="数据容器"></a>数据容器</h5><p>使用了<code>HashMap</code>之类的容器，针对每一个键值对，都需要额外的<code>Entry</code>对象</p>
+<h5 id="强引用"><a href="#强引用" class="headerlink" title="强引用"></a>强引用</h5><p>针对某些低频使用对象使用强引用，当GC触发时不能去回收这些对象</p>
+<h5 id="数据相关"><a href="#数据相关" class="headerlink" title="数据相关"></a>数据相关</h5><p>使用SP存储数据时，第一次读取时都需要将所有数据缓存到内存中，有时为了一些数据，就需要缓存整个SP。</p>
+<h5 id="缓存"><a href="#缓存" class="headerlink" title="缓存"></a>缓存</h5><p>针对一些大量重复使用对象，但是很快就要被替代，导致频繁发生GC。</p>
+<h2 id="优化工具"><a href="#优化工具" class="headerlink" title="优化工具"></a>优化工具</h2><p>主要是针对<code>内存泄漏</code>场景的优化分析。</p>
+<h3 id="Lint分析"><a href="#Lint分析" class="headerlink" title="Lint分析"></a>Lint分析</h3><p>主要是扫描静态代码，从代码实现方面进行内存泄漏分析。</p>
+<p>识别不太准确且覆盖率不高，<strong>不推荐使用</strong>。</p>
+<h3 id="Memory-Profiler"><a href="#Memory-Profiler" class="headerlink" title="Memory Profiler"></a>Memory Profiler</h3><blockquote>
+<p>AS 提供的性能分析工具，包含了CPU、内存、网络以及电量的分析信息。</p>
+<p>可以实时观测应用的内存使用情况，用于查看是否发生内存抖动(上下波动明显)，内存泄漏(切换Activity时内存明显上升)</p>
+<p>一般情况下会结合下面的<code>MAT</code>一起使用。</p>
+</blockquote>
+<h4 id=""><a href="#" class="headerlink" title=""></a><img src="/images/Memory-Profiler.png" srcset="/img/loading.gif" alt="Memory-Profiler.png"></h4><p>主要有以下作用：</p>
+<ol>
+<li>实时图表展示应用内存使用量</li>
+<li>用于识别内存泄漏、内存抖动等</li>
+<li>提供捕获堆转储、强制GC以及查看内存分配详情</li>
+</ol>
+<p><img src="/images/Memory堆转储" srcset="/img/loading.gif" alt="堆转储.png"></p>
+<p>多次点击强制GC后，再点击<code>堆转储</code>，等待一会儿会得到<code>hprof</code>文件，如果想用MAT查看该文件，还需要执行一次转换。</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><code class="hljs shell">cd platform-tools //切换Android SDK目录<br>./hprof-conv XX.hprof mat.hprof<br></code></pre></td></tr></table></figure>
+<p>转换得到的<code>mat.hprof</code>就可以通过MAT打开。</p>
+<h3 id="Memory-Analyzer-Tool"><a href="#Memory-Analyzer-Tool" class="headerlink" title="Memory Analyzer Tool"></a>Memory Analyzer Tool</h3><blockquote>
+<p><code>Memory Profiler</code>只能查看对应内存的分配，不能判断是否发生了内存泄漏。</p>
+<p><code>MAT</code>可以提供完整的<code>Java Heap</code>分析功能，并可以生成对应的内存分配报告以及分析内存问题。</p>
+</blockquote>
+<h4 id="如何使用"><a href="#如何使用" class="headerlink" title="如何使用"></a>如何使用</h4><p>使用Mat打开的上一步生成的<code>mat.hprof</code>文件，打开后会显示一个预览页。</p>
+<p>预览页上主要显示以下组件：</p>
+<ul>
+<li><p><code>Histogram</code></p>
+<p>列举内存中所有<code>实例类型对象</code>和<code>个数以及大小</code>，并在顶部的<code>regex</code>区域支持<code>正则表达式</code>查找。</p>
+<p>主要显示以下内容：</p>
+<ul>
+<li><code>Shallow Heap</code>：对象自身占用的内存</li>
+<li><code>Retained Heap</code>：对象自身占用的内存 + 对象引用对象所占用内存</li>
+<li><code>Objects</code>：对象个数</li>
+</ul>
+</li>
+<li><p><code>Dominator Tree</code></p>
+<p>列举<code>最大的对象及其依赖存活的Object</code>。相比<code>Histogram</code>可以更方便的看出引用关系</p>
+</li>
+<li><p><code>Top Consumers</code></p>
+<p>通过<code>图形</code>的方式列出<code>占用内存比较多的对象</code></p>
+</li>
+<li><p><code>Leak Suspects</code></p>
+<p>列出<code>有内存泄漏的地方</code></p>
+</li>
+</ul>
+<h4 id="排查方式"><a href="#排查方式" class="headerlink" title="排查方式"></a>排查方式</h4><ol>
+<li><p>找到当前Activity(<code>任何猜测可能发生内存泄漏的类</code>)</p>
+<p>通过顶部的<code>Regex</code>输入具体类名，或使用<code>group by package</code>查找对应包下的类</p>
+</li>
+<li><p>在<code>Histogram</code>选择对应类的<code>List Objects</code>的<code>with incoming reference</code>就可以查看类的实例</p>
+<ul>
+<li><code>with incoming reference</code>：哪些对象引用了它</li>
+<li><code>with outgoing reference</code>：它引用了哪些对象</li>
+</ul>
+</li>
+<li><p>看到实例后，右键点击，选择<code>Path to GC Roots</code>的<code>exclude all phantom/weak/soft etc references</code></p>
+<p>排除掉<code>虚 / 弱 / 软</code>引用，剩下的就是强引用</p>
+</li>
+<li><p>根据引用链分析是否发生内存泄漏</p>
+</li>
+</ol>
+<h4 id="高级使用"><a href="#高级使用" class="headerlink" title="高级使用"></a>高级使用</h4><p>有两个hprof文件中，通过<code>Compare Basket</code>进行比较，可以快速生成对比结果，直接进行对应实例对象的比较。</p>
+<h4 id="hprof文件介绍"><a href="#hprof文件介绍" class="headerlink" title="hprof文件介绍"></a>hprof文件介绍</h4>{% post_link Hprof文件解析%}
+<h3 id="LeakCanary"><a href="#LeakCanary" class="headerlink" title="LeakCanary"></a>LeakCanary</h3>{% post_link Android性能优化-LeakCanary%}
+<h2 id="优化技巧"><a href="#优化技巧" class="headerlink" title="优化技巧"></a>优化技巧</h2><h3 id="图片高效加载方式"><a href="#图片高效加载方式" class="headerlink" title="图片高效加载方式"></a>图片高效加载方式</h3><p>图片的主要载体形式为<code>Bitmap</code>，一般通过<code>BitmapFactory.decodeFile()或</code>BitmapFactory.decodeResource()去进行加载。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><code class="hljs java">//加载本地文件<br>BitmapFactory.decodeFile(filePath, new BitmapFactory.Options());<br>//加载res资源文件<br>BitmapFactory.decodeResource(getResources(),resId,new BitmapFactory.Options());<br></code></pre></td></tr></table></figure>
+<p>其中最主要的就是<code>BitmapFactory.Options</code>。通过设置其中的参数进行高效加载</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> class Options &#123;<br>    <span class="hljs-keyword">public</span> Options() &#123;<br>        inScaled = <span class="hljs-keyword">true</span>;<br>        inPremultiplied = <span class="hljs-keyword">true</span>;<br>    &#125;<br>    ...      <br>   <span class="hljs-keyword">public</span> Bitmap inBitmap; //用于实现Bitmap的复用<br>   <span class="hljs-keyword">public</span> Bitmap.Config inPreferredConfig = Bitmap.Config.ARGB_8888;  //默认颜色深度 ARGB_8888<br>   <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> inSampleSize;  //采样率 <br>   <span class="hljs-keyword">public</span> <span class="hljs-keyword">boolean</span> inJustDecodeBounds; //只解析边界，可以得出图片的宽高<br>   <span class="hljs-keyword">public</span> <span class="hljs-keyword">boolean</span> inDither;  //是否开启抖动<br>   <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> inDensity; // 图片所属文件夹对应的dpi<br>   <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> inTargetDensity;  // 目标设备屏幕的dpi           <br>   <span class="hljs-keyword">public</span> <span class="hljs-keyword">boolean</span> inScaled;    //是否支持缩放<br>   <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> outWidth;   //图片的原始宽度<br>   <span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> outHeight;  //图片的原始高度<br>   ...<br>&#125;<br></code></pre></td></tr></table></figure>
+<h4 id="Options关键参数"><a href="#Options关键参数" class="headerlink" title="Options关键参数"></a>Options关键参数</h4><h5 id="inPreferredConfig"><a href="#inPreferredConfig" class="headerlink" title="inPreferredConfig"></a>inPreferredConfig</h5><blockquote>
+<p>根据需求选择合适的<code>颜色深度</code>，可以有效减少占用内存。</p>
+</blockquote>
+<p>实质用的就是上面介绍的<a href="#Bitmap占用内存">颜色深度</a></p>
+<figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-keyword">val</span> options = BitmapFactory.Options()<br>options.inPreferredConfig = Bitmap.Config.ARGB_4444<br></code></pre></td></tr></table></figure>
+<h5 id="inJustDecodeBounds"><a href="#inJustDecodeBounds" class="headerlink" title="inJustDecodeBounds"></a>inJustDecodeBounds</h5><blockquote>
+<p>是否去加载图片。</p>
+<ul>
+<li>设置<code>true</code>：只会去加载图片的原始宽高信息，但不会真正加载图片到内存。</li>
+<li>设置<code>false</code>：图片加载到内存中</li>
+</ul>
+</blockquote>
+<figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-keyword">val</span> options = BitmapFactory.Options()<br>options.inJustDecodeBounds = <span class="hljs-literal">true</span> //只加载布局<br>BitmapFactory.decodeFile(fileName, options)<br><span class="hljs-keyword">val</span> picWidth = options.outWidth //加载图片的宽度<br><span class="hljs-keyword">val</span> picHeight = options.outHeight //加载图片的高度<br></code></pre></td></tr></table></figure>
+<p>一般配合<code>inSampleSize</code>使用，可以提前设置<code>采样率</code></p>
+<h5 id="inDensity-inTargetDensity"><a href="#inDensity-inTargetDensity" class="headerlink" title="inDensity/inTargetDensity"></a>inDensity/inTargetDensity</h5><blockquote>
+<p><code>inDensity</code>默认表示<code>图片资源文件夹的densityDpi</code></p>
+<p><code>inTargetDensity</code>默认表示<code>设备的densityDpi</code></p>
+</blockquote>
+<p>上面讲到<code>加载Drawable下文件资源</code>时，计算占用内存大小时，需要用到上述两个参数。</p>
+<p>所以可以通过调整这两个参数，优化一部分的图片内存占用。</p>
+<h5 id="inSampleSize"><a href="#inSampleSize" class="headerlink" title="inSampleSize"></a>inSampleSize</h5><blockquote>
+<p>设置图片的采样率，同时作用于图片的宽和高</p>
+</blockquote>
+<p><code>inSampleSize</code>取值总是<code>2的指数</code>，如果传进来的值不为<code>2的次方</code>，就会向下取整并取到<code>2的次方</code>的值来代替。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Bitmap decodeSampledBitmapTromResource(Resource res,<span class="hljs-keyword">int</span> rresId,<span class="hljs-keyword">int</span> reqWidth,<span class="hljs-keyword">int</span> reqHeight)&#123;<br>  <span class="hljs-keyword">final</span> BitmapFactory.Options options = new BitmapFactory.Options();<br>  options.inJustDecodeBounds = <span class="hljs-keyword">true</span>;<br>  <br>  BitmapFacory.decodeResource(res,resId,options);<br>  options.inSampleSize = calculateInSampleSize(options,reqWidth,reqHeight);<br>  options.inJustDecodeBounds = <span class="hljs-keyword">false</span>;<br>  return BitmapFactory.decodeResource(res,resId,options);<br>&#125;<br><br><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">int</span> calculateInSampleSize(BitmapFactory.Options options,<span class="hljs-keyword">int</span> reqWidth,<span class="hljs-keyword">int</span> reqHeight)&#123;<br>  <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> height = options.outHeight;<br>  <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> width = options.outWidth;<br>  <span class="hljs-keyword">int</span> inSampleSize = 1;<br>  <br>  //不断 /2 计算得出一个 合适的值<br>  <span class="hljs-keyword">if</span>(height &gt; reqHeight || width &gt; reqWidth)&#123;<br>     <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> halfWidth = width /2;<br>     <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> halfHeight = height/2;<br>     <span class="hljs-keyword">while</span>((halfHeight / inSampleSize) &gt;= reqHeight <br>           &amp;&amp; (halfWidth / inSampleSize) &gt;= reqWidth)&#123;<br>       inSampleSize = inSampleSize &lt;&lt; 1;<br>     &#125;<br>  &#125;<br>  return inSampleSize;<br>&#125;<br><br>//使用示例<br>iv.setImageBitmap(decodeSampledBitmapTromResource(getResources(),R.drawable.bitmap,100,100))<br></code></pre></td></tr></table></figure>
+<h3 id="使用优化的数据容器"><a href="#使用优化的数据容器" class="headerlink" title="使用优化的数据容器"></a>使用优化的数据容器</h3><p><strong>可以使用<code>SparseArray</code>和<code>ArrayMap</code>替换<code>HashMap</code>。</strong></p>
+<p>如果<code>key</code>为int，可以直接使用<code>SparseArray</code></p>
+<h3 id="AutoBoxing的处理"><a href="#AutoBoxing的处理" class="headerlink" title="AutoBoxing的处理"></a>AutoBoxing的处理</h3><p>核心就是<strong>基础数据类型转换成对应的复杂类型</strong>，例如<code>int &lt;=&gt; Integer</code>。</p>
+<p>在自动装箱发生时，每次都会产生一个新的对象，就会导致更多的内存占用和性能开销。</p>
+<p><strong>尽量使用基础数据类型，减少自动装箱。</strong></p>
+<h4 id="减少使用枚举类型"><a href="#减少使用枚举类型" class="headerlink" title="减少使用枚举类型"></a>减少使用枚举类型</h4><p>一般情况下使用枚举类型的<code>dex size</code>是普通常量定义的<code>dex size</code>的13倍以上，同时运行时的内存分配，一个<code>enum</code>值的生命也会消耗至少20Bytes。</p>
+<p><strong>建议使用<code>IntDef</code>和<code>StringDef</code>替代枚举类型。简单的枚举的话，可以直接使用静态常量代替。</strong></p>
+<p><a href="https://www.liaohuqiu.net/cn/posts/android-enum-memory-usage/" target="_blank" rel="noopener">Android 中的 Enum 到底占多少内存</a></p>
+<h4 id="内存复用"><a href="#内存复用" class="headerlink" title="内存复用"></a>内存复用</h4><ul>
+<li>资源复用：通用的字符串、颜色定义、简单页面布局的复用(<code>&lt;merge&gt;、&lt;include&gt;</code>)</li>
+<li>视图复用：使用ViewHolder实现ConvertView复用</li>
+<li>对象池：创建对象池，实现复用逻辑，对相同类型的数据使用同一块内存空间。<em>不要使用new Message()而是使用Message.obtain()以复用Message对象</em></li>
+<li>Bitmap复用：使用<code>inBitmap</code>属性告知BitmapDecoder尝试使用已经存在的内存区域。<em>在Android 4.4之前只能重用相同大小的Bitmap内存，4.4之后的只要后来的Bitmap比之前的小即可。</em></li>
+</ul>
+<h4 id="可用内存过低主动清理"><a href="#可用内存过低主动清理" class="headerlink" title="可用内存过低主动清理"></a>可用内存过低主动清理</h4><p>通过实现<code>onTrimMemory()</code>或<code>onLowMemory()</code>在其中去执行<code>释放资源</code>的操作以减少内存占用。</p>
+<h2 id="自动化内存检测"><a href="#自动化内存检测" class="headerlink" title="自动化内存检测"></a>自动化内存检测</h2><p><a href="https://github.com/hehonghui/mmat/blob/master/README.md" target="_blank" rel="noopener"></a></p>
+<p><img src="/images/20190814160744769.png" srcset="/img/loading.gif" alt="img"></p>
+<h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a href="https://developer.android.com/topic/performance/memory" target="_blank" rel="noopener">管理应用内存</a></p>
+<p><a href="https://juejin.cn/post/6844903897958449166" target="_blank" rel="noopener">探索Android内存优化方法</a></p>
+<p><a href="https://juejin.im/post/5e780257f265da575209652c#heading-6" target="_blank" rel="noopener">探索Android内存优化</a></p>
+<p><a href="https://blog.csdn.net/wangbaochu/article/details/45581875" target="_blank" rel="noopener">Android 如何获取App内存大小</a></p>
+<p><a href="https://mp.weixin.qq.com/s?__biz=MzUyMDAxMjQ3Ng==&amp;mid=2247491618&amp;idx=1&amp;sn=ec8774712e93ec4a61197648bffd8473&amp;chksm=f9f277f1ce85fee74dbeab1e51a68c19b668dfc63c22a8b5de52953f1cdbc65e8f9377deedfe&amp;mpshare=1&amp;scene=23&amp;srcid=1212w21N5TwHQy6Ea5g3P0fD&amp;sharer_sharetime=1607751741389&amp;sharer_shareid=65073698ab9ac2983b955fa53b4ff585%23rd" target="_blank" rel="noopener">内存优化实战秘籍</a></p>
+<p><a href="https://mp.weixin.qq.com/s?__biz=MzI1MzYzMjE0MQ==&amp;mid=2247487267&amp;idx=1&amp;sn=64858e39d3c0ac3b3444213856f0d9a3&amp;chksm=e9d0c4c1dea74dd72482c94f936fa31d5609eff5f09b7ee2405e95eecba7ce00bbbb5657730b&amp;mpshare=1&amp;scene=23&amp;srcid=1222g3BpOggvZ2gUY7fgOwUr&amp;sharer_sharetime=1608602832041&amp;sharer_shareid=65073698ab9ac2983b955fa53b4ff585%23rd" target="_blank" rel="noopener">抖音Android性能优化系列:Java内存优化篇</a></p>
+<p><a href="https://juejin.cn/post/6911624328472133646#heading-11" target="_blank" rel="noopener">MAT使用详解</a></p>
+
+            </div>
+            <hr>
+            <div>
+              <div class="post-metas mb-3">
+                
+                
+                  <div class="post-meta">
+                    <i class="iconfont icon-tags"></i>
+                    
+                      <a class="hover-with-bg" href="/tags/Android/">Android</a>
+                    
+                  </div>
+                
+              </div>
+              
+                <p class="note note-warning">本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-sa/4.0/deed.zh" rel="nofollow noopener">CC BY-SA 4.0 协议</a> ，转载请注明出处！</p>
+              
+              
+                <div class="post-prevnext">
+                  <article class="post-prev col-6">
+                    
+                    
+                      <a href="/2020/03/29/HTTP的原理和工作机制/">
+                        <i class="iconfont icon-arrowleft"></i>
+                        <span class="hidden-mobile">HTTP的原理和工作机制</span>
+                        <span class="visible-mobile">上一篇</span>
+                      </a>
+                    
+                  </article>
+                  <article class="post-next col-6">
+                    
+                    
+                      <a href="/2020/02/19/OKHTTP-HTTPDNS实践/">
+                        <span class="hidden-mobile">OkHttp-HTTPDNS实践</span>
+                        <span class="visible-mobile">下一篇</span>
+                        <i class="iconfont icon-arrowright"></i>
+                      </a>
+                    
+                  </article>
+                </div>
+              
+            </div>
+
+            
+          </article>
+        </div>
+      </div>
+    </div>
+    
+      <div class="d-none d-lg-block col-lg-2 toc-container" id="toc-ctn">
+        <div id="toc">
+  <p class="toc-header"><i class="iconfont icon-list"></i>&nbsp;目录</p>
+  <div class="toc-body" id="toc-body"></div>
+</div>
+
+      </div>
+    
+  </div>
+</div>
+
+<!-- Custom -->
+
+
+    
+
+    
+      <a id="scroll-top-button" href="#" role="button">
+        <i class="iconfont icon-arrowup" aria-hidden="true"></i>
+      </a>
+    
+
+    
+      <div class="modal fade" id="modalSearch" tabindex="-1" role="dialog" aria-labelledby="ModalLabel"
+     aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header text-center">
+        <h4 class="modal-title w-100 font-weight-bold">搜索</h4>
+        <button type="button" id="local-search-close" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body mx-3">
+        <div class="md-form mb-5">
+          <input type="text" id="local-search-input" class="form-control validate">
+          <label data-error="x" data-success="v"
+                 for="local-search-input">关键词</label>
+        </div>
+        <div class="list-group" id="local-search-result"></div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+
+    
+  </main>
+
+  <footer class="text-center mt-5 py-3">
+  <div class="footer-content">
+     <a href="https://hexo.io" target="_blank" rel="nofollow noopener"><span>Hexo</span></a> <i class="iconfont icon-love"></i> <a href="https://github.com/fluid-dev/hexo-theme-fluid" target="_blank" rel="nofollow noopener"><span>Fluid</span></a> 
+  </div>
+  
+
+  
+
+  
+</footer>
+
+<!-- SCRIPTS -->
+
+  <script  src="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.js" ></script>
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.css" />
+
+  <script>
+    NProgress.configure({"showSpinner":false,"trickleSpeed":100})
+    NProgress.start()
+    window.addEventListener('load', function() {
+      NProgress.done();
+    })
+  </script>
+
+
+<script  src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" ></script>
+<script  src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.min.js" ></script>
+<script  src="/js/debouncer.js" ></script>
+<script  src="/js/events.js" ></script>
+<script  src="/js/plugins.js" ></script>
+
+<!-- Plugins -->
+
+
+  
+    <script  src="/js/lazyload.js" ></script>
+  
+
+
+
+  
+
+
+
+  <script  src="https://cdn.jsdelivr.net/npm/tocbot@4.12.0/dist/tocbot.min.js" ></script>
+
+
+
+  <script  src="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.js" ></script>
+
+
+
+  <script  src="https://cdn.jsdelivr.net/npm/anchor-js@4.3.0/anchor.min.js" ></script>
+
+
+
+  <script defer src="https://cdn.jsdelivr.net/npm/clipboard@2.0.6/dist/clipboard.min.js" ></script>
+
+
+
+
+
+
+
+
+  <script  src="/js/local-search.js" ></script>
+  <script>
+    (function () {
+      var path = "/local-search.xml";
+      var inputArea = document.querySelector("#local-search-input");
+      inputArea.onclick = function () {
+        searchFunc(path, 'local-search-input', 'local-search-result');
+        this.onclick = null
+      }
+    })()
+  </script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- 主题的启动项 保持在最底部 -->
+<script  src="/js/boot.js" ></script>
+
+
+
+</body>
+</html>

@@ -1,0 +1,449 @@
+
+
+<!DOCTYPE html>
+<html lang="zh-CN" data-default-color-scheme=&#34;auto&#34;>
+
+
+
+<head><meta name="generator" content="Hexo 3.9.0">
+  <meta charset="UTF-8">
+  <link rel="apple-touch-icon" sizes="76x76" href="/img/favicon.png">
+  <link rel="icon" type="image/png" href="/img/favicon.png">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  
+  <meta name="theme-color" content="#11527b">
+  <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
+  <meta name="author" content="Leo-Wxy">
+  <meta name="keywords" content="">
+  <title>数据结构--CopyOnWriteArrayList实现原理及简析 - Wxy的个人博客</title>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css">
+
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@4.0.0/github-markdown.min.css">
+  <link rel="stylesheet" href="/lib/hint/hint.min.css">
+
+  
+    
+    
+      
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@10.4.0/styles/atom-one-light.min.css">
+    
+  
+
+  
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.css">
+  
+
+
+
+<!-- 主题依赖的图标库，不要自行修改 -->
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1749284_ba1fz6golrf.css">
+
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1736178_kmeydafke9r.css">
+
+<link rel="stylesheet" href="/css/main.css">
+
+<!-- 自定义样式保持在最底部 -->
+
+
+  <script id="fluid-configs">
+    var Fluid = window.Fluid || {};
+    var CONFIG = {"hostname":"leo-wxy.github.io","root":"/","version":"1.8.7","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"copy_btn":true,"image_zoom":{"enable":true},"toc":{"enable":true,"headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"onlypost":false},"web_analytics":{"enable":false,"baidu":null,"google":null,"gtag":null,"tencent":{"sid":null,"cid":null},"woyaola":null,"cnzz":null,"leancloud":{"app_id":null,"app_key":null,"server_url":null}}};
+  </script>
+  <script src="/js/utils.js"></script>
+  <script src="/js/color-schema.js"></script>
+</head>
+
+
+<body>
+  <header style="height: 30vh;">
+    <nav id="navbar" class="navbar fixed-top  navbar-expand-lg navbar-dark scrolling-navbar">
+  <div class="container">
+    <a class="navbar-brand"
+       href="/">&nbsp;<strong>Wxy's Blog</strong>&nbsp;</a>
+
+    <button id="navbar-toggler-btn" class="navbar-toggler" type="button" data-toggle="collapse"
+            data-target="#navbarSupportedContent"
+            aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+      <div class="animated-icon"><span></span><span></span><span></span></div>
+    </button>
+
+    <!-- Collapsible content -->
+    <div class="collapse navbar-collapse" id="navbarSupportedContent">
+      <ul class="navbar-nav ml-auto text-center">
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/">
+                <i class="iconfont icon-home-fill"></i>
+                首页
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/archives/">
+                <i class="iconfont icon-archive-fill"></i>
+                归档
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/tags/">
+                <i class="iconfont icon-tags-fill"></i>
+                标签
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/about/">
+                <i class="iconfont icon-user-fill"></i>
+                关于
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/links/">
+                <i class="iconfont icon-link-fill"></i>
+                友链
+              </a>
+            </li>
+          
+        
+        
+          <li class="nav-item" id="search-btn">
+            <a class="nav-link" data-toggle="modal" data-target="#modalSearch">&nbsp;<i
+                class="iconfont icon-search"></i>&nbsp;</a>
+          </li>
+        
+        
+          <li class="nav-item" id="color-toggle-btn">
+            <a class="nav-link" href="javascript:">&nbsp;<i
+                class="iconfont icon-dark" id="color-toggle-icon"></i>&nbsp;</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    <div class="banner" id="banner" parallax=true
+         style="background: url('/img/default.png') no-repeat center center;
+           background-size: cover;">
+      <div class="full-bg-img">
+        <div class="mask flex-center" style="background-color: rgba(0, 0, 0, 0.3)">
+          <div class="page-header text-center fade-in-up">
+            <span class="h2" id="subtitle" title="数据结构--CopyOnWriteArrayList实现原理及简析">
+              
+                数据结构--CopyOnWriteArrayList实现原理及简析
+              
+            </span>
+
+            
+              <div class="mt-3">
+  
+  
+    <span class="post-meta">
+      <i class="iconfont icon-date-fill" aria-hidden="true"></i>
+      <time datetime="2019-01-18 09:53" pubdate>
+        2019年1月18日 上午
+      </time>
+    </span>
+  
+</div>
+
+<div class="mt-1">
+  
+    
+    <span class="post-meta mr-2">
+      <i class="iconfont icon-chart"></i>
+      924 字
+    </span>
+  
+
+  
+    
+    <span class="post-meta mr-2">
+      <i class="iconfont icon-clock-fill"></i>
+      
+      
+      11
+       分钟
+    </span>
+  
+
+  
+  
+</div>
+
+            
+          </div>
+
+          
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    
+      
+
+<div class="container-fluid nopadding-x">
+  <div class="row nomargin-x">
+    <div class="d-none d-lg-block col-lg-2"></div>
+    <div class="col-lg-8 nopadding-x-md">
+      <div class="container nopadding-x-md" id="board-ctn">
+        <div class="py-5" id="board">
+          <article class="post-content mx-auto">
+            <!-- SEO header -->
+            <h1 style="display: none">数据结构--CopyOnWriteArrayList实现原理及简析</h1>
+            
+            <div class="markdown-body">
+              <span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/CopyOnWriteArrayList简析.png" srcset="/img/loading.gif" class="full-image" alt="CopyOnWriteArrayList简析" title="CopyOnWriteArrayList简析"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<h2 id="CopyOnWriteArrayList定义"><a href="#CopyOnWriteArrayList定义" class="headerlink" title="CopyOnWriteArrayList定义"></a>CopyOnWriteArrayList定义</h2><blockquote>
+<p>ArrayList本身不是线程安全的，在读线程读取ArrayList的数据时，此时在去写入数据，就会触发<code>fast-fail</code>机制，抛出<code>ConcurrentModificationException</code>异常。也可以使用<code>Vector</code>去代替<code>ArrayList</code>使用，或者使用<code>Collections.synchronizeList()</code>包裹ArrayList。但他们都是使用<code>synchronized</code>进行修饰，执行效率不高。</p>
+<p>针对运行效率情况，有了<code>CopyOnWriteArrayList</code>。</p>
+<p>适用场景：<strong>读多写少</strong>。</p>
+</blockquote>
+<h2 id="CopyOnWrite容器"><a href="#CopyOnWrite容器" class="headerlink" title="CopyOnWrite容器"></a>CopyOnWrite容器</h2><p><code>CopyOnWrite</code>容器即<code>写时复制</code>的容器。<em>当我们往一个容器添加元素的时候，不直接往当前容器添加，而是先将当前容器进行copy，复制出一个新的容器，然后往新的容器添加元素，添加完元素之后，再将原容器的引用指向新的容器。</em></p>
+<p>对<code>CopyOnWrite容器</code>进行并发读的时候，不需要加锁，因为当前容器不会添加任何元素。所以<code>CopyOnWrite容器</code>也是一种<strong>读写分离</strong>的思想，读和写采用不同的容器。<em>放弃了数据实时性。</em></p>
+<h2 id="CopyOnWriteArrayList源码解析"><a href="#CopyOnWriteArrayList源码解析" class="headerlink" title="CopyOnWriteArrayList源码解析"></a>CopyOnWriteArrayList源码解析</h2><h3 id="重要参数分析"><a href="#重要参数分析" class="headerlink" title="重要参数分析"></a>重要参数分析</h3><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><code class="hljs java">//利用Lock实现读写分离<br><span class="hljs-keyword">final</span> <span class="hljs-keyword">transient</span> ReentrantLock lock = new ReentrantLock();<br><br>//设置初始化数组引用<br><span class="hljs-keyword">private</span> <span class="hljs-keyword">transient</span> <span class="hljs-keyword">volatile</span> Object[] array;<br></code></pre></td></tr></table></figure>
+<h3 id="初始化"><a href="#初始化" class="headerlink" title="初始化"></a>初始化</h3><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> CopyOnWriteArrayList() &#123;<br>    //设置空数组<br>    setArray(new Object[0]);<br>&#125;    <br><br><span class="hljs-keyword">public</span> CopyOnWriteArrayList(E[] toCopyIn) &#123;<br>    setArray(Arrays.copyOf(toCopyIn, toCopyIn.length, Object[].class));<br>&#125;<br><br><span class="hljs-keyword">public</span> CopyOnWriteArrayList(Collection&lt;? extends E&gt; c) &#123;<br>    Object[] elements;<br>    <span class="hljs-keyword">if</span> (c.getClass() == CopyOnWriteArrayList.class)<br>        elements = ((CopyOnWriteArrayList&lt;?&gt;)c).getArray();<br>    <span class="hljs-keyword">else</span> &#123;<br>        elements = c.toArray();<br>        // c.toArray might (incorrectly) not return Object[] (see 6260652)<br>        <span class="hljs-keyword">if</span> (elements.getClass() != Object[].class)<br>            elements = Arrays.copyOf(elements, elements.length, Object[].class);<br>    &#125;<br>    setArray(elements);<br>&#125;<br></code></pre></td></tr></table></figure>
+<h3 id="插入数据-add-E-e"><a href="#插入数据-add-E-e" class="headerlink" title="插入数据 - add(E e)"></a>插入数据 - add(E e)</h3><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">boolean</span> add(E e) &#123;<br>       <span class="hljs-keyword">final</span> ReentrantLock lock = <span class="hljs-keyword">this</span>.lock;<br>       //锁住写线程，保证同一时刻只有一个线程可以操作<br>       lock.lock();<br>       <span class="hljs-keyword">try</span> &#123;<br>           //获取旧数组引用<br>           Object[] elements = getArray();<br>           <span class="hljs-keyword">int</span> len = elements.length;<br>           //复制旧数组数据到新数组中<br>           Object[] newElements = Arrays.copyOf(elements, len + 1);<br>           //添加新的数据<br>           newElements[len] = e;<br>           //设置新数据的引用到旧数组上<br>           setArray(newElements);<br>           return <span class="hljs-keyword">true</span>;<br>       &#125; <span class="hljs-keyword">finally</span> &#123;<br>           //操作完成 解锁<br>           lock.unlock();<br>       &#125;<br>   &#125;<br></code></pre></td></tr></table></figure>
+<ol>
+<li>采用<code>ReentrantLock</code>，保证同一时刻只有一个线程正在进行数组的复制，否则的话内存中会有多份被复制的数据。</li>
+<li><code>volatile</code>修饰的数组引用，在调用<code>setArray()</code>时，线程对数组引用的修改是对其他线程可见的。</li>
+<li>插入数据时插到新的数组中的，可以保证读和写操作在两个数组中执行，不会影响数据。</li>
+</ol>
+<p><strong>和ArrayList相比，效率比较低，每次插入一个数组 都需要进行数组复制操作，随着元素的增加，修改代价会越来越大。</strong></p>
+<h3 id="获取数据-get-int-index"><a href="#获取数据-get-int-index" class="headerlink" title="获取数据 - get(int index)"></a>获取数据 - get(int index)</h3><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> E get(<span class="hljs-keyword">int</span> index) &#123;<br>  //获取index对应数据<br>  return get(getArray(), index);<br>&#125;<br><br><span class="hljs-keyword">private</span> E get(Object[] a, <span class="hljs-keyword">int</span> index) &#123;<br>  return (E) a[index];<br>&#125;<br></code></pre></td></tr></table></figure>
+<p><code>get()</code>没有添加线程安全控制，也没有加锁。因为<strong>get()操作的是旧数组，也不会发生修改操作。</strong></p>
+<h3 id="移除数据-remove-int-index"><a href="#移除数据-remove-int-index" class="headerlink" title="移除数据 - remove(int index)"></a>移除数据 - remove(int index)</h3><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> E remove(<span class="hljs-keyword">int</span> index) &#123;<br>    <span class="hljs-keyword">final</span> ReentrantLock lock = <span class="hljs-keyword">this</span>.lock;<br>    lock.lock();<br>    <span class="hljs-keyword">try</span> &#123;<br>        Object[] elements = getArray();<br>        <span class="hljs-keyword">int</span> len = elements.length;<br>        E oldValue = get(elements, index);<br>        <span class="hljs-keyword">int</span> numMoved = len - index - 1;<br>        <span class="hljs-keyword">if</span> (numMoved == 0)<br>            //移除了最后一位 只要复制前面的数据即可<br>            setArray(Arrays.copyOf(elements, len - 1));<br>        <span class="hljs-keyword">else</span> &#123;<br>            //生成一个新数组<br>            Object[] newElements = new Object[len - 1];<br>            System.arraycopy(elements, 0, newElements, 0, index);<br>            System.arraycopy(elements, index + 1, newElements, index,<br>                             numMoved);<br>            setArray(newElements);<br>        &#125;<br>        return oldValue;<br>    &#125; <span class="hljs-keyword">finally</span> &#123;<br>        lock.unlock();<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+<h2 id="拓展"><a href="#拓展" class="headerlink" title="拓展"></a>拓展</h2><h4 id="CopyOnWriteArrayList的缺点"><a href="#CopyOnWriteArrayList的缺点" class="headerlink" title="CopyOnWriteArrayList的缺点"></a>CopyOnWriteArrayList的缺点</h4><ul>
+<li><p><strong>内存占用问题</strong>：在进行写操作时，内存里会有两份数组对象的内存，旧对象和新写入的对象。<em>可以通过压缩容器中元素的方法来减少大对象的内存消耗。</em></p>
+</li>
+<li><p><strong>数据一致性问题</strong>：只能保证最终数据的一致性，不能保证实时一致性。</p>
+</li>
+</ul>
+
+            </div>
+            <hr>
+            <div>
+              <div class="post-metas mb-3">
+                
+                
+                  <div class="post-meta">
+                    <i class="iconfont icon-tags"></i>
+                    
+                      <a class="hover-with-bg" href="/tags/数据结构/">数据结构</a>
+                    
+                  </div>
+                
+              </div>
+              
+                <p class="note note-warning">本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-sa/4.0/deed.zh" rel="nofollow noopener">CC BY-SA 4.0 协议</a> ，转载请注明出处！</p>
+              
+              
+                <div class="post-prevnext">
+                  <article class="post-prev col-6">
+                    
+                    
+                      <a href="/2019/01/28/Android性能优化-ANR分析/">
+                        <i class="iconfont icon-arrowleft"></i>
+                        <span class="hidden-mobile">ANR分析</span>
+                        <span class="visible-mobile">上一篇</span>
+                      </a>
+                    
+                  </article>
+                  <article class="post-next col-6">
+                    
+                    
+                      <a href="/2019/01/16/Java-ConcurrentHashMap原理及解析/">
+                        <span class="hidden-mobile">数据结构--ConcurrentHashMap原理及解析</span>
+                        <span class="visible-mobile">下一篇</span>
+                        <i class="iconfont icon-arrowright"></i>
+                      </a>
+                    
+                  </article>
+                </div>
+              
+            </div>
+
+            
+          </article>
+        </div>
+      </div>
+    </div>
+    
+      <div class="d-none d-lg-block col-lg-2 toc-container" id="toc-ctn">
+        <div id="toc">
+  <p class="toc-header"><i class="iconfont icon-list"></i>&nbsp;目录</p>
+  <div class="toc-body" id="toc-body"></div>
+</div>
+
+      </div>
+    
+  </div>
+</div>
+
+<!-- Custom -->
+
+
+    
+
+    
+      <a id="scroll-top-button" href="#" role="button">
+        <i class="iconfont icon-arrowup" aria-hidden="true"></i>
+      </a>
+    
+
+    
+      <div class="modal fade" id="modalSearch" tabindex="-1" role="dialog" aria-labelledby="ModalLabel"
+     aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header text-center">
+        <h4 class="modal-title w-100 font-weight-bold">搜索</h4>
+        <button type="button" id="local-search-close" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body mx-3">
+        <div class="md-form mb-5">
+          <input type="text" id="local-search-input" class="form-control validate">
+          <label data-error="x" data-success="v"
+                 for="local-search-input">关键词</label>
+        </div>
+        <div class="list-group" id="local-search-result"></div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+
+    
+  </main>
+
+  <footer class="text-center mt-5 py-3">
+  <div class="footer-content">
+     <a href="https://hexo.io" target="_blank" rel="nofollow noopener"><span>Hexo</span></a> <i class="iconfont icon-love"></i> <a href="https://github.com/fluid-dev/hexo-theme-fluid" target="_blank" rel="nofollow noopener"><span>Fluid</span></a> 
+  </div>
+  
+
+  
+
+  
+</footer>
+
+<!-- SCRIPTS -->
+
+  <script  src="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.js" ></script>
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.css" />
+
+  <script>
+    NProgress.configure({"showSpinner":false,"trickleSpeed":100})
+    NProgress.start()
+    window.addEventListener('load', function() {
+      NProgress.done();
+    })
+  </script>
+
+
+<script  src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" ></script>
+<script  src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.min.js" ></script>
+<script  src="/js/debouncer.js" ></script>
+<script  src="/js/events.js" ></script>
+<script  src="/js/plugins.js" ></script>
+
+<!-- Plugins -->
+
+
+  
+    <script  src="/js/lazyload.js" ></script>
+  
+
+
+
+  
+
+
+
+  <script  src="https://cdn.jsdelivr.net/npm/tocbot@4.12.0/dist/tocbot.min.js" ></script>
+
+
+
+  <script  src="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.js" ></script>
+
+
+
+  <script  src="https://cdn.jsdelivr.net/npm/anchor-js@4.3.0/anchor.min.js" ></script>
+
+
+
+  <script defer src="https://cdn.jsdelivr.net/npm/clipboard@2.0.6/dist/clipboard.min.js" ></script>
+
+
+
+
+
+
+
+
+  <script  src="/js/local-search.js" ></script>
+  <script>
+    (function () {
+      var path = "/local-search.xml";
+      var inputArea = document.querySelector("#local-search-input");
+      inputArea.onclick = function () {
+        searchFunc(path, 'local-search-input', 'local-search-result');
+        this.onclick = null
+      }
+    })()
+  </script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- 主题的启动项 保持在最底部 -->
+<script  src="/js/boot.js" ></script>
+
+
+
+</body>
+</html>
