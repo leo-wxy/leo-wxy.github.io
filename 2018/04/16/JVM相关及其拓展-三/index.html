@@ -8,7 +8,7 @@
 <head><meta name="generator" content="Hexo 3.9.0">
   <meta charset="UTF-8">
   <link rel="apple-touch-icon" sizes="76x76" href="/img/favicon.png">
-  <link rel="icon" type="image/png" href="/img/favicon.png">
+  <link rel="icon" href="/img/favicon.png">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no">
   <meta http-equiv="x-ua-compatible" content="ie=edge">
   
@@ -16,6 +16,7 @@
   <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
   <meta name="author" content="Leo-Wxy">
   <meta name="keywords" content="">
+  
   <title>JVM相关及其拓展(三) -- 虚拟机类加载器 - Wxy的个人博客</title>
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css">
@@ -50,7 +51,7 @@
 
   <script id="fluid-configs">
     var Fluid = window.Fluid || {};
-    var CONFIG = {"hostname":"leo-wxy.github.io","root":"/","version":"1.8.7","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"copy_btn":true,"image_zoom":{"enable":true},"toc":{"enable":true,"headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"onlypost":false},"web_analytics":{"enable":false,"baidu":null,"google":null,"gtag":null,"tencent":{"sid":null,"cid":null},"woyaola":null,"cnzz":null,"leancloud":{"app_id":null,"app_key":null,"server_url":null}}};
+    var CONFIG = {"hostname":"leo-wxy.github.io","root":"/","version":"1.8.10","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"copy_btn":true,"image_zoom":{"enable":true,"img_url_replace":["",""]},"toc":{"enable":true,"headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"loading_img":"/img/loading.gif","onlypost":false,"offset_factor":2},"web_analytics":{"enable":false,"baidu":null,"google":null,"gtag":null,"tencent":{"sid":null,"cid":null},"woyaola":null,"cnzz":null,"leancloud":{"app_id":null,"app_key":null,"server_url":null}}};
   </script>
   <script src="/js/utils.js"></script>
   <script src="/js/color-schema.js"></script>
@@ -136,13 +137,13 @@
         
         
           <li class="nav-item" id="search-btn">
-            <a class="nav-link" data-toggle="modal" data-target="#modalSearch">&nbsp;<i
+            <a class="nav-link" target="_self" data-toggle="modal" data-target="#modalSearch">&nbsp;<i
                 class="iconfont icon-search"></i>&nbsp;</a>
           </li>
         
         
           <li class="nav-item" id="color-toggle-btn">
-            <a class="nav-link" href="javascript:">&nbsp;<i
+            <a class="nav-link" target="_self">&nbsp;<i
                 class="iconfont icon-dark" id="color-toggle-icon"></i>&nbsp;</a>
           </li>
         
@@ -227,7 +228,7 @@
               <h1 id="虚拟机类加载器"><a href="#虚拟机类加载器" class="headerlink" title="虚拟机类加载器"></a>虚拟机类加载器</h1><h2 id="定义："><a href="#定义：" class="headerlink" title="定义："></a>定义：</h2><p>在类加载阶段中的“通过一个类的全限定名来获取描述此类的二进制字节流”这个动作放到Java虚拟机外部去实现，以便让应用程序自己决定如何去获取所需要的类，实现这个动作的代码块称为“类加载器”。</p>
 <p>例如：编写的是.java文件，代码运行后变成.class文件，类加载器就是加载.class文件。</p>
 <p><strong>不同的类加载器加载同一个类时，得到的两个类也是不相等的。</strong></p>
-<h2 id="Java类加载器分类："><a href="#Java类加载器分类：" class="headerlink" title="Java类加载器分类："></a>Java类加载器分类：</h2><h3 id="1-系统提供的类加载器"><a href="#1-系统提供的类加载器" class="headerlink" title="1.系统提供的类加载器"></a>1.系统提供的类加载器</h3><span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/类加载器.png" srcset="/img/loading.gif" class="full-image" alt="类加载器分类" title="类加载器分类"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<h2 id="Java类加载器分类："><a href="#Java类加载器分类：" class="headerlink" title="Java类加载器分类："></a>Java类加载器分类：</h2><h3 id="1-系统提供的类加载器"><a href="#1-系统提供的类加载器" class="headerlink" title="1.系统提供的类加载器"></a>1.系统提供的类加载器</h3><span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/类加载器.png" srcset="/img/loading.gif" lazyload="" class="full-image" alt="类加载器分类" title="类加载器分类"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
 <ul>
 <li><p><strong>Bootstrap ClassLoader(启动类加载器)</strong>：由C/C++实现的加载器，用于加载虚拟机运行时所需要的系统类，如<code>java.lang.*、java.uti.*</code>等系统类。它负责将存放在<code>&lt;JAVA_HOME&gt;\lib</code>目录中的，或者被-Xbootclasspath参数所指定的路径中的，并且是虚拟机识别的类库加载到虚拟机内存中。</p>
 <p>这个加载器由于是C实现的，所以<strong>无法被Java程序直接引用</strong>。并且不继承<code>java.lang.ClassLoader</code>。</p>
@@ -240,7 +241,7 @@
 <li><p><strong>Custom ClassLoader(自定义加载器)</strong>：通过集成<code>java.lang.ClassLoader</code>来实现自己的加载器。</p>
 </li>
 </ul>
-<h3 id="2-双亲委托模型"><a href="#2-双亲委托模型" class="headerlink" title="2.双亲委托模型"></a>2.双亲委托模型</h3><span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/parent_loader.png" srcset="/img/loading.gif" class="full-image" alt="alt" title="双亲委托模型"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<h3 id="2-双亲委托模型"><a href="#2-双亲委托模型" class="headerlink" title="2.双亲委托模型"></a>2.双亲委托模型</h3><span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/parent_loader.png" srcset="/img/loading.gif" lazyload="" class="full-image" alt="alt" title="双亲委托模型"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
 <ul>
 <li><p>工作流程：如果一个类加载器收到了类加载的请求，不会自己去尝试加载这个类，而把这个请求委派给父类加载器去完成，每一层都是如此，依次向上递归，直到委托到最顶层的<code>Bootstrap ClassLoader</code>，若父加载器无法处理加载请求（它的搜索范围内没有找到所需的类时），则交由子加载器去加载。</p>
 <blockquote>
@@ -305,7 +306,11 @@
                 
               </div>
               
-                <p class="note note-warning">本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-sa/4.0/deed.zh" rel="nofollow noopener">CC BY-SA 4.0 协议</a> ，转载请注明出处！</p>
+                <p class="note note-warning">
+                  
+                    本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-sa/4.0/deed.zh" rel="nofollow noopener">CC BY-SA 4.0 协议</a> ，转载请注明出处！
+                  
+                </p>
               
               
                 <div class="post-prevnext">
@@ -399,8 +404,9 @@
   
 </footer>
 
-<!-- SCRIPTS -->
 
+  <!-- SCRIPTS -->
+  
   <script  src="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.js" ></script>
   <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.css" />
 
@@ -415,7 +421,6 @@
 
 <script  src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" ></script>
 <script  src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.min.js" ></script>
-<script  src="/js/debouncer.js" ></script>
 <script  src="/js/events.js" ></script>
 <script  src="/js/plugins.js" ></script>
 
@@ -423,7 +428,7 @@
 
 
   
-    <script  src="/js/lazyload.js" ></script>
+    <script  src="/js/img-lazyload.js" ></script>
   
 
 
@@ -457,11 +462,12 @@
   <script>
     (function () {
       var path = "/local-search.xml";
-      var inputArea = document.querySelector("#local-search-input");
-      inputArea.onclick = function () {
+      $('#local-search-input').on('click', function() {
         searchFunc(path, 'local-search-input', 'local-search-result');
-        this.onclick = null
-      }
+      });
+      $('#modalSearch').on('shown.bs.modal', function() {
+        $('#local-search-input').focus();
+      });
     })()
   </script>
 
@@ -481,7 +487,6 @@
 
 <!-- 主题的启动项 保持在最底部 -->
 <script  src="/js/boot.js" ></script>
-
 
 
 </body>

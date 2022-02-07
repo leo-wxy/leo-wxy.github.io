@@ -114,5 +114,54 @@ Fluid.events = {
         easing   : 'swing'
       });
     });
+  },
+
+  registerImageLoadedEvent: function() {
+    if (!('NProgress' in window)) { return; }
+
+    var bg = document.getElementById('banner');
+    if (bg) {
+      var src = bg.style.backgroundImage;
+      var url = src.match(/\((.*?)\)/)[1].replace(/(['"])/g, '');
+      var img = new Image();
+      img.onload = function() {
+        window.NProgress && window.NProgress.inc(0.2);
+      };
+      img.src = url;
+      if (img.complete) { img.onload(); }
+    }
+
+    var notLazyImages = $('main img:not([lazyload])');
+    var total = notLazyImages.length;
+    for (const img of notLazyImages) {
+      const old = img.onload;
+      img.onload = function() {
+        old && old();
+        window.NProgress && window.NProgress.inc(0.5 / total);
+      };
+      if (img.complete) { img.onload(); }
+    }
+  },
+
+  billboard: function() {
+    if (!('console' in window)) {
+      return;
+    }
+    // eslint-disable-next-line no-console
+    console.log(`
+------------------------------------------------
+|                                              |
+|     ________  __            _        __      |
+|    |_   __  |[  |          (_)      |  ]     |
+|      | |_ \\_| | | __   _   __   .--.| |      |
+|      |  _|    | |[  | | | [  |/ /'\`\\' |      |
+|     _| |_     | | | \\_/ |, | || \\__/  |      |
+|    |_____|   [___]'.__.'_/[___]'.__.;__]     |
+|                                              |
+|           Powered by Hexo x Fluid            |
+|         GitHub: https://git.io/JqpVD         |
+|                                              |
+------------------------------------------------
+    `);
   }
 };

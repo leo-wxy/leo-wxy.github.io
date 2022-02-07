@@ -8,7 +8,7 @@
 <head><meta name="generator" content="Hexo 3.9.0">
   <meta charset="UTF-8">
   <link rel="apple-touch-icon" sizes="76x76" href="/img/favicon.png">
-  <link rel="icon" type="image/png" href="/img/favicon.png">
+  <link rel="icon" href="/img/favicon.png">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no">
   <meta http-equiv="x-ua-compatible" content="ie=edge">
   
@@ -16,6 +16,7 @@
   <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
   <meta name="author" content="Leo-Wxy">
   <meta name="keywords" content="">
+  
   <title>Android中的GC分析-Dalvik和ART虚拟机 - Wxy的个人博客</title>
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css">
@@ -50,7 +51,7 @@
 
   <script id="fluid-configs">
     var Fluid = window.Fluid || {};
-    var CONFIG = {"hostname":"leo-wxy.github.io","root":"/","version":"1.8.7","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"copy_btn":true,"image_zoom":{"enable":true},"toc":{"enable":true,"headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"onlypost":false},"web_analytics":{"enable":false,"baidu":null,"google":null,"gtag":null,"tencent":{"sid":null,"cid":null},"woyaola":null,"cnzz":null,"leancloud":{"app_id":null,"app_key":null,"server_url":null}}};
+    var CONFIG = {"hostname":"leo-wxy.github.io","root":"/","version":"1.8.10","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"copy_btn":true,"image_zoom":{"enable":true,"img_url_replace":["",""]},"toc":{"enable":true,"headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"loading_img":"/img/loading.gif","onlypost":false,"offset_factor":2},"web_analytics":{"enable":false,"baidu":null,"google":null,"gtag":null,"tencent":{"sid":null,"cid":null},"woyaola":null,"cnzz":null,"leancloud":{"app_id":null,"app_key":null,"server_url":null}}};
   </script>
   <script src="/js/utils.js"></script>
   <script src="/js/color-schema.js"></script>
@@ -136,13 +137,13 @@
         
         
           <li class="nav-item" id="search-btn">
-            <a class="nav-link" data-toggle="modal" data-target="#modalSearch">&nbsp;<i
+            <a class="nav-link" target="_self" data-toggle="modal" data-target="#modalSearch">&nbsp;<i
                 class="iconfont icon-search"></i>&nbsp;</a>
           </li>
         
         
           <li class="nav-item" id="color-toggle-btn">
-            <a class="nav-link" href="javascript:">&nbsp;<i
+            <a class="nav-link" target="_self">&nbsp;<i
                 class="iconfont icon-dark" id="color-toggle-icon"></i>&nbsp;</a>
           </li>
         
@@ -229,7 +230,7 @@
 <p><code>Dalvik Virtual Machine</code>，简称Dalvik VM或者 DVM。DVM是Google专门为Android平台开发的虚拟机，是Android的重要组成部分，支持<code>dex格式</code>的Java应用程序运行。</p>
 <p><code>dex格式</code>是专门为DVM设计的一种压缩格式，适合内存和处理器速度有限的系统。</p>
 </blockquote>
-<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/Android系统架构图.jpg" srcset="/img/loading.gif" class="full-image" alt="Android系统架构图" title="Android系统架构图"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/Android系统架构图.jpg" srcset="/img/loading.gif" lazyload="" class="full-image" alt="Android系统架构图" title="Android系统架构图"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
 <p>从架构图中可知，DVM运行在Android的运行时库层。</p>
 <h3 id="DVM与JVM的区别"><a href="#DVM与JVM的区别" class="headerlink" title="DVM与JVM的区别"></a>DVM与JVM的区别</h3><h4 id="基于的架构不同"><a href="#基于的架构不同" class="headerlink" title="基于的架构不同"></a>基于的架构不同</h4><p>JVM是基于栈的，意味着需要去栈中读写数据，所需的指令会更多，会导致速度变慢，不适用于性能有限的移动设备。</p>
 <p>DVM是基于寄存器的，不会有基于栈的虚拟机在复制数据时，使用大量的出入栈指令，同时指令更紧凑，简洁。</p>
@@ -239,7 +240,7 @@
 <p><strong>执行顺序为： .java文件 -&gt; .class文件 -&gt; .dex文件</strong></p>
 <p><strong>dex文件体积小。Android SDK中有一个<code>dx</code>工具将Java字节码转换为Dalvik字节码。</strong></p>
 <p>dx工具对Java类文件重新排序，消除在类文件中出现的所有冗余信息，避免虚拟机在初始化时反复进行文件加载与解析。<strong>消除其中的冗余信息，重新组合成一个常量池，所有类文件共享同一个常量池。由于dx工具对常量池的压缩，使得相同的字符串，常量在dex文件中只出现一次，从而减小文件体积。并把所有的.class文件整合到.dex文件中，减少了I/O操作，加快类查找速度。</strong></p>
-<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/执行的字节码区别.png" srcset="/img/loading.gif" class="full-image" alt="执行的字节码区别" title="执行的字节码区别"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/执行的字节码区别.png" srcset="/img/loading.gif" lazyload="" class="full-image" alt="执行的字节码区别" title="执行的字节码区别"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
 <p>简单来讲，dex格式文件就是将多个class文件中共有的部分统一存放，取出冗余信息。</p>
 <h4 id="DVM允许在有限的内存中同时允许多个进程"><a href="#DVM允许在有限的内存中同时允许多个进程" class="headerlink" title="DVM允许在有限的内存中同时允许多个进程"></a>DVM允许在有限的内存中同时允许多个进程</h4><p>在Android中的每一个应用都运行在一个DVM实例中，每一个DVM实例都运行在一个独立的进程空间中，独立的进程可以防止在虚拟机崩溃时导致所有程序关闭。</p>
 <h4 id="DVM由Zygote创建和初始化"><a href="#DVM由Zygote创建和初始化" class="headerlink" title="DVM由Zygote创建和初始化"></a>DVM由Zygote创建和初始化</h4><p>每当系统需要创建一个应用程序时，Zygote就会fork自身，快速的创建和初始化一个DVM实例，用于应用程序的运行。</p>
@@ -248,7 +249,7 @@
 <p><em>JIT会对多次运行的代码进行编译，生成相当精简的本地机器码，这样在下次执行相同的逻辑时，直接使用编译之后的本地机器码，而不是每次都需要编译。</em></p>
 <p><strong>每次重新打开应用程序，都需要JIT编译。</strong></p>
 <h3 id="DVM架构"><a href="#DVM架构" class="headerlink" title="DVM架构"></a>DVM架构</h3><p>DVM源码位于dalvik/目录下。</p>
-<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/DVM架构.png" srcset="/img/loading.gif" class="full-image" alt="DVM架构" title="DVM架构"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/DVM架构.png" srcset="/img/loading.gif" lazyload="" class="full-image" alt="DVM架构" title="DVM架构"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
 <p>首先Java编译器的.class文件经过<code>DX工具</code>转换为.dex文件，.dex文件由类加载器进行处理，接着解释器根据指令集对Dalvik字节码进行解释、执行，最后交于Linux处理。</p>
 <h3 id="DVM运行时堆"><a href="#DVM运行时堆" class="headerlink" title="DVM运行时堆"></a>DVM运行时堆</h3><p>DVM运行时堆使用<strong>标记-清除</strong>算法进行GC，它由两个Space以及多个辅助数据结构组成，两个Space分别是<code>Zygote Space(Zygote Heap)</code>和<code>Allocation Space(Active Heap)</code>。</p>
 <p><code>Zygote Space</code>用来管理Zygote进程在启动过程中预加载和创建的各种对象，<code>Zygote Space</code>不会触发GC。所有进程都共享该区域，比如系统资源。</p>
@@ -290,7 +291,7 @@
 </li>
 </ol>
 <h3 id="ART的运行时堆"><a href="#ART的运行时堆" class="headerlink" title="ART的运行时堆"></a>ART的运行时堆</h3><p>ART的GC类型有多种，主要分为<code>Mark-Sweep GC(标记-整理)</code>和<code>Compacting GC()</code>。ART运行时堆得空间根据不同的GC类型也有不同的划分，默认采用CMS方案。</p>
-<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/ART运行时堆.png" srcset="/img/loading.gif" class="full-image" alt="ART运行时堆" title="ART运行时堆"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/ART运行时堆.png" srcset="/img/loading.gif" lazyload="" class="full-image" alt="ART运行时堆" title="ART运行时堆"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
 <h3 id="ART-GC过程-提高内存使用，减少碎片化"><a href="#ART-GC过程-提高内存使用，减少碎片化" class="headerlink" title="ART-GC过程 - 提高内存使用，减少碎片化"></a>ART-GC过程 - 提高内存使用，减少碎片化</h3><ol>
 <li>GC将会锁住Java堆，扫描并进行标记</li>
 <li>标记完毕释放Java堆的锁，并且挂起所有线程</li>
@@ -302,7 +303,7 @@
 <p>DVM内存管理特点：<strong>内存碎片化严重，这也是由于标记-清除算法导致的。</strong></p>
 <p>ART的解决方案：在ART中，它将Java分了一块空间<code>Large Object Space</code>，专门用来存放大对象。同时ART引入了<code>moving collector</code>技术，将不连续的物理内存块进行对其，对齐后碎片问题得到了很好的解决。</p>
 <p>使用<code>Large Object Space</code>是因为<code>moving collector</code>对大块内存的位移时间过长，需要降低时间并提高内存利用率。</p>
-<h3 id="Apk打包流程"><a href="#Apk打包流程" class="headerlink" title="Apk打包流程"></a>Apk打包流程</h3><span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/android_apk_build.png" srcset="/img/loading.gif" class="full-image" alt="android_apk_build" title="android_apk_build"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
+<h3 id="Apk打包流程"><a href="#Apk打包流程" class="headerlink" title="Apk打包流程"></a>Apk打包流程</h3><span itemprop="image" itemscope="" itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/android_apk_build.png" srcset="/img/loading.gif" lazyload="" class="full-image" alt="android_apk_build" title="android_apk_build"><meta itemprop="width" content="auto"><meta itemprop="height" content="auto"></span>
 <p>根据流程图可知，apk打包流程分为7步：</p>
 <ol>
 <li>通过aapt打包res资源文件，生成<code>R.java、resource.asrc,res文件</code></li>
@@ -347,7 +348,11 @@
                 
               </div>
               
-                <p class="note note-warning">本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-sa/4.0/deed.zh" rel="nofollow noopener">CC BY-SA 4.0 协议</a> ，转载请注明出处！</p>
+                <p class="note note-warning">
+                  
+                    本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-sa/4.0/deed.zh" rel="nofollow noopener">CC BY-SA 4.0 协议</a> ，转载请注明出处！
+                  
+                </p>
               
               
                 <div class="post-prevnext">
@@ -441,8 +446,9 @@
   
 </footer>
 
-<!-- SCRIPTS -->
 
+  <!-- SCRIPTS -->
+  
   <script  src="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.js" ></script>
   <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.css" />
 
@@ -457,7 +463,6 @@
 
 <script  src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" ></script>
 <script  src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.min.js" ></script>
-<script  src="/js/debouncer.js" ></script>
 <script  src="/js/events.js" ></script>
 <script  src="/js/plugins.js" ></script>
 
@@ -465,7 +470,7 @@
 
 
   
-    <script  src="/js/lazyload.js" ></script>
+    <script  src="/js/img-lazyload.js" ></script>
   
 
 
@@ -499,11 +504,12 @@
   <script>
     (function () {
       var path = "/local-search.xml";
-      var inputArea = document.querySelector("#local-search-input");
-      inputArea.onclick = function () {
+      $('#local-search-input').on('click', function() {
         searchFunc(path, 'local-search-input', 'local-search-result');
-        this.onclick = null
-      }
+      });
+      $('#modalSearch').on('shown.bs.modal', function() {
+        $('#local-search-input').focus();
+      });
     })()
   </script>
 
@@ -523,7 +529,6 @@
 
 <!-- 主题的启动项 保持在最底部 -->
 <script  src="/js/boot.js" ></script>
-
 
 
 </body>

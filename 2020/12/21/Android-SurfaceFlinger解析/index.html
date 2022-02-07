@@ -8,7 +8,7 @@
 <head><meta name="generator" content="Hexo 3.9.0">
   <meta charset="UTF-8">
   <link rel="apple-touch-icon" sizes="76x76" href="/img/favicon.png">
-  <link rel="icon" type="image/png" href="/img/favicon.png">
+  <link rel="icon" href="/img/favicon.png">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no">
   <meta http-equiv="x-ua-compatible" content="ie=edge">
   
@@ -16,6 +16,7 @@
   <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
   <meta name="author" content="Leo-Wxy">
   <meta name="keywords" content="">
+  
   <title>Android-SurfaceFlinger解析 - Wxy的个人博客</title>
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css">
@@ -50,7 +51,7 @@
 
   <script id="fluid-configs">
     var Fluid = window.Fluid || {};
-    var CONFIG = {"hostname":"leo-wxy.github.io","root":"/","version":"1.8.7","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"copy_btn":true,"image_zoom":{"enable":true},"toc":{"enable":true,"headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"onlypost":false},"web_analytics":{"enable":false,"baidu":null,"google":null,"gtag":null,"tencent":{"sid":null,"cid":null},"woyaola":null,"cnzz":null,"leancloud":{"app_id":null,"app_key":null,"server_url":null}}};
+    var CONFIG = {"hostname":"leo-wxy.github.io","root":"/","version":"1.8.10","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"copy_btn":true,"image_zoom":{"enable":true,"img_url_replace":["",""]},"toc":{"enable":true,"headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"loading_img":"/img/loading.gif","onlypost":false,"offset_factor":2},"web_analytics":{"enable":false,"baidu":null,"google":null,"gtag":null,"tencent":{"sid":null,"cid":null},"woyaola":null,"cnzz":null,"leancloud":{"app_id":null,"app_key":null,"server_url":null}}};
   </script>
   <script src="/js/utils.js"></script>
   <script src="/js/color-schema.js"></script>
@@ -136,13 +137,13 @@
         
         
           <li class="nav-item" id="search-btn">
-            <a class="nav-link" data-toggle="modal" data-target="#modalSearch">&nbsp;<i
+            <a class="nav-link" target="_self" data-toggle="modal" data-target="#modalSearch">&nbsp;<i
                 class="iconfont icon-search"></i>&nbsp;</a>
           </li>
         
         
           <li class="nav-item" id="color-toggle-btn">
-            <a class="nav-link" href="javascript:">&nbsp;<i
+            <a class="nav-link" target="_self">&nbsp;<i
                 class="iconfont icon-dark" id="color-toggle-icon"></i>&nbsp;</a>
           </li>
         
@@ -229,7 +230,7 @@
 </blockquote>
 <p><code>SurfaceFlinger</code>是Android系统中最重要的<strong>图像消费者</strong>，Activity绘制的界面图像，都会传递到<code>SurfaceFlinger</code>中。</p>
 <p>主要作用：<strong>接收图像缓冲区数据，然后交给HWComposer或OpenGL合成，合成完毕后再返回。</strong></p>
-<p><img src="/images/SurfaceFlinger执行流程.jpg" srcset="/img/loading.gif" alt="SurfaceFlinger执行流程"></p>
+<p><img src="/images/SurfaceFlinger执行流程.jpg" srcset="/img/loading.gif" lazyload="" alt="SurfaceFlinger执行流程"></p>
 <h2 id="SurfaceFlinger初始化"><a href="#SurfaceFlinger初始化" class="headerlink" title="SurfaceFlinger初始化"></a>SurfaceFlinger初始化</h2><p><code>init</code>通过执行<code>surfaceflinger.rc</code>文件，然后就执行到了<code>main_surfaceflinger.cpp</code>开始初始化流程</p>
 <figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br></pre></td><td class="code"><pre><code class="hljs cpp">//frameworks/native/services/surfaceflinger/main_surfaceflinger.cpp<br><span class="hljs-keyword">int</span> main(<span class="hljs-keyword">int</span>, <span class="hljs-keyword">char</span>**) &#123;<br>    signal(SIGPIPE, SIG_IGN);<br><br>    hardware::configureRpcThreadpool(1 /* maxThreads */,<br>            <span class="hljs-literal">false</span> /* callerWillJoin */);<br><br>    startGraphicsAllocatorService();<br><br>   //设置支持最多 4个 binder线程执行<br>    ProcessState::self()-&gt;setThreadPoolMaxThreadCount(4);<br><br>    // start the thread pool<br>    sp&lt;ProcessState&gt; ps(ProcessState::self());<br>    ps-&gt;startThreadPool();<br><br>    //构建 Surfaceflinger实例<br>    sp&lt;SurfaceFlinger&gt; flinger = <span class="hljs-keyword">new</span> SurfaceFlinger();<br><br>    // 执行初始化流程<br>    flinger-&gt;init();<br><br>    // 通过ServiceManager注册 SurfaceFlinger服务<br>    sp&lt;IServiceManager&gt; sm(defaultServiceManager());<br>    sm-&gt;addService(String16(SurfaceFlinger::getServiceName()), flinger, <span class="hljs-literal">false</span>,<br>                   IServiceManager::DUMP_FLAG_PRIORITY_CRITICAL | IServiceManager::DUMP_FLAG_PROTO);<br><br>    startDisplayService(); // dependency on SF getting registered above<br><br>    // 开始运行<br>    flinger-&gt;run();<br><br>    <span class="hljs-keyword">return</span> 0;<br>&#125;<br></code></pre></td></tr></table></figure>
 <h3 id="new-SurfaceFlinger"><a href="#new-SurfaceFlinger" class="headerlink" title="new SurfaceFlinger"></a>new SurfaceFlinger</h3><figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><code class="hljs cpp">//frameworks/native/services/surfaceflinger/SurfaceFlinger.cpp<br><span class="hljs-keyword">void</span> SurfaceFlinger::onFirstRef()<br>&#123;<br>    mEventQueue-&gt;init(<span class="hljs-keyword">this</span>);<br>&#125;<br></code></pre></td></tr></table></figure>
@@ -281,7 +282,7 @@
 <figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><code class="hljs cpp"><span class="hljs-keyword">void</span> SurfaceFlinger::run() &#123;<br>    <span class="hljs-keyword">do</span> &#123;<br>        waitForEvent();<br>    &#125; <span class="hljs-keyword">while</span> (<span class="hljs-literal">true</span>);<br>&#125;<br><br><span class="hljs-keyword">void</span> SurfaceFlinger::waitForEvent() &#123;<br>    mEventQueue.waitMessage();<br>&#125;<br></code></pre></td></tr></table></figure>
 <figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><code class="hljs cpp">//frameworks/native/services/surfaceflinger/MessageQueue.cpp<br><span class="hljs-keyword">void</span> MessageQueue::waitMessage() &#123;<br>    <span class="hljs-keyword">do</span> &#123;<br>        IPCThreadState::self()-&gt;flushCommands();<br>        int32_t ret = mLooper-&gt;pollOnce(-1);<br>        <span class="hljs-keyword">switch</span> (ret) &#123;<br>            <span class="hljs-keyword">case</span> Looper::POLL_WAKE:<br>            <span class="hljs-keyword">case</span> Looper::POLL_CALLBACK:<br>                <span class="hljs-keyword">continue</span>;<br>            <span class="hljs-keyword">case</span> Looper::POLL_ERROR:<br>                ALOGE("Looper::POLL_ERROR");<br>            <span class="hljs-keyword">case</span> Looper::POLL_TIMEOUT:<br>                // timeout (should <span class="hljs-keyword">not</span> happen)<br>                <span class="hljs-keyword">continue</span>;<br>            <span class="hljs-keyword">default</span>:<br>                // should <span class="hljs-keyword">not</span> happen<br>                ALOGE("Looper::pollOnce() returned unknown status %d", ret);<br>                <span class="hljs-keyword">continue</span>;<br>        &#125;<br>    &#125; <span class="hljs-keyword">while</span> (<span class="hljs-literal">true</span>);<br>&#125;<br></code></pre></td></tr></table></figure>
 <p>通过<code>waitMessage()</code>等待消息的到来</p>
-<p><img src="/images/Sf初始化.png" srcset="/img/loading.gif" alt="Sf初始化"></p>
+<p><img src="/images/Sf初始化.png" srcset="/img/loading.gif" lazyload="" alt="Sf初始化"></p>
 <h2 id="Vsync信号相关"><a href="#Vsync信号相关" class="headerlink" title="Vsync信号相关"></a>Vsync信号相关</h2><h3 id="接收Vsync"><a href="#接收Vsync" class="headerlink" title="接收Vsync"></a>接收Vsync</h3><h4 id="HWC-hook-vsync"><a href="#HWC-hook-vsync" class="headerlink" title="HWC#hook_vsync"></a>HWC#hook_vsync</h4><p><code>Vsync信号</code>都是由<code>HWComposer</code>发出的，需要从<code>HWC</code>进行分析</p>
 <figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><code class="hljs cpp">//frameworks/native/services/surfaceflinger/DisplayHardware/HWComposer.cpp<br>HWComposer::HWComposer(<br>        <span class="hljs-keyword">const</span> sp&lt;SurfaceFlinger&gt;&amp; flinger,<br>        EventHandler&amp; handler)<br>    : mFlinger(flinger),<br>      mFbDev(0), mHwc(0), mNumDisplays(1),<br>      mCBContext(<span class="hljs-keyword">new</span> cb_context),<br>      mEventHandler(handler),<br>      mDebugForceFakeVSync(<span class="hljs-literal">false</span>)<br>&#123;<br>        ...<br>    <span class="hljs-keyword">if</span> (mHwc) &#123;<br>        <span class="hljs-keyword">if</span> (mHwc-&gt;registerProcs) &#123;<br>            mCBContext-&gt;hwc = <span class="hljs-keyword">this</span>;<br>            mCBContext-&gt;procs.invalidate = &amp;hook_invalidate; //invalidate事件回调<br>            mCBContext-&gt;procs.vsync = &amp;hook_vsync;//Vsync回调<br>            <span class="hljs-keyword">if</span> (hwcHasApiVersion(mHwc, HWC_DEVICE_API_VERSION_1_1))<br>                mCBContext-&gt;procs.hotplug = &amp;hook_hotplug;<br>            <span class="hljs-keyword">else</span><br>                mCBContext-&gt;procs.hotplug = <span class="hljs-literal">NULL</span>;<br>            <span class="hljs-built_in">memset</span>(mCBContext-&gt;procs.zero, 0, <span class="hljs-keyword">sizeof</span>(mCBContext-&gt;procs.zero));<br>            mHwc-&gt;registerProcs(mHwc, &amp;mCBContext-&gt;procs);<br>        &#125;          <br>&#125;<br></code></pre></td></tr></table></figure>
 <p>通过<code>hook_vsync</code>处理<code>Vsync信号</code></p>
@@ -310,7 +311,7 @@
 <p>回调到<code>MessageQueue.Handler</code>的<code>handleMessage()</code></p>
 <figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><code class="hljs cpp"><span class="hljs-keyword">void</span> MessageQueue::Handler::handleMessage(<span class="hljs-keyword">const</span> Message&amp; message) &#123;<br>    <span class="hljs-keyword">switch</span> (message.what) &#123;<br>        <span class="hljs-keyword">case</span> INVALIDATE:<br>            android_atomic_and(~eventMaskInvalidate, &amp;mEventMask);<br>            mQueue.mFlinger-&gt;onMessageReceived(message.what);<br>            <span class="hljs-keyword">break</span>;<br>        <span class="hljs-keyword">case</span> REFRESH:<br>            android_atomic_and(~eventMaskRefresh, &amp;mEventMask);<br>            mQueue.mFlinger-&gt;onMessageReceived(message.what);<br>            <span class="hljs-keyword">break</span>;<br>        <span class="hljs-keyword">case</span> TRANSACTION:<br>            android_atomic_and(~eventMaskTransaction, &amp;mEventMask);<br>            mQueue.mFlinger-&gt;onMessageReceived(message.what);<br>            <span class="hljs-keyword">break</span>;<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
 <h4 id="Sf-onMessageReceived"><a href="#Sf-onMessageReceived" class="headerlink" title="Sf#onMessageReceived"></a>Sf#onMessageReceived</h4><figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><code class="hljs cpp"><span class="hljs-keyword">void</span> SurfaceFlinger::onMessageReceived(int32_t what) &#123;<br>    ATRACE_CALL();<br>    <span class="hljs-keyword">switch</span> (what) &#123;<br>        <span class="hljs-keyword">case</span> MessageQueue::TRANSACTION: &#123;<br>            handleMessageTransaction();<br>            <span class="hljs-keyword">break</span>;<br>        &#125;<br>        <span class="hljs-keyword">case</span> MessageQueue::INVALIDATE: &#123;<br>            <span class="hljs-keyword">bool</span> refreshNeeded = handleMessageTransaction();<br>            refreshNeeded |= handleMessageInvalidate();<br>            refreshNeeded |= mRepaintEverything;<br>            <span class="hljs-keyword">if</span> (refreshNeeded) &#123;<br>                signalRefresh();<br>            &#125;<br>            <span class="hljs-keyword">break</span>;<br>        &#125;<br>        <span class="hljs-keyword">case</span> MessageQueue::REFRESH: &#123;<br>            handleMessageRefresh();<br>            <span class="hljs-keyword">break</span>;<br>        &#125;<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
-<h4 id="总结-1"><a href="#总结-1" class="headerlink" title="总结"></a>总结</h4><p><img src="/images/SF接收Vsync信号.jpg" srcset="/img/loading.gif" alt="SF接收Vsync信号"></p>
+<h4 id="总结-1"><a href="#总结-1" class="headerlink" title="总结"></a>总结</h4><p><img src="/images/SF接收Vsync信号.jpg" srcset="/img/loading.gif" lazyload="" alt="SF接收Vsync信号"></p>
 <p>接收Vsync信号主要分为以下几步：</p>
 <ol>
 <li>HWC收到Vsync信号时，回调到<code>hook_vsync</code>，内部执行到<code>sf#onVsyncReceived()</code></li>
@@ -382,7 +383,7 @@
 <p>此时图层已经混合完成，图像数据也被送到了<code>帧缓冲(FrameBuffer)</code>，并且已经显示在屏幕上了，由<code>postComposition()</code>进行一些收尾工作的处理。</p>
 </blockquote>
 <figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><code class="hljs cpp">//frameworks/native/services/surfaceflinger/SurfaceFlinger.cpp<br><span class="hljs-keyword">void</span> SurfaceFlinger::postComposition()<br>&#123;<br>    <span class="hljs-keyword">const</span> LayerVector&amp; layers(mDrawingState.layersSortedByZ);<br>    <span class="hljs-keyword">const</span> size_t count = layers.size();<br>    <span class="hljs-keyword">for</span> (size_t i=0 ; i&lt;count ; i++) &#123;<br>        layers[i]-&gt;onPostComposition();<br>    &#125;<br>  ...<br>    //更新 swapBuffer 记录时间<br>    nsecs_t currentTime = systemTime();<br>    <span class="hljs-keyword">if</span> (mHasPoweredOff) &#123;<br>        mHasPoweredOff = <span class="hljs-literal">false</span>;<br>    &#125; <span class="hljs-keyword">else</span> &#123;<br>        nsecs_t period = mPrimaryDispSync.getPeriod();<br>        nsecs_t elapsedTime = currentTime - mLastSwapTime;<br>        size_t numPeriods = <span class="hljs-keyword">static_cast</span>&lt;size_t&gt;(elapsedTime / period);<br>        <span class="hljs-keyword">if</span> (numPeriods &lt; NUM_BUCKETS - 1) &#123;<br>            mFrameBuckets[numPeriods] += elapsedTime;<br>        &#125; <span class="hljs-keyword">else</span> &#123;<br>            mFrameBuckets[NUM_BUCKETS - 1] += elapsedTime;<br>        &#125;<br>        mTotalTime += elapsedTime;<br>    &#125;<br>    mLastSwapTime = currentTime;    <br>  <br>&#125;<br></code></pre></td></tr></table></figure>
-<h3 id="总结-2"><a href="#总结-2" class="headerlink" title="总结"></a>总结</h3><p><img src="/images/SF处理Vsync信号.jpg" srcset="/img/loading.gif" alt="SF处理Vsync信号"></p>
+<h3 id="总结-2"><a href="#总结-2" class="headerlink" title="总结"></a>总结</h3><p><img src="/images/SF处理Vsync信号.jpg" srcset="/img/loading.gif" lazyload="" alt="SF处理Vsync信号"></p>
 <h2 id="Android图形缓冲区"><a href="#Android图形缓冲区" class="headerlink" title="Android图形缓冲区"></a>Android图形缓冲区</h2><p>Android的图形缓冲区主要由以下几部分组成：</p>
 <ul>
 <li><code>Surface</code></li>
@@ -408,7 +409,7 @@
 <h3 id="BufferQueue"><a href="#BufferQueue" class="headerlink" title="BufferQueue"></a>BufferQueue</h3><blockquote>
 <p>存放<code>GraphicBuffer</code>的数组结构，最多可以存储<strong>64</strong>个<code>GraphicBuffer</code></p>
 </blockquote>
-<p><img src="/images/BufferQueue执行流程.jpg" srcset="/img/loading.gif" alt="BufferQueue执行流程"></p>
+<p><img src="/images/BufferQueue执行流程.jpg" srcset="/img/loading.gif" lazyload="" alt="BufferQueue执行流程"></p>
 <blockquote>
 <p>当绘制图像时，首先去创建<code>Surface</code>和<code>Layer</code>，</p>
 <p>然后<code>图像生产者</code>通过<code>Surface</code>调用<code>dequeue()</code>申请一块<code>GraphicBuffer</code>，在其上绘制图像</p>
@@ -476,7 +477,7 @@
 </li>
 </ul>
 </blockquote>
-<p><img src="/images/SF-Surface和Layer创建准备.jpg" srcset="/img/loading.gif" alt="SF-Surface/Layer创建准备"></p>
+<p><img src="/images/SF-Surface和Layer创建准备.jpg" srcset="/img/loading.gif" lazyload="" alt="SF-Surface/Layer创建准备"></p>
 <h4 id="Surface、Layer的创建"><a href="#Surface、Layer的创建" class="headerlink" title="Surface、Layer的创建"></a>Surface、Layer的创建</h4><p>根据上节源码分析可以知道，<code>Surface、Layer</code>的创建主要分为以下几步</p>
 <h5 id="创建SurfaceComponentClient"><a href="#创建SurfaceComponentClient" class="headerlink" title="创建SurfaceComponentClient"></a>创建SurfaceComponentClient</h5><blockquote>
 <p>App进程与<code>SurfaceFlinger</code>沟通的桥梁。</p>
@@ -503,7 +504,7 @@
 <h5 id="通过SurfaceControl创建Surface"><a href="#通过SurfaceControl创建Surface" class="headerlink" title="通过SurfaceControl创建Surface"></a>通过SurfaceControl创建Surface</h5><p>此时已经创建完毕<code>Surfacecontrol</code>和<code>Layer</code>对象。</p>
 <figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><code class="hljs cpp">//<br>sp&lt;Surface&gt; SurfaceControl::getSurface() <span class="hljs-keyword">const</span><br>&#123;<br>    Mutex::Autolock _l(mLock);<br>    <span class="hljs-keyword">if</span> (mSurfaceData == 0) &#123;<br>        <span class="hljs-keyword">return</span> generateSurfaceLocked();<br>    &#125;<br>    <span class="hljs-keyword">return</span> mSurfaceData;<br>&#125;<br><br>sp&lt;Surface&gt; SurfaceControl::generateSurfaceLocked() <span class="hljs-keyword">const</span><br>&#123;<br>  //构造Surface对象<br>    mSurfaceData = <span class="hljs-keyword">new</span> Surface(mGraphicBufferProducer, <span class="hljs-literal">false</span>);<br><br>    <span class="hljs-keyword">return</span> mSurfaceData;<br>&#125;<br></code></pre></td></tr></table></figure>
 <p><code>Native</code>层的<code>Surface</code>创建完毕后，返回到<code>Java</code>层进行赋值。</p>
-<p><img src="/images/SF-Buffer、Layer创建过程.jpg" srcset="/img/loading.gif" alt="SF-Buffer、Layer创建过程"></p>
+<p><img src="/images/SF-Buffer、Layer创建过程.jpg" srcset="/img/loading.gif" lazyload="" alt="SF-Buffer、Layer创建过程"></p>
 <h4 id="BufferQueue的创建"><a href="#BufferQueue的创建" class="headerlink" title="BufferQueue的创建"></a>BufferQueue的创建</h4><p>在创建<code>Layer</code>完成后，后续就会继续去创建<code>BufferQueue</code></p>
 <figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><code class="hljs cpp">//BufferLayer.cpp<br><span class="hljs-keyword">void</span> BufferLayer::onFirstRef() &#123;<br>    // Creates a custom BufferQueue <span class="hljs-keyword">for</span> SurfaceFlingerConsumer to use<br>    sp&lt;IGraphicBufferProducer&gt; producer;<br>    sp&lt;IGraphicBufferConsumer&gt; consumer;<br>  //创建BufferQueue对象<br>    BufferQueue::createBufferQueue(&amp;producer, &amp;consumer, <span class="hljs-literal">true</span>);<br>    mProducer = <span class="hljs-keyword">new</span> MonitoredProducer(producer, mFlinger, <span class="hljs-keyword">this</span>);<br>    mConsumer = <span class="hljs-keyword">new</span> BufferLayerConsumer(consumer,<br>            mFlinger-&gt;getRenderEngine(), mTextureName, <span class="hljs-keyword">this</span>);<br>    mConsumer-&gt;setConsumerUsageBits(getEffectiveUsage(0));<br>    mConsumer-&gt;setContentsChangedListener(<span class="hljs-keyword">this</span>);<br>    mConsumer-&gt;setName(mName);<br><br>    <span class="hljs-keyword">if</span> (mFlinger-&gt;isLayerTripleBufferingDisabled()) &#123;<br>        mProducer-&gt;setMaxDequeuedBufferCount(2);<br>    &#125;<br><br>    <span class="hljs-keyword">const</span> sp&lt;<span class="hljs-keyword">const</span> DisplayDevice&gt; hw(mFlinger-&gt;getDefaultDisplayDevice());<br>    updateTransformHint(hw);<br>&#125;<br></code></pre></td></tr></table></figure>
 <figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><code class="hljs cpp">//native/libs/gui/BufferQueue.cpp<br><span class="hljs-keyword">void</span> BufferQueue::createBufferQueue(sp&lt;IGraphicBufferProducer&gt;* outProducer,<br>        sp&lt;IGraphicBufferConsumer&gt;* outConsumer,<br>        <span class="hljs-keyword">bool</span> consumerIsSurfaceFlinger) &#123;<br>  //创建BufferQueueCore<br>    sp&lt;BufferQueueCore&gt; core(<span class="hljs-keyword">new</span> BufferQueueCore());<br>  //创建BufferQueueProducer<br>    sp&lt;IGraphicBufferProducer&gt; producer(<span class="hljs-keyword">new</span> BufferQueueProducer(core, consumerIsSurfaceFlinger));<br>  //创建BufferQueueConsumer<br>    sp&lt;IGraphicBufferConsumer&gt; consumer(<span class="hljs-keyword">new</span> BufferQueueConsumer(core));<br>  <br>    *outProducer = producer;<br>    *outConsumer = consumer;<br>&#125;<br></code></pre></td></tr></table></figure>
@@ -543,7 +544,7 @@
 <blockquote>
 <p><code>BufferQueueCore</code>设置了这么多的<code>BufferSlot</code>集合，主要为了<strong>分类BufferSlot时更高效</strong>。</p>
 </blockquote>
-<p><img src="/images/SF-BufferQueueCore.jpg" srcset="/img/loading.gif" alt="SF-BufferQueueCore"></p>
+<p><img src="/images/SF-BufferQueueCore.jpg" srcset="/img/loading.gif" lazyload="" alt="SF-BufferQueueCore"></p>
 <h5 id="BufferQueueProducer"><a href="#BufferQueueProducer" class="headerlink" title="BufferQueueProducer"></a>BufferQueueProducer</h5><blockquote>
 <p><code>Surface</code>中持有<code>BufferQueueProducer</code>的BP代理对象-<code>IGraphicBufferProducer</code>。</p>
 </blockquote>
@@ -580,7 +581,7 @@ A---&gt;C
 <blockquote>
 <p>尝试寻找一个<code>BufferSlot</code>，并且<code>width,height,format</code>都符合要求，如果没有绑定<code>GraphicBuffer</code>，就需要新建一个并且进行绑定，然后设置<code>BufferSlot</code>的<code>BufferState</code>为<code>DEQUEUED</code>，最后返回在<code>mSlots</code>的<code>index</code>回去。</p>
 </blockquote>
-<p><img src="/images/SF-BufferQueue-dequeueBuffer.jpg" srcset="/img/loading.gif" alt="SF-BufferQueue-dequeueBuffer"></p>
+<p><img src="/images/SF-BufferQueue-dequeueBuffer.jpg" srcset="/img/loading.gif" lazyload="" alt="SF-BufferQueue-dequeueBuffer"></p>
 <h6 id="queueBuffer"><a href="#queueBuffer" class="headerlink" title="queueBuffer"></a>queueBuffer</h6><blockquote>
 <p>在<code>生产者</code>填充数据到<code>GraphicBuffer</code>完毕后，通过<code>queueBuffer</code>把<code>GraphicBuffer</code>放回到<code>BufferQueue</code>。</p>
 <p>标记<code>BufferSlot</code>的<code>BufferState</code>标记为<code>QUEUED</code>。</p>
@@ -683,7 +684,7 @@ E---B
 F---C
 G---D
 </code></pre>
-<h5 id="总结-4"><a href="#总结-4" class="headerlink" title="总结"></a>总结</h5><p><img src="/images/BufferSlot状态转变过程.jpg" srcset="/img/loading.gif" alt="BufferSlot状态转变过程"></p>
+<h5 id="总结-4"><a href="#总结-4" class="headerlink" title="总结"></a>总结</h5><p><img src="/images/BufferSlot状态转变过程.jpg" srcset="/img/loading.gif" lazyload="" alt="BufferSlot状态转变过程"></p>
 <h4 id="GraphicBuffer的创建"><a href="#GraphicBuffer的创建" class="headerlink" title="GraphicBuffer的创建"></a>GraphicBuffer的创建</h4><blockquote>
 <p><code>GraphicBuffer</code>是基本单元，所有的交互都是基于它进行的。</p>
 </blockquote>
@@ -840,7 +841,11 @@ H---F
                 
               </div>
               
-                <p class="note note-warning">本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-sa/4.0/deed.zh" rel="nofollow noopener">CC BY-SA 4.0 协议</a> ，转载请注明出处！</p>
+                <p class="note note-warning">
+                  
+                    本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-sa/4.0/deed.zh" rel="nofollow noopener">CC BY-SA 4.0 协议</a> ，转载请注明出处！
+                  
+                </p>
               
               
                 <div class="post-prevnext">
@@ -934,8 +939,9 @@ H---F
   
 </footer>
 
-<!-- SCRIPTS -->
 
+  <!-- SCRIPTS -->
+  
   <script  src="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.js" ></script>
   <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.css" />
 
@@ -950,7 +956,6 @@ H---F
 
 <script  src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" ></script>
 <script  src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.min.js" ></script>
-<script  src="/js/debouncer.js" ></script>
 <script  src="/js/events.js" ></script>
 <script  src="/js/plugins.js" ></script>
 
@@ -958,7 +963,7 @@ H---F
 
 
   
-    <script  src="/js/lazyload.js" ></script>
+    <script  src="/js/img-lazyload.js" ></script>
   
 
 
@@ -992,11 +997,12 @@ H---F
   <script>
     (function () {
       var path = "/local-search.xml";
-      var inputArea = document.querySelector("#local-search-input");
-      inputArea.onclick = function () {
+      $('#local-search-input').on('click', function() {
         searchFunc(path, 'local-search-input', 'local-search-result');
-        this.onclick = null
-      }
+      });
+      $('#modalSearch').on('shown.bs.modal', function() {
+        $('#local-search-input').focus();
+      });
     })()
   </script>
 
@@ -1023,7 +1029,6 @@ H---F
 
 <!-- 主题的启动项 保持在最底部 -->
 <script  src="/js/boot.js" ></script>
-
 
 
 </body>
