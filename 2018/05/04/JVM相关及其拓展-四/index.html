@@ -1,7 +1,7 @@
 
 
 <!DOCTYPE html>
-<html lang="zh-CN" data-default-color-scheme=&#34;auto&#34;>
+<html lang="zh-CN" data-default-color-scheme=auto>
 
 
 
@@ -9,13 +9,36 @@
   <meta charset="UTF-8">
   <link rel="apple-touch-icon" sizes="76x76" href="/img/favicon.png">
   <link rel="icon" href="/img/favicon.png">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, shrink-to-fit=no">
   <meta http-equiv="x-ua-compatible" content="ie=edge">
   
   <meta name="theme-color" content="#11527b">
   <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
   <meta name="author" content="Leo-Wxy">
   <meta name="keywords" content="">
+  <meta name="description" content="垃圾收集器与内存分配策略垃圾收集器1.概述垃圾收集(Garbage Collection,GC)：自动管理回收不再引用的内存数据需要完成的三件事情：  哪些内存需要回收 什么时候回收 如何回收    Java语言会自动管理和回收不再引用的内存数据，由垃圾回收机制来完成。Java自身提供了内存管理机制，应用程序不需要去关注内存如何释放，内存用完后，GC会去自动进行处理，不需要人为干预出现错误。  在">
+<meta name="keywords" content="JVM">
+<meta property="og:type" content="article">
+<meta property="og:title" content="JVM相关及其拓展(四) -- 垃圾收集器与内存分配策略">
+<meta property="og:url" content="https://leo-wxy.github.io/2018/05/04/JVM相关及其拓展-四/index.html">
+<meta property="og:site_name" content="Wxy的个人博客">
+<meta property="og:description" content="垃圾收集器与内存分配策略垃圾收集器1.概述垃圾收集(Garbage Collection,GC)：自动管理回收不再引用的内存数据需要完成的三件事情：  哪些内存需要回收 什么时候回收 如何回收    Java语言会自动管理和回收不再引用的内存数据，由垃圾回收机制来完成。Java自身提供了内存管理机制，应用程序不需要去关注内存如何释放，内存用完后，GC会去自动进行处理，不需要人为干预出现错误。  在">
+<meta property="og:locale" content="zh-CN">
+<meta property="og:image" content="https://leo-wxy.github.io/images/jvm/gc_reachability_analysis.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/判断Java对象是否存活.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/jvm/gc_mark_sweep.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/jvm/gc_copying.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/jvm/gc_mark_compact.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/jvm/gc_java_heap_memory.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/jvm/gc_collectors.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/CMS收集器.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/jvm/gc_collectors_CMS.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/G1收集器.png">
+<meta property="og:updated_time" content="2019-02-20T05:53:26.000Z">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="JVM相关及其拓展(四) -- 垃圾收集器与内存分配策略">
+<meta name="twitter:description" content="垃圾收集器与内存分配策略垃圾收集器1.概述垃圾收集(Garbage Collection,GC)：自动管理回收不再引用的内存数据需要完成的三件事情：  哪些内存需要回收 什么时候回收 如何回收    Java语言会自动管理和回收不再引用的内存数据，由垃圾回收机制来完成。Java自身提供了内存管理机制，应用程序不需要去关注内存如何释放，内存用完后，GC会去自动进行处理，不需要人为干预出现错误。  在">
+<meta name="twitter:image" content="https://leo-wxy.github.io/images/jvm/gc_reachability_analysis.png">
   
   <title>JVM相关及其拓展(四) -- 垃圾收集器与内存分配策略 - Wxy的个人博客</title>
 
@@ -38,7 +61,6 @@
   
 
 
-
 <!-- 主题依赖的图标库，不要自行修改 -->
 <link rel="stylesheet" href="//at.alicdn.com/t/font_1749284_ba1fz6golrf.css">
 
@@ -51,7 +73,7 @@
 
   <script id="fluid-configs">
     var Fluid = window.Fluid || {};
-    var CONFIG = {"hostname":"leo-wxy.github.io","root":"/","version":"1.8.10","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"copy_btn":true,"image_zoom":{"enable":true,"img_url_replace":["",""]},"toc":{"enable":true,"headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"loading_img":"/img/loading.gif","onlypost":false,"offset_factor":2},"web_analytics":{"enable":false,"baidu":null,"google":null,"gtag":null,"tencent":{"sid":null,"cid":null},"woyaola":null,"cnzz":null,"leancloud":{"app_id":null,"app_key":null,"server_url":null}}};
+    var CONFIG = {"hostname":"leo-wxy.github.io","root":"/","version":"1.8.12","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"copy_btn":true,"image_zoom":{"enable":true,"img_url_replace":["",""]},"toc":{"enable":true,"headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"loading_img":"/img/loading.gif","onlypost":false,"offset_factor":2},"web_analytics":{"enable":false,"baidu":null,"google":null,"gtag":null,"tencent":{"sid":null,"cid":null},"woyaola":null,"cnzz":null,"leancloud":{"app_id":null,"app_key":null,"server_url":null,"path":"window.location.pathname"}},"search_path":"/local-search.xml"};
   </script>
   <script src="/js/utils.js"></script>
   <script src="/js/color-schema.js"></script>
@@ -62,8 +84,9 @@
   <header style="height: 30vh;">
     <nav id="navbar" class="navbar fixed-top  navbar-expand-lg navbar-dark scrolling-navbar">
   <div class="container">
-    <a class="navbar-brand"
-       href="/">&nbsp;<strong>Wxy's Blog</strong>&nbsp;</a>
+    <a class="navbar-brand" href="/">
+      <strong>Wxy&#39;s Blog</strong>
+    </a>
 
     <button id="navbar-toggler-btn" class="navbar-toggler" type="button" data-toggle="collapse"
             data-target="#navbarSupportedContent"
@@ -137,13 +160,14 @@
         
         
           <li class="nav-item" id="search-btn">
-            <a class="nav-link" target="_self" data-toggle="modal" data-target="#modalSearch">&nbsp;<i
-                class="iconfont icon-search"></i>&nbsp;</a>
+            <a class="nav-link" target="_self" href="javascript:;" data-toggle="modal" data-target="#modalSearch" aria-label="Search">
+              &nbsp;<i class="iconfont icon-search"></i>&nbsp;
+            </a>
           </li>
         
         
           <li class="nav-item" id="color-toggle-btn">
-            <a class="nav-link" target="_self">&nbsp;<i
+            <a class="nav-link" target="_self" href="javascript:;" aria-label="Color Toggle">&nbsp;<i
                 class="iconfont icon-dark" id="color-toggle-icon"></i>&nbsp;</a>
           </li>
         
@@ -179,21 +203,18 @@
 
 <div class="mt-1">
   
-    
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      5.8k 字
+      8.4k 字
     </span>
   
 
   
-    
     <span class="post-meta mr-2">
       <i class="iconfont icon-clock-fill"></i>
       
       
-      62
-       分钟
+      26 分钟
     </span>
   
 
@@ -559,7 +580,7 @@
     
 
     
-      <a id="scroll-top-button" href="#" role="button">
+      <a id="scroll-top-button" aria-label="TOP" href="#" role="button">
         <i class="iconfont icon-arrowup" aria-hidden="true"></i>
       </a>
     
@@ -625,6 +646,10 @@
 <!-- Plugins -->
 
 
+  <script  src="/js/local-search.js" ></script>
+
+
+
   
     <script  src="/js/img-lazyload.js" ></script>
   
@@ -635,39 +660,23 @@
 
 
 
-  <script  src="https://cdn.jsdelivr.net/npm/tocbot@4.12.0/dist/tocbot.min.js" ></script>
-
-
-
-  <script  src="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.js" ></script>
-
-
-
-  <script  src="https://cdn.jsdelivr.net/npm/anchor-js@4.3.0/anchor.min.js" ></script>
-
-
-
-  <script defer src="https://cdn.jsdelivr.net/npm/clipboard@2.0.6/dist/clipboard.min.js" ></script>
-
-
-
+  
+    <script  src="https://cdn.jsdelivr.net/npm/tocbot@4.12.0/dist/tocbot.min.js" ></script>
+  
+  
+    <script  src="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.js" ></script>
+  
+  
+    <script  src="https://cdn.jsdelivr.net/npm/anchor-js@4.3.0/anchor.min.js" ></script>
+  
+  
+    <script defer src="https://cdn.jsdelivr.net/npm/clipboard@2.0.6/dist/clipboard.min.js" ></script>
+  
 
 
 
 
 
-  <script  src="/js/local-search.js" ></script>
-  <script>
-    (function () {
-      var path = "/local-search.xml";
-      $('#local-search-input').on('click', function() {
-        searchFunc(path, 'local-search-input', 'local-search-result');
-      });
-      $('#modalSearch').on('shown.bs.modal', function() {
-        $('#local-search-input').focus();
-      });
-    })()
-  </script>
 
 
 

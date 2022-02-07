@@ -1,7 +1,7 @@
 
 
 <!DOCTYPE html>
-<html lang="zh-CN" data-default-color-scheme=&#34;auto&#34;>
+<html lang="zh-CN" data-default-color-scheme=auto>
 
 
 
@@ -9,7 +9,7 @@
   <meta charset="UTF-8">
   <link rel="apple-touch-icon" sizes="76x76" href="/img/favicon.png">
   <link rel="icon" href="/img/favicon.png">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, shrink-to-fit=no">
   <meta http-equiv="x-ua-compatible" content="ie=edge">
   
   <meta name="theme-color" content="#11527b">
@@ -20,6 +20,48 @@
 ">
   <meta name="author" content="Leo-Wxy">
   <meta name="keywords" content="">
+  <meta name="description" content="主要的内容包括Handler的机制以及四个组成部分和源码的分析 下面的代码分析都是基于Android8.0 - Oreo的源代码">
+<meta name="keywords" content="Android,源码解析">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Handler机制源码解析">
+<meta property="og:url" content="https://leo-wxy.github.io/2018/05/14/Handler机制即源码解析/index.html">
+<meta property="og:site_name" content="Wxy的个人博客">
+<meta property="og:description" content="主要的内容包括Handler的机制以及四个组成部分和源码的分析 下面的代码分析都是基于Android8.0 - Oreo的源代码">
+<meta property="og:locale" content="zh-CN">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Handler机制xmind.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/study_plan/handler_process.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Handler-机制模型.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Handler基本原理">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Handler-运行流程.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Handler-源码分析.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Handler-源码1.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Handler-源码2.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Handler-源码3.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Handler-源码4.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Handler-源码5.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Handler-源码6.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Handler-源码7.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Handler-源码8.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Handler-源码9.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Handler-源码10.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Handler-异步消息.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Handler-同步屏障.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Handler-nativeInit.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Handler-nativePollOnce.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Handler-nativeWake.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Handler-nativeDestroy.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/handler_arch.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/MessageQueue-Native.jpg">
+<meta property="og:image" content="https://leo-wxy.github.io/images/epoll机制.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/epoll-主要方法.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/epoll-工作模式.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/epoll-其他多路复用机制.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Handler-内存泄漏分析.png">
+<meta property="og:updated_time" content="2020-12-30T13:38:24.000Z">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Handler机制源码解析">
+<meta name="twitter:description" content="主要的内容包括Handler的机制以及四个组成部分和源码的分析 下面的代码分析都是基于Android8.0 - Oreo的源代码">
+<meta name="twitter:image" content="https://leo-wxy.github.io/images/Handler机制xmind.png">
   
   <title>Handler机制源码解析 - Wxy的个人博客</title>
 
@@ -42,7 +84,6 @@
   
 
 
-
 <!-- 主题依赖的图标库，不要自行修改 -->
 <link rel="stylesheet" href="//at.alicdn.com/t/font_1749284_ba1fz6golrf.css">
 
@@ -55,7 +96,7 @@
 
   <script id="fluid-configs">
     var Fluid = window.Fluid || {};
-    var CONFIG = {"hostname":"leo-wxy.github.io","root":"/","version":"1.8.10","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"copy_btn":true,"image_zoom":{"enable":true,"img_url_replace":["",""]},"toc":{"enable":true,"headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"loading_img":"/img/loading.gif","onlypost":false,"offset_factor":2},"web_analytics":{"enable":false,"baidu":null,"google":null,"gtag":null,"tencent":{"sid":null,"cid":null},"woyaola":null,"cnzz":null,"leancloud":{"app_id":null,"app_key":null,"server_url":null}}};
+    var CONFIG = {"hostname":"leo-wxy.github.io","root":"/","version":"1.8.12","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"copy_btn":true,"image_zoom":{"enable":true,"img_url_replace":["",""]},"toc":{"enable":true,"headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"loading_img":"/img/loading.gif","onlypost":false,"offset_factor":2},"web_analytics":{"enable":false,"baidu":null,"google":null,"gtag":null,"tencent":{"sid":null,"cid":null},"woyaola":null,"cnzz":null,"leancloud":{"app_id":null,"app_key":null,"server_url":null,"path":"window.location.pathname"}},"search_path":"/local-search.xml"};
   </script>
   <script src="/js/utils.js"></script>
   <script src="/js/color-schema.js"></script>
@@ -66,8 +107,9 @@
   <header style="height: 30vh;">
     <nav id="navbar" class="navbar fixed-top  navbar-expand-lg navbar-dark scrolling-navbar">
   <div class="container">
-    <a class="navbar-brand"
-       href="/">&nbsp;<strong>Wxy's Blog</strong>&nbsp;</a>
+    <a class="navbar-brand" href="/">
+      <strong>Wxy&#39;s Blog</strong>
+    </a>
 
     <button id="navbar-toggler-btn" class="navbar-toggler" type="button" data-toggle="collapse"
             data-target="#navbarSupportedContent"
@@ -141,13 +183,14 @@
         
         
           <li class="nav-item" id="search-btn">
-            <a class="nav-link" target="_self" data-toggle="modal" data-target="#modalSearch">&nbsp;<i
-                class="iconfont icon-search"></i>&nbsp;</a>
+            <a class="nav-link" target="_self" href="javascript:;" data-toggle="modal" data-target="#modalSearch" aria-label="Search">
+              &nbsp;<i class="iconfont icon-search"></i>&nbsp;
+            </a>
           </li>
         
         
           <li class="nav-item" id="color-toggle-btn">
-            <a class="nav-link" target="_self">&nbsp;<i
+            <a class="nav-link" target="_self" href="javascript:;" aria-label="Color Toggle">&nbsp;<i
                 class="iconfont icon-dark" id="color-toggle-icon"></i>&nbsp;</a>
           </li>
         
@@ -183,21 +226,18 @@
 
 <div class="mt-1">
   
-    
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      9.7k 字
+      37k 字
     </span>
   
 
   
-    
     <span class="post-meta mr-2">
       <i class="iconfont icon-clock-fill"></i>
       
       
-      136
-       分钟
+      115 分钟
     </span>
   
 
@@ -763,7 +803,7 @@
     
 
     
-      <a id="scroll-top-button" href="#" role="button">
+      <a id="scroll-top-button" aria-label="TOP" href="#" role="button">
         <i class="iconfont icon-arrowup" aria-hidden="true"></i>
       </a>
     
@@ -829,6 +869,10 @@
 <!-- Plugins -->
 
 
+  <script  src="/js/local-search.js" ></script>
+
+
+
   
     <script  src="/js/img-lazyload.js" ></script>
   
@@ -839,39 +883,23 @@
 
 
 
-  <script  src="https://cdn.jsdelivr.net/npm/tocbot@4.12.0/dist/tocbot.min.js" ></script>
-
-
-
-  <script  src="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.js" ></script>
-
-
-
-  <script  src="https://cdn.jsdelivr.net/npm/anchor-js@4.3.0/anchor.min.js" ></script>
-
-
-
-  <script defer src="https://cdn.jsdelivr.net/npm/clipboard@2.0.6/dist/clipboard.min.js" ></script>
-
-
-
+  
+    <script  src="https://cdn.jsdelivr.net/npm/tocbot@4.12.0/dist/tocbot.min.js" ></script>
+  
+  
+    <script  src="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.js" ></script>
+  
+  
+    <script  src="https://cdn.jsdelivr.net/npm/anchor-js@4.3.0/anchor.min.js" ></script>
+  
+  
+    <script defer src="https://cdn.jsdelivr.net/npm/clipboard@2.0.6/dist/clipboard.min.js" ></script>
+  
 
 
 
 
 
-  <script  src="/js/local-search.js" ></script>
-  <script>
-    (function () {
-      var path = "/local-search.xml";
-      $('#local-search-input').on('click', function() {
-        searchFunc(path, 'local-search-input', 'local-search-result');
-      });
-      $('#modalSearch').on('shown.bs.modal', function() {
-        $('#local-search-input').focus();
-      });
-    })()
-  </script>
 
 
 
