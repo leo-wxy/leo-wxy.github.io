@@ -1,0 +1,3637 @@
+---
+title: Android-SurfaceFlinger解析
+typora-root-url: ../
+date: 2020-12-21 15:06:52
+tags: Android
+top: 9
+mermaid: true
+---
+
+>  基于`Android 6.0`源码进行分析
+
+`SurfaceFlinger`是Android系统中最重要的**图像消费者**，Activity绘制的界面图像，都会传递到`SurfaceFlinger`中。
+
+主要作用：**接收图像缓冲区数据，然后交给HWComposer或OpenGL合成，合成完毕后再返回。**
+
+
+
+![SurfaceFlinger执行流程](/images/SurfaceFlinger执行流程.jpg)
+
+## SurfaceFlinger初始化
+
+`init`通过执行`surfaceflinger.rc`文件，然后就执行到了`main_surfaceflinger.cpp`开始初始化流程
+
+```cpp
+//frameworks/native/services/surfaceflinger/main_surfaceflinger.cpp
+int main(int, char**) {
+    signal(SIGPIPE, SIG_IGN);
+
+    hardware::configureRpcThreadpool(1 /* maxThreads */,
+            false /* callerWillJoin */);
+
+    startGraphicsAllocatorService();
+
+   //设置支持最多 4个 binder线程执行
+    ProcessState::self()->setThreadPoolMaxThreadCount(4);
+
+    // start the thread pool
+    sp<ProcessState> ps(ProcessState::self());
+    ps->startThreadPool();
+
+    //构建 Surfaceflinger实例
+    sp<SurfaceFlinger> flinger = new SurfaceFlinger();
+
+    // 执行初始化流程
+    flinger->init();
+
+    // 通过ServiceManager注册 SurfaceFlinger服务
+    sp<IServiceManager> sm(defaultServiceManager());
+    sm->addService(String16(SurfaceFlinger::getServiceName()), flinger, false,
+                   IServiceManager::DUMP_FLAG_PRIORITY_CRITICAL | IServiceManager::DUMP_FLAG_PROTO);
+
+    startDisplayService(); // dependency on SF getting registered above
+
+    // 开始运行
+    flinger->run();
+
+    return 0;
+}
+```
+
+### new SurfaceFlinger
+
+```cpp
+//frameworks/native/services/surfaceflinger/SurfaceFlinger.cpp
+void SurfaceFlinger::onFirstRef()
+{
+    mEventQueue->init(this);
+}
+```
+
+`mEventQueue`执行初始化
+
+```cpp
+//frameworks/native/services/surfaceflinger/MessageQueue.cpp
+void MessageQueue::init(const sp<SurfaceFlinger>& flinger) {
+    mFlinger = flinger;
+    mLooper = new Looper(true);
+    mHandler = new Handler(*this);
+}
+```
+
+初始化`Handler`
+
+### SurfaceFlinger#init
+
+```cpp
+void SurfaceFlinger::init() {
+    ALOGI(  "SurfaceFlinger's main thread ready to run. "
+            "Initializing graphics H/W...");
+
+    ALOGI("Phase offest NS: %" PRId64 "", vsyncPhaseOffsetNs);
+
+    Mutex::Autolock _l(mStateLock);
+
+    // start the EventThread
+    mEventThreadSource =
+            std::make_unique<DispSyncSource>(&mPrimaryDispSync, SurfaceFlinger::vsyncPhaseOffsetNs,
+                                             true, "app");
+    mEventThread = std::make_unique<impl::EventThread>(mEventThreadSource.get(),
+                                                       [this]() { resyncWithRateLimit(); },
+                                                       impl::EventThread::InterceptVSyncsCallback(),
+                                                       "appEventThread");
+    mSfEventThreadSource =
+            std::make_unique<DispSyncSource>(&mPrimaryDispSync,
+                                             SurfaceFlinger::sfVsyncPhaseOffsetNs, true, "sf");
+
+    mSFEventThread =
+            std::make_unique<impl::EventThread>(mSfEventThreadSource.get(),
+                                                [this]() { resyncWithRateLimit(); },
+                                                [this](nsecs_t timestamp) {
+                                                    mInterceptor->saveVSyncEvent(timestamp);
+                                                },
+                                                "sfEventThread");
+    mEventQueue->setEventThread(mSFEventThread.get());
+    mVsyncModulator.setEventThread(mSFEventThread.get());
+
+    // Get a RenderEngine for the given display / config (can't fail)
+    getBE().mRenderEngine =
+            RE::impl::RenderEngine::create(HAL_PIXEL_FORMAT_RGBA_8888,
+                                           hasWideColorDisplay
+                                                   ? RE::RenderEngine::WIDE_COLOR_SUPPORT
+                                                   : 0);
+  
+    getBE().mHwc.reset(
+            new HWComposer(std::make_unique<Hwc2::impl::Composer>(getBE().mHwcServiceName)));
+    getBE().mHwc->registerCallback(this, getBE().mComposerSequenceId);
+    // Process any initial hotplug and resulting display changes.
+    processDisplayHotplugEventsLocked();
+    LOG_ALWAYS_FATAL_IF(!getBE().mHwc->isConnected(HWC_DISPLAY_PRIMARY),
+            "Registered composer callback but didn't create the default primary display");
+
+    // make the default display GLContext current so that we can create textures
+    // when creating Layers (which may happens before we render something)
+    getDefaultDisplayDeviceLocked()->makeCurrent();
+
+    mEventControlThread = std::make_unique<impl::EventControlThread>(
+            [this](bool enabled) { setVsyncEnabled(HWC_DISPLAY_PRIMARY, enabled); });
+
+    // initialize our drawing state
+    mDrawingState = mCurrentState;
+
+    // set initial conditions (e.g. unblank default device)
+    initializeDisplays();
+
+    getBE().mRenderEngine->primeCache();
+
+    // Inform native graphics APIs whether the present timestamp is supported:
+    if (getHwComposer().hasCapability(
+            HWC2::Capability::PresentFenceIsNotReliable)) {
+        mStartPropertySetThread = new StartPropertySetThread(false);
+    } else {
+        mStartPropertySetThread = new StartPropertySetThread(true);
+    }
+
+    if (mStartPropertySetThread->Start() != NO_ERROR) {
+        ALOGE("Run StartPropertySetThread failed!");
+    }
+
+    mLegacySrgbSaturationMatrix = getBE().mHwc->getDataspaceSaturationMatrix(HWC_DISPLAY_PRIMARY,
+            Dataspace::SRGB_LINEAR);
+
+    ALOGV("Done initializing");
+}
+```
+
+#### 创建HWComposer
+
+> `HWComposer`代表着硬件显示设备。
+
+```cpp
+//frameworks/native/services/surfaceflinger/DisplayHardware/HWComposer.cpp
+HWComposer::HWComposer(
+        const sp<SurfaceFlinger>& flinger,
+        EventHandler& handler)
+    : mFlinger(flinger),
+      mFbDev(0), mHwc(0), mNumDisplays(1),
+      mCBContext(new cb_context),
+      mEventHandler(handler),
+      mDebugForceFakeVSync(false)
+{
+    ...     
+    bool needVSyncThread = true;
+
+    // Note: some devices may insist that the FB HAL be opened before HWC.
+    int fberr = loadFbHalModule();
+    loadHwcModule();//加载HWComposer模块
+
+    // these display IDs are always reserved
+    for (size_t i=0 ; i<NUM_BUILTIN_DISPLAYS ; i++) {
+        mAllocatedDisplayIDs.markBit(i);
+    }
+
+    if (mHwc) {
+        ALOGI("Using %s version %u.%u", HWC_HARDWARE_COMPOSER,
+              (hwcApiVersion(mHwc) >> 24) & 0xff,
+              (hwcApiVersion(mHwc) >> 16) & 0xff);
+        if (mHwc->registerProcs) {
+            mCBContext->hwc = this;
+            mCBContext->procs.invalidate = &hook_invalidate;
+          //vsync信号回调方法
+            mCBContext->procs.vsync = &hook_vsync;
+            if (hwcHasApiVersion(mHwc, HWC_DEVICE_API_VERSION_1_1))
+                mCBContext->procs.hotplug = &hook_hotplug;
+            else
+                mCBContext->procs.hotplug = NULL;
+            memset(mCBContext->procs.zero, 0, sizeof(mCBContext->procs.zero));
+          //注册回调函数
+            mHwc->registerProcs(mHwc, &mCBContext->procs);
+        }
+
+        // don't need a vsync thread if we have a hardware composer
+        needVSyncThread = false;
+        // always turn vsync off when we start
+        eventControl(HWC_DISPLAY_PRIMARY, HWC_EVENT_VSYNC, 0);
+
+        // the number of displays we actually have depends on the
+        // hw composer version
+        if (hwcHasApiVersion(mHwc, HWC_DEVICE_API_VERSION_1_3)) {
+            // 1.3 adds support for virtual displays
+            mNumDisplays = MAX_HWC_DISPLAYS;
+        } else if (hwcHasApiVersion(mHwc, HWC_DEVICE_API_VERSION_1_1)) {
+            // 1.1 adds support for multiple displays
+            mNumDisplays = NUM_BUILTIN_DISPLAYS;
+        } else {
+            mNumDisplays = 1;
+        }
+    }
+
+
+    if (needVSyncThread) {
+        // 不支持硬件Vsync的设备，则使用`VsyncThread`模拟发出Vsync信号
+        mVSyncThread = new VSyncThread(*this);
+    }
+}
+```
+
+`Vsync信号`本身由显示驱动发出，如果不支持硬件`Vsync`，则使用`VsyncThread`模拟发出信号。
+
+#### 初始化显示设备
+
+
+
+
+
+#### 运行EventThread线程
+
+> `EventThread`主要用来接收`Vsync信号`。
+
+```cpp
+void SurfaceFlinger::init() {
+  ...
+        // start the EventThread
+    sp<VSyncSource> vsyncSrc = new DispSyncSource(&mPrimaryDispSync,
+            vsyncPhaseOffsetNs, true, "app");
+  //创建App的Vsync信号接收线程
+    mEventThread = new EventThread(vsyncSrc);
+    sp<VSyncSource> sfVsyncSrc = new DispSyncSource(&mPrimaryDispSync,
+            sfVsyncPhaseOffsetNs, true, "sf");
+   //创建Sf的Vsync信号接收线程
+    mSFEventThread = new EventThread(sfVsyncSrc);
+    mEventQueue.setEventThread(mSFEventThread);
+...
+}
+```
+
+##### DispSyncSource
+
+```cpp
+    DispSyncSource(DispSync* dispSync, nsecs_t phaseOffset, bool traceVsync,
+        const char* label) :
+            mValue(0),
+            mTraceVsync(traceVsync),
+            mVsyncOnLabel(String8::format("VsyncOn-%s", label)),
+            mVsyncEventLabel(String8::format("VSYNC-%s", label)),
+            mDispSync(dispSync),
+            mCallbackMutex(),
+            mCallback(),
+            mVsyncMutex(),
+            mPhaseOffset(phaseOffset),
+            mEnabled(false) {}
+```
+
+##### EventThread
+
+```cpp
+EventThread::EventThread(const sp<VSyncSource>& src)
+    : mVSyncSource(src),
+      mUseSoftwareVSync(false),
+      mVsyncEnabled(false),
+      mDebugVsyncEnabled(false),
+      mVsyncHintSent(false) {
+
+    for (int32_t i=0 ; i<DisplayDevice::NUM_BUILTIN_DISPLAY_TYPES ; i++) {
+        mVSyncEvent[i].header.type = DisplayEventReceiver::DISPLAY_EVENT_VSYNC;
+        mVSyncEvent[i].header.id = 0;
+        mVSyncEvent[i].header.timestamp = 0;
+        mVSyncEvent[i].vsync.count =  0;
+    }
+    struct sigevent se;
+    se.sigev_notify = SIGEV_THREAD;
+    se.sigev_value.sival_ptr = this;
+    se.sigev_notify_function = vsyncOffCallback;
+    se.sigev_notify_attributes = NULL;
+    timer_create(CLOCK_MONOTONIC, &se, &mTimerId);
+}
+
+```
+
+```cpp
+void EventThread::onFirstRef() {
+  //运行EventThread线程
+    run("EventThread", PRIORITY_URGENT_DISPLAY + PRIORITY_MORE_FAVORABLE);
+}
+
+bool EventThread::threadLoop() {
+    DisplayEventReceiver::Event event;
+    Vector< sp<EventThread::Connection> > signalConnections;
+  //等待事件发生
+    signalConnections = waitForEvent(&event);
+
+    const size_t count = signalConnections.size();
+    for (size_t i=0 ; i<count ; i++) {
+        const sp<Connection>& conn(signalConnections[i]);
+        // 分发事件给所有的监听者
+        status_t err = conn->postEvent(event);
+        if (err == -EAGAIN || err == -EWOULDBLOCK) {
+          
+        } else if (err < 0) {
+            removeDisplayEventConnection(signalConnections[i]);
+        }
+    }
+    return true;
+}
+
+Vector< sp<EventThread::Connection> > EventThread::waitForEvent(
+        DisplayEventReceiver::Event* event)
+{
+    Mutex::Autolock _l(mLock);
+    Vector< sp<EventThread::Connection> > signalConnections;
+
+    do {
+        // Here we figure out if we need to enable or disable vsyncs
+        if (timestamp && !waitForVSync) {
+            disableVSyncLocked();
+        } else if (!timestamp && waitForVSync) {
+            enableVSyncLocked();
+        }
+
+        // note: !timestamp implies signalConnections.isEmpty(), because we
+        // don't populate signalConnections if there's no vsync pending
+        if (!timestamp && !eventPending) {
+            // wait for something to happen
+            if (waitForVSync) {
+                bool softwareSync = mUseSoftwareVSync;
+                nsecs_t timeout = softwareSync ? ms2ns(16) : ms2ns(1000);
+                if (mCondition.waitRelative(mLock, timeout) == TIMED_OUT) {
+                    if (!softwareSync) {
+                        ALOGW("Timed out waiting for hw vsync; faking it");
+                    }
+                    mVSyncEvent[0].header.type = DisplayEventReceiver::DISPLAY_EVENT_VSYNC;
+                    mVSyncEvent[0].header.id = DisplayDevice::DISPLAY_PRIMARY;
+                    mVSyncEvent[0].header.timestamp = systemTime(SYSTEM_TIME_MONOTONIC);
+                    mVSyncEvent[0].vsync.count++;
+                }
+            } else {
+                mCondition.wait(mLock);
+            }
+        }
+    } while (signalConnections.isEmpty());
+
+    return signalConnections;
+}
+```
+
+创建`EventThread`线程完毕后，执行`threadLoop`，通过`waitForEvent()`等待事件通知。
+
+等待通过`mCondition.wait()`实现
+
+##### MessaqeQueue#setEventThread
+
+```cpp
+//frameworks/native/services/surfaceflinger/MessageQueue.cpp
+void MessageQueue::setEventThread(const sp<EventThread>& eventThread)
+{
+    mEventThread = eventThread;
+    mEvents = eventThread->createEventConnection();
+    mEventTube = mEvents->getDataChannel();
+    mLooper->addFd(mEventTube->getFd(), 0, Looper::EVENT_INPUT,
+            MessageQueue::cb_eventReceiver, this);
+}
+```
+
+主要执行了以下几步：
+
+
+
+###### EventThread#createEventConnection
+
+> 新建`BitTube`对象
+
+```cpp
+//frameworks/native/services/surfaceflinger/EventThread.cpp
+sp<EventThread::Connection> EventThread::createEventConnection() const {
+    return new Connection(const_cast<EventThread*>(this));
+}
+
+EventThread::Connection::Connection(
+        const sp<EventThread>& eventThread)
+    : count(-1), mEventThread(eventThread), mChannel(new BitTube())
+{
+}
+```
+
+构建完成`Connection`对象，执行如下代码
+
+```cpp
+void EventThread::Connection::onFirstRef() {
+    // NOTE: mEventThread doesn't hold a strong reference on us
+    mEventThread->registerDisplayEventConnection(this);
+}
+
+status_t EventThread::registerDisplayEventConnection(
+        const sp<EventThread::Connection>& connection) {
+    Mutex::Autolock _l(mLock);
+    mDisplayEventConnections.add(connection);
+    mCondition.broadcast();
+    return NO_ERROR;
+}
+```
+
+初始化`Connection`之后，将`Connection`对象添加到`mDisplayEventConnections`中。
+
+`mDisplayEventConnections`主要负责**保存接收Vsync信号的Connection的容器**. 主要存储的是`SurfaceFlinger`与`App`的用来接收`Vsync信号`。
+
+###### Connection#getDataChannel
+
+> 获取`BitTube`对象
+
+```cpp
+sp<BitTube> EventThread::Connection::getDataChannel() const {
+    return mChannel;
+}
+```
+
+```cpp
+//frameworks/native/libs/gui/BitTube.cpp
+BitTube::BitTube(size_t bufsize) {
+    // 创建socket pair，用于发送事件
+    init(bufsize, bufsize);
+}
+
+void BitTube::init(size_t rcvbuf, size_t sndbuf) {
+    int sockets[2];
+    if (socketpair(AF_UNIX, SOCK_SEQPACKET, 0, sockets) == 0) {
+        size_t size = DEFAULT_SOCKET_BUFFER_SIZE;
+        // 设置socket buffer
+        setsockopt(sockets[0], SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
+        setsockopt(sockets[1], SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
+        // since we don't use the "return channel", we keep it small...
+        setsockopt(sockets[0], SOL_SOCKET, SO_SNDBUF, &size, sizeof(size));
+        setsockopt(sockets[1], SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
+        fcntl(sockets[0], F_SETFL, O_NONBLOCK);
+        fcntl(sockets[1], F_SETFL, O_NONBLOCK);
+        // socket[0]用于接收端，最终通过Binder IPC返回给客户端应用
+        mReceiveFd.reset(sockets[0]);
+        // socket[1]用于发送端
+        mSendFd.reset(sockets[1]);
+    } else {
+        mReceiveFd.reset();
+        ALOGE("BitTube: pipe creation failed (%s)", strerror(errno));
+    }
+}
+```
+
+`BitTube`实际是一个`Socket`，所以`EventThread`实际通过`Socket`和`MessageQueue`通信。
+
+###### Looper#addFd
+
+> 监听`BitTube`，一旦收到数据调用`cb_eventReceiver()`
+
+通过`Looper`监听`BitTube`的fd。
+
+##### 总结
+
+这一步主要用于接收`Vsync信号`的初始化操作
+
+1. `init()`中，创建了`EventThread`用来接收`Vsync信号`
+2. 通过`MessageQueue.setEventThread()`将`EventThread`与`MessageQueue`建立关联。实际内部通过`BitTube(Socket)`建立两者间的通信。
+3. 再通过`addFd()`监听`BitTube`的套接字fd，这样就可以监听到数据的变化。
+
+
+
+### SurfaceFlinger#run
+
+最后执行`SurfaceFlinger#run`
+
+```cpp
+void SurfaceFlinger::run() {
+    do {
+        waitForEvent();
+    } while (true);
+}
+
+void SurfaceFlinger::waitForEvent() {
+    mEventQueue.waitMessage();
+}
+```
+
+```cpp
+//frameworks/native/services/surfaceflinger/MessageQueue.cpp
+void MessageQueue::waitMessage() {
+    do {
+        IPCThreadState::self()->flushCommands();
+        int32_t ret = mLooper->pollOnce(-1);
+        switch (ret) {
+            case Looper::POLL_WAKE:
+            case Looper::POLL_CALLBACK:
+                continue;
+            case Looper::POLL_ERROR:
+                ALOGE("Looper::POLL_ERROR");
+            case Looper::POLL_TIMEOUT:
+                // timeout (should not happen)
+                continue;
+            default:
+                // should not happen
+                ALOGE("Looper::pollOnce() returned unknown status %d", ret);
+                continue;
+        }
+    } while (true);
+}
+```
+
+通过`waitMessage()`等待消息的到来
+
+
+
+![Sf初始化](/images/Sf初始化.png)
+
+
+
+## Vsync信号相关
+
+### 接收Vsync
+
+#### HWC#hook_vsync
+
+`Vsync信号`都是由`HWComposer`发出的，需要从`HWC`进行分析
+
+```cpp
+//frameworks/native/services/surfaceflinger/DisplayHardware/HWComposer.cpp
+HWComposer::HWComposer(
+        const sp<SurfaceFlinger>& flinger,
+        EventHandler& handler)
+    : mFlinger(flinger),
+      mFbDev(0), mHwc(0), mNumDisplays(1),
+      mCBContext(new cb_context),
+      mEventHandler(handler),
+      mDebugForceFakeVSync(false)
+{
+        ...
+    if (mHwc) {
+        if (mHwc->registerProcs) {
+            mCBContext->hwc = this;
+            mCBContext->procs.invalidate = &hook_invalidate; //invalidate事件回调
+            mCBContext->procs.vsync = &hook_vsync;//Vsync回调
+            if (hwcHasApiVersion(mHwc, HWC_DEVICE_API_VERSION_1_1))
+                mCBContext->procs.hotplug = &hook_hotplug;
+            else
+                mCBContext->procs.hotplug = NULL;
+            memset(mCBContext->procs.zero, 0, sizeof(mCBContext->procs.zero));
+            mHwc->registerProcs(mHwc, &mCBContext->procs);
+        }          
+}
+```
+
+通过`hook_vsync`处理`Vsync信号`
+
+```cpp
+void HWComposer::hook_vsync(const struct hwc_procs* procs, int disp,
+        int64_t timestamp) {
+    cb_context* ctx = reinterpret_cast<cb_context*>(
+            const_cast<hwc_procs_t*>(procs));
+    ctx->hwc->vsync(disp, timestamp);
+}
+
+void HWComposer::vsync(int disp, int64_t timestamp) {
+    if (uint32_t(disp) < HWC_NUM_PHYSICAL_DISPLAY_TYPES) {
+        {
+            Mutex::Autolock _l(mLock);
+
+            mLastHwVSync[disp] = timestamp;
+        }
+
+        char tag[16];
+        snprintf(tag, sizeof(tag), "HW_VSYNC_%1u", disp);
+        mEventHandler.onVSyncReceived(disp, timestamp);
+    }
+}
+```
+
+当`hook_vsync`收到`Vsync信号`时，回调到`vsync()`，继续调用到`mEventHandler.onVsyncReceived()`
+
+`mEventHandler`是在`HWC`初始化时赋值的，实际就是`SurfaceFlinger`
+
+#### Sf#onVSyncReceived
+
+```cpp
+void SurfaceFlinger::onVSyncReceived(int type, nsecs_t timestamp) {
+    bool needsHwVsync = false;
+
+    { // Scope for the lock
+        Mutex::Autolock _l(mHWVsyncLock);
+        if (type == 0 && mPrimaryHWVsyncEnabled) {
+            needsHwVsync = mPrimaryDispSync.addResyncSample(timestamp);
+        }
+    }
+
+    if (needsHwVsync) {
+        enableHardwareVsync();
+    } else {
+        disableHardwareVsync(false);
+    }
+}
+
+void SurfaceFlinger::init() {
+    sp<VSyncSource> vsyncSrc = new DispSyncSource(&mPrimaryDispSync,
+            vsyncPhaseOffsetNs, true, "app");
+    mEventThread = new EventThread(vsyncSrc);
+}
+
+void SurfaceFlinger::enableHardwareVsync() {
+    Mutex::Autolock _l(mHWVsyncLock);
+    if (!mPrimaryHWVsyncEnabled && mHWVsyncAvailable) {
+        mPrimaryDispSync.beginResync();
+        //申请Vsync信号
+        mEventControlThread->setVsyncEnabled(true);
+        mPrimaryHWVsyncEnabled = true;
+    }
+}
+```
+
+##### DispSync#addResyncSample
+
+```cpp
+//frameworks/native/services/surfaceflinger/DispSync.cpp
+DispSync::DispSync() :
+        mRefreshSkipCount(0),
+        mThread(new DispSyncThread()) {
+    //启动DispSyncThread
+    mThread->run("DispSync", PRIORITY_URGENT_DISPLAY + PRIORITY_MORE_FAVORABLE);
+
+    reset();
+    beginResync();
+
+    if (kTraceDetailedInfo) {
+        if (!kIgnorePresentFences) {
+            addEventListener(0, new ZeroPhaseTracer());
+        }
+    }
+}
+
+```
+
+###### DispSyncThread#threadLoop
+
+```cpp
+//frameworks/native/services/surfaceflinger/DispSync.cpp   
+virtual bool threadLoop() {
+  ...
+       while (true) {
+         ...
+                if (mPeriod == 0) {
+                    err = mCond.wait(mMutex);
+                    if (err != NO_ERROR) {
+                        ALOGE("error waiting for new events: %s (%d)",
+                                strerror(-err), err);
+                        return false;
+                    }
+                    continue;
+                }        
+               //收集Vsync信号回调的方法
+                callbackInvocations = gatherCallbackInvocationsLocked(now);         
+       }
+
+            if (callbackInvocations.size() > 0) {
+                fireCallbackInvocations(callbackInvocations);
+            }  
+    }
+
+    void fireCallbackInvocations(const Vector<CallbackInvocation>& callbacks) {
+        for (size_t i = 0; i < callbacks.size(); i++) {
+          //回调callback的 onDispSyncEvent
+            callbacks[i].mCallback->onDispSyncEvent(callbacks[i].mEventTime);
+        }
+    }
+```
+
+`DispSyncThread`通过`mCond.wait()`等待被唤醒，被唤醒之后回调到`onDispSynvEvent()`
+
+```cpp
+bool DispSync::addResyncSample(nsecs_t timestamp) {
+    Mutex::Autolock lock(mMutex);
+    size_t idx = (mFirstResyncSample + mNumResyncSamples) % MAX_RESYNC_SAMPLES;
+    mResyncSamples[idx] = timestamp;
+
+    if (mNumResyncSamples < MAX_RESYNC_SAMPLES) {
+        mNumResyncSamples++;
+    } else {
+        mFirstResyncSample = (mFirstResyncSample + 1) % MAX_RESYNC_SAMPLES;
+    }
+    updateModelLocked();
+
+    return mPeriod == 0 || mError > kErrorThreshold;
+}
+
+void DispSync::updateModelLocked() {
+    if (mNumResyncSamples >= MIN_RESYNC_SAMPLES_FOR_UPDATE) {
+        ...
+        mPeriod = durationSum / (mNumResyncSamples - 1);
+
+        // Artificially inflate the period if requested.
+        mPeriod += mPeriod * mRefreshSkipCount;
+
+        mThread->updateModel(mPeriod, mPhase);
+    }
+}
+```
+
+##### DispsyncThread#updateModel
+
+```cpp
+    void updateModel(nsecs_t period, nsecs_t phase) {
+        Mutex::Autolock lock(mMutex);
+        mPeriod = period;
+        mPhase = phase;
+        mCond.signal();
+    }
+```
+
+执行`updateModel()`后，唤醒了`DispSyncThread`
+
+在`SurfaceFlinger.init()`之后初始化设置的`DispSyncSource`就是`callback`，然后回调到`onDispSyncEvent`
+
+#### Sf.DispSyncSource#onDispSyncEvent
+
+```cpp
+    virtual void onDispSyncEvent(nsecs_t when) {
+        sp<VSyncSource::Callback> callback;
+        {
+            Mutex::Autolock lock(mCallbackMutex);
+            callback = mCallback;
+
+            if (mTraceVsync) {
+                mValue = (mValue + 1) % 2;
+                ATRACE_INT(mVsyncEventLabel.string(), mValue);
+            }
+        }
+
+        if (callback != NULL) {
+            callback->onVSyncEvent(when);
+        }
+    }
+```
+
+这个`callback`是在`EventThread`初始化的时候设置的，所以`mCallback`就是`EventThread`
+
+```cpp
+void EventThread::enableVSyncLocked() {
+    if (!mUseSoftwareVSync) {
+        // never enable h/w VSYNC when screen is off
+        if (!mVsyncEnabled) {
+            mVsyncEnabled = true;
+            mVSyncSource->setCallback(static_cast<VSyncSource::Callback*>(this));
+            mVSyncSource->setVSyncEnabled(true);
+        }
+    }
+    mDebugVsyncEnabled = true;
+    sendVsyncHintOnLocked();
+}
+```
+
+通过`setCallback()`建立`EventThread`与`DispSyncSource`之间的关联
+
+#### EventThread#onVsyncEvent
+
+```cpp
+void EventThread::onVSyncEvent(nsecs_t timestamp) {
+    Mutex::Autolock _l(mLock);
+    mVSyncEvent[0].header.type = DisplayEventReceiver::DISPLAY_EVENT_VSYNC;
+    mVSyncEvent[0].header.id = 0;
+    mVSyncEvent[0].header.timestamp = timestamp;
+    mVSyncEvent[0].vsync.count++;
+    mCondition.broadcast();//唤醒EventThread
+}
+```
+
+```cpp
+bool EventThread::threadLoop() {
+    DisplayEventReceiver::Event event;
+    Vector< sp<EventThread::Connection> > signalConnections;
+  //等待事件发生
+    signalConnections = waitForEvent(&event);
+
+    const size_t count = signalConnections.size();
+    for (size_t i=0 ; i<count ; i++) {
+        const sp<Connection>& conn(signalConnections[i]);
+        // 分发事件给所有的监听者
+        status_t err = conn->postEvent(event);
+        if (err == -EAGAIN || err == -EWOULDBLOCK) {
+          
+        } else if (err < 0) {
+            removeDisplayEventConnection(signalConnections[i]);
+        }
+    }
+    return true;
+}
+```
+
+`EventThread#threadLoop`在被唤醒后会执行`conn->postEvent()`
+
+##### ET.Connection#postEvent
+
+```cpp
+status_t EventThread::Connection::postEvent(
+        const DisplayEventReceiver::Event& event) {
+    ssize_t size = DisplayEventReceiver::sendEvents(mChannel, &event, 1);
+    return size < 0 ? status_t(size) : status_t(NO_ERROR);
+}
+```
+
+```cpp
+//frameworks/native/libs/gui/DisplayEventReceiver.cpp
+ssize_t DisplayEventReceiver::sendEvents(gui::BitTube* dataChannel,
+        Event const* events, size_t count)
+{
+    return gui::BitTube::sendObjects(dataChannel, events, count);
+}
+```
+
+通过`BitTube`发送消息，此时就会触发到`MQ#cb_eventReceiver`
+
+#### MessageQueue#cb_eventReceiver
+
+```cpp
+int MessageQueue::cb_eventReceiver(int fd, int events, void* data) {
+    MessageQueue* queue = reinterpret_cast<MessageQueue *>(data);
+    return queue->eventReceiver(fd, events);
+}
+
+int MessageQueue::eventReceiver(int /*fd*/, int /*events*/) {
+    ssize_t n;
+    DisplayEventReceiver::Event buffer[8];
+    while ((n = DisplayEventReceiver::getEvents(mEventTube, buffer, 8)) > 0) {
+        for (int i=0 ; i<n ; i++) {
+            if (buffer[i].header.type == DisplayEventReceiver::DISPLAY_EVENT_VSYNC) {
+#if INVALIDATE_ON_VSYNC
+                mHandler->dispatchInvalidate();
+#else
+                mHandler->dispatchRefresh();
+#endif
+                break;
+            }
+        }
+    }
+    return 1;
+}
+
+void MessageQueue::Handler::dispatchRefresh() {
+    if ((android_atomic_or(eventMaskRefresh, &mEventMask) & eventMaskRefresh) == 0) {
+        mQueue.mLooper->sendMessage(this, Message(MessageQueue::REFRESH));
+    }
+}
+
+void MessageQueue::Handler::dispatchInvalidate() {
+    if ((android_atomic_or(eventMaskInvalidate, &mEventMask) & eventMaskInvalidate) == 0) {
+        mQueue.mLooper->sendMessage(this, Message(MessageQueue::INVALIDATE));
+    }
+}
+```
+
+回调到`MessageQueue.Handler`的`handleMessage()`
+
+```cpp
+void MessageQueue::Handler::handleMessage(const Message& message) {
+    switch (message.what) {
+        case INVALIDATE:
+            android_atomic_and(~eventMaskInvalidate, &mEventMask);
+            mQueue.mFlinger->onMessageReceived(message.what);
+            break;
+        case REFRESH:
+            android_atomic_and(~eventMaskRefresh, &mEventMask);
+            mQueue.mFlinger->onMessageReceived(message.what);
+            break;
+        case TRANSACTION:
+            android_atomic_and(~eventMaskTransaction, &mEventMask);
+            mQueue.mFlinger->onMessageReceived(message.what);
+            break;
+    }
+}
+```
+
+#### Sf#onMessageReceived
+
+```cpp
+void SurfaceFlinger::onMessageReceived(int32_t what) {
+    ATRACE_CALL();
+    switch (what) {
+        case MessageQueue::TRANSACTION: {
+            handleMessageTransaction();
+            break;
+        }
+        case MessageQueue::INVALIDATE: {
+            bool refreshNeeded = handleMessageTransaction();
+            refreshNeeded |= handleMessageInvalidate();
+            refreshNeeded |= mRepaintEverything;
+            if (refreshNeeded) {
+                signalRefresh();
+            }
+            break;
+        }
+        case MessageQueue::REFRESH: {
+            handleMessageRefresh();
+            break;
+        }
+    }
+}
+```
+
+#### 总结
+
+
+
+![SF接收Vsync信号](/images/SF接收Vsync信号.jpg)
+
+
+
+接收Vsync信号主要分为以下几步：
+
+1. HWC收到Vsync信号时，回调到`hook_vsync`，内部执行到`sf#onVsyncReceived()`
+2. 继续执行到`DispSync#addResyncSample()`，然后到`DispSyncThread#updateModel()`调用`mCondition.broadcast()`唤醒`EventThread`
+3. 唤醒之后执行到`DispSyncSource.onDispSyncEvent()`继续执行到`EventThread.onVsyncEvent()`，其中内部调用了`DisplayEventReceiver.sendEvents() -> BitTube.sendObjects()`发送消息，`Looper`监听到`BitTube`有数据流动，就会回调`MessageQueue.cb_eventReceiver()`
+4. 继续通过消息机制，回调到`MessageQueue.handleMessage()`，最后调用`Sf.handleMessageReceived()`
+
+> 简化版：
+>
+> `Vsync信号`由`HWC`产生，然后回调到`DispSyncthread`在继续回调到`DispSyncSource`，继续调用到了`EventThread`。最后`EventThread`通过`BitTube(Socket)`发送消息到`MessageQueue`，`MessageQueue`接收到消息后，在回调给`SurfaceFlinger`。
+
+### 处理Vsync
+
+主要在`Sf#onMessageReceived()`处理`Vsync信号`
+
+```cpp
+void SurfaceFlinger::onMessageReceived(int32_t what) {
+        case MessageQueue::INVALIDATE: {
+            bool refreshNeeded = handleMessageTransaction();
+            refreshNeeded |= handleMessageInvalidate();
+            refreshNeeded |= mRepaintEverything;
+            if (refreshNeeded) {
+                signalRefresh();
+            }
+            break;
+        }  
+        case MessageQueue::REFRESH: {
+            handleMessageRefresh();
+            break;
+        }
+}
+```
+
+在接受到`Vsync信号`后，就会回调到`MessageQueue::INVALIDATE`，继续向下执行到`signalRefresh()`
+
+```cpp
+//frameworks/native/services/surfaceflinger/SurfaceFlinger.cpp
+void SurfaceFlinger::signalRefresh() {
+    mEventQueue.refresh();
+}
+
+//frameworks/native/services/surfaceflinger/MessageQueue.cpp
+void MessageQueue::refresh() {
+#if INVALIDATE_ON_VSYNC
+    mHandler->dispatchRefresh();
+#else
+    mEvents->requestNextVsync();
+#endif
+}	
+
+void MessageQueue::Handler::dispatchRefresh() {
+    if ((android_atomic_or(eventMaskRefresh, &mEventMask) & eventMaskRefresh) == 0) {
+        mQueue.mLooper->sendMessage(this, Message(MessageQueue::REFRESH));
+    }
+}
+```
+
+#### Sf#handleMessageRefresh
+
+最后还是执行到了`handleMessageRefresh()`
+
+```cpp
+void SurfaceFlinger::handleMessageRefresh() {
+    ATRACE_CALL();
+    preComposition();
+    rebuildLayerStacks();
+    setUpHWComposer();
+    doDebugFlashRegions();
+    doComposition();
+    postComposition();
+}
+```
+
+##### preComposition-合成前预处理
+
+```cpp
+void SurfaceFlinger::preComposition()
+{
+    //是否需要刷新布局
+    bool needExtraInvalidate = false;
+    const LayerVector& layers(mDrawingState.layersSortedByZ);
+    const size_t count = layers.size();
+    for (size_t i=0 ; i<count ; i++) {
+       //当前Layer发生了变化
+        if (layers[i]->onPreComposition()) {
+            needExtraInvalidate = true;
+        }
+    }
+    if (needExtraInvalidate) {
+      //申请下一个Vsync信号
+        signalLayerUpdate();
+    }
+}
+
+//frameworks/native/services/surfaceflinger/Layer.cpp
+bool Layer::onPreComposition() {
+    mRefreshPending = false;
+   //有待处理的Buffer帧，
+    return mQueuedFrames > 0 || mSidebandStreamChanged;
+}
+```
+
+`preComposition()`需要先判断`Layer`是否发生了变化，没发生变化不需要申请下一次Vsync信号，否则执行`signalLayerUpdate()`申请下一次Vsync信号。
+
+###### signalLayerUpdate
+
+```cpp
+//frameworks/native/services/surfaceflinger/SurfaceFlinger.cpp
+void SurfaceFlinger::signalLayerUpdate() {
+    mEventQueue.invalidate();
+}
+
+//frameworks/native/services/surfaceflinger/MessageQueue.cpp
+void MessageQueue::invalidate() {
+#if INVALIDATE_ON_VSYNC
+    mEvents->requestNextVsync();
+#else
+    mHandler->dispatchInvalidate();
+#endif
+}
+
+//frameworks/native/services/surfaceflinger/EventThread.cpp
+void EventThread::requestNextVsync(
+        const sp<EventThread::Connection>& connection) {
+    Mutex::Autolock _l(mLock);
+    if (connection->count < 0) {
+        connection->count = 0;
+        mCondition.broadcast();
+    }
+}
+
+
+```
+
+唤醒了`EventThread`，返回Vsync信号通知。
+
+##### rebuildLayerStacks-重建Layer
+
+> 遍历`Layer`，计算和存储每个Layer的`dirtyRegion`，如果`dirtyRegion`显示在设备的显示区域内，就表示`Layer`需要重新绘制。
+
+```cpp
+void SurfaceFlinger::rebuildLayerStacks() {
+    // rebuild the visible layer list per screen
+    if (CC_UNLIKELY(mVisibleRegionsDirty)) {
+        ATRACE_CALL();
+        mVisibleRegionsDirty = false;
+        invalidateHwcGeometry();
+
+        const LayerVector& layers(mDrawingState.layersSortedByZ);
+      //遍历所有显示设备，计算显示设备中dirtyRegion和 opaqueRegion
+        for (size_t dpy=0 ; dpy<mDisplays.size() ; dpy++) {
+            Region opaqueRegion;//非透明区域
+            Region dirtyRegion;//变化区域，需要刷新
+            Vector< sp<Layer> > layersSortedByZ;
+            const sp<DisplayDevice>& hw(mDisplays[dpy]);
+            const Transform& tr(hw->getTransform());
+            const Rect bounds(hw->getBounds());
+            if (hw->isDisplayOn()) {
+              //计算Layer的 dirtyRegion和 opaqueRegion
+                SurfaceFlinger::computeVisibleRegions(layers,
+                        hw->getLayerStack(), dirtyRegion, opaqueRegion);
+
+                const size_t count = layers.size();
+                for (size_t i=0 ; i<count ; i++) {
+                    const sp<Layer>& layer(layers[i]);
+                    const Layer::State& s(layer->getDrawingState());
+                    if (s.layerStack == hw->getLayerStack()) {
+                        Region drawRegion(tr.transform(
+                                layer->visibleNonTransparentRegion));
+                        drawRegion.andSelf(bounds);
+                        if (!drawRegion.isEmpty()) {
+                            layersSortedByZ.add(layer);
+                        }
+                    }
+                }
+            }
+          //按照Z轴由小到大排序
+            hw->setVisibleLayersSortedByZ(layersSortedByZ);
+            hw->undefinedRegion.set(bounds);
+            hw->undefinedRegion.subtractSelf(tr.transform(opaqueRegion));
+            hw->dirtyRegion.orSelf(dirtyRegion);
+        }
+    }
+}
+```
+
+最重要的是`computeVisibleRegions`-对Layer的`dirtyRegion`和`opaqueRegion`的计算。
+
+```cpp
+//frameworks/native/services/surfaceflinger/SurfaceFlinger.cpp
+void SurfaceFlinger::computeVisibleRegions(
+        const LayerVector& currentLayers, uint32_t layerStack,
+        Region& outDirtyRegion, Region& outOpaqueRegion)
+{
+ size_t i = currentLayers.size();
+    while (i--) {
+        const sp<Layer>& layer = currentLayers[i];
+
+        // start with the whole surface at its current location
+        const Layer::State& s(layer->getDrawingState());
+
+        // only consider the layers on the given layer stack
+        if (s.layerStack != layerStack)
+            continue;
+      //非透明区域
+        Region opaqueRegion;
+      //可见区域
+        Region visibleRegion;
+      //被遮盖区域
+        Region coveredRegion;
+      //透明区域
+        Region transparentRegion;
+
+        // handle hidden surfaces by setting the visible region to empty
+        if (CC_LIKELY(layer->isVisible())) {
+            const bool translucent = !layer->isOpaque(s);
+            Rect bounds(s.transform.transform(layer->computeBounds()));
+            visibleRegion.set(bounds);
+            if (!visibleRegion.isEmpty()) {
+                // Remove the transparent area from the visible region
+                if (translucent) {
+                    const Transform tr(s.transform);
+                    if (tr.transformed()) {
+                        if (tr.preserveRects()) {
+                            // transform the transparent region
+                            transparentRegion = tr.transform(s.activeTransparentRegion);
+                        } else {
+                            // transformation too complex, can't do the
+                            // transparent region optimization.
+                            transparentRegion.clear();
+                        }
+                    } else {
+                        transparentRegion = s.activeTransparentRegion;
+                    }
+                }
+
+                // compute the opaque region
+                const int32_t layerOrientation = s.transform.getOrientation();
+                if (s.alpha==255 && !translucent &&
+                        ((layerOrientation & Transform::ROT_INVALID) == false)) {
+                    // the opaque region is the layer's footprint
+                    opaqueRegion = visibleRegion;
+                }
+            }
+        }
+
+        // Clip the covered region to the visible region
+        coveredRegion = aboveCoveredLayers.intersect(visibleRegion);
+
+        // 累加当前Layer和上层Layer的可见区域
+        aboveCoveredLayers.orSelf(visibleRegion);
+
+        // 可见区域减去非透明区域
+        visibleRegion.subtractSelf(aboveOpaqueLayers);
+
+        // 计算脏区
+        if (layer->contentDirty) {
+            // we need to invalidate the whole region
+            dirty = visibleRegion;
+            // as well, as the old visible region
+            dirty.orSelf(layer->visibleRegion);
+            layer->contentDirty = false;
+        } else {
+            const Region newExposed = visibleRegion - coveredRegion;
+            const Region oldVisibleRegion = layer->visibleRegion;
+            const Region oldCoveredRegion = layer->coveredRegion;
+            const Region oldExposed = oldVisibleRegion - oldCoveredRegion;
+            dirty = (visibleRegion&oldCoveredRegion) | (newExposed-oldExposed);
+        }
+        dirty.subtractSelf(aboveOpaqueLayers);
+       //累加脏区
+        outDirtyRegion.orSelf(dirty);
+       //添加非透明区域
+        aboveOpaqueLayers.orSelf(opaqueRegion);
+       //存储可见区域
+        layer->setVisibleRegion(visibleRegion);
+        layer->setCoveredRegion(coveredRegion);
+        layer->setVisibleNonTransparentRegion(
+                visibleRegion.subtract(transparentRegion));
+    }
+
+    outOpaqueRegion = aboveOpaqueLayers;
+}
+```
+
+按照上述源码，界面显示区域分为如下几种：
+
+- `opaqueRegion`：非透明区域——表示不完全透明的区域
+- `dirtyRegion`：需要重绘的区域
+- `visibleRegion`：可见区域——表示完全不透明的区域
+- `coveredRegion`：被覆盖区域——被完全不透明区域覆盖的区域
+- `transparentRegion`：完全透明的区域——一般需要从合成列表中移除
+- `aboveOpaqueLayers`：所有`非透明区域`的叠加
+- `aboveCoveredLayers`：所有`可见区域`的叠加
+
+以平常的应用界面来举例。
+
+`opaqueRegion`：状态栏通常都是半透明的，可以看到时间等信息
+
+`visibleRegion`：当前显示的应用界面，就完全遮盖了后面的内容
+
+`coveredRegion`：桌面应用设置的壁纸。
+
+> `computeVisibleRegions`主要完成了以下几步：
+>
+> 1. 在`Layer的Z轴`从上向下遍历该显示设备中的`Layer`
+> 2. 计算被覆盖区域：`aboveCoveredLayers`与`opaqueRegion`的交集
+> 3. 计算可见区域：去除`opaqueRegion`和`aboveOpaqueLayers`的交集
+> 4. 计算脏区域
+> 5. 保存到`Layer`中
+
+##### setUpHWComposer-构造硬件合成的任务
+
+> `Layer`交给`HWComposer`去做图层混合。
+
+```cpp
+void SurfaceFlinger::setUpHWComposer() {
+  
+    for (size_t dpy=0 ; dpy<mDisplays.size() ; dpy++) {
+        bool dirty = !mDisplays[dpy]->getDirtyRegion(false).isEmpty();
+        bool empty = mDisplays[dpy]->getVisibleLayersSortedByZ().size() == 0;
+        bool wasEmpty = !mDisplays[dpy]->lastCompositionHadVisibleLayers;
+       //没有脏区域或者可见的Layer，就不需要进行合成
+        bool mustRecompose = dirty && !(empty && wasEmpty);
+      
+        mDisplays[dpy]->beginFrame(mustRecompose);
+
+        if (mustRecompose) {
+            mDisplays[dpy]->lastCompositionHadVisibleLayers = !empty;
+        }      
+    }
+  
+  //构造HWComposer硬件任务
+    HWComposer& hwc(getHwComposer());
+    if (hwc.initCheck() == NO_ERROR) {
+        // build the h/w work list
+        if (CC_UNLIKELY(mHwWorkListDirty)) {
+            mHwWorkListDirty = false;
+            for (size_t dpy=0 ; dpy<mDisplays.size() ; dpy++) {
+                sp<const DisplayDevice> hw(mDisplays[dpy]);
+                const int32_t id = hw->getHwcDisplayId();
+                if (id >= 0) {
+                    const Vector< sp<Layer> >& currentLayers(
+                        hw->getVisibleLayersSortedByZ());
+                    const size_t count = currentLayers.size();
+                  //在HWC创建任务列表
+                    if (hwc.createWorkList(id, count) == NO_ERROR) {
+                        HWComposer::LayerListIterator cur = hwc.begin(id);
+                        const HWComposer::LayerListIterator end = hwc.end(id);
+                        for (size_t i=0 ; cur!=end && i<count ; ++i, ++cur) {
+                            const sp<Layer>& layer(currentLayers[i]);
+                            layer->setGeometry(hw, *cur);
+                            if (mDebugDisableHWC || mDebugRegion || mDaltonize || mHasColorMatrix) {
+                                cur->setSkip(true);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 设置每帧的数据
+        for (size_t dpy=0 ; dpy<mDisplays.size() ; dpy++) {
+            sp<const DisplayDevice> hw(mDisplays[dpy]);
+            const int32_t id = hw->getHwcDisplayId();
+            if (id >= 0) {
+                const Vector< sp<Layer> >& currentLayers(
+                    hw->getVisibleLayersSortedByZ());
+                const size_t count = currentLayers.size();
+                HWComposer::LayerListIterator cur = hwc.begin(id);
+                const HWComposer::LayerListIterator end = hwc.end(id);
+                for (size_t i=0 ; cur!=end && i<count ; ++i, ++cur) {
+                    const sp<Layer>& layer(currentLayers[i]);
+                    layer->setPerFrameData(hw, *cur);
+                }
+            }
+        }
+
+        status_t err = hwc.prepare();
+        ALOGE_IF(err, "HWComposer::prepare failed (%s)", strerror(-err));
+
+        for (size_t dpy=0 ; dpy<mDisplays.size() ; dpy++) {
+            sp<const DisplayDevice> hw(mDisplays[dpy]);
+            hw->prepareFrame(hwc);
+        }
+    }  
+  
+}
+```
+
+
+
+##### doComposition-执行合成任务
+
+> 前面已经准备好了`合成Layer任务`和`需要合成的数据`，现在就需要做图像的混合工作。
+
+
+
+```cpp
+//frameworks/native/services/surfaceflinger/SurfaceFlinger.cpp
+void SurfaceFlinger::doComposition() {
+    ATRACE_CALL();
+    const bool repaintEverything = android_atomic_and(0, &mRepaintEverything);
+    for (size_t dpy=0 ; dpy<mDisplays.size() ; dpy++) {
+        const sp<DisplayDevice>& hw(mDisplays[dpy]);
+        if (hw->isDisplayOn()) {
+            // transform the dirty region into this screen's coordinate space
+            const Region dirtyRegion(hw->getDirtyRegion(repaintEverything));
+
+            // repaint the framebuffer (if needed)
+            doDisplayComposition(hw, dirtyRegion);
+        }
+    }
+    postFramebuffer();
+}
+```
+
+`doComposition()`主要执行以下两步
+
+###### doDisplayComposition
+
+```cpp
+void SurfaceFlinger::doDisplayComposition(const sp<const DisplayDevice>& hw,
+        const Region& inDirtyRegion)
+{
+  //是否硬件绘制
+    bool isHwcDisplay = hw->getHwcDisplayId() >= 0;
+    if (!isHwcDisplay && inDirtyRegion.isEmpty()) {
+        return;
+    }
+  
+  ...
+    //进行合成
+       if (!doComposeSurfaces(hw, dirtyRegion)) return;  
+  ...
+    
+}
+
+bool SurfaceFlinger::doComposeSurfaces(const sp<const DisplayDevice>& hw, const Region& dirty)
+{
+  ...
+    const Vector< sp<Layer> >& layers(hw->getVisibleLayersSortedByZ());
+    const size_t count = layers.size();
+    const Transform& tr = hw->getTransform();
+    if (cur != end) {
+        // 使用硬件合成
+        for (size_t i=0 ; i<count && cur!=end ; ++i, ++cur) {
+            const sp<Layer>& layer(layers[i]);
+            const Region clip(dirty.intersect(tr.transform(layer->visibleRegion)));
+            if (!clip.isEmpty()) {
+                switch (cur->getCompositionType()) {
+                    case HWC_CURSOR_OVERLAY:
+                    case HWC_OVERLAY: {
+                        const Layer::State& state(layer->getDrawingState());
+                        if ((cur->getHints() & HWC_HINT_CLEAR_FB)
+                                && i
+                                && layer->isOpaque(state) && (state.alpha == 0xFF)
+                                && hasGlesComposition) {
+                            // never clear the very first layer since we're
+                            // guaranteed the FB is already cleared
+                            layer->clearWithOpenGL(hw, clip);
+                        }
+                        break;
+                    }
+                    case HWC_FRAMEBUFFER: {
+                        layer->draw(hw, clip);
+                        break;
+                    }
+                    case HWC_FRAMEBUFFER_TARGET: {
+                        // this should not happen as the iterator shouldn't
+                        // let us get there.
+                        ALOGW("HWC_FRAMEBUFFER_TARGET found in hwc list (index=%zu)", i);
+                        break;
+                    }
+                }
+            }
+            layer->setAcquireFence(hw, *cur);
+        }
+    } else {
+        // 不使用硬件合成
+        for (size_t i=0 ; i<count ; ++i) {
+            const sp<Layer>& layer(layers[i]);
+            const Region clip(dirty.intersect(
+                    tr.transform(layer->visibleRegion)));
+            if (!clip.isEmpty()) {
+                layer->draw(hw, clip);
+            }
+        }
+    }    
+}
+```
+
+
+
+###### postFrameBuffer
+
+```cpp
+//frameworks/native/services/surfaceflinger/SurfaceFlinger.cpp
+void SurfaceFlinger::postFramebuffer()
+{
+    ATRACE_CALL();
+
+    const nsecs_t now = systemTime();
+    mDebugInSwapBuffers = now;
+
+    HWComposer& hwc(getHwComposer());
+    if (hwc.initCheck() == NO_ERROR) {
+        if (!hwc.supportsFramebufferTarget()) {
+            // EGL spec says:
+            //   "surface must be bound to the calling thread's current context,
+            //    for the current rendering API."
+            getDefaultDisplayDevice()->makeCurrent(mEGLDisplay, mEGLContext);
+        }
+        hwc.commit();
+    }
+
+    getDefaultDisplayDevice()->makeCurrent(mEGLDisplay, mEGLContext);
+
+    for (size_t dpy=0 ; dpy<mDisplays.size() ; dpy++) {
+        sp<const DisplayDevice> hw(mDisplays[dpy]);
+        const Vector< sp<Layer> >& currentLayers(hw->getVisibleLayersSortedByZ());
+        hw->onSwapBuffersCompleted(hwc);
+        const size_t count = currentLayers.size();
+        int32_t id = hw->getHwcDisplayId();
+        if (id >=0 && hwc.initCheck() == NO_ERROR) {
+            HWComposer::LayerListIterator cur = hwc.begin(id);
+            const HWComposer::LayerListIterator end = hwc.end(id);
+            for (size_t i = 0; cur != end && i < count; ++i, ++cur) {
+                currentLayers[i]->onLayerDisplayed(hw, &*cur);
+            }
+        } else {
+            for (size_t i = 0; i < count; i++) {
+                currentLayers[i]->onLayerDisplayed(hw, NULL);
+            }
+        }
+    }
+
+    mLastSwapBufferTime = systemTime() - now;
+    mDebugInSwapBuffers = 0;
+
+    uint32_t flipCount = getDefaultDisplayDevice()->getPageFlipCount();
+    if (flipCount % LOG_FRAME_STATS_PERIOD == 0) {
+        logFrameStats();
+    }
+}
+```
+
+
+
+`doComposition`  
+
+- `doDisplayComposition`：重绘`FrameBuffer`，并进行合成
+- `postFrameBuffer`：将数据写入到`FrameBuffer`然后完成物理屏幕的图像显示
+
+##### postComposition-合成图形结束后的处理
+
+> 此时图层已经混合完成，图像数据也被送到了`帧缓冲(FrameBuffer)`，并且已经显示在屏幕上了，由`postComposition()`进行一些收尾工作的处理。
+
+```cpp
+//frameworks/native/services/surfaceflinger/SurfaceFlinger.cpp
+void SurfaceFlinger::postComposition()
+{
+    const LayerVector& layers(mDrawingState.layersSortedByZ);
+    const size_t count = layers.size();
+    for (size_t i=0 ; i<count ; i++) {
+        layers[i]->onPostComposition();
+    }
+  ...
+    //更新 swapBuffer 记录时间
+    nsecs_t currentTime = systemTime();
+    if (mHasPoweredOff) {
+        mHasPoweredOff = false;
+    } else {
+        nsecs_t period = mPrimaryDispSync.getPeriod();
+        nsecs_t elapsedTime = currentTime - mLastSwapTime;
+        size_t numPeriods = static_cast<size_t>(elapsedTime / period);
+        if (numPeriods < NUM_BUCKETS - 1) {
+            mFrameBuckets[numPeriods] += elapsedTime;
+        } else {
+            mFrameBuckets[NUM_BUCKETS - 1] += elapsedTime;
+        }
+        mTotalTime += elapsedTime;
+    }
+    mLastSwapTime = currentTime;    
+  
+}
+```
+
+
+
+### 总结
+
+![SF处理Vsync信号](/images/SF处理Vsync信号.jpg)
+
+## Android图形缓冲区
+
+Android的图形缓冲区主要由以下几部分组成：
+
+- `Surface`
+- `Layer`
+- `GraphicBuffer`
+- `BufferQueue`
+
+### Surface相关
+
+> **`Surface`是提供给`图形生产者`控制缓冲区的**
+>
+> 在`软件绘制`中，调用`drawSoftware(surface)`传入`Surface缓冲区`到`native`层的`SkiaCanvas`
+>
+> 在`硬件绘制`中，调用`ThreadedRenderer.initalize(surface)`传入`Surface缓冲区`到OpenGL中进行渲染。
+>
+> 当得到`Surface缓冲区`后，就可以存入**需要绘制的内容**到`Surface`中。
+
+`Surface`内部持有`BufferQueue中的GraphicBufferProducer`，主要负责**创建或获取可用的`GraphicBuffer`以及提交绘制后的`GraphicBuffer`**。
+
+### Layer相关
+
+> **`Layer`是提供给`图形消费者`获取缓冲区的**
+>
+> 在`SurfaceFlinger`需要消费图形数据，进行图层混合时，在`rebuildLayerStacks()`进行`Layer`遍历，取出`Layer`中的图形数据，进行数据合成处理。
+
+`Layer`内部持有`BufferQueue中的GraphicBufferConsumer`，主要负责**获取和释放`GraphicBuffer`**
+
+### GraphicBuffer
+
+> 真正被分配内存，并能存储图形数据的缓冲区。
+
+### BufferQueue
+
+> 存放`GraphicBuffer`的数组结构，最多可以存储**64**个`GraphicBuffer`
+
+![BufferQueue执行流程](/images/BufferQueue执行流程.jpg)
+
+> 当绘制图像时，首先去创建`Surface`和`Layer`，
+>
+> 然后`图像生产者`通过`Surface`调用`dequeue()`申请一块`GraphicBuffer`，在其上绘制图像
+>
+> 绘制完毕后，通过`Surface`调用`queue()`把绘制好的`GraphicBuffer`返回到`BufferQueue`中。
+>
+> 收到`HWComposer`发出的`Vsync信号后`，`SurfaceFlinger`通过`Layer`调用`acquire()`获取绘制好的`GraphicBuffer`进行合成与处理
+>
+> 处理完毕后通过`Layer`调用`release()`释放`GraphicBuffer`并返回到`BufferQueue`中。
+>
+
+### 缓冲区创建流程
+
+#### Activity创建图形缓冲区
+
+其中最常见的场景在`ViewRootImpl`的创建过程中，在其中执行了`Surface`的创建。
+
+```java
+//ViewRootImpl.java
+public final class ViewRootImpl implements ViewParent,
+        View.AttachInfo.Callbacks, ThreadedRenderer.DrawCallbacks {
+          ...
+    public final Surface mSurface = new Surface();
+          
+        }
+```
+
+主要在`WindowManagerGlobal.addView()`构造的`ViewRootImpl`对象。
+
+此时创建的只是Java层的`Surface`，还需要绑定Native层的`Surface`。
+
+```java
+//ViewRootImpl.java
+public void setView(View view, WindowManager.LayoutParams attrs, View panelParentView) {
+               //执行绘制流程 测量-布局-绘制
+                requestLayout();
+                if ((mWindowAttributes.inputFeatures
+                        & WindowManager.LayoutParams.INPUT_FEATURE_NO_INPUT_CHANNEL) == 0) {
+                  //触摸事件回调
+                    mInputChannel = new InputChannel();
+                }
+                mForceDecorViewVisibility = (mWindowAttributes.privateFlags
+                        & PRIVATE_FLAG_FORCE_DECOR_VIEW_VISIBILITY) != 0;
+                try {
+                    mOrigWindowType = mWindowAttributes.type;
+                    mAttachInfo.mRecomputeGlobalAttributes = true;
+                    collectViewAttributes();
+                   //添加窗口
+                    res = mWindowSession.addToDisplay(mWindow, mSeq, mWindowAttributes,
+                            getHostVisibility(), mDisplay.getDisplayId(), mWinFrame,
+                            mAttachInfo.mContentInsets, mAttachInfo.mStableInsets,
+                            mAttachInfo.mOutsets, mAttachInfo.mDisplayCutout, mInputChannel);
+                } catch (RemoteException e) {
+                   ...
+                } finally {
+                    if (restore) {
+                        attrs.restore();
+                    }
+                }      
+    }
+```
+
+`setView()`主要做了两件事情：
+
+- `requestLayout`：主要是执行到`relayoutWindow`创建了`Surface`和`Layer`
+- `addToDisplay`：创建了`SurfaceComponentClient`
+
+`requestLayout`需要在`addToDisplay`执行完毕后才可以执行。
+
+<br>
+
+##### WS#addToDisplay
+
+`WS#addToDisplay()`执行过程
+
+`WindowSession`表示**Java层的Window和WMS通信的对象**。
+
+```java
+//com.android.server.wm.Session
+class Session extends IWindowSession.Stub implements IBinder.DeathRecipient {
+    @Override
+    public int addToDisplayWithoutInputChannel(IWindow window, int seq, WindowManager.LayoutParams attrs,
+            int viewVisibility, int displayId, Rect outContentInsets, Rect outStableInsets) {
+        return mService.addWindow(this, window, seq, attrs, viewVisibility, displayId,
+                new Rect() /* outFrame */, outContentInsets, outStableInsets, null /* outOutsets */,
+                new DisplayCutout.ParcelableWrapper() /* cutout */, null /* outInputChannel */);
+    }  
+}
+```
+
+`mService`表示的就是`WindowManagerService`
+
+```java
+//WindowManagerService.java
+    public int addWindow(Session session, IWindow client, int seq,
+            LayoutParams attrs, int viewVisibility, int displayId, Rect outFrame,
+            Rect outContentInsets, Rect outStableInsets, Rect outOutsets,
+            DisplayCutout.ParcelableWrapper outDisplayCutout, InputChannel outInputChannel) {
+      ...      
+      synchronized(mWindowMap) {
+            AppWindowToken atoken = null;
+            final boolean hasParent = parentWindow != null;
+          //创建WindowToken
+            WindowToken token = displayContent.getWindowToken(
+                    hasParent ? parentWindow.mAttrs.token : attrs.token);        
+        ...
+          //创建WindowState对象
+            final WindowState win = new WindowState(this, session, client, token, parentWindow,
+                    appOp[0], seq, attrs, viewVisibility, session.mUid,
+                    session.mCanAddInternalSystemWindow); 
+        ...
+          //附加窗口
+            win.attach();
+            mWindowMap.put(client.asBinder(), win);          
+      }
+    }
+
+```
+
+这里重点关注`WindowState#attach`
+
+```java
+//WindowState.java
+    void attach() {
+        if (localLOGV) Slog.v(TAG, "Attaching " + this + " token=" + mToken);
+        mSession.windowAddedLocked(mAttrs.packageName);
+    }
+
+//Session.java
+    void windowAddedLocked(String packageName) {
+        mPackageName = packageName;
+        mRelayoutTag = "relayoutWindow: " + mPackageName;
+        if (mSurfaceSession == null) {
+            if (WindowManagerService.localLOGV) Slog.v(
+                TAG_WM, "First window added to " + this + ", creating SurfaceSession");
+            mSurfaceSession = new SurfaceSession();
+          ...
+        }
+        mNumWindow++;
+    }
+
+//SurfaceSession.java
+public SurfaceSession() {
+        mNativeClient = nativeCreate();
+    }
+
+//android_view_SurfaceSession.cpp
+static jlong nativeCreate(JNIEnv* env, jclass clazz) {
+    SurfaceComposerClient* client = new SurfaceComposerClient();
+    client->incStrong((void*)nativeCreate);
+    return reinterpret_cast<jlong>(client);
+}
+```
+
+经过上述步骤最后创建了`SurfaceComponentClient`
+
+`addToDisplay`执行完毕后，回调到`performTraversals()`
+
+
+
+##### WS#relayoutWindow
+
+```java
+//ViewRootImpl.java
+    private void performTraversals() {
+        boolean layoutRequested = mLayoutRequested && (!mStopped || mReportNextDraw);
+      ...
+        final int surfaceGenerationId = mSurface.getGenerationId();
+
+        final boolean isViewVisible = viewVisibility == View.VISIBLE;
+        final boolean windowRelayoutWasForced = mForceNextWindowRelayout;
+        if (mFirst || windowShouldResize || insetsChanged ||
+                viewVisibilityChanged || params != null || mForceNextWindowRelayout) {
+            mForceNextWindowRelayout = false;
+          ...
+            try {            
+             relayoutResult = relayoutWindow(params, viewVisibility, insetsPending);
+              ...
+            }catch(RemoteException e){
+              
+            }
+            if (!mStopped || mReportNextDraw) {
+                boolean focusChangedDueToTouchMode = ensureTouchModeLocally(
+                        (relayoutResult&WindowManagerGlobal.RELAYOUT_RES_IN_TOUCH_MODE) != 0);
+                if (focusChangedDueToTouchMode || mWidth != host.getMeasuredWidth()
+                        || mHeight != host.getMeasuredHeight() || contentInsetsChanged ||
+                        updatedConfiguration) {
+                    int childWidthMeasureSpec = getRootMeasureSpec(mWidth, lp.width);
+                    int childHeightMeasureSpec = getRootMeasureSpec(mHeight, lp.height);
+                  //执行测量流程
+                    performMeasure(childWidthMeasureSpec, childHeightMeasureSpec);  
+                  ...
+                }
+            }
+          
+        final boolean didLayout = layoutRequested && (!mStopped || mReportNextDraw);
+        if (didLayout) {
+          //执行布局过程
+            performLayout(lp, mWidth, mHeight);
+        }
+      }
+        boolean cancelDraw = mAttachInfo.mTreeObserver.dispatchOnPreDraw() || !isViewVisible;
+        if (!cancelDraw && !newSurface) {
+            if (mPendingTransitions != null && mPendingTransitions.size() > 0) {
+                for (int i = 0; i < mPendingTransitions.size(); ++i) {
+                    mPendingTransitions.get(i).startChangingAnimations();
+                }
+                mPendingTransitions.clear();
+            }
+           //执行绘制流程
+            performDraw();
+        } 
+      ...
+    }
+```
+
+`performTraversals()`主要做了以下几步：
+
+1. `relayoutWindow`——创建`Surface`和`Layout`
+2. `performMeasure`——测量过程
+3. `performLayout`——布局过程
+4. `performDraw`——绘制过程
+
+接下来主要分析`relayoutWindow`
+
+```java
+//ViewRootImpl.java
+    private int relayoutWindow(WindowManager.LayoutParams params, int viewVisibility,
+            boolean insetsPending) throws RemoteException {
+      ...
+        int relayoutResult = mWindowSession.relayout(mWindow, mSeq, params,
+                (int) (mView.getMeasuredWidth() * appScale + 0.5f),
+                (int) (mView.getMeasuredHeight() * appScale + 0.5f), viewVisibility,
+                insetsPending ? WindowManagerGlobal.RELAYOUT_INSETS_PENDING : 0, frameNumber,
+                mWinFrame, mPendingOverscanInsets, mPendingContentInsets, mPendingVisibleInsets,
+                mPendingStableInsets, mPendingOutsets, mPendingBackDropFrame, mPendingDisplayCutout,
+                mPendingMergedConfiguration, mSurface);      
+    }
+
+//Session.java
+    @Override
+    public int relayout(IWindow window, int seq, WindowManager.LayoutParams attrs,
+            int requestedWidth, int requestedHeight, int viewFlags, int flags, long frameNumber,
+            Rect outFrame, Rect outOverscanInsets, Rect outContentInsets, Rect outVisibleInsets,
+            Rect outStableInsets, Rect outsets, Rect outBackdropFrame,
+            DisplayCutout.ParcelableWrapper cutout, MergedConfiguration mergedConfiguration,
+            Surface outSurface) {
+      ...
+        int res = mService.relayoutWindow(this, window, seq, attrs,
+                requestedWidth, requestedHeight, viewFlags, flags, frameNumber,
+                outFrame, outOverscanInsets, outContentInsets, outVisibleInsets,
+                outStableInsets, outsets, outBackdropFrame, cutout,
+                mergedConfiguration, outSurface);
+      ...
+        return res;
+    }
+
+//WindowManagerService.java
+    public int relayoutWindow(Session session, IWindow client, int seq, LayoutParams attrs,
+            int requestedWidth, int requestedHeight, int viewVisibility, int flags,
+            long frameNumber, Rect outFrame, Rect outOverscanInsets, Rect outContentInsets,
+            Rect outVisibleInsets, Rect outStableInsets, Rect outOutsets, Rect outBackdropFrame,
+            DisplayCutout.ParcelableWrapper outCutout, MergedConfiguration mergedConfiguration,
+            Surface outSurface) {
+      ...
+            final boolean shouldRelayout = viewVisibility == View.VISIBLE &&
+                    (win.mAppToken == null || win.mAttrs.type == TYPE_APPLICATION_STARTING
+                            || !win.mAppToken.isClientHidden());        
+            if (shouldRelayout) {
+                try {
+                  //创建SurfaceControl
+                    result = createSurfaceControl(outSurface, result, win, winAnimator);
+                } catch (Exception e) {
+                  ...
+                }              
+            }
+      
+    }
+```
+
+接下来执行到`createSurfaceControl`
+
+###### WMS#createSurfaceControl
+
+```java
+    private int createSurfaceControl(Surface outSurface, int result, WindowState win,
+            WindowStateAnimator winAnimator) {
+        if (!win.mHasSurface) {
+            result |= RELAYOUT_RES_SURFACE_CHANGED;
+        }
+
+        WindowSurfaceController surfaceController;
+        try {
+            Trace.traceBegin(TRACE_TAG_WINDOW_MANAGER, "createSurfaceControl");
+          //创建SurfaceControl
+            surfaceController = winAnimator.createSurfaceLocked(win.mAttrs.type, win.mOwnerUid);
+        } finally {
+            Trace.traceEnd(TRACE_TAG_WINDOW_MANAGER);
+        }
+        if (surfaceController != null) {
+          //创建Surface
+            surfaceController.getSurface(outSurface);
+            if (SHOW_TRANSACTIONS) Slog.i(TAG_WM, "  OUT SURFACE " + outSurface + ": copied");
+        } else {
+            // For some reason there isn't a surface.  Clear the
+            // caller's object so they see the same state.
+            Slog.w(TAG_WM, "Failed to create surface control for " + win);
+            outSurface.release();
+        }
+
+        return result;
+    }
+```
+
+`createSurfaceControl()`主要执行了两步：
+
+- `createSurfaceLocked`——创建Layer
+- `SurfaceControl#getSurface`——创建Surface
+
+###### WMS#createSurfaceLocked
+
+```java
+//com/android/server/wm/WindowStateAnimator.java
+    WindowSurfaceController createSurfaceLocked(int windowType, int ownerUid) {
+      ...
+            mSurfaceController = new WindowSurfaceController(mSession.mSurfaceSession,
+                    attrs.getTitle().toString(), width, height, format, flags, this,
+                    windowType, ownerUid);      
+      ...
+    }
+
+//WindowSurfaceController.java
+    public WindowSurfaceController(SurfaceSession s, String name, int w, int h, int format,
+            int flags, WindowStateAnimator animator, int windowType, int ownerUid) {
+      ...
+        final SurfaceControl.Builder b = win.makeSurface()
+                .setParent(win.getSurfaceControl())
+                .setName(name)
+                .setSize(w, h)
+                .setFormat(format)
+                .setFlags(flags)
+                .setMetadata(windowType, ownerUid);
+        mSurfaceControl = b.build();      
+      ...
+    }
+
+//SurfaceControl.java
+    public static class Builder {
+      ...
+        public SurfaceControl build() {
+            if (mWidth <= 0 || mHeight <= 0) {
+                throw new IllegalArgumentException(
+                        "width and height must be set");
+            }
+            return new SurfaceControl(mSession, mName, mWidth, mHeight, mFormat,
+                    mFlags, mParent, mWindowType, mOwnerUid);
+        }      
+    }
+
+    private SurfaceControl(SurfaceSession session, String name, int w, int h, int format, int flags,
+            SurfaceControl parent, int windowType, int ownerUid)
+                    throws OutOfResourcesException, IllegalArgumentException {
+      ...
+        mNativeObject = nativeCreate(session, name, w, h, format, flags,
+            parent != null ? parent.mNativeObject : 0, windowType, ownerUid);
+      ...
+    }
+```
+
+执行`nativeCreate`切换到Native层执行
+
+```cpp
+//base/core/jni/android_view_SurfaceControl.cpp
+static jlong nativeCreate(JNIEnv* env, jclass clazz, jobject sessionObj,
+        jstring nameStr, jint w, jint h, jint format, jint flags, jlong parentObject,
+        jint windowType, jint ownerUid) {
+    ScopedUtfChars name(env, nameStr);
+    sp<SurfaceComposerClient> client(android_view_SurfaceSession_getClient(env, sessionObj));
+    SurfaceControl *parent = reinterpret_cast<SurfaceControl*>(parentObject);
+    sp<SurfaceControl> surface;
+    status_t err = client->createSurfaceChecked(
+            String8(name.c_str()), w, h, format, &surface, flags, parent, windowType, ownerUid);
+  ...
+
+    surface->incStrong((void *)nativeCreate);
+    return reinterpret_cast<jlong>(surface.get());
+}
+```
+
+在`createSurfaceChecked()`后续的流程会创建`Layer`
+
+###### SurfaceControl#getSurface
+
+```java
+//WindowSurfaceController.java
+    void getSurface(Surface outSurface) {
+        outSurface.copyFrom(mSurfaceControl);
+    }
+
+//Surface.java
+    public void copyFrom(SurfaceControl other) {
+      ...
+        //创建Surface
+        long newNativeObject = nativeGetFromSurfaceControl(surfaceControlPtr);
+
+    }
+```
+
+在`nativeGetFromSurfaceControl()`创建`Surface`
+
+##### 总结
+
+> 先执行`ViewRootImpl#setView()`，其中会执行
+>
+> - `requestLayout`
+>
+>   内部执行`ViewRootImpl#performTraversals()`，接下去执行`WMS#relayoutWindow()`，然后是`WMS#createSurfaceControl`，分为两步：
+>
+>   - `createSurfaceLocked`：创建`SurfaceControl`，内部执行`android_view_surfaceControl#nativeCreate`，执行`SurfaceComponentClient#createSurface`，创建`Layer`对象。
+>   - `WindowSurfaceController#getSurface`：执行到`Surface#copyFrom()`，调用到`nativeGetFromSurfaceControl()`，内部调用到`SurfaceControl#getSurface()`去创建`Surface`
+>
+>   创建`Surface`和`Layer`完毕后，继续执行View的绘制流程`measure->layout->draw`
+>
+> - `WindowSession#addToDisplay()`
+>
+>   执行到`WMS#addWindow()`，继续到`Session#windowAddedLocked()`，切换到`Native`层执行`android_view_surfaceSession#native_create()`在其中创建了`SurfaceComponentClient`。
+
+![SF-Surface/Layer创建准备](/images/SF-Surface和Layer创建准备.jpg)
+
+#### Surface、Layer的创建
+
+根据上节源码分析可以知道，`Surface、Layer`的创建主要分为以下几步
+
+
+
+##### 创建SurfaceComponentClient
+
+> App进程与`SurfaceFlinger`沟通的桥梁。
+
+```cpp
+//native/libs/gui/SurfaceComposerClient.cpp
+void SurfaceComposerClient::onFirstRef() {
+    sp<ISurfaceComposer> sf(ComposerService::getComposerService());
+    if (sf != 0 && mStatus == NO_INIT) {
+        auto rootProducer = mParent.promote();
+        sp<ISurfaceComposerClient> conn;
+        conn = (rootProducer != nullptr) ? sf->createScopedConnection(rootProducer) :
+                sf->createConnection();
+      ...
+    }
+}
+```
+
+其中`ComposerService`就是`SurfaceFlinger`的Binder代理对象，`SurfaceComponentClient`通过`ComposerService`与`SurfaceFlinger`进行通信。
+
+###### ComposerService
+
+```cpp
+//native/libs/gui/SurfaceComposerClient.cpp
+/*static*/ sp<ISurfaceComposer> ComposerService::getComposerService() {
+    ComposerService& instance = ComposerService::getInstance();
+    if (instance.mComposerService == NULL) {
+        ComposerService::getInstance().connectLocked();
+    }
+    return instance.mComposerService;
+}
+
+void ComposerService::connectLocked() {
+    const String16 name("SurfaceFlinger");
+  //获取SurfaceFlinger 服务
+    while (getService(name, &mComposerService) != NO_ERROR) {
+        usleep(250000);
+    }
+    assert(mComposerService != NULL);
+}
+
+//native/libs/binder/include/binder/IServiceManager.h
+status_t getService(const String16& name, sp<INTERFACE>* outService)
+{
+    const sp<IServiceManager> sm = defaultServiceManager();
+    if (sm != NULL) {
+        *outService = interface_cast<INTERFACE>(sm->getService(name));
+        if ((*outService) != NULL) return NO_ERROR;
+    }
+    return NAME_NOT_FOUND;
+}
+```
+
+
+
+###### SurfaceFlinger#createConnection
+
+```cpp
+//native/services/surfaceflinger/SurfaceFlinger.cpp
+sp<ISurfaceComposerClient> SurfaceFlinger::createConnection() {
+    return initClient(new Client(this));
+}
+
+static sp<ISurfaceComposerClient> initClient(const sp<Client>& client) {
+  //检查Client是否合法
+    status_t err = client->initCheck();
+    if (err == NO_ERROR) {
+        return client;
+    }
+    return nullptr;
+}
+```
+
+其中`Client`内部封装的是**创建和销毁Layer和Surface的操作函数。**
+
+> `Client`实现了`ISurfaceComposerClient`接口，`SurfaceComposerClient`通过`Client`和`SurfaceFlinger`进行通讯。
+>
+> 除此之外还可以创建`Surface`以及维护`Layer`对象。
+
+##### 创建SurfaceControl并创建Layer
+
+```cpp
+status_t SurfaceComposerClient::createSurfaceChecked(
+        const String8& name,
+        uint32_t w,
+        uint32_t h,
+        PixelFormat format,
+        sp<SurfaceControl>* outSurface,
+        uint32_t flags,
+        SurfaceControl* parent,
+        int32_t windowType,
+        int32_t ownerUid)
+{
+    sp<SurfaceControl> sur;
+    status_t err = mStatus;
+      
+        err = mClient->createSurface(name, w, h, format, flags, parentHandle,
+                windowType, ownerUid, &handle, &gbp);
+        if (err == NO_ERROR) {
+            *outSurface = new SurfaceControl(this, handle, gbp, true /* owned */);
+        }
+    }
+    return err;
+}
+```
+
+
+
+###### Client#createSurface
+
+```cpp
+//native/services/surfaceflinger/Client.cpp
+status_t Client::createSurface(
+        const String8& name,
+        uint32_t w, uint32_t h, PixelFormat format, uint32_t flags,
+        const sp<IBinder>& parentHandle, int32_t windowType, int32_t ownerUid,
+        sp<IBinder>* handle,
+        sp<IGraphicBufferProducer>* gbp)
+{
+    class MessageCreateLayer : public MessageBase {
+        SurfaceFlinger* flinger;
+        Client* client;
+        sp<IBinder>* handle;
+        sp<IGraphicBufferProducer>* gbp;
+        status_t result;
+        const String8& name;
+        uint32_t w, h;
+        PixelFormat format;
+        uint32_t flags;
+        sp<Layer>* parent;
+        int32_t windowType;
+        int32_t ownerUid;
+    public:
+        virtual bool handler() {
+            result = flinger->createLayer(name, client, w, h, format, flags,
+                    windowType, ownerUid, handle, gbp, parent);
+            return true;
+        }
+    };
+  
+    sp<MessageBase> msg = new MessageCreateLayer(mFlinger.get(),
+            name, this, w, h, format, flags, handle,
+            windowType, ownerUid, gbp, &parent);
+    mFlinger->postMessageSync(msg);
+    return static_cast<MessageCreateLayer*>( msg.get() )->getResult();  
+}
+```
+
+通过`postMessageSync()`发送消息，处理后回调到`handler()`，继续执行`createLayer()`
+
+```cpp
+//native/services/surfaceflinger/SurfaceFlinger.cpp
+status_t SurfaceFlinger::createLayer(
+        const String8& name,
+        const sp<Client>& client,
+        uint32_t w, uint32_t h, PixelFormat format, uint32_t flags,
+        int32_t windowType, int32_t ownerUid, sp<IBinder>* handle,
+        sp<IGraphicBufferProducer>* gbp, sp<Layer>* parent)
+{
+  ...
+    switch (flags & ISurfaceComposerClient::eFXSurfaceMask) {
+        case ISurfaceComposerClient::eFXSurfaceNormal:
+            result = createBufferLayer(client,
+                    uniqueName, w, h, flags, format,
+                    handle, gbp, &layer);
+
+            break;
+        case ISurfaceComposerClient::eFXSurfaceColor:
+            result = createColorLayer(client,
+                    uniqueName, w, h, flags,
+                    handle, &layer);
+            break;
+        default:
+            result = BAD_VALUE;
+            break;
+    }
+  ...  
+  
+}
+
+status_t SurfaceFlinger::createBufferLayer(const sp<Client>& client,
+        const String8& name, uint32_t w, uint32_t h, uint32_t flags, PixelFormat& format,
+        sp<IBinder>* handle, sp<IGraphicBufferProducer>* gbp, sp<Layer>* outLayer)
+{
+ ...
+   //创建Layer对象
+    sp<BufferLayer> layer = new BufferLayer(this, client, name, w, h, flags);   
+ ...
+}
+```
+
+`createSurface`执行到最后，构建出`Layer`对象。
+
+###### new SurfaceControl
+
+> `SurfaceControl`主要作用就是**维护Surface**。
+
+```cpp
+//native/libs/gui/SurfaceControl.cpp
+SurfaceControl::SurfaceControl(
+        const sp<SurfaceComposerClient>& client,
+        const sp<IBinder>& handle,
+        const sp<IGraphicBufferProducer>& gbp,
+        bool owned)
+    : mClient(client), mHandle(handle), mGraphicBufferProducer(gbp), mOwned(owned)
+{
+}
+```
+
+创建SurfaceControl之后，仅仅是设置了`mClient`以及创建了`GraphicBufferProducer`对象。
+
+
+
+##### 通过SurfaceControl创建Surface
+
+此时已经创建完毕`Surfacecontrol`和`Layer`对象。
+
+```cpp
+//
+sp<Surface> SurfaceControl::getSurface() const
+{
+    Mutex::Autolock _l(mLock);
+    if (mSurfaceData == 0) {
+        return generateSurfaceLocked();
+    }
+    return mSurfaceData;
+}
+
+sp<Surface> SurfaceControl::generateSurfaceLocked() const
+{
+  //构造Surface对象
+    mSurfaceData = new Surface(mGraphicBufferProducer, false);
+
+    return mSurfaceData;
+}
+```
+
+`Native`层的`Surface`创建完毕后，返回到`Java`层进行赋值。
+
+
+
+![SF-Buffer、Layer创建过程](/images/SF-Buffer、Layer创建过程.jpg)
+
+
+
+#### BufferQueue的创建
+
+在创建`Layer`完成后，后续就会继续去创建`BufferQueue`
+
+```cpp
+//BufferLayer.cpp
+void BufferLayer::onFirstRef() {
+    // Creates a custom BufferQueue for SurfaceFlingerConsumer to use
+    sp<IGraphicBufferProducer> producer;
+    sp<IGraphicBufferConsumer> consumer;
+  //创建BufferQueue对象
+    BufferQueue::createBufferQueue(&producer, &consumer, true);
+    mProducer = new MonitoredProducer(producer, mFlinger, this);
+    mConsumer = new BufferLayerConsumer(consumer,
+            mFlinger->getRenderEngine(), mTextureName, this);
+    mConsumer->setConsumerUsageBits(getEffectiveUsage(0));
+    mConsumer->setContentsChangedListener(this);
+    mConsumer->setName(mName);
+
+    if (mFlinger->isLayerTripleBufferingDisabled()) {
+        mProducer->setMaxDequeuedBufferCount(2);
+    }
+
+    const sp<const DisplayDevice> hw(mFlinger->getDefaultDisplayDevice());
+    updateTransformHint(hw);
+}
+```
+
+```cpp
+//native/libs/gui/BufferQueue.cpp
+void BufferQueue::createBufferQueue(sp<IGraphicBufferProducer>* outProducer,
+        sp<IGraphicBufferConsumer>* outConsumer,
+        bool consumerIsSurfaceFlinger) {
+  //创建BufferQueueCore
+    sp<BufferQueueCore> core(new BufferQueueCore());
+  //创建BufferQueueProducer
+    sp<IGraphicBufferProducer> producer(new BufferQueueProducer(core, consumerIsSurfaceFlinger));
+  //创建BufferQueueConsumer
+    sp<IGraphicBufferConsumer> consumer(new BufferQueueConsumer(core));
+  
+    *outProducer = producer;
+    *outConsumer = consumer;
+}
+```
+
+`createBufferQueue`主要创建以下三个对象：
+
+- `BufferQueueCore`
+- `BufferQueueProducer`
+- `BufferQueueConsumer`
+
+##### BufferQueueCore
+
+> 主要用来存放`GraphicBuffer`，并且存放最多**64**个。
+
+```cpp
+//native/libs/gui/include/gui/BufferQueueCore.h
+class BufferQueueCore : public virtual RefBase {
+
+    friend class BufferQueueProducer;
+    friend class BufferQueueConsumer;
+public:
+  ...
+private:
+  ...
+    BufferQueueDefs::SlotsType mSlots;
+    Fifo mQueue;
+    std::set<int> mFreeSlots;
+    std::list<int> mFreeBuffers;
+    std::list<int> mUnusedSlots;
+    std::set<int> mActiveBuffers;
+  ...
+}
+```
+
+主要有以下几个对象：
+
+- `mSlots`：大小为`NUM_BUFFER_SLOTS(64)`的数组，存储数据为`BufferSlot`
+- `mQueue`：以`先进先出对了`存放`生产者生产的数据-BufferItem`，保证按照顺序取出
+- `mFreeSlots`：尚未绑定`GraphicBuffer`且`state = FREE`的`BufferSlot`的`index`集合
+- `mFreeBuffers`：已经绑定了`GraphicBuffer`且`state = FREE`的`BufferSlot`的`index`集合
+- `mActiveBuffers`：已经绑定了`GraphicBuffer`且`state!=FREE`的`BufferSlot`的`index`集合
+- `mUnusedSlots`：没有绑定`GraphicBuffer`且没有状态的`BufferSlot`的`index`集合
+
+主要介绍`BufferSlot`，`BufferQueueCore`基本是`BufferSlot`的各种集合
+
+```cpp
+//
+struct BufferSlot {
+
+    BufferSlot()
+    : mGraphicBuffer(nullptr),
+      mBufferState(),
+  ...
+   //绑定的 GraphicBuffer
+    sp<GraphicBuffer> mGraphicBuffer;
+   //绑定的BufferSlot 状态
+    BufferState mBufferState;
+}
+
+struct BufferState {
+
+    // All slots are initially FREE (not dequeued, queued, acquired, or shared).
+    BufferState()
+    : mDequeueCount(0),
+      mQueueCount(0),
+      mAcquireCount(0),
+      mShared(false) {
+    }
+  
+    //         | mShared | mDequeueCount | mQueueCount | mAcquireCount |
+    // --------|---------|---------------|-------------|---------------|
+    // FREE    |  false  |       0       |      0      |       0       |
+    // DEQUEUED|  false  |       1       |      0      |       0       |
+    // QUEUED  |  false  |       0       |      1      |       0       |
+    // ACQUIRED|  false  |       0       |      0      |       1       |
+    // SHARED  |  true   |      any      |     any     |      any      |      
+}
+```
+
+主要由两部分构成：
+
+- `mGraphicBuffer`：`BufferSlot`所绑定的`GraphicBuffer`
+- `mBufferState`：表示当前`BufferSlot`的状态，主要有以下几种状态：
+  - `FREE`：空闲状态，存入`mFreeSlots`
+  - `DEQUEUED`：被`生产者`获取，待绘制数据
+  - `QUEUED`：被`BufferQueue`获取，待`消费者`获取。
+  - `ACQUIRED`：被`消费者`获取，待获取绘制数据
+  - `SHARED`：处于共享状态。
+
+> `BufferQueueCore`设置了这么多的`BufferSlot`集合，主要为了**分类BufferSlot时更高效**。
+
+![SF-BufferQueueCore](/images/SF-BufferQueueCore.jpg)
+
+##### BufferQueueProducer
+
+> `Surface`中持有`BufferQueueProducer`的BP代理对象-`IGraphicBufferProducer`。
+
+```cpp
+//native/libs/gui/BufferQueueProducer.cpp
+BufferQueueProducer::BufferQueueProducer(const sp<BufferQueueCore>& core,
+        bool consumerIsSurfaceFlinger) :
+    mCore(core),
+    mSlots(core->mSlots),
+...
+}
+
+status_t BufferQueueProducer::dequeueBuffer(int* outSlot, sp<android::Fence>* outFence,
+                                            uint32_t width, uint32_t height, PixelFormat format,
+                                            uint64_t usage, uint64_t* outBufferAge,
+                                            FrameEventHistoryDelta* outTimestamps) {
+ ... 
+}
+
+status_t BufferQueueProducer::queueBuffer(int slot,
+        const QueueBufferInput &input, QueueBufferOutput *output) {
+  ...
+}
+  
+```
+
+初始化了`mCore`和`mSlots`对象
+
+```mermaid
+graph TD
+A(new <br>BufferQueueProducer)
+B(赋值BufferQueueCore到mCore)
+C(赋值mSlots)
+A--->B
+A--->C
+```
+
+
+
+###### dequeueBuffer
+
+> 向`BufferQueue`申请一块`GraphicBuffer`。
+>
+> 标记`BufferSlot`的`BufferState`为`DEQUEUED`。
+
+```cpp
+//native/libs/gui/BufferQueueProducer.cpp
+status_t BufferQueueProducer::dequeueBuffer(int* outSlot, sp<android::Fence>* outFence,
+                                            uint32_t width, uint32_t height, PixelFormat format,
+                                            uint64_t usage, uint64_t* outBufferAge,
+                                            FrameEventHistoryDelta* outTimestamps) {
+        while (found == BufferItem::INVALID_BUFFER_SLOT) {
+            status_t status = waitForFreeSlotThenRelock(FreeSlotCaller::Dequeue,
+                    &found);
+           ...     
+        }
+      //判断寻找的 BufferSlot是否与 申请的宽高、格式一致
+        const sp<GraphicBuffer>& buffer(mSlots[found].mGraphicBuffer);
+        if (mCore->mSharedBufferSlot == found &&
+                buffer->needsReallocation(width, height, format, BQ_LAYER_COUNT, usage)) {
+            BQ_LOGE("dequeueBuffer: cannot re-allocate a shared"
+                    "buffer");
+
+            return BAD_VALUE;
+        }  
+  ...
+        if (mCore->mSharedBufferSlot != found) {
+          //添加 GraphicBuffer 的index到 mActiveBuffers
+            mCore->mActiveBuffers.insert(found);
+        }
+        *outSlot = found;  
+  ...
+      //标记 选中的BufferSlot状态为 DEQUEUED
+        mSlots[found].mBufferState.dequeue();
+
+      //找到了空的 GraphicBuffer，就进行初始化。
+        if ((buffer == NULL) ||
+                buffer->needsReallocation(width, height, format, BQ_LAYER_COUNT, usage))
+        {
+            mSlots[found].mAcquireCalled = false;
+            mSlots[found].mGraphicBuffer = NULL;
+            mSlots[found].mRequestBufferCalled = false;
+            mSlots[found].mEglDisplay = EGL_NO_DISPLAY;
+            mSlots[found].mEglFence = EGL_NO_SYNC_KHR;
+            mSlots[found].mFence = Fence::NO_FENCE;
+            mCore->mBufferAge = 0;
+            mCore->mIsAllocating = true;
+
+            returnFlags |= BUFFER_NEEDS_REALLOCATION;
+        } 
+      ...
+    if (returnFlags & BUFFER_NEEDS_REALLOCATION) {
+        sp<GraphicBuffer> graphicBuffer = new GraphicBuffer(
+                width, height, format, BQ_LAYER_COUNT, usage,u
+                {mConsumerName.string(), mConsumerName.size()});
+      {
+            if (error == NO_ERROR && !mCore->mIsAbandoned) {
+                graphicBuffer->setGenerationNumber(mCore->mGenerationNumber);
+              //将新创建的GraphicBuffer放到 BufferSlot中
+                mSlots[*outSlot].mGraphicBuffer = graphicBuffer;
+            }      
+      }
+    }
+  
+}
+
+status_t BufferQueueProducer::waitForFreeSlotThenRelock(FreeSlotCaller caller,
+        int* found) const {
+  ...
+        const int maxBufferCount = mCore->getMaxBufferCountLocked();
+       //请求是否太多
+        bool tooManyBuffers = mCore->mQueue.size()
+                            > static_cast<size_t>(maxBufferCount);
+        if (tooManyBuffers) {
+          //请求过多时，就会进入阻塞状态
+            BQ_LOGV("r%s: queue size is %zu, waiting", callerString,
+                    mCore->mQueue.size());
+        } else {
+            if (mCore->mSharedBufferMode && mCore->mSharedBufferSlot !=
+                    BufferQueueCore::INVALID_BUFFER_SLOT) {
+                *found = mCore->mSharedBufferSlot;
+            } else {
+                if (caller == FreeSlotCaller::Dequeue) {
+                    // 寻找已经绑定GraphicBuffer 但 State = FREE的 BufferSlot
+                    int slot = getFreeBufferLocked();
+                    if (slot != BufferQueueCore::INVALID_BUFFER_SLOT) {
+                        *found = slot;
+                    } else if (mCore->mAllowAllocation) {
+                        *found = getFreeSlotLocked();
+                    }
+                } else
+                    // 寻找尚未绑定GraphicBuffer 但 State = FREE 的BufferSlot
+                    int slot = getFreeSlotLocked();
+                    if (slot != BufferQueueCore::INVALID_BUFFER_SLOT) {
+                        *found = slot;
+                    } else {
+                        *found = getFreeBufferLocked();
+                    }
+                }
+            }
+        }
+  ...
+}
+```
+
+`edequeueBuffer`主要做了以下几步：
+
+- 通过`waitForFreeSlotThenRelock`寻找空闲的`BufferSlot`，需要判断当前是否与申请`width、height、format`一致，不一致则需要重新请求
+
+  `waitForFreeSlotThenRelock`主要实现了以下几步：
+
+  - `getFreeBufferLocked`：直接使用已经绑定的`GraphicBuffer`
+  - `getFreeSlotLocked`：需要新建一个`GraphicBuffer`与其绑定
+
+- 把找到的`BufferSlot`的`index`放到`mActiveSlots`中
+
+- 如果找到的`BufferSlot`中的`GraphicBuffer`为null，需要初始化`BufferSlot`
+
+- 如果需要重新创建`GraphicBuffer`，并把新建的`GraphicBuffer`放在找到的`BufferSlot`中
+
+> 尝试寻找一个`BufferSlot`，并且`width,height,format`都符合要求，如果没有绑定`GraphicBuffer`，就需要新建一个并且进行绑定，然后设置`BufferSlot`的`BufferState`为`DEQUEUED`，最后返回在`mSlots`的`index`回去。
+
+![SF-BufferQueue-dequeueBuffer](/images/SF-BufferQueue-dequeueBuffer.jpg)
+
+
+
+
+
+###### queueBuffer
+
+> 在`生产者`填充数据到`GraphicBuffer`完毕后，通过`queueBuffer`把`GraphicBuffer`放回到`BufferQueue`。
+>
+> 标记`BufferSlot`的`BufferState`标记为`QUEUED`。
+
+```cpp
+//native/libs/gui/BufferQueueProducer.cpp
+status_t BufferQueueProducer::queueBuffer(int slot,
+        const QueueBufferInput &input, QueueBufferOutput *output) {
+  ...
+    //消费者回调
+    sp<IConsumerListener> frameAvailableListener;
+    sp<IConsumerListener> frameReplacedListener;
+    int callbackTicket = 0;
+    uint64_t currentFrameNumber = 0;
+  //需要插入mQueue的 数据结构
+    BufferItem item;
+  ...
+  {
+    ...
+        const sp<GraphicBuffer>& graphicBuffer(mSlots[slot].mGraphicBuffer);    
+        mSlots[slot].mBufferState.queue();
+       //构造BufferItem对象
+        item.mAcquireCalled = mSlots[slot].mAcquireCalled;
+        item.mGraphicBuffer = mSlots[slot].mGraphicBuffer;
+        item.mCrop = crop;
+        item.mTransform = transform &
+                ~static_cast<uint32_t>(NATIVE_WINDOW_TRANSFORM_INVERSE_DISPLAY);
+        item.mTransformToDisplayInverse =
+                (transform & NATIVE_WINDOW_TRANSFORM_INVERSE_DISPLAY) != 0;
+        item.mScalingMode = static_cast<uint32_t>(scalingMode);
+        item.mTimestamp = requestedPresentTimestamp;
+        item.mIsAutoTimestamp = isAutoTimestamp;
+        item.mDataSpace = dataSpace;
+        item.mHdrMetadata = hdrMetadata;
+        item.mFrameNumber = currentFrameNumber;
+        item.mSlot = slot;
+        item.mFence = acquireFence;
+        item.mFenceTime = acquireFenceTime;
+        item.mIsDroppable = mCore->mAsyncMode ||
+                mCore->mDequeueBufferCannotBlock ||
+                (mCore->mSharedBufferMode && mCore->mSharedBufferSlot == slot);
+        item.mSurfaceDamage = surfaceDamage;
+        item.mQueuedBuffer = true;
+        item.mAutoRefresh = mCore->mSharedBufferMode && mCore->mAutoRefresh;
+        item.mApi = mCore->mConnectedApi;    
+    
+        if (mCore->mQueue.empty()) {
+          //添加BufferItem
+            mCore->mQueue.push_back(item);
+            frameAvailableListener = mCore->mConsumerListener;
+        } else {
+            const BufferItem& last = mCore->mQueue.itemAt(
+                    mCore->mQueue.size() - 1);
+            if (last.mIsDroppable) {
+              //替换mQueue最后一位 为新的BufferItem
+                mCore->mQueue.editItemAt(mCore->mQueue.size() - 1) = item;
+                frameReplacedListener = mCore->mConsumerListener;
+            } else {
+              //添加 BufferItem
+                mCore->mQueue.push_back(item);
+                frameAvailableListener = mCore->mConsumerListener;
+            }               
+        }
+    ...
+      
+        if (frameAvailableListener != NULL) {
+          //回调 onFrameAvaliaable 通知消费者有新的数据入队
+            frameAvailableListener->onFrameAvailable(item);
+        } else if (frameReplacedListener != NULL) {
+            frameReplacedListener->onFrameReplaced(item);
+        }      
+  }
+}
+```
+
+`queueBuffer`主要执行了以下几步：
+
+- 根据传入的`slot`从`mSlots`获取对应的`BufferSlot`，并设置对应的`BufferState`为`QUEUED`
+- 根据获取的`BufferSlot`构造出`BufferItem`，并添加到`mQueues`中
+- 最后回调到`frameAvaliableListener.onFrameAvaliable()`通知`消费者`有新数据入队，可以进行获取。
+
+```mermaid
+graph TD
+A(queueBuffer)
+B("获取mSlots[slot].mGraphicBuffer")
+C("mSlots[slot].mBufferState.queue()")
+A-->B
+A--->C
+D("设置BufferState状态为QUEUED")
+D---C
+E("组装BufferItem")
+B-->E
+F{"last<br>.mIsDroppable"}
+E--->F
+G("mQueue.push_back(item)")
+H("mQueue.editItemAt(last)==item")
+F-->|Y| H
+F-->|N| G
+J("frameAvailableListener->onFrameAvailable(item)")
+H-->J
+G-->J
+I("通知消费者有数据入队，消费者可以获取数据")
+K("最后一条数据是否有效？")
+K---F
+I---J
+```
+
+
+
+##### BufferQueueConsumer
+
+> `SurfaceFlinger`通过`BufferQueueConsumer`来获取以及释放`GraphicBuffer`
+
+```cpp
+//native/libs/gui/BufferQueueConsumer.cpp
+BufferQueueConsumer::BufferQueueConsumer(const sp<BufferQueueCore>& core) :
+    mCore(core),
+    mSlots(core->mSlots),
+    mConsumerName() {}
+```
+
+`BufferQueueConsumer`只是设置了`mCore`和`mSlots`的两个参数。
+
+###### acquireBuffer
+
+> `消费者`向`BufferQueue`申请`已被填充数据的GraphicBuffer`进行消费。
+>
+> 标记`BufferSlot`的`BufferState`标记为`ACQUIRED`。
+
+```cpp
+//native/libs/gui/BufferQueueConsumer.cpp
+status_t BufferQueueConsumer::acquireBuffer(BufferItem* outBuffer,
+        nsecs_t expectedPresent, uint64_t maxFrameNumber) {
+ ... 
+      //生产者注册回调
+       sp<IProducerListener> listener;
+   //如果队列为空则返回空
+        if (mCore->mQueue.empty() && !sharedBufferAvailable) {
+            return NO_BUFFER_AVAILABLE;
+        }
+    //获取队列的第一条数据
+        BufferQueueCore::Fifo::iterator front(mCore->mQueue.begin()); 
+        if (sharedBufferAvailable && mCore->mQueue.empty()) {
+            //共享Buffer模式
+        } else {
+            //从front获取对应的slot
+            slot = front->mSlot;
+            *outBuffer = *front;
+        }
+  ...
+                if (!front->mIsStale) {
+                    // Front buffer is still in mSlots, so mark the slot as free
+                    mSlots[front->mSlot].mBufferState.freeQueued();
+                  //存在已经被消费的BufferSlot
+                    listener = mCore->mConnectedProducerListener;                  
+                }
+        if (!outBuffer->mIsStale) {
+            mSlots[slot].mAcquireCalled = true;
+            // Don't decrease the queue count if the BufferItem wasn't
+            // previously in the queue. This happens in shared buffer mode when
+            // the queue is empty and the BufferItem is created above.
+            if (mCore->mQueue.empty()) {
+                mSlots[slot].mBufferState.acquireNotInQueue();
+            } else {
+              //更新BufferState 为 ACQUIRED
+                mSlots[slot].mBufferState.acquire();
+            }
+            mSlots[slot].mFence = Fence::NO_FENCE;
+        }    
+       //从队列中移除
+        mCore->mQueue.erase(front);   
+  
+      if (listener != NULL) {
+        for (int i = 0; i < numDroppedBuffers; ++i) {
+          //回调生产者 有数据被消费
+            listener->onBufferReleased();
+        }
+    }
+}
+```
+
+`acquireBuffer`主要有以下几步：
+
+- 从`mQueue`中获取第一个元素
+- 改变第一个`BufferSlot`的`BufferState`为`ACQUIRED`
+- 再将该`BufferSlot`从`mQueue`中移除
+- 如果存在已被消费的数据则回调`onBufferReleased`
+
+```mermaid
+graph TB
+A("acquireBuffer()")
+C{"mQueue.empty()"}
+A-->C
+D("NO_BUFFER_AVALIABLE")
+C--->|Y| D
+E("front = <br>mCore->mQueue.begin()")
+F("获取第一条BufferSlot")
+F---E
+C--->|N| E
+G("mSlots[slot].mBufferState.acquire()")
+H("slot = front->mSlot")
+E-->H
+H--->G
+J("设置BufferSlot的BufferState状态为ACQUIRED")
+J---G
+K("mCore->mQueue.erase(front)")
+L("从mQueue中移除front")
+L---K
+G-->K
+
+```
+
+
+
+
+
+###### releaseBuffer
+
+> `消费者`消费完毕后，通知`BufferQueueCore`已消费完毕，并返回`空GraphicBuffer`到`BufferQueue`
+>
+> 标记`BufferSlot`的`BufferState`标记为`FREE`。
+
+```cpp
+//native/libs/gui/BufferQueueConsumer.cpp
+status_t BufferQueueConsumer::releaseBuffer(int slot, uint64_t frameNumber,
+        const sp<Fence>& releaseFence, EGLDisplay eglDisplay,
+        EGLSyncKHR eglFence) {
+  ...
+    sp<IProducerListener> listener;
+    { // Autolock scope
+      ...
+        mSlots[slot].mEglDisplay = eglDisplay;
+        mSlots[slot].mEglFence = eglFence;
+        mSlots[slot].mFence = releaseFence;
+      //设置 BufferSlot状态为 FREE
+        mSlots[slot].mBufferState.release();     
+      ...
+        if (!mSlots[slot].mBufferState.isShared()) {
+            mCore->mActiveBuffers.erase(slot);
+          //将BufferSlot放入 mFreeBuffers
+            mCore->mFreeBuffers.push_back(slot);
+        }
+
+        listener = mCore->mConnectedProducerListener;        
+    }
+    if (listener != NULL) {
+      //通知生产者有数据被消费
+        listener->onBufferReleased();
+    }  
+}
+```
+
+`releaseBuffer`主要有以下几步：
+
+- 将使用完的`BufferSlot`的`BufferState`转换为`FREE`
+- 被消费完的`BufferSlot`的`index`放回到`mFreeBuffers`供后续的`生产者`继续获取
+- 最后通知生产者有数据被消费，生产者可以准备生产数据。
+
+
+
+```mermaid
+graph TD
+A("releaseBuffer()")
+B("mSlots[slot].mBufferState.release()")
+C("mFreeBuffers.push_back(slot)")
+D("listener->onBufferReleased")
+
+A--->B
+B--->C
+C--->D
+
+E("设置BufferSlot状态为FREE")
+F("存入mFreeBuffers待使用")
+G("通知 生产者 数据被消费，可以准备生产数据")
+
+E---B
+F---C
+G---D
+```
+
+
+
+
+
+##### 总结
+
+![BufferSlot状态转变过程](/images/BufferSlot状态转变过程.jpg)
+
+#### GraphicBuffer的创建
+
+> `GraphicBuffer`是基本单元，所有的交互都是基于它进行的。
+
+```cpp
+//native/libs/gui/BufferQueueProducer.cpp
+status_t BufferQueueProducer::dequeueBuffer(int* outSlot, sp<android::Fence>* outFence,
+                                            uint32_t width, uint32_t height, PixelFormat format,
+                                            uint64_t usage, uint64_t* outBufferAge,
+                                            FrameEventHistoryDelta* outTimestamps) {
+  ...
+        sp<GraphicBuffer> graphicBuffer = new GraphicBuffer(
+                width, height, format, BQ_LAYER_COUNT, usage,
+                {mConsumerName.string(), mConsumerName.size()});
+  ...
+  
+}
+```
+
+主要在`dequeueBuffer`进行的创建过程。在`生产者`的使用场景下
+
+```cpp
+//native/libs/ui/GraphicBuffer.cpp
+GraphicBuffer::GraphicBuffer(uint32_t inWidth, uint32_t inHeight,
+        PixelFormat inFormat, uint32_t inLayerCount, uint64_t usage, std::string requestorName)
+    : GraphicBuffer()
+{
+    mInitCheck = initWithSize(inWidth, inHeight, inFormat, inLayerCount,
+            usage, std::move(requestorName));
+}
+
+status_t GraphicBuffer::initWithSize(uint32_t inWidth, uint32_t inHeight,
+        PixelFormat inFormat, uint32_t inLayerCount, uint64_t inUsage,
+        std::string requestorName)
+{
+  //GraphicBuffer的内存分配器
+    GraphicBufferAllocator& allocator = GraphicBufferAllocator::get();
+    uint32_t outStride = 0;
+  //为GraphicBuffer分配内存
+    status_t err = allocator.allocate(inWidth, inHeight, inFormat, inLayerCount,
+            inUsage, &handle, &outStride, mId,
+            std::move(requestorName));
+    if (err == NO_ERROR) {
+        mBufferMapper.getTransportSize(handle, &mTransportNumFds, &mTransportNumInts);
+
+        width = static_cast<int>(inWidth);
+        height = static_cast<int>(inHeight);
+        format = inFormat;
+        layerCount = inLayerCount;
+        usage = inUsage;
+        usage_deprecated = int(usage);
+        stride = static_cast<int>(outStride);
+    }
+    return err;
+}
+```
+
+`GraphicBuffer`创建过程主要执行了以下几步：
+
+- 获取`GraphicBufferAllocator`，这个是`GraphicBuffer`的内存分配器
+- 再调用`allocate()`进行内存分配
+
+其中`GraphicBufferAllocator`的实现如下：
+
+```cpp
+//native/libs/ui/GraphicBufferAllocator.cpp
+GraphicBufferAllocator::GraphicBufferAllocator()
+  : mMapper(GraphicBufferMapper::getInstance()),
+    mAllocator(std::make_unique<Gralloc2::Allocator>(
+                mMapper.getGrallocMapper()))
+{
+}
+
+status_t GraphicBufferAllocator::allocate(uint32_t width, uint32_t height,
+        PixelFormat format, uint32_t layerCount, uint64_t usage,
+        buffer_handle_t* handle, uint32_t* stride,
+        uint64_t /*graphicBufferId*/, std::string requestorName)
+{
+    ATRACE_CALL();
+
+    // make sure to not allocate a N x 0 or 0 x N buffer, since this is
+    // allowed from an API stand-point allocate a 1x1 buffer instead.
+    if (!width || !height)
+        width = height = 1;
+
+    // Ensure that layerCount is valid.
+    if (layerCount < 1)
+        layerCount = 1;
+
+    Gralloc2::IMapper::BufferDescriptorInfo info = {};
+    info.width = width;
+    info.height = height;
+    info.layerCount = layerCount;
+    info.format = static_cast<Gralloc2::PixelFormat>(format);
+    info.usage = usage;
+
+    Gralloc2::Error error = mAllocator->allocate(info, stride, handle);
+    if (error == Gralloc2::Error::NONE) {
+        Mutex::Autolock _l(sLock);
+        KeyedVector<buffer_handle_t, alloc_rec_t>& list(sAllocList);
+        uint32_t bpp = bytesPerPixel(format);
+        alloc_rec_t rec;
+        rec.width = width;
+        rec.height = height;
+        rec.stride = *stride;
+        rec.format = format;
+        rec.layerCount = layerCount;
+        rec.usage = usage;
+        rec.size = static_cast<size_t>(height * (*stride) * bpp);
+        rec.requestorName = std::move(requestorName);
+        list.add(*handle, rec);
+
+        return NO_ERROR;
+    } else {
+        ALOGE("Failed to allocate (%u x %u) layerCount %u format %d "
+                "usage %" PRIx64 ": %d",
+                width, height, layerCount, format, usage,
+                error);
+        return NO_MEMORY;
+    }
+}
+```
+
+//TODO 对`GraphicBufferAllocator`进行分析
+
+
+
+
+
+### 图形缓冲区在`图像生产者`的使用
+
+> Android中的`图像生产者`如`Skia、OpenGL、Vulkan`。负责**将绘制的数据放在图形缓冲区中**
+
+Android中的图像绘制分为以下两种，主要区别在于**是否开启硬件加速**。
+
+未开启就是`软件绘制`，若开启就执行`硬件绘制`流程。
+
+
+
+#### 软件绘制
+
+`软件绘制`的入口函数位于`ViewRootImpl`
+
+```java
+//ViewRootImpl.java
+    private boolean drawSoftware(Surface surface, AttachInfo attachInfo, int xoff, int yoff,
+            boolean scalingRequired, Rect dirty, Rect surfaceInsets) {
+        final Canvas canvas;
+           //从surface获取Canvas
+            canvas = mSurface.lockCanvas(dirty);
+           //在canvas上进行绘制
+            mView.draw(canvas);
+           //将绘制内容提交给SF进行合成
+            surface.unlockCanvasAndPost(canvas);      
+      
+    }
+```
+
+`drawSoftware()`主要分为以下几步：
+
+```mermaid
+graph LR
+classDef someclass fill:#f96;
+A("drawSoftware()<br>软件绘制")
+B("lockCanvas()<br>获取Canvas")
+C("draw(canvas)<br>在Canvas进行绘制")
+D("unlockCanvasAndPost()<br>提交绘制完成的GraphicBuffer<br>到SurfaceFlinger进行合成")
+A-->B:::someclass
+A-->C
+A-->D:::someclass
+```
+
+
+
+##### lockCanvas
+
+> 获取`Canvas`
+
+```java
+//Surface.java
+    public Canvas lockCanvas(Rect inOutDirty)
+            throws Surface.OutOfResourcesException, IllegalArgumentException {
+        synchronized (mLock) {
+            checkNotReleasedLocked();
+            if (mLockedObject != 0) {
+                throw new IllegalArgumentException("Surface was already locked");
+            }
+            mLockedObject = nativeLockCanvas(mNativeObject, mCanvas, inOutDirty);
+            return mCanvas;
+        }
+    }
+```
+
+```cpp
+//base/core/jni/android_view_Surface.cpp
+static jlong nativeLockCanvas(JNIEnv* env, jclass clazz,
+        jlong nativeObject, jobject canvasObj, jobject dirtyRectObj) {
+    sp<Surface> surface(reinterpret_cast<Surface *>(nativeObject));
+  ...
+    Rect dirtyRect(Rect::EMPTY_RECT);
+    Rect* dirtyRectPtr = NULL;
+
+    if (dirtyRectObj) {
+        dirtyRect.left   = env->GetIntField(dirtyRectObj, gRectClassInfo.left);
+        dirtyRect.top    = env->GetIntField(dirtyRectObj, gRectClassInfo.top);
+        dirtyRect.right  = env->GetIntField(dirtyRectObj, gRectClassInfo.right);
+        dirtyRect.bottom = env->GetIntField(dirtyRectObj, gRectClassInfo.bottom);
+        dirtyRectPtr = &dirtyRect;
+    }
+
+    ANativeWindow_Buffer outBuffer;
+  //获取绘制图形的GraphicBuffer
+    status_t err = surface->lock(&outBuffer, dirtyRectPtr);  
+  ...
+    SkImageInfo info = SkImageInfo::Make(outBuffer.width, outBuffer.height,
+                                         convertPixelFormat(outBuffer.format),
+                                         outBuffer.format == PIXEL_FORMAT_RGBX_8888
+                                                 ? kOpaque_SkAlphaType : kPremul_SkAlphaType,
+                                         GraphicsJNI::defaultColorSpace());
+
+    SkBitmap bitmap;
+    ssize_t bpr = outBuffer.stride * bytesPerPixel(outBuffer.format);
+    bitmap.setInfo(info, bpr);
+    if (outBuffer.width > 0 && outBuffer.height > 0) {
+        bitmap.setPixels(outBuffer.bits);
+    } else {
+        // be safe with an empty bitmap.
+        bitmap.setPixels(NULL);
+    }
+   //新建Canvas对象
+    Canvas* nativeCanvas = GraphicsJNI::getNativeCanvas(env, canvasObj);
+    nativeCanvas->setBitmap(bitmap);    
+  
+    sp<Surface> lockedSurface(surface);
+    lockedSurface->incStrong(&sRefBaseOwner);
+   //返回最后的Canvas对象
+    return (jlong) lockedSurface.get();
+}
+```
+
+主要通过`surface#lock`获取`GraphicBuffer`
+
+```cpp
+//native/libs/gui/Surface.cpp
+status_t Surface::lock(
+        ANativeWindow_Buffer* outBuffer, ARect* inOutDirtyBounds)
+{
+  ...
+    status_t err = dequeueBuffer(&out, &fenceFd);
+  ...
+  
+}
+```
+
+最后通过`dequeueBuffer`获取`GraphicBuffer`
+
+```cpp
+//native/libs/gui/Surface.cpp
+int Surface::dequeueBuffer(android_native_buffer_t** buffer, int* fenceFd) {
+  ...
+    //申请一块GraphicBuffer
+    status_t result = mGraphicBufferProducer->dequeueBuffer(&buf, &fence, reqWidth, reqHeight,
+                                                            reqFormat, reqUsage, &mBufferAge,
+                                                            enableFrameTimestamps ? &frameTimestamps
+                                                                                  : nullptr);    
+  ...
+    if ((result & IGraphicBufferProducer::BUFFER_NEEDS_REALLOCATION) || gbuf == nullptr) {
+        if (mReportRemovedBuffers && (gbuf != nullptr)) {
+            mRemovedBuffers.push_back(gbuf);
+        }
+      //映射 GraphicBuffer
+        result = mGraphicBufferProducer->requestBuffer(buf, &gbuf);
+        if (result != NO_ERROR) {
+            ALOGE("dequeueBuffer: IGraphicBufferProducer::requestBuffer failed: %d", result);
+            mGraphicBufferProducer->cancelBuffer(buf, fence);
+            return result;
+        }
+    }    
+  
+}
+```
+
+主要执行了以下两步：
+
+1. `dequeueBuffer`：申请`GraphicBuffer`
+2. `requestBuffer`：使用`GraphicBuffer`
+
+其中`requestBuffer`通过**共享内存**方式获取`GraphicBuffer`数据
+
+```mermaid
+graph TB
+
+ E("nativeLockCanvas()")
+ F("Surface->lock()")
+ G("Surface::dequeueBuffer()<br>获取待绘制的GraphicBuffer")
+ H("mGraphicProducer<br>.requestBuffer()<br>使用GraphicBuffer")
+ E-->F
+ F-->G
+ G-->J
+ J-->H
+J("mGraphicProducer<br>.dequeueBuffer()")
+
+```
+
+
+
+
+
+##### draw(Canvas)
+
+> 在Canvas上绘制图形
+
+
+
+##### unlockCanvasAndPost()
+
+> 提交绘制完成的GraphicBuffer到SurfaceFlinger进行合成
+
+```java
+//Surface.java
+    public void unlockCanvasAndPost(Canvas canvas) {
+        synchronized (mLock) {
+            checkNotReleasedLocked();
+
+            if (mHwuiContext != null) {
+                mHwuiContext.unlockAndPost(canvas);
+            } else {
+              //软件绘制提交
+                unlockSwCanvasAndPost(canvas);
+            }
+        }
+    }
+
+    private void unlockSwCanvasAndPost(Canvas canvas) {
+        try {
+            nativeUnlockCanvasAndPost(mLockedObject, canvas);
+        } finally {
+            nativeRelease(mLockedObject);
+            mLockedObject = 0;
+        }
+    }
+```
+
+```cpp
+//base/core/jni/android_view_Surface.cpp
+static void nativeUnlockCanvasAndPost(JNIEnv* env, jclass clazz,
+        jlong nativeObject, jobject canvasObj) {
+    sp<Surface> surface(reinterpret_cast<Surface *>(nativeObject));
+    if (!isSurfaceValid(surface)) {
+        return;
+    }
+
+    // detach the canvas from the surface
+    Canvas* nativeCanvas = GraphicsJNI::getNativeCanvas(env, canvasObj);
+    nativeCanvas->setBitmap(SkBitmap());
+
+    // unlock surface
+    status_t err = surface->unlockAndPost();
+    if (err < 0) {
+        doThrowIAE(env);
+    }
+}
+```
+
+继续通过`Surface#unlockAndPost()`执行提交过程
+
+```cpp
+//native/libs/gui/Surface.cpp
+status_t Surface::unlockAndPost()
+{
+    if (mLockedBuffer == 0) {
+        ALOGE("Surface::unlockAndPost failed, no locked buffer");
+        return INVALID_OPERATION;
+    }
+
+    int fd = -1;
+    status_t err = mLockedBuffer->unlockAsync(&fd);
+
+    err = queueBuffer(mLockedBuffer.get(), fd);
+    return err;
+}
+
+int Surface::queueBuffer(android_native_buffer_t* buffer, int fenceFd) {
+  ...
+    //根据传入的GraphicBufer 获取对应的 BufferSlot位置
+    int i = getSlotFromBufferLocked(buffer);
+  ...
+    //把获取到的数据 放回到BufferQueue中
+    status_t err = mGraphicerProducer->queueBuffer(i, input, &output);    
+  ...
+}
+```
+
+最后通过`queueBuffer`提交`GraphicBuffer`。
+
+```mermaid
+graph TB
+A("unlockCanvasAndPost()")
+B("unlockSwCanvasAndPost()")
+C("Surface::unlockAndPost")
+A-->B
+B--"nativeUnlockCanvasAndPost()"-->C
+D("Surface::queueBuffer")
+C-->D
+E("i = <br>getSlotFromBufferLocked()")
+G("根据传入的Buffer获取对应mSlots中的index")
+G---E
+D--->E
+F("mGraphicProducer<br>.queueBuffer(i)")
+H("通过queueBuffer放回数据")
+E-->F
+H---F
+```
+
+#### 硬件绘制
+
+具体执行流程可以参考{% post_link Android-硬件加速%}
+
+```cpp
+//base/libs/hwui/renderthread/CanvasContext.cpp
+void CanvasContext::draw() {
+  ...
+    //获取GraphicBuffer
+    Frame frame = mRenderPipeline->getFrame();
+  ...
+    //绘制图形到 GraphicBuffer上
+    bool drew = mRenderPipeline->draw(frame, windowDirty, dirty, mLightGeometry, &mLayerUpdateQueue,
+                                      mContentDrawBounds, mOpaque, mWideColorGamut, mLightInfo,
+                                      mRenderNodes, &(profiler()));    
+  ...
+    //提交绘制完成的GraphicBuffer到 SurfaceFlinger进行合成
+    bool requireSwap = false;
+    bool didSwap =
+            mRenderPipeline->swapBuffers(frame, drew, windowDirty, mCurrentFrameInfo, &requireSwap);    
+  
+}
+```
+
+##### OpenGLPipeline#getFrame
+
+> 从`BufferQueue`获取`GraphicBuffer`准备绘制图形
+
+```cpp
+//base/libs/hwui/renderthread/OpenGLPipeline.cpp
+Frame OpenGLPipeline::getFrame() {
+    return mEglManager.beginFrame(mEglSurface);
+}
+
+//base/libs/hwui/renderthread/EglManager.cpp
+Frame EglManager::beginFrame(EGLSurface surface) {
+    makeCurrent(surface);  
+}
+
+bool EglManager::makeCurrent(EGLSurface surface, EGLint* errOut) {
+  ...
+    if (!eglMakeCurrent(mEglDisplay, surface, surface, mEglContext)) {
+        if (errOut) {
+            *errOut = eglGetError();
+        }
+    }
+    mCurrentSurface = surface; 
+  ...
+}
+
+//native/opengl/libagl/egl.cpp
+EGLBoolean eglMakeCurrent(  EGLDisplay dpy, EGLSurface draw,
+                            EGLSurface read, EGLContext ctx)
+{
+  ...
+    if (ctx == EGL_NO_CONTEXT) {
+        // if we're detaching, we need the current context
+        current_ctx = (EGLContext)getGlThreadSpecific();
+    } else {
+        egl_surface_t* d = (egl_surface_t*)draw;
+        egl_surface_t* r = (egl_surface_t*)read;
+    }  
+  ...
+            if (d) {
+              //创建GraphicBuffer
+                if (d->connect() == EGL_FALSE) {
+                    return EGL_FALSE;
+                }
+                d->ctx = ctx;
+                d->bindDrawSurface(gl);
+            }
+  ...
+}
+
+EGLBoolean egl_window_surface_v2_t::connect() 
+{
+      // dequeue a buffer
+    int fenceFd = -1;
+   //Surface是 ANativeWindow 的子类，实际调用的就是Surface#dequeueBuffer
+    if (nativeWindow->dequeueBuffer(nativeWindow, &buffer,
+            &fenceFd) != NO_ERROR) {
+        return setError(EGL_BAD_ALLOC, EGL_FALSE);
+    }
+}
+```
+
+`OpenGLPipeline#getFrame()`最后通过`Surface#dequeueBuffer()`获取`GraphicBuffer`
+
+##### OpenGLPipeline#draw
+
+> 将图像绘制到获取的`GraphicBuffer`上
+
+##### OpenGLPipeline#swapBuffers
+
+> 
+
+```cpp
+//base/libs/hwui/renderthread/OpenGLPipeline.cpp
+bool OpenGLPipeline::swapBuffers(const Frame& frame, bool drew, const SkRect& screenDirty,
+                                 FrameInfo* currentFrameInfo, bool* requireSwap) {
+
+  ...
+    if (*requireSwap && (CC_UNLIKELY(!mEglManager.swapBuffers(frame, screenDirty)))) {
+        return false;
+    }
+
+    return *requireSwap;
+}
+```
+
+在向下执行到`EglManager#swapBuffers()`
+
+```cpp
+//base/libs/hwui/renderthread/EglManager.cpp
+bool EglManager::swapBuffers(const Frame& frame, const SkRect& screenDirty) {
+    if (CC_UNLIKELY(Properties::waitForGpuCompletion)) {
+        ATRACE_NAME("Finishing GPU work");
+        fence();
+    }
+
+    EGLint rects[4];
+    frame.map(screenDirty, rects);
+    eglSwapBuffersWithDamageKHR(mEglDisplay, frame.mSurface, rects, screenDirty.isEmpty() ? 0 : 1);
+
+    return false;
+}
+
+//native/opengl/libs/EGL/eglApi.cpp
+EGLBoolean eglSwapBuffersWithDamageKHR(EGLDisplay dpy, EGLSurface draw,
+        EGLint *rects, EGLint n_rects)
+{
+  ...
+    if (n_rects == 0) {
+        return s->cnx->egl.eglSwapBuffers(dp->disp.dpy, s->surface);
+    }
+  ...
+    if (s->cnx->egl.eglSwapBuffersWithDamageKHR) {
+      //调用自身
+        return s->cnx->egl.eglSwapBuffersWithDamageKHR(dp->disp.dpy, s->surface,
+                rects, n_rects);
+    } else {
+        return s->cnx->egl.eglSwapBuffers(dp->disp.dpy, s->surface);
+    }  
+ 
+}
+
+//native/opengl/libagl/egl.cpp
+EGLBoolean eglSwapBuffers(EGLDisplay dpy, EGLSurface draw)
+{
+    // post the surface
+    d->swapBuffers();
+   ...
+    return EGL_TRUE;
+}
+
+EGLBoolean egl_window_surface_v2_t::swapBuffers()
+{
+  ...
+    unlock(buffer);
+    previousBuffer = buffer;
+  //提交GraphicBuffer
+    nativeWindow->queueBuffer(nativeWindow, buffer, -1);
+    buffer = 0;
+  ...
+    //重新申请 GraphicBuffer
+    if (nativeWindow->dequeueBuffer(nativeWindow, &buffer, &fenceFd) == NO_ERROR) {
+        sp<Fence> fence(new Fence(fenceFd));
+      ...
+    }
+}
+```
+
+`swapBuffers()`主要执行以下两步：
+
+- `Surface#queueBuffer`：提交`GraphicBuffer`到`BufferQueue`中
+- `Surface#dequeueBuffer`：从`BufferQueue`中获取空闲的`BufferQueue`并获取其中的`GraphicBuffer`进行图像绘制
+
+//TODO 流程图
+
+
+
+#### 总结
+
+图像缓冲区的使用场景主要有两种：`软件绘制`和`硬件绘制`。
+
+主要执行以下几步：
+
+1. `dequeueBuffer`获取`GraphicBuffer`
+2. 进行`GraphicBuffer`内存绑定操作
+   - 软件绘制：`GBQ#requestBuffer`
+   - 硬件绘制：`egl#lock`
+3. 在`GraphicBuffer`进行图像绘制
+4. `queueBuffer`提交`GraphicBuffer`到`BufferQueue`中
+
+
+
+### 图形缓冲区在`图像消费者`的使用
+
+> `图像消费者`主要就是`SurfaceFlinger`
+
+主要执行流程参考[Vsync信号相关](#Vsync信号相关)
+
+收到`Vsync信号`会回调到`SurfaceFlinger`中
+
+```cpp
+//native/services/surfaceflinger/SurfaceFlinger.cpp
+void SurfaceFlinger::onMessageReceived(int32_t what) {
+    switch (what) {
+        case MessageQueue::INVALIDATE: {
+          //判断是否有丢帧
+            bool frameMissed = !mHadClientComposition &&
+                    mPreviousPresentFence != Fence::NO_FENCE &&
+                    (mPreviousPresentFence->getSignalTime() ==
+                            Fence::SIGNAL_TIME_PENDING);
+            if (frameMissed) {
+                mTimeStats.incrementMissedFrames();
+                if (mPropagateBackpressure) {
+                  //需要执行 申请Vsync信号过程
+                    signalLayerUpdate();
+                    break;
+                }
+            }
+
+          //需要重新刷新
+            bool refreshNeeded = handleMessageTransaction();
+            refreshNeeded |= handleMessageInvalidate();
+            refreshNeeded |= mRepaintEverything;
+            if (refreshNeeded) {
+              //执行刷新过程
+                signalRefresh();
+            }
+            break;
+        }
+        case MessageQueue::REFRESH: {
+            handleMessageRefresh();
+            break;
+        }
+    }  
+}
+```
+
+`handleMessageRefresh`流程在上面的[处理Vsync](#处理Vsync)已经介绍过，包括`signalLayerUpdate()`以及`signalRefresh()`都有相关的介绍。
+
+在`SurfaceFlinger`与`BufferQueue`相关的操作都位于`handleMessageInvalidate()`中
+
+#### SF#handleMessageInvalidate
+
+```cpp
+bool SurfaceFlinger::handleMessageInvalidate() {
+    return handlePageFlip();
+}
+
+bool SurfaceFlinger::handlePageFlip()
+{
+  ...
+    for (auto& layer : mLayersWithQueuedFrames) {
+        const Region dirty(layer->latchBuffer(visibleRegions, latchTime));
+        layer->useSurfaceDamage();
+        invalidateLayerStack(layer, dirty);
+        if (layer->isBufferLatched()) {
+            newDataLatched = true;
+        }
+    }
+  ...
+}
+```
+
+其中`layer`的实现为`BufferLayer`
+
+```cpp
+//native/services/surfaceflinger/BufferLayer.cpp
+Region BufferLayer::latchBuffer(bool& recomputeVisibleRegions, nsecs_t latchTime) {
+  ...
+    bool queuedBuffer = false;
+    status_t updateResult =
+            mConsumer->updateTexImage(&r, mFlinger->mPrimaryDispSync,
+                                                    &mAutoRefresh, &queuedBuffer,
+                                                    mLastFrameNumberReceived);  
+  ...
+}
+
+
+```
+
+`mConsumer`指的对象为`BufferLayerConsumer`
+
+##### BufferLayerConsumer#updateTexImage
+
+```cpp
+//native/services/surfaceflinger/BufferLayerConsumer.cpp
+status_t BufferLayerConsumer::updateTexImage(BufferRejecter* rejecter, const DispSync& dispSync,
+                                             bool* autoRefresh, bool* queuedBuffer,
+                                             uint64_t maxFrameNumber) {
+  ...
+    BufferItem item;
+
+    // Acquire the next buffer.
+    // In asynchronous mode the list is guaranteed to be one buffer
+    // deep, while in synchronous mode we use the oldest buffer.
+    // 从BufferQueue获取已绘制完成的 GraphicBuffer
+    status_t err = acquireBufferLocked(&item, computeExpectedPresent(dispSync), maxFrameNumber);
+  
+    // Release the previous buffer.
+    //释放已经使用完成的 GraphicBuffer并返回到BufferQueue
+    err = updateAndReleaseLocked(item, &mPendingRelease);
+}
+```
+
+`updateTexImage`主要执行以下两步：
+
+###### acquireBufferLocked
+
+```cpp
+status_t BufferLayerConsumer::acquireBufferLocked(BufferItem* item, nsecs_t presentWhen,
+                                                  uint64_t maxFrameNumber) {
+    status_t err = ConsumerBase::acquireBufferLocked(item, presentWhen, maxFrameNumber);
+    return NO_ERROR;
+}
+
+//native/libs/gui/ConsumerBase.cpp
+status_t ConsumerBase::acquireBufferLocked(BufferItem *item,
+        nsecs_t presentWhen, uint64_t maxFrameNumber) {
+   
+    status_t err = mConsumer->acquireBuffer(item, presentWhen, maxFrameNumber);
+
+    if (item->mGraphicBuffer != NULL) {
+        if (mSlots[item->mSlot].mGraphicBuffer != NULL) {
+            freeBufferLocked(item->mSlot);
+        }
+        mSlots[item->mSlot].mGraphicBuffer = item->mGraphicBuffer;
+    }
+
+    mSlots[item->mSlot].mFrameNumber = item->mFrameNumber;
+    mSlots[item->mSlot].mFence = item->mFence;
+
+    return OK;
+}
+```
+
+最后是通过`acquireBuffer`从`BufferQueue`获取`已绘制完成的GraphicBuffer`
+
+###### updateAndReleaseLocked
+
+```cpp
+status_t BufferLayerConsumer::updateAndReleaseLocked(const BufferItem& item,
+                                                     PendingRelease* pendingRelease) {
+  ...
+    if (mCurrentTexture != BufferQueue::INVALID_BUFFER_SLOT) {
+        if (pendingRelease == nullptr) {
+            status_t status =
+                    releaseBufferLocked(mCurrentTexture, mCurrentTextureImage->graphicBuffer());
+        }
+    }
+  ...
+}
+
+//native/libs/gui/ConsumerBase.cpp
+status_t ConsumerBase::releaseBufferLocked(
+        int slot, const sp<GraphicBuffer> graphicBuffer,
+        EGLDisplay display, EGLSyncKHR eglFence) {
+  ...
+    status_t err = mConsumer->releaseBuffer(slot, mSlots[slot].mFrameNumber,
+            display, eglFence, mSlots[slot].mFence);
+    if (err == IGraphicBufferConsumer::STALE_BUFFER_SLOT) {
+      //重置BufferSlot数据
+        freeBufferLocked(slot);
+    }
+  ...
+}
+```
+
+最后是通过`releaseBuffer()`把`使用完成的GraphicBuffer`返回到`BufferQueue`中
+
+
+
+## 参考链接
+
+[SurfaceFlinger 解读](https://androidperformance.com/2020/02/14/Android-Systrace-SurfaceFlinger/)
+
+[掌握Android图像显示原理-上](https://blog.csdn.net/tyuiof/article/details/108434845)
+
