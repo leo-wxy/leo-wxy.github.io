@@ -528,7 +528,7 @@ public class ViewStubBindingAdapter {
 > 
 > - `@InverseMethod`
 > 
-> 找到以上注解类后，将其保存在`-setter_store.bin`文件中
+> 找到以上注解类后，将解析后的信息放在`BindingAdapterStore`中，最后通过Json格式将其保存在`-setter_store.json`文件中
 
 
 
@@ -634,13 +634,427 @@ private void addBindingAdapters(RoundEnvironment roundEnv, ProcessingEnvironment
 
 ##### SetterStore.addBindingAdapter
 
-```java
+###### 单入参处理
 
+```java 
+    public void addBindingAdapter(ProcessingEnvironment processingEnv, String attribute,
+            ExecutableElement bindingMethod, boolean takesComponent) {
+        attribute = stripNamespace(attribute);
+
+        List<? extends VariableElement> parameters = bindingMethod.getParameters();
+        final int viewIndex = takesComponent ? 1 : 0;
+        TypeMirror viewType = eraseType(processingEnv, parameters.get(viewIndex).asType());
+        String view = getQualifiedName(viewType);
+        TypeMirror parameterType = eraseType(processingEnv, parameters.get(viewIndex + 1).asType());
+        String value = getQualifiedName(parameterType);
+
+        AccessorKey key = new AccessorKey(view, value);
+        MethodDescription desc = new MethodDescription(bindingMethod, 1, takesComponent);
+
+        mStore.addBindingAdapter(attribute, key, desc);
+    }
 ```
+
+相关的两个类为`AccessorKey`、`MethodDescription`，决定在`-setter_store.json`保存的数据格式
+
+```java
+//SetterStore.java 
+    static class AccessorKey implements Serializable, Comparable<AccessorKey> {
+        //作用的View类型
+        public final String viewType;
+        //设置的参数类型
+        public final String valueType;
+
+        public AccessorKey(String viewType, String valueType) {
+            this.viewType = viewType;
+            this.valueType = valueType;
+        }
+      ...
+    }
+
+    static class MethodDescription implements Serializable, Comparable<MethodDescription> {
+        //注解方法所在类
+        public final String type;
+        //注解方法名
+        public final String method;
+        
+        public final boolean requiresOldValue;
+
+        public final boolean isStatic;
+
+        public final String componentClass;
+
+        public MethodDescription(String type, String method) {
+            this.type = type;
+            this.method = method;
+            this.requiresOldValue = false;
+            this.isStatic = true;
+            this.componentClass = null;
+        }
+      ...
+    }
+```
+
+
+
+对应生成的json格式
+
+```json
+  "adapterMethods": {
+    "setShape": [
+      [
+        {
+          "viewType": "android.view.View",
+          "valueType": "com.example.behaviordemo.bindingadapter.ShapeBuilder"
+        },
+        {
+          "type": "com.example.behaviordemo.bindingadapter.ViewExpressionKt",
+          "method": "setShape",
+          "requiresOldValue": false,
+          "isStatic": true,
+          "componentClass": null
+        }
+      ]
+    ]
+  }
+```
+
+
+
+###### 多入参处理
+
+```java
+    public void addBindingAdapter(ProcessingEnvironment processingEnv, String[] attributes,
+            ExecutableElement bindingMethod, boolean takesComponent, boolean requireAll) {
+        L.d("STORE add multi-value BindingAdapter %d %s", attributes.length, bindingMethod);
+        MultiValueAdapterKey key = new MultiValueAdapterKey(processingEnv, bindingMethod,
+                attributes, takesComponent, requireAll);
+        testRepeatedAttributes(key, bindingMethod);
+        MethodDescription methodDescription = new MethodDescription(bindingMethod,
+                attributes.length, takesComponent);
+        mStore.addMultiValueAdapter(key, methodDescription);
+    }
+```
+
+相关的两个类为`MethodDescription`、`MultiAttributeSetter`
+
+```java
+//SetterStore.java
+//MethodDescription 与上节一致
+
+    public static class MultiAttributeSetter implements BindingSetterCall {
+        public final String[] attributes;
+        private final MethodDescription mAdapter;
+        private final MethodDescription[] mConverters;
+        private final String[] mCasts;
+        private final MultiValueAdapterKey mKey;
+        private final boolean[] mSupplied;
+    }
+```
+
+
+
+对应生成的json格式
+
+```json
+  "multiValueAdapters": [
+    [
+      {
+        "viewType": "android.widget.TextView",
+        "attributes": [
+          "android:beforeTextChanged",
+          "android:onTextChanged",
+          "android:afterTextChanged",
+          "android:textAttrChanged"
+        ],
+        "parameterTypes": [
+          "androidx.databinding.adapters.TextViewBindingAdapter.BeforeTextChanged",
+          "androidx.databinding.adapters.TextViewBindingAdapter.OnTextChanged",
+          "androidx.databinding.adapters.TextViewBindingAdapter.AfterTextChanged",
+          "androidx.databinding.InverseBindingListener"
+        ],
+        "requireAll": false,
+        "attributeIndices": {
+          "android:afterTextChanged": 2,
+          "android:beforeTextChanged": 0,
+          "android:onTextChanged": 1,
+          "android:textAttrChanged": 3
+        }
+      },
+      {
+        "type": "com.example.behaviordemo.bindingadapter.ViewExpressionKt",
+        "method": "setTextChange",
+        "requiresOldValue": false,
+        "isStatic": true,
+        "componentClass": null
+      }
+    ]
+  ]
+```
+
+生产对应的类后，需要将他们写入json文件进行存储
 
 ##### SetterStore.write
 
+```java
+//SetterStore.java
+    public void write(String projectPackage)
+            throws IOException {
+        Preconditions.checkNotNull(mStore.getCurrentModuleStore(),
+                "current module store should not be null");
+        GenerationalClassUtil.get().write(
+                projectPackage,
+                GenerationalClassUtil.ExtensionFilter.SETTER_STORE_JSON,
+                mStore.getCurrentModuleStore());
+    }
+```
+
+调用`GenerationalClassUtil`的write()写入文件
+
+```java
+    fun write(pkg:String, ext : ExtensionFilter, item: Any) {
+        L.d("writing output file for %s, %s into %s", pkg, ext, outputDir)
+        try {
+            Preconditions.checkNotNull(outputDir,
+                    "incremental out directory should be" + " set to aar output directory.")
+            outputDir!!.mkdirs()
+            val outFile = File(outputDir, "$pkg${ext.ext}")
+            if (ext.isJson) {
+                outFile.bufferedWriter(Charsets.UTF_8).use {
+                    GSON.toJson(item, it)
+                }
+            } else {
+                outFile.outputStream().use {
+                    ObjectOutputStream(it).use {
+                        it.writeObject(item)
+                    }
+                }
+            }
+            L.d("done writing output file %s into %s", pkg, outFile.canonicalPath)
+        } catch (t : Throwable) {
+            L.e(t, "cannot write file $pkg $ext")
+        }
+    }
+```
+
+参数主要有三个
+
+- pkg 插件所在module/project包名
+
+- ext ExtensionFilter 枚举记录的是DataBinding处理后的存储文件名
+
+  ```java
+      enum class ExtensionFilter(val ext : String, val isJson : Boolean) {
+          SETTER_STORE_JSON("-setter_store.json", true),
+          BR("-br.bin", false),
+          LAYOUT("-layoutinfo.bin", false),
+          SETTER_STORE("-setter_store.bin", false);
+      }
+  ```
+
+  
+
+- item 需要转换成json的对象
+
+  在当前场景下记录的对象为 `BindingAdapterStore`
+
+  ```java
+  internal class BindingAdapterStore : Intermediate {
+      @Suppress("unused")
+      @field:SerializedName("version")
+      private var version = 5
+      // Intermediate V1
+      @field:SerializedName("adapterMethods")
+      private val adapterMethods = TreeMap<String, TreeMap<SetterStore.AccessorKey, MethodDescription>>()
+      @field:SerializedName("renamedMethods")
+      private val renamedMethods = TreeMap<String, TreeMap<String, MethodDescription>>()
+      @field:SerializedName("conversionMethods")
+      private val conversionMethods = TreeMap<String, TreeMap<String, MethodDescription>>()
+      @field:SerializedName("untaggableTypes")
+      private val untaggableTypes = TreeMap<String, String>()
+      @field:SerializedName("multiValueAdapters")
+      private val multiValueAdapters = TreeMap<MultiValueAdapterKey, MethodDescription>()
+      // Intermediate V2
+      @field:SerializedName("inverseAdapters")
+      private val inverseAdapters = TreeMap<String, TreeMap<AccessorKey, InverseDescription>>()
+      @field:SerializedName("inverseMethods")
+      private val inverseMethods = TreeMap<String, TreeMap<String, InverseDescription>>()
+      // Intermediate V3
+      @field:SerializedName("twoWayMethods")
+      private val twoWayMethods = TreeMap<InverseMethodDescription, String>()
+  ```
+
+最终生成的`-setter_sotre.json`格式如下，存储路径为`./build/intermediates/data_binding_artifact/debug/kaptDebugKotlin/XX-setter_store.json`
+
+```json
+{
+  "version": 5,
+  "adapterMethods": {},
+  "renamedMethods": {},
+  "conversionMethods": {},
+  "untaggableTypes": {},
+  "multiValueAdapters": {},
+  "inverseAdapters": {},
+  "inverseMethods": {},
+  "twoWayMethods": {},
+  "useAndroidX": true
+}
+```
+
+> 
+
+//todo 流程图
+
+
+
 #### ProcessExpressions
+
+> 检索所有`layout`目录下的xml文件，把这个xml文件拆分为两个文件 //找到xml中最外层为`<layout></layout>`的xml文件?
+>
+> - XX.xml 正常的布局文件 路径`./build/intermediates/incremental/debug/mergeDebugResources/stripped.dir/layout/fragment_test_db.xml`
+> - XX-layout.xml 包含了绑定信息的xml文件 `./build/intermediates/data_binding_layout_info_type_merge/debug/out/fragment_test_db-layout.xml`
+>
+> 生成上述两个文件后，继续生成以下文件
+>
+> - XXBinding.java 抽象类 路径`./build/generated/data_binding_base_class_source_out/debug/out/com/example/behaviordemo/databinding/FragmentTestDbBinding.java`
+> - XXBindingImpl.java 继承自 XXBinding `./build/generated/source/kapt/debug/com/example/behaviordemo/databinding/FragmentTestDbBindingImpl.java`
+
+```java
+public class ProcessExpressions extends ProcessDataBinding.ProcessingStep {
+  ...
+        @Override
+    public boolean onHandleStep(RoundEnvironment roundEnvironment,
+            ProcessingEnvironment processingEnvironment, CompilerArguments args)
+            throws JAXBException {
+        try {
+            ResourceBundle resourceBundle;
+            resourceBundle = new ResourceBundle(
+                    args.getModulePackage(),
+                    ModelAnalyzer.getInstance().libTypes.getUseAndroidX());
+            L.d("creating resource bundle for %s", args.getModulePackage());
+            final List<IntermediateV2> intermediateList;
+            GenClassInfoLog infoLog = null;
+            @Nullable
+            CompilerChef v1CompatChef = null;
+           ...
+            IntermediateV2 mine = createIntermediateFromLayouts(args.getLayoutInfoDir(),
+                    intermediateList);
+            if (mine != null) {
+                if (!args.isEnableV2()) {
+                    mine.updateOverridden(resourceBundle);
+                    intermediateList.add(mine);
+                    saveIntermediate(args, mine);
+                }
+                mine.appendTo(resourceBundle, true);
+            }
+            // generate them here so that bindable parser can read
+            try {
+                writeResourceBundle(resourceBundle, args, infoLog, v1CompatChef);
+            } catch (Throwable t) {
+                L.e(t, "cannot generate view binders");
+            }
+        } catch (LoggedErrorException e) {
+            // This will be logged later
+        }
+        return true;
+    }
+}
+```
+
+##### 收集Xml中expression信息
+
+###### LayoutXmlProcessor.processResources
+
+```java
+//LayoutXmlProcessor.java
+//todo 待确定如何调用到 processResources 方法 通过Debug Gradle Task方式测试
+    private static final FilenameFilter LAYOUT_FOLDER_FILTER = (dir, name)
+            -> name.startsWith("layout");
+
+    private static final FilenameFilter XML_FILE_FILTER = (dir, name)
+            -> name.toLowerCase().endsWith(".xml");
+
+    public boolean processResources(
+            ResourceInput input, boolean isViewBindingEnabled, boolean isDataBindingEnabled)
+            throws ParserConfigurationException, SAXException, XPathExpressionException,
+            IOException {
+               final URI inputRootUri = input.getRootInputFolder().toURI();
+            ProcessFileCallback callback = new ProcessFileCallback() {
+
+            @Override
+            public void processLayoutFile(File file)
+                    throws ParserConfigurationException, SAXException, XPathExpressionException,
+                    IOException {
+                      //处理单个layout文件
+                processSingleFile(RelativizableFile.fromAbsoluteFile(file, null),
+                        convertToOutFile(file), isViewBindingEnabled, isDataBindingEnabled);
+            }
+              ...
+        if (input.isIncremental()) {
+          //增量文件处理
+            processIncrementalInputFiles(input, callback);
+        } else {
+          //全量文件处理
+            processAllInputFiles(input, callback);
+        }
+              ...
+    //处理所有 文件              
+    private static void processAllInputFiles(ResourceInput input, ProcessFileCallback callback)
+            throws IOException, XPathExpressionException, SAXException,
+            ParserConfigurationException {
+        FileUtils.deleteDirectory(input.getRootOutputFolder());
+        //noinspection ConstantConditions
+        for (File firstLevel : input.getRootInputFolder().listFiles()) {
+            if (firstLevel.isDirectory()) {
+                if (LAYOUT_FOLDER_FILTER.accept(firstLevel, firstLevel.getName())) {
+                    callback.processLayoutFolder(firstLevel);
+                    //noinspection ConstantConditions
+                    for (File xmlFile : firstLevel.listFiles(XML_FILE_FILTER)) {
+                        callback.processLayoutFile(xmlFile);
+                    }
+                } else {
+                  ...
+                }
+            } else {
+                callback.processOtherRootFile(firstLevel);
+            }
+
+        }
+    }
+}
+              
+```
+
+
+
+###### LayoutFileParser.parseXml
+
+```java
+```
+
+
+
+##### 生成Layout Xml文件
+
+```java
+//ProcessExpression.java
+IntermediateV2 mine = createIntermediateFromLayouts(args.getLayoutInfoDir(),
+                    intermediateList);
+            if (mine != null) {
+                if (!args.isEnableV2()) {
+                    mine.updateOverridden(resourceBundle);
+                    intermediateList.add(mine);
+                    saveIntermediate(args, mine);
+                }
+                mine.appendTo(resourceBundle, true);
+            }
+```
+
+
+
+##### 生成Binding文件
+
+
 
 #### ProcessBindable
 
