@@ -88,6 +88,40 @@ git clone https://android.googlesource.com/platform/frameworks/data-binding
 
 
 
+```kotlin
+@BindingAdapter("setShape")
+fun setShape(view: View, builder: ShapeBuilder) {
+    view.background = builder.mGradientDrawable
+}
+
+@BindingAdapter("setShape1")
+fun setShape1(view: View, builder: ShapeBuilder) {
+    view.background = builder.mGradientDrawable
+}
+
+@BindingAdapter(
+    value = ["android:beforeTextChanged", "android:onTextChanged", "android:afterTextChanged", "android:textAttrChanged"],
+    requireAll = false
+)
+fun setTextChange(
+    view: TextView,
+    before: TextViewBindingAdapter.BeforeTextChanged,
+    on: TextViewBindingAdapter.OnTextChanged,
+    after: TextViewBindingAdapter.AfterTextChanged,
+    textAttrChanged: InverseBindingListener
+) {
+
+}
+
+@BindingConversion
+fun colorToDrawable(color: String): ColorDrawable {
+    val colorInt = Color.parseColor(color)
+    return ColorDrawable(colorInt)
+}
+```
+
+用于分析生成后的文件
+
 
 
 ### 核心模块
