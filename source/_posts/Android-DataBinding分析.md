@@ -166,6 +166,14 @@ fun colorToDrawable(color: String): ColorDrawable {
 compiler`、 `compilerCommon`、`baseLibrary
 ```
 
+### 资源合并流程
+
+通过Debug GradlePlugin 起点为 `MergeResource`
+
+相关源码：`build-system/gradle-core/src/main/java/com/android/build/gradle/tasks/MergeResources.kt`
+
+
+
 ### 核心类
 
 #### ProcessDataBinding
@@ -963,6 +971,10 @@ public class ProcessExpressions extends ProcessDataBinding.ProcessingStep {
 
 ##### 收集Xml中expression信息
 
+> 主要为了得到`LayoutFileBundle`对象，用于后续生成相关文件
+
+
+
 ###### LayoutXmlProcessor.processResources
 
 ```java
@@ -980,6 +992,12 @@ public class ProcessExpressions extends ProcessDataBinding.ProcessingStep {
             IOException {
                final URI inputRootUri = input.getRootInputFolder().toURI();
             ProcessFileCallback callback = new ProcessFileCallback() {
+              
+            private File convertToOutFile(File file) {
+                final String subPath = toSystemDependentPath(inputRootUri
+                        .relativize(file.toURI()).getPath());
+                return new File(input.getRootOutputFolder(), subPath);
+            }
 
             @Override
             public void processLayoutFile(File file)
@@ -988,6 +1006,12 @@ public class ProcessExpressions extends ProcessDataBinding.ProcessingStep {
                       //处理单个layout文件
                 processSingleFile(RelativizableFile.fromAbsoluteFile(file, null),
                         convertToOutFile(file), isViewBindingEnabled, isDataBindingEnabled);
+            }
+              
+            @Override
+            public void processLayoutFolder(File folder) {
+                //创建文件输出目录
+                convertToOutFile(folder).mkdirs();
             }
               ...
         if (input.isIncremental()) {
@@ -1006,10 +1030,13 @@ public class ProcessExpressions extends ProcessDataBinding.ProcessingStep {
         //noinspection ConstantConditions
         for (File firstLevel : input.getRootInputFolder().listFiles()) {
             if (firstLevel.isDirectory()) {
+              //找到 layout文件夹
                 if (LAYOUT_FOLDER_FILTER.accept(firstLevel, firstLevel.getName())) {
+                    //创建生成文件输出目录
                     callback.processLayoutFolder(firstLevel);
-                    //noinspection ConstantConditions
+                  //找到xml结尾文件
                     for (File xmlFile : firstLevel.listFiles(XML_FILE_FILTER)) {
+                        //处理 layout xml文件
                         callback.processLayoutFile(xmlFile);
                     }
                 } else {
@@ -1025,34 +1052,270 @@ public class ProcessExpressions extends ProcessDataBinding.ProcessingStep {
               
 ```
 
-
+> 主要流程如下：
+>
+> 1. 找到layout文件夹
+> 2. 创建文件输出目录
+> 3. 寻找 layout目录下以xml结尾的文件
+> 4. 处理xml文件，继续调用到`processSingleFile`
 
 ###### LayoutFileParser.parseXml
 
 ```java
+    public static ResourceBundle.LayoutFileBundle parseXml(@NonNull final RelativizableFile input,
+            @NonNull final File outputFile, @NonNull final String pkg,
+            @NonNull final LayoutXmlProcessor.OriginalFileLookup originalFileLookup,
+            boolean isViewBindingEnabled, boolean isDataBindingEnabled)
+            throws ParserConfigurationException, IOException, SAXException,
+            XPathExpressionException {
+              ...
+              //生成正常的xx.xml文件
+              stripFile(inputFile, outputFile, encoding, originalFileLookup);
+              //解析原始的xml文件
+              return parseOriginalXml(
+                RelativizableFile.fromAbsoluteFile(originalFile, input.getBaseDir()),
+                pkg, encoding, isViewBindingEnabled, isDataBindingEnabled);
+            }
+
+//根据传入的文件进行处理
+    private static void stripFile(File xml, File out, String encoding,
+            LayoutXmlProcessor.OriginalFileLookup originalFileLookup)
+            throws ParserConfigurationException, IOException, SAXException,
+            XPathExpressionException {
+              ...
+        // now if file has any binding expressions, find and delete them
+        boolean changed = isBindingLayout(doc, xPath);
+        if (changed) {
+            stripBindingTags(xml, out, binderId, encoding);
+        } else if (!xml.equals(out)){
+            FileUtils.copyFile(xml, out);
+        } 
+    }
+
+    private static void stripBindingTags(File xml, File output, String newTag, String encoding)
+            throws IOException {
+      //分离xml里的 layout data 标签，然后再给view设置 android:tag 
+        String res = XmlEditor.strip(xml, newTag, encoding);
+        Preconditions.checkNotNull(res, "layout file should've changed %s", xml.getAbsolutePath());
+        if (res != null) {
+            L.d("file %s has changed, overwriting %s",
+                    xml.getAbsolutePath(), output.getAbsolutePath());
+          //处理后的文件 写入指定目录
+            FileUtils.writeStringToFile(output, res, encoding);
+        }
+    }
+
+//对原始的xml文件进行解析
+    private static ResourceBundle.LayoutFileBundle parseOriginalXml(
+            @NonNull final RelativizableFile originalFile, @NonNull final String pkg,
+            @NonNull final String encoding, boolean isViewBindingEnabled,
+            boolean isDataBindingEnabled)
+            throws IOException {
+      ...
+           //创建LayoutFileBundle对象
+           ResourceBundle.LayoutFileBundle bundle =
+                new ResourceBundle.LayoutFileBundle(
+                    originalFile, xmlNoExtension, original.getParentFile().getName(), pkg,
+                    isMerge, isBindingData, rootViewType, rootViewId);
+
+            final String newTag = original.getParentFile().getName() + '/' + xmlNoExtension;
+           //解析 <data></data> 标签格式
+            parseData(original, data, bundle);
+           //解析 xml中的 @{} 表达式
+            parseExpressions(newTag, rootView, isMerge, bundle);
+
+    }
 ```
 
+> 主要流程如下：
+>
+> 调用到`parseXml`执行如下两步
+>
+> - stripFile 
+>   - stripBindingTags
+>   - XmlEditor.strip 去除xml中 <layout> <data>标签，并且给View设置tag
+>   - writeStringToFile 将执行以上操作后的xml文件 写入`build/intermediates/incremental/debug/mergeDebugResources/stripped.dir/layout`
+>
+> - parseOriginXml
+>   - new LayoutFileBundle对象
+>   - parseData 解析<data>标签 ，主要是内部的 <import> <variable> <class>属性
+>   - parseExpressions 解析表达式 ，主要是循环遍历View，主要处理 id、tag binding_id 以及 @{} 这类表达式
+> - 得到`LayoutFileBundle`对象，里面主要记录了 xml文件中的 Variables Imports 等核心信息
+>   - 详细信息可查看 `compilerCommon/src/main/java/android/databinding/tool/store/ResourceBundle.java`
 
 
-##### 生成Layout Xml文件
+
+##### 生成Layout xml文件
+
+> 根据得到的`LayoutFileBundle`对象生成`xx-layout.xml`文件
+
+###### MergeResources.xx.end
+
+```kotlin
+            @Throws(JAXBException::class)
+            override fun end() {
+                processor
+                    .writeLayoutInfoFiles(
+                        dataBindingLayoutInfoOutFolder.get().asFile
+                    )
+            }
+//dataBindingLayoutInfoOutFolder 即为生成的 xx-layout.xml 存储目录
+
+            artifacts.setInitialProvider(taskProvider) { obj: MergeResources -> obj.dataBindingLayoutInfoOutFolder }
+                .withName("out")
+                .on(
+                    if (mergeType === TaskManager.MergeType.MERGE) DATA_BINDING_LAYOUT_INFO_TYPE_MERGE else DATA_BINDING_LAYOUT_INFO_TYPE_PACKAGE
+                )
+//指向了 data_binding_layout_info_type_merge 或 data_binding_layout_info_type_package目录
+
+```
+
+`MergeResources`执行到`end`后调用`writeLayoutInfoFiles`
+
+
+
+###### LayoutXmlProcesser.writeLayoutInfoFiles
 
 ```java
-//ProcessExpression.java
-IntermediateV2 mine = createIntermediateFromLayouts(args.getLayoutInfoDir(),
-                    intermediateList);
-            if (mine != null) {
-                if (!args.isEnableV2()) {
-                    mine.updateOverridden(resourceBundle);
-                    intermediateList.add(mine);
-                    saveIntermediate(args, mine);
-                }
-                mine.appendTo(resourceBundle, true);
-            }
+    public void writeLayoutInfoFiles(File xmlOutDir) throws JAXBException {
+        writeLayoutInfoFiles(xmlOutDir, mFileWriter);
+    }
+
+    public void writeLayoutInfoFiles(File xmlOutDir, JavaFileWriter writer) throws JAXBException {
+        // For each layout file, generate a corresponding layout info file
+        for (ResourceBundle.LayoutFileBundle layout : mResourceBundle
+                .getAllLayoutFileBundlesInSource()) {
+            writeXmlFile(writer, xmlOutDir, layout);
+        }
+      ...
+    }
+
+    private void writeXmlFile(JavaFileWriter writer, File xmlOutDir,
+            ResourceBundle.LayoutFileBundle layout)
+            throws JAXBException {
+        String filename = generateExportFileName(layout);
+        writer.writeToFile(new File(xmlOutDir, filename), layout.toXML());
+    }
+
+    public static String generateExportFileName(String fileName, String dirName) {
+      //生成名为 xx-layout.xml
+        return fileName + '-' + dirName + ".xml";
+    }
+```
+
+> 主要流程如下：
+>
+> 1. 遍历LayoutFileBundle对象，并写入文件
+> 2. generateExportFileName 设置生成的文件名 xx-layout.xml
+> 3. 得到的LayoutFileBundle对象 toXML，后写入 xx-layout.xml文件中
+
+生成的 xx-layout.xml文件内容
+
+```xml
+//build/intermediates/data_binding_layout_info_type_merge/debug/out/fragment_test_db-layout.xml
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<Layout directory="layout" filePath="app/src/main/res/layout/fragment_test_db.xml" isBindingData="true" isMerge="false" layout="fragment_test_db"
+    modulePackage="com.example.behaviordemo" rootNodeType="androidx.constraintlayout.widget.ConstraintLayout">
+    //参数
+    <Variables name="text" declared="true" type="String">
+        <location endLine="14" endOffset="27" startLine="12" startOffset="8" />
+    </Variables>
+    ...
+    //引用
+    <Imports name="ShapeBuilder" type="com.example.behaviordemo.bindingadapter.ShapeBuilder">
+        <location endLine="8" endOffset="77" startLine="8" startOffset="8" />
+    </Imports>
+    ...
+    //作用对象
+     <Targets>
+        <Target tag="layout/fragment_test_db_0" view="androidx.constraintlayout.widget.ConstraintLayout">
+            <Expressions />
+            <location endLine="57" endOffset="55" startLine="22" startOffset="4" />
+        </Target>
+         <Target id="@+id/tv_txt" tag="binding_1" view="TextView">
+            <Expressions>
+              //xml里写的表达式信息
+                <Expression attribute="android:text" text="text, default = 23456">
+                    <Location endLine="30" endOffset="50" startLine="30" startOffset="12" />
+                    <TwoWay>false</TwoWay>
+                    <ValueLocation endLine="30" endOffset="48" startLine="30" startOffset="28" />
+                </Expression>
+            </Expressions>
+            <location endLine="32" endOffset="55" startLine="26" startOffset="8" />
+        </Target>
+     </Targets> 
+    
+</Layout>
 ```
 
 
 
 ##### 生成Binding文件
+
+> 得到`LayoutFileBundle`之后，继续生成xxBinding.java文件
+
+###### ProcessExpressions.writeResourceBundle
+
+```java
+private void writeResourceBundle(
+            ResourceBundle resourceBundle,
+            CompilerArguments compilerArgs,
+            @Nullable GenClassInfoLog classInfoLog,
+            @NonNull CompilerChef v1CompatChef) {
+  //生成DataBindingComponent对象
+        if (compilerArgs.isLibrary()
+                || (!compilerArgs.isTestVariant() && !compilerArgs.isFeature())) {
+            compilerChef.writeComponent();
+        }
+  //生成 xml文件
+        if (compilerChef.hasAnythingToGenerate()) {
+            if (!compilerArgs.isEnableV2()) {
+                compilerChef.writeViewBinderInterfaces(compilerArgs.isLibrary()
+                        && !compilerArgs.isTestVariant());
+            }
+            if (compilerArgs.isApp() != compilerArgs.isTestVariant()
+                    || (compilerArgs.isEnabledForTests() && !compilerArgs.isLibrary())
+                    || compilerArgs.isEnableV2()) {
+                compilerChef.writeViewBinders(compilerArgs.getMinApi());
+            }
+        }
+}
+```
+
+###### CompilerChef -> DataBinder -> LayoutBinder
+
+```java
+//CompilerChef.java 
+public void writeViewBinderInterfaces(boolean isLibrary) {
+        ensureDataBinder();
+        mDataBinder.writerBaseClasses(isLibrary);
+    }
+
+    public void writeViewBinders(int minSdk) {
+        ensureDataBinder();
+        mDataBinder.writeBinders(minSdk);
+    }
+//构造Databinder对象
+    public void ensureDataBinder() {
+        if (mDataBinder == null) {
+            LibTypes libTypes = ModelAnalyzer.getInstance().libTypes;
+            mDataBinder = new DataBinder(mResourceBundle, mEnableV2, libTypes);
+            mDataBinder.setFileWriter(mFileWriter);
+        }
+    }
+
+//DataBinder.java
+
+
+```
+
+
+
+###### LayoutBinderWriter.writeBaseClass - 生成xxBinding.java文件
+
+
+
+###### LayoutBinderWriter.write - 生成xxBindingImpl.java文件
 
 
 
