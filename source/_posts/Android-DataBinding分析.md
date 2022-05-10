@@ -160,7 +160,7 @@ fun colorToDrawable(color: String): ColorDrawable {
 
 ## DataBinding Plugin——解析XML及生成相关文件
 
-{% post_link Android-DataBinding-GradlePlugin分析 %}
+{% post_link Android-DataBinding-GradlePlugin分析 DataBinding-GradlePlugin %}
 
 ## DataBinding 源码解析
 
