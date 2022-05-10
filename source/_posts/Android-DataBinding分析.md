@@ -2,7 +2,7 @@
 title: Android-DataBinding分析
 typora-root-url: ../
 date: 2022-05-08 21:22:49
-tags: Android
+tags: 源码解析
 top: 9
 ---
 
@@ -160,15 +160,21 @@ fun colorToDrawable(color: String): ColorDrawable {
 
 ## DataBinding Plugin——解析XML及生成相关文件
 
-{% post_link Android-DataBinding-GradlePlugin分析 DataBinding-GradlePlugin %}
+
+
+```java
+//分析置于如下文章
+```
+
+{% post_link Android-DataBinding-GradlePlugin分析 %}
+
+
 
 ## DataBinding 源码解析
 
-### 相关模块
+{% post_link Android-DataBinding-Library分析 %}
 
-### 核心类
 
-### 执行流程
 
 ## 相关小结
 
@@ -178,6 +184,8 @@ fun colorToDrawable(color: String): ColorDrawable {
 
 https://cs.android.com/android-studio/platform/tools/adt/idea/+/mirror-goog-studio-main:android/src/com/android/tools/idea/databinding/
 Android Studio 提供了DataBinding相关的文件生成与解析，待后续理解AS相关源码分析
+
+
 
 ### DataBinding针对ViewStub的处理
 
