@@ -30,49 +30,6 @@ compiler`、 `compilerCommon`、`baseLibrary
 
 ## 核心类
 
-### ProcessDataBinding
-
-根据一般插件开发流程，插件处理类配置在`META_INF`下
-
-```java
-public class ProcessDataBinding extends AbstractProcessor {
-    @Override
-    public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
-        try {
-            return doProcess(roundEnv);
-        } finally {
-            if (roundEnv.processingOver()) {
-                Context.fullClear(processingEnv);
-            }
-        }
-    }
-
-    private boolean doProcess(RoundEnvironment roundEnv) {
-        if (mProcessingSteps == null) {
-            readArguments();
-            initProcessingSteps(processingEnv);
-        }
-        if (mCompilerArgs == null) {
-            return false;
-        }
-        ...
-    }
-
-    private void initProcessingSteps(ProcessingEnvironment processingEnv) {
-        final ProcessBindable processBindable = new ProcessBindable();
-        mProcessingSteps = Arrays.asList(
-                new ProcessMethodAdapters(),
-                new ProcessExpressions(),
-                processBindable
-        );
-       ...
-     }
-
-}
-```
-
-将流程拆分成以下三部分分别进行处理
-
 ### baselibrary/注解释义
 
 以上标记的注解均来自于`baseLibrary`下，接下来对他们进行一些简单的介绍
@@ -372,6 +329,63 @@ public class ViewStubBindingAdapter {
 }
 ```
 
+
+
+### ProcessDataBinding
+
+根据一般插件开发流程，插件处理类配置在`META_INF`下
+
+```java
+public class ProcessDataBinding extends AbstractProcessor {
+    @Override
+    public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
+        try {
+            return doProcess(roundEnv);
+        } finally {
+            if (roundEnv.processingOver()) {
+                Context.fullClear(processingEnv);
+            }
+        }
+    }
+
+    private boolean doProcess(RoundEnvironment roundEnv) {
+        if (mProcessingSteps == null) {
+            readArguments();
+            initProcessingSteps(processingEnv);
+        }
+        if (mCompilerArgs == null) {
+            return false;
+        }
+        ...
+    }
+
+    private void initProcessingSteps(ProcessingEnvironment processingEnv) {
+        final ProcessBindable processBindable = new ProcessBindable();
+        mProcessingSteps = Arrays.asList(
+                new ProcessMethodAdapters(),
+                new ProcessExpressions(),
+                processBindable
+        );
+       ...
+     }
+
+}
+```
+
+将流程拆分成以下三部分分别进行处理
+
+```mermaid
+flowchart LR
+A[ProcessDataBinding] --> B[ProcessMethodAdapters]
+A[ProcessDataBinding] --> C[ProcessExpressions]
+A[ProcessDataBinding] --> D[ProcessBindable]
+B --> E[收集特定注解的类,解析后数据存放在BindingAdapterStore中\n生成 -setter_store.json文件]
+C --> F[解析layout下xml文件,得到LayoutFileBundle对象\n期间生成了xx.xml xx-layout.xml \n生成了xxBinding.java xxBindingImpl.java]
+D --> G[生成BR文件]
+```
+
+
+
 ### ProcessMethodAdapters
 
 > 搜索工程下的所有类，找出包含以下注解的相关类
@@ -598,19 +612,25 @@ private void addBindingAdapters(RoundEnvironment roundEnv, ProcessingEnvironment
     }
 ```
 
-相关的两个类为`MethodDescription`、`MultiAttributeSetter`
+相关的两个类为`MethodDescription`、`MultiValueAdapterKey`
 
 ```java
 //SetterStore.java
 //MethodDescription 与上节一致
 
-    public static class MultiAttributeSetter implements BindingSetterCall {
+    static class MultiValueAdapterKey implements Serializable,
+            Comparable<MultiValueAdapterKey> {
+        private static final long serialVersionUID = 1;
+
+        public final String viewType;
+
         public final String[] attributes;
-        private final MethodDescription mAdapter;
-        private final MethodDescription[] mConverters;
-        private final String[] mCasts;
-        private final MultiValueAdapterKey mKey;
-        private final boolean[] mSupplied;
+
+        public final String[] parameterTypes;
+
+        public final boolean requireAll;
+
+        public final TreeMap<String, Integer> attributeIndices = new TreeMap<>();
     }
 ```
 
@@ -763,9 +783,22 @@ private void addBindingAdapters(RoundEnvironment roundEnv, ProcessingEnvironment
 }
 ```
 
-> 
-
-//todo 流程图
+```mermaid
+flowchart TD
+    A[ProcessMethodAdapters.onHandlerStep] --> B[addBindingAdapters]
+    B --> C[bindingAdapter.getAttributes 获取入参个数]
+    C --> D[入参个数>1]
+    D --> | 个数为1| E[SetterStore.addBindingAdapter String attribute]
+    D --> | 个数大于1| F[SetterStore.addBindingAdapter String数组 attribute]
+    E --> G[得到AccessorKey & MethodDescription]
+    G --> H[单入参Json格式]
+    F --> I[得到MultiValueAdapterKey & MethodDescription]
+    I --> J[多入参Json格式]
+    H --> K[SetterStore.write]
+    J --> K
+    K --> L[GenerationClassUtil.write]
+    L --> M[写入路径为 -setter_store.json 写入内容为 BingingAdapterStore Json格式]
+```
 
 
 
@@ -1123,10 +1156,12 @@ private void writeResourceBundle(
         }
   //生成 xml文件
         if (compilerChef.hasAnythingToGenerate()) {
+          //不是V2版本 xxBinding.java 由代码生成 XXBindingImpl.java 不生成
             if (!compilerArgs.isEnableV2()) {
                 compilerChef.writeViewBinderInterfaces(compilerArgs.isLibrary()
                         && !compilerArgs.isTestVariant());
             }
+          //V2版本 xxBinding.java由插件生成 xxBindingImpl.java 由代码生成
             if (compilerArgs.isApp() != compilerArgs.isTestVariant()
                     || (compilerArgs.isEnabledForTests() && !compilerArgs.isLibrary())
                     || compilerArgs.isEnableV2()) {
@@ -1159,20 +1194,155 @@ public void writeViewBinderInterfaces(boolean isLibrary) {
     }
 
 //DataBinder.java
+    public DataBinder(ResourceBundle resourceBundle, boolean enableV2, LibTypes libTypes) {
+      ...
+        for(ResourceBundle.LayoutFileBundle bundle :
+                    resourceBundle.getLayoutFileBundlesInSource()) {
+                try {
+                    mLayoutBinders.add(new LayoutBinder(bundle, true));
+                } catch (ScopedException ex) {
+                    Scope.defer(ex);
+                }
+            }
+    }
 
+```
+
+以上几步串联了`CompilerChef` 与 `LayoutBinder`的关系
+
+```java
+//LayoutBinder.java
+public class LayoutBinder implements FileScopeProvider {
+  public LayoutBinder(ResourceBundle.LayoutFileBundle layoutBundle, boolean enableV2) {
+   ...
+            for (ResourceBundle.VariableDeclaration variable : mBundle.getVariables()) {
+                addVariable(variable.name, variable.type, variable.location, variable.declared);
+                names.add(variable.name);
+            }
+
+            for (ResourceBundle.NameTypeLocation userImport : mBundle.getImports()) {
+                mExprModel.addImport(userImport.name, userImport.type, userImport.location);
+                names.add(userImport.name);
+            }
+    ...
+  }
+}
+```
+
+
+
+##### LayoutBinderWriter.writeBaseClass - V1 版本生成xxBinding.java文件
+
+```kotlin
+public fun writeBaseClass(forLibrary: Boolean, variations: List<LayoutBinder>) : String = 
+  ...
+
+//按照规则生成文件
+```
+
+
+
+BaseLayoutBinderWriter.write - V2 版本生成XXBinding.java文件
+
+> //build-system/gradle-core/src/main/java/com/android/build/gradle/internal/tasks/databinding/DataBindingGenBaseClassesTask.kt
+
+```kotlin
+@CacheableTask
+abstract class DataBindingGenBaseClassesTask : AndroidVariantTask() {
+      @TaskAction
+    fun writeBaseClasses(inputChanges: InputChanges) {
+
+        recordTaskAction(analyticsService.get()) {
+            val args = buildInputArgs(inputChanges)
+            CodeGenerator(
+                args,
+                sourceOutFolder.get().asFile,
+                Logger.getLogger(DataBindingGenBaseClassesTask::class.java),
+                encodeErrors,
+                collectResources()).run()
+        }
+    }
+  
+      class CodeGenerator @Inject constructor(
+        val args: LayoutInfoInput.Args,
+        private val sourceOutFolder: File,
+        private val logger: Logger,
+        private val encodeErrors: Boolean,
+        private val symbolTables: List<SymbolTable>? = null
+    ) : Runnable, Serializable {
+         override fun run() {
+            try {
+                initLogger()
+                BaseDataBinder(
+                        LayoutInfoInput(args),
+                        if (symbolTables != null) this::getRPackage else null)
+                    .generateAll(DataBindingBuilder.GradleFileWriter(sourceOutFolder.absolutePath))
+            } finally {
+                clearLogger()
+            }
+        }
+        
+      }
+
+}
+```
+
+```kotlin
+//BaseDataBinder.java
+    fun generateAll(writer : JavaFileWriter) {
+           if (variations.first().isBindingData) {
+                check(input.args.enableDataBinding) {
+                    "Data binding is not enabled but found data binding layouts: $variations"
+                }
+
+                val binderWriter = BaseLayoutBinderWriter(layoutModel, libTypes)
+                javaFile = binderWriter.write()
+                classInfo = binderWriter.generateClassInfo()
+            } else {
+                check(input.args.enableViewBinding) {
+                    "View binding is not enabled but found non-data binding layouts: $variations"
+                }
+
+                val viewBinder = layoutModel.toViewBinder()
+                javaFile = viewBinder.toJavaFile(useLegacyAnnotations = !useAndroidX)
+                classInfo = viewBinder.generatedClassInfo()
+            }
+    }
 
 ```
 
 
 
-##### LayoutBinderWriter.writeBaseClass - 生成xxBinding.java文件
-
-
-
 ##### LayoutBinderWriter.write - 生成xxBindingImpl.java文件
 
+```java
+//LayoutBinderWriter.kt
+fun write(minSdk: kotlin.Int): String {
+  ..
+}
+//按照规则生成文件
+```
+
+//todo 流程图
 
 
-#### ProcessBindable
+
+### ProcessBindable
+
+
+
+#### 生成BR文件
+
+
+
+#### 生成DataBinderMapperImpl文件
+
+```java
+
+```
+
+
+
+
 
 ## 处理流程
