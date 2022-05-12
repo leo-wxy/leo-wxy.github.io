@@ -1329,20 +1329,382 @@ fun write(minSdk: kotlin.Int): String {
 
 ### ProcessBindable
 
-
+> 主要是生成`BR`和`DataBinderMapperImpl`
+>
+> 位置分别在：
+>
+> - `BR.java`   `./build/generated/source/kapt/debug/${module.package}/BR.java`
+>
+> - `DataBinderMapperImpl`
+>
+>   - 包括其他module的 DataBinderMapperImpl 映射文件只在`app`中 ：
+>
+>     `BehaviorDemo/app/build/generated/source/kapt/debug/androidx/databinding/DataBinderMapperImpl.java`
+>
+>   - 包括module中 XXBindingImpl 映射文件 `./build/generated/source/kapt/debug/${module.package}/DataBinderMapperImpl.java`
 
 #### 生成BR文件
+
+> 主要包含根据`<variable>`和`@Bindable`注解的字段生成的id
+
+```java
+//ProcessBinder.java
+public class ProcessBindable extends ProcessDataBinding.ProcessingStep implements BindableHolder {
+    @Override
+    public boolean onHandleStep(RoundEnvironment roundEnv, ProcessingEnvironment processingEnv,
+            CompilerArguments args) {
+          if (mProperties == null) {
+            mProperties = new IntermediateV1(args.getModulePackage());
+            mergeLayoutVariables();
+            ...
+            for (Element element : AnnotationUtil
+                    .getElementsAnnotatedWith(roundEnv, libTypes.getBindableClass())) {
+              //解析 @Bindable注解对象
+              Element parentElement = element.getEnclosingElement();
+              ...
+                
+            }
+          }
+            GenerationalClassUtil.get().write(mProperties.getPackage(),
+                    GenerationalClassUtil.ExtensionFilter.BR, mProperties);
+           //生成BR.java
+            generateBRClasses(processingEnv, args, mProperties.getPackage());
+    }
+  
+  //解析layout中的 <variable>标签
+    private void mergeLayoutVariables() {
+        for (String containingClass : mLayoutVariables.keySet()) {
+            for (String variable : mLayoutVariables.get(containingClass)) {
+                mProperties.addProperty(containingClass, variable);
+            }
+        }
+    }
+  
+    private void generateBRClasses(
+            ProcessingEnvironment processingEnv,
+            CompilerArguments compilerArgs,
+            String pkg) {
+        try {
+            CompilerArguments.Type artifactType = compilerArgs.getArtifactType();
+
+            HashSet<String> properties = new HashSet<>();
+            mProperties.captureProperties(properties);
+            BindableBag bindableBag = new BindableBag(
+                    compilerArgs,
+                    getProperties(mProperties),
+                    processingEnv);
+            final JavaFileWriter writer = getWriter();
+            boolean useFinal = compilerArgs.isApp()
+                    || compilerArgs.isFeature()
+                    || compilerArgs.isTestVariant();
+            BRWriter brWriter = new BRWriter(useFinal);
+            bindableBag.getToBeGenerated().forEach(brWithValues -> {
+                String out = brWriter.write(brWithValues);
+              //写入BR.java文件
+                writer.writeToFile(brWithValues.getPkg() + ".BR", out);
+            });
+          //兜回到 ProcessDataBinding
+            mCallback.onBrWriterReady(
+                    bindableBag.getVariableIdLookup(),
+                    bindableBag.getWrittenPackages());
+        } catch (LoggedErrorException e) {
+            // This will be logged later
+        }
+    }
+}
+
+```
+
+`BR.java`文件内容如下
+
+```java
+public class BR {
+  public static final int _all = 0;
+
+  public static final int map = 1;
+
+  public static final int text = 2;
+}
+```
 
 
 
 #### 生成DataBinderMapperImpl文件
 
-```java
+> 主要存储`tag`对应的`xml文件`，`BR文件`中`id`到`属性名`的映射
 
+```java
+//ProcessBindable.java
+
+    private void generateBRClasses(
+            ProcessingEnvironment processingEnv,
+            CompilerArguments compilerArgs,
+            String pkg) {
+      //生成BR.java文件
+      ...
+        mCallback.onBrWriterReady(
+                    bindableBag.getVariableIdLookup(),
+                    bindableBag.getWrittenPackages());
+    }
 ```
 
+`mCallback`位于`ProcessingStep`中，在`ProcessDataBinding.initProcessingSteps `中赋值
+
+```java
+//ProcessDataBinding.java
+    private void initProcessingSteps(ProcessingEnvironment processingEnv) {
+        final ProcessBindable processBindable = new ProcessBindable();
+      //需要处理的流程
+        mProcessingSteps = Arrays.asList(
+                new ProcessMethodAdapters(),
+                new ProcessExpressions(),
+                processBindable
+        );
+        Callback dataBinderWriterCallback = new Callback() {
+            CompilerChef mChef;
+            List<String> mModulePackages;
+            BindableBag.BRMapping mBRVariableLookup;
+            boolean mWrittenMapper = false;
+
+          //在 ProcessExpressions中回调
+            @Override
+            public void onChefReady(
+                    @NonNull CompilerChef chef,
+                    @Nullable GenClassInfoLog classInfoLog) {
+                Preconditions.checkNull(mChef, "Cannot set compiler chef twice");
+                chef.addBRVariables(processBindable);
+                mChef = chef;
+                considerWritingMapper();
+            }
+
+            private void considerWritingMapper() {
+                if (mWrittenMapper || mChef == null || mBRVariableLookup == null) {
+                    return;
+                }
+                boolean justLibrary = mCompilerArgs.isLibrary()
+                        && !mCompilerArgs.isTestVariant();
+                if (justLibrary && !mCompilerArgs.isEnableV2()) {
+                    return;
+                }
+                mWrittenMapper = true;
+                mChef.writeDataBinderMapper(processingEnv, mCompilerArgs, mBRVariableLookup,
+                        mModulePackages);
+            }
+
+          //在 ProcessBindable中回调
+            @Override
+            public void onBrWriterReady(BindableBag.BRMapping brWithValues, List<String> brPackages) {
+                Preconditions.checkNull(mBRVariableLookup, "Cannot set br writer twice");
+                mBRVariableLookup = brWithValues;
+                mModulePackages = brPackages;
+                considerWritingMapper();
+            }
+        };
+        AnnotationJavaFileWriter javaFileWriter = new AnnotationJavaFileWriter(processingEnv);
+        for (ProcessingStep step : mProcessingSteps) {
+            step.mJavaFileWriter = javaFileWriter;
+            step.mCallback = dataBinderWriterCallback;
+        }
+    }
+```
+
+##### CompilerChef.writeDataBinderMapper
+
+```java
+    public void writeDataBinderMapper(
+            ProcessingEnvironment processingEnv,
+            CompilerArguments compilerArgs,
+            BindableBag.BRMapping brValueLookup,
+            List<String> modulePackages) {
+      if (compilerArgs.isEnableV2()) {
+       ...
+           if (generateMapper) {
+              //为每个moule 包括 app生成 DataBinderMapperImpl
+                writeMapperForModule(compilerArgs, brValueLookup, availableDependencyModules);
+           }
+         ...
+           if (generateMergedMapper) {
+          ...  //只为app生成 DataBinderMapperImpl
+                writeMergedMapper(compilerArgs);
+            }
+      }
+      
+    }
+```
+
+###### writeMapperForModule
+
+> 为`module&app`生成`DataBinderMapperImpl.java`，其中包含`tag`和`layout`的映射关系，可以根据tag找到`XXBindingImpl`实现类
+
+```java
+//CompilerChef.java
+    private void writeMapperForModule(
+            CompilerArguments compilerArgs,
+            BindableBag.BRMapping brValueLookup,
+            Set<String> availableDependencyModules) {
+      ...
+            BindingMapperWriterV2 v2 = new BindingMapperWriterV2(
+                infoLogInThisModule,
+                compilerArgs,
+                libTypes,
+                availableDependencyModules);
+      ...
+        try {
+            JavaFile.builder(v2.getPkg(), spec).build().writeTo(sb);
+            mFileWriter.writeToFile(v2.getQualifiedName(), sb.toString());
+        } catch (IOException e) {
+            Scope.defer(new ScopedException("cannot generate mapper class", e));
+        }
+    }
+```
+
+生成的`DataBinderMapperImpl`格式如下
+
+```java
+public class DataBinderMapperImpl extends DataBinderMapper {
+  private static final int LAYOUT_FRAGMENTTESTDB = 1;
+
+  private static final SparseIntArray INTERNAL_LAYOUT_ID_LOOKUP = new SparseIntArray(1);
+
+  static {
+    INTERNAL_LAYOUT_ID_LOOKUP.put(com.example.behaviordemo.R.layout.fragment_test_db, LAYOUT_FRAGMENTTESTDB);
+  }
+
+  @Override
+  public ViewDataBinding getDataBinder(DataBindingComponent component, View view, int layoutId) {
+    int localizedLayoutId = INTERNAL_LAYOUT_ID_LOOKUP.get(layoutId);
+    if(localizedLayoutId > 0) {
+      final Object tag = view.getTag();
+      if(tag == null) {
+        throw new RuntimeException("view must have a tag");
+      }
+      switch(localizedLayoutId) {
+        case  LAYOUT_FRAGMENTTESTDB: {
+          if ("layout/fragment_test_db_0".equals(tag)) {
+            return new FragmentTestDbBindingImpl(component, view);
+          }
+          throw new IllegalArgumentException("The tag for fragment_test_db is invalid. Received: " + tag);
+        }
+      }
+    }
+    return null;
+  }
+
+  @Override
+  public ViewDataBinding getDataBinder(DataBindingComponent component, View[] views, int layoutId) {
+    if(views == null || views.length == 0) {
+      return null;
+    }
+    int localizedLayoutId = INTERNAL_LAYOUT_ID_LOOKUP.get(layoutId);
+    if(localizedLayoutId > 0) {
+      final Object tag = views[0].getTag();
+      if(tag == null) {
+        throw new RuntimeException("view must have a tag");
+      }
+      switch(localizedLayoutId) {
+      }
+    }
+    return null;
+  }
+
+  @Override
+  public int getLayoutId(String tag) {
+    if (tag == null) {
+      return 0;
+    }
+    Integer tmpVal = InnerLayoutIdLookup.sKeys.get(tag);
+    return tmpVal == null ? 0 : tmpVal;
+  }
+
+  @Override
+  public String convertBrIdToString(int localId) {
+    String tmpVal = InnerBrLookup.sKeys.get(localId);
+    return tmpVal;
+  }
+
+  @Override
+  public List<DataBinderMapper> collectDependencies() {
+    ArrayList<DataBinderMapper> result = new ArrayList<DataBinderMapper>(1);
+    result.add(new androidx.databinding.library.baseAdapters.DataBinderMapperImpl());
+    return result;
+  }
+
+  private static class InnerBrLookup {
+    static final SparseArray<String> sKeys = new SparseArray<String>(3);
+
+    static {
+      sKeys.put(0, "_all");
+      sKeys.put(1, "map");
+      sKeys.put(2, "text");
+    }
+  }
+
+  private static class InnerLayoutIdLookup {
+    static final HashMap<String, Integer> sKeys = new HashMap<String, Integer>(1);
+
+    static {
+      sKeys.put("layout/fragment_test_db_0", com.example.behaviordemo.R.layout.fragment_test_db);
+    }
+  }
+}
+```
+
+具体的分析 会在DataBinding-API分析时具体描述
+
+###### writeMergedMapper
+
+> 为`app`生成`DataBinderMapperImpl.java`，其中包含对其他module中的`DataBinderMapperImpl.java`文件的映射
+
+```java
+    /**
+     * Writes the mapper android.databinding.DataBinderMapperImpl which is a merged mapper
+     * that includes all mappers from dependencies.
+     */
+    private void writeMergedMapper(CompilerArguments compilerArgs) {
+
+        Set<String> featurePackageIds = loadFeaturePackageIds(compilerArgs);
+        StringBuilder sb = new StringBuilder();
+        LibTypes libTypes = ModelAnalyzer.getInstance().libTypes;
+        MergedBindingMapperWriter mergedBindingMapperWriter =
+                new MergedBindingMapperWriter(
+                        compilerArgs,
+                        featurePackageIds,
+                        mV1CompatChef != null,
+                        libTypes);
+        TypeSpec mergedMapperSpec = mergedBindingMapperWriter.write();
+        try {
+            JavaFile.builder(mergedBindingMapperWriter.getPkg(), mergedMapperSpec)
+                    .build().writeTo(sb);
+            mFileWriter.writeToFile(mergedBindingMapperWriter.getQualifiedName(),
+                    sb.toString());
+        } catch (IOException e) {
+            Scope.defer(new ScopedException("cannot generate merged mapper class", e));
+        }
+    }
+```
+
+生成`DataBinderMapperImpl`格式如下
+
+```java
+public class DataBinderMapperImpl extends MergedDataBinderMapper {
+  DataBinderMapperImpl() {
+    addMapper(new com.example.behaviordemo.DataBinderMapperImpl());
+  }
+}
+```
+
+//todo流程图
 
 
 
 
-## 处理流程
+
+## 总结
+
+
+
+## 参考链接
+
+[DataBinding-注解详解](https://www.twblogs.net/a/5b8085ab2b71772165a81a8e)
+
+[DataBinding构建过程分析](https://juejin.cn/post/6984282340205789191#heading-11)
