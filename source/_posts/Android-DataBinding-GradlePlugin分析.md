@@ -36,6 +36,79 @@ compiler`、 `compilerCommon`、`baseLibrary
 
 #### *Bindable
 
+> 用于**双向绑定**，主要用于标记model中的`getXX/isXX`，并且model**必须继承`BaseObservable`**
+>
+> 使用`@Bindable`注解的`getXX/isXX`，会在`BR.java`中生成对应的字段。
+
+
+
+```java
+@Target({ElementType.FIELD, ElementType.METHOD})
+@Retention(RetentionPolicy.RUNTIME) // this is necessary for java analyzer to work
+public @interface Bindable {
+    String[] value() default  {};
+}
+```
+
+参数
+
+- value 监听的属性
+
+示例代码
+
+Java实现
+
+```java
+public class JavaBook extends BaseObservable {
+    private String name;
+    private String author;
+
+    @Bindable
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+      //通知刷新
+        notifyPropertyChanged(BR.name);
+    }
+
+    @Bindable
+    public String getAuthor() {
+        return author;
+    }
+
+    public void setAuthor(String author) {
+        this.author = author;
+        notifyPropertyChanged(BR.author);
+    }
+}
+
+//调用实现
+        val books = JavaBook()
+        books.name = "DataBinding-Java"
+        binding.javaBook = books
+```
+
+Kotlin实现
+
+*由于kotlin没有get/set方法，没法使用`@Bindable`和`notifyPropertyChanged`*。需要采用以下方法
+
+```kotlin
+class Book {
+    val name:ObservableField<String> by lazy { ObservableField<String>() }
+    val author:ObservableField<String> by lazy { ObservableField<String>() }
+}
+
+//调用实现
+        val book = Book()
+        book.name.set("DataBinding") //差异处
+        binding.book = book
+```
+
+
+
 
 
 #### *BindingAdapter
@@ -97,7 +170,7 @@ public static oid loadImage(ImageView view, String url, Drawable placeholder, Dr
 
 > **当View中某个属性与该属性对应的set方法名称不对应时可以进行映射**
 >
-> `BindingMethods`只是一个容器，需要配合`BindingMethod`进行使用
+> `@BindingMethods`只是一个容器，需要配合`@BindingMethod`进行使用
 
 ```java
 @Target({ElementType.TYPE})
@@ -132,11 +205,11 @@ public @interface BindingMethod {
 
 - value `BindingMethod`
 
-  - type 作用对象 例如`TextView`
+  - type ：作用对象 例如`TextView`
 
-  - attribute 对应xml设置方法 例如`android:inputType`
+  - attribute： 对应xml设置方法 例如`android:inputType`
 
-  - method 映射方法 例如`setRawInputType`
+  - method：指定xml属性对应的映射方法 例如`setRawInputType`
 
 示例代码
 
@@ -191,6 +264,10 @@ fun colorToDrawable(color:String):ColorDrawable{
             android:layout_height="50dp"
             android:background='@{"#00ff00"}'/>
 ```
+
+*重复定义多次`@BindingConversion`方法，默认选择最后一次定义的方法作为全局实现。*
+
+
 
 #### InverseBindingAdapter
 
@@ -300,6 +377,8 @@ public @interface BindingBuildInfo {
 > DataBinding默认通过给View设置`tag`的方式进行标记，后续再根据设置的`tag`找到对应的View。
 >
 > 该注解的用处为：针对设置的View不去设置`tag`，避免后续操作异常
+>
+> 目前设置了`@Untaggable`的有`ViewStub`和`fragment`
 
 ```java
 @Target({ElementType.TYPE})
@@ -328,6 +407,8 @@ public class ViewStubBindingAdapter {
     }
 }
 ```
+
+
 
 
 
@@ -381,7 +462,7 @@ A[ProcessDataBinding] --> C[ProcessExpressions]
 A[ProcessDataBinding] --> D[ProcessBindable]
 B --> E[收集特定注解的类,解析后数据存放在BindingAdapterStore中\n生成 -setter_store.json文件]
 C --> F[解析layout下xml文件,得到LayoutFileBundle对象\n期间生成了xx.xml xx-layout.xml \n生成了xxBinding.java xxBindingImpl.java]
-D --> G[生成BR文件]
+D --> G[生成BR文件和 DataBinderMapperImpl文件]
 ```
 
 
