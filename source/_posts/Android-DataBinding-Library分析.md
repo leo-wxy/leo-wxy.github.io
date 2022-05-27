@@ -519,9 +519,113 @@ public void executePendingBindings() {
 
 ### View与Model双向更新
 
+#### Model -> View Model变化通知View修改
+
+> 支持监听Model数据变化的方式有两种
+>
+> - 在Model中参数的`getXX`添加`@Bindable`注解，在`setXX`内调用`notifyPropertyChanged()`
+> - 直接设置Model参数为`ObservableField<T>`
+
+通过设置`ObservableField`，当值发生变化时，会调用到`ViewDataBinding.updateRegistration()`，后续继续调用最终也会执行到`notifyPropertyChanged`
+
+##### BaseObservable.notifyPropertyChanged
+
+```java
+private transient PropertyChangeRegistry mCallbacks;
+
+public void notifyPropertyChanged(int fieldId) {
+        synchronized (this) {
+            if (mCallbacks == null) {
+                return;
+            }
+        }
+        mCallbacks.notifyCallbacks(this, fieldId, null);
+    }
+
+```
+
+此时`mCallbacks`为`PropertyChangeRegistry`
+
+```java
+public class PropertyChangeRegistry extends
+        CallbackRegistry<Observable.OnPropertyChangedCallback, Observable, Void> {
+
+    private static final CallbackRegistry.NotifierCallback<Observable.OnPropertyChangedCallback, Observable, Void> NOTIFIER_CALLBACK = new CallbackRegistry.NotifierCallback<Observable.OnPropertyChangedCallback, Observable, Void>() {
+        @Override
+        public void onNotifyCallback(Observable.OnPropertyChangedCallback callback, Observable sender,
+                int arg, Void notUsed) {
+            callback.onPropertyChanged(sender, arg);
+        }
+    };
+  
+}
+```
+
+对应的callback就为`ViewDataBinding.WeakPropertyListener`
+
+##### WeakPropertyListener.onPropertyChanged
+
+```java
+//ViewBinding.java
+    private static class WeakPropertyListener extends Observable.OnPropertyChangedCallback
+            implements ObservableReference<Observable> {
+      ...
+        @Override
+        public void onPropertyChanged(Observable sender, int propertyId) {
+            ViewDataBinding binder = mListener.getBinder();
+            if (binder == null) {
+                return;
+            }
+            Observable obj = mListener.getTarget();
+            if (obj != sender) {
+                return; // notification from the wrong object?
+            }
+            binder.handleFieldChange(mListener.mLocalFieldId, sender, propertyId);
+        }
+      
+    }
+
+    @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+    protected void handleFieldChange(int mLocalFieldId, Object object, int fieldId) {
+        if (mInLiveDataRegisterObserver || mInStateFlowRegisterObserver) {
+            return;
+        }
+        boolean result = onFieldChange(mLocalFieldId, object, fieldId);
+        if (result) {
+            requestRebind();
+        }
+    }
+```
 
 
-#### 避免冗余UI更新
+
+##### requestRebind
+
+```java
+//ViewDataBinding.java
+    protected void requestRebind() {
+        if (mContainingBinding != null) {
+            mContainingBinding.requestRebind();
+        } else {
+           ...
+            if (USE_CHOREOGRAPHER) {
+                mChoreographer.postFrameCallback(mFrameCallback);
+            } else {
+                mUIThreadHandler.post(mRebindRunnable);
+            }
+        }
+    }
+```
+
+此处就续上了上一节中`mRebindRunnable`后续的执行流程，最终走到`executeBindings`刷新View中的显示数据。
+
+
+
+#### View -> Model View变化修改Model
+
+> 相对使用较少
+
+### 避免冗余UI更新
 
 > 由于DataBinding是`Viwe与Model是双向绑定的`，所以修改了model，View也会更新，再导致Model的修改。
 > 可能就会存在冗余更新，`DataBinding`内部会对此进行处理。
@@ -564,3 +668,8 @@ public class TextViewBindingAdapter {
 ## 参考链接
 
 [DataBinding原理](https://mdnice.com/writing/518996ef89c5413fb26025054edd9e6c)
+
+[DataBinding-绑定原理](https://juejin.cn/post/6984281996457902110)
+
+<!-- https://www.jianshu.com/p/70bca3376957 -->
+

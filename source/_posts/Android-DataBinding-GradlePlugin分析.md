@@ -1782,9 +1782,7 @@ public class DataBinderMapperImpl extends MergedDataBinderMapper {
 
 ## 总结
 
-
-
-
+![DataBinding-Gradle流程](/images/DataBinding-Gradle流程.webp)
 
 
 

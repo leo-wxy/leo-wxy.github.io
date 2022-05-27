@@ -239,3 +239,15 @@ project(':dataBinding:compilerCommon').projectDir = new File("compilerCommon")
 ## 参考链接
 
 [DataBinding注解详解](https://www.twblogs.net/a/5b8085ab2b71772165a81a8e)
+
+[DataBinding数据绑定](https://mp.weixin.qq.com/s?__biz=MzI1NjEwMTM4OA==&mid=2651232170&idx=1&sn=f4d7eb8f35ebf3b13696562ca3172bac&chksm=f1d9eac9c6ae63df357c3a96aa0218b5d66237c5411de5b34cd24ddb7a1d258b34444966d8c6&scene=0)
+
+
+
+todo
+
+ViewStub加载分析
+
+关键步骤的流程图补充
+
+xmind总结
