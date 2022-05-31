@@ -1,6 +1,7 @@
 ---
 title: Gradle学习笔记-基础
 date: 2019-04-22 21:21:30
+typora-root-url: ../
 tags: Gradle
 top: 10
 ---
@@ -132,13 +133,382 @@ Gradle插件打包了可以复用的构建逻辑块，这些逻辑可以在不�
 
 ## Gradle工作流程
 
-{% fullimage /images/Gradle-workflow.png,Gradle工作流程,Gradle工作流程%}
-
-- `Initialzation phase(初始化阶段)`：就是执行`setting.gradle`
-- `Configuration phase(配置阶段)`：解析每个`project`中的`build.gradle`，可以在此期间添加一些`Hook`，需要通过API进行添加。配置完成后，内部建立一个有向图来描述Task之间的依赖关系。
-- `Execution phase(执行阶段)`：执行任务
+![Gradle工作流程](/images/Gradle-workflow.png)
 
 
+
+### Initialization phase(初始化阶段)
+
+> **初始化构建**
+>
+> 此处创建了`Setting`以及各Module的`Project`对象
+
+#### 执行`Init Script`
+
+> 读取全局脚本，主要是**初始化一些全局通用属性**，例如获取`Gradle Version`等
+
+位于`GRADLE_USER_HOME`目录，API主要分为三部分：
+
+- 获取全局属性
+- 项目配置
+- 生命周期Hook：身为**最早执行的脚本**，几乎可以监听到所有的事件
+
+#### 执行`settings.gradle`
+
+> **初始化了一次构建中参与的所有模块**，主要负责`组织和管理一个项目中的所有模块的脚本*build.gradle*`
+
+内部主要有以下两个操作
+
+##### 设置参与构建的模块
+
+> 进行项目的描述
+
+```groovy
+//按照模块名引入
+include ':app'
+include ':lib'
+
+//若子项目不在根目录下，需要使用路径引入
+include(":anotherLibrary")
+project(":anotherLibrary").projectDir = File(rootDir, "../another-library")
+```
+
+所有`include`的项目，都可以在`DefaultProjectRegistry.projects`中找到
+
+可以通过`rootProject.project("lib")`找到Project相关配置
+
+##### Plugin管理
+
+> Plugin的相关配置
+
+Plugin仓库设置
+
+```groovy
+//settings.gradle
+pluginManagement {
+    repositories {
+        maven(url = "../maven-repo")
+    }
+}
+```
+
+
+
+Plugin模块替换
+
+```groovy
+pluginManagement {
+    resolutionStrategy {
+        eachPlugin {
+            if (requested.id.id == "org.gradle.sample") {
+               //  useVersion("1.4") //根据模块名使用指定版本
+               //   useModule("org.gradle.sample:sample-plugins:1.0.0") 使用指定插件 可替换
+            }
+        }
+    }
+}
+```
+
+`resolutionStrategy`唯一回调`eachPlugin`返回的对象为`PluginResolveDetails`,其中的`PluginRequest`记录了插件信息。主要有以下内容:
+
+[PluginRequest](https://docs.gradle.org/6.0.1/javadoc/org/gradle/plugin/management/PluginRequest.html)
+
+- id：对应`PluginId`
+  - id
+  - name
+  - namespace`
+- module：对应`ModuleVersionSelector`
+  - name
+  - group
+- version：版本
+
+### Configuration phase(配置阶段)
+
+> 加载项目中所有模块的`build.gradle`，实际就是执行`build.gradle`，再然后根据执行创建对应的**Task**。最终生成一个`Task组成的有向无环图`，记录Task之间的依赖关系。
+
+#### `build.gradle`主要职能
+
+主要有两部分
+
+##### 插件引入
+
+> `Gradle`本身不提供任何编译打包的功能，只是一个**负责定义流程和规则的框架**，具体的编译打包工作都有**Task**完成。
+>
+> 插件(Plugin)：**定义Task，并具体执行这些Task的模版**
+
+`Plugin`主要分为两种类型：
+
+- `脚本插件`：存在于另一个脚本文件中的一段脚本代码
+- `二进制插件`：实现`Plugin`接口
+
+```groovy
+//build.gradle
+//引入内置插件
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+apply plugin: 'kotlin-android-extensions'
+
+//非内置插件引入 需要配置到classpath下
+//root build.gradle
+buildscript {
+    repositories {
+        google()
+        jcenter()
+    }
+    dependencies {
+        classpath "XX:core_dolphin_parse_plugin:1.0.18-SNAPSHOT"
+    }
+}
+
+//module build.gradle
+//引入非内置插件
+apply plugin: 'dolphin-parse-plugin'
+
+```
+
+
+
+##### 属性配置
+
+> 引入了插件之后，就可以使用插件提供的DSL进行配置 ，配置执行过程
+
+以`com.android.application`插件为例
+
+```groovy
+apply plugin: 'com.android.application'
+
+android {
+    compileSdk 32
+    //编译时配置
+    defaultConfig {
+        applicationId "com.example.gradleplugindemo"
+        minSdk 23
+        targetSdk 32
+        versionCode 1
+        versionName "1.0"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+    //构建类型配置
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    //编译选项配置
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+}
+```
+
+额外`Project`也提供了`repositories`,`dependencies`等配置项，后续会介绍他们的作用
+
+#### 根目录 Root build.gradle
+
+> 一般是对`Module build.gradle`进行统一的配置
+
+```groovy
+buildscript {
+  repositories {
+    google()
+    jcenter()
+  }
+  dependencies {
+    classpath 'com.android.tools.build:gradle:4.1.3'
+  }
+}
+
+allprojects{
+    repositories {
+      google()
+      jcenter()
+    }
+}
+
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}
+
+ext {
+    compileSdkVersion = 29
+    buildToolsVersion = "29.0.3"
+}
+
+subprojects { sub ->
+    if (sub.name != 'app' ) {
+        apply plugin: 'XX'
+    }
+}
+```
+
+`Root build.gradle`主要分为以下几部分
+
+##### buildscript
+
+> Gradle默认是自顶向下执行，但是无论`buildscript`在哪，都会是第一个执行
+>
+> **buildscript声明的是gradle脚本自身需要使用的资源**
+
+- repositories：`dependencies`声明的依赖去哪些仓库寻找
+- dependencies：表示Gradle的执行需要哪些依赖
+
+> 非`buildscript`配置的依赖等 均为项目自身运行所需要的资源
+
+##### allprojects
+
+> 配置对所有Module生效
+
+- repositories：`dependencies`声明的依赖去哪些仓库寻找
+
+##### ext
+
+> 用于Project间的数据共享，主要统一各Module的依赖版本
+
+##### subprojects
+
+> 主要统一Module之间的重复配置，并可针对特定Module进行设置
+
+##### other
+
+#### 子模块 Module build.gradle
+
+> 指定Module的配置
+
+```groovy
+apply plugin 'com.android.application'
+
+android {
+    compileSdk 32
+
+    defaultConfig {
+        applicationId "com.example.gradleplugindemo"
+        minSdk 23
+        targetSdk 32
+        versionCode 1
+        versionName "1.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+}
+
+repositories{
+
+}
+
+dependencies {
+    implementation 'androidx.core:core-ktx:1.7.0'
+    implementation 'androidx.appcompat:appcompat:1.4.1'
+    implementation 'com.google.android.material:material:1.6.0'
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.3'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.4.0'
+}
+```
+
+##### apply plugin
+
+> **应用插件**
+>
+> 当插件应用成功后，就会创建一系列的*Task*
+
+比如`apply plugin 'com.android.application' `，就会创建出`assembleRelease`这类的Task，通过这些Task，最终生成APK
+
+##### android
+
+> 插件提供的配置项，允许对Task进行修改
+
+##### repositories
+
+> `dependencies`声明的依赖去哪些仓库寻找
+
+##### dependencies
+
+> 表示Gradle的执行需要哪些依赖
+
+### Execution phase(执行阶段)
+
+> **真正进行编译和打包动作**，会执行`Task`
+>
+> 可以通过执行`./gradlew <TaskName>`直接执行对应Task
+
+`配置阶段`结束后，Gradle生成一个Task的有向无环图，可以通过`getTaskGraph`来获取具体的Task以及执行的通知
+
+```groovy
+gradle.getTaskGraph().addTaskExecutionGraphListener(new TaskExecutionGraphListener() {
+    @Override
+    void graphPopulated(TaskExecutionGraph taskExecutionGraph) {
+
+    }
+})
+```
+
+后续就是具体的任务执行，会在后续分析中介绍Task的执行流程。
+
+
+
+## Gradle工作流程Hook
+
+> 在`初始化阶段`、`配置阶段`，`执行阶段`每阶段可以获取到的信息都有不同，可以通过`Hook`获取到每阶段的情况
+
+### Initialization Hook
+
+#### gradle.settingsEvaluated(settings.gradle执行结束)
+
+> 可以得到`settings.gradle`转化的`Settings`对象
+
+```groovy
+//settings.gradle
+settingsEvaluated { settings ->
+  //添加统一仓库地址
+    settings.pluginManagement {
+        repositories {
+            maven(url = "../maven-repo")
+        }
+    }
+}
+```
+
+#### gradle.projectsLoaded(Project对象创建)
+
+> 可以获取到各Module创建的`Project`对象
+
+```groovy
+//settings.gradle
+gradle.projectsLoaded {
+   ...
+}
+```
+
+此时获取的`Project`对象只包含一些通用的基本信息，其他信息要在`配置阶段`执行之后才可获取
+
+### Configuration Hook
+
+
+
+### Execution Hook
 
 ## 自定义插件
 
+
+
+## 参考链接
+
+[Mastering Gradle](https://juejin.cn/book/6844733819363262472/section/6844733819421999118)
