@@ -501,9 +501,264 @@ gradle.projectsLoaded {
 
 ### Configuration Hook
 
+#### project.beforeEvaluate
+
+> 各Module的`build.gradle`执行前回调
+
+```groovy
+//settings.gradle
+gradle.projectsLoaded {
+    println("projectsLoaded " + it)
+    gradle.allprojects({
+        beforeEvaluate {
+            println("beforeEvaluate " + it)
+        }
+    })
+}
+
+```
+
+此时`build.gradle`尚未执行，所以hook点需要在`settings.gradle`添加
+
+#### project.afterEvaluate
+
+> 各Module的`build.gradle`执行完毕后，回调`afterEvaluate`
+>
+> **此时Project对象完整了**
+
+```groovy
+//build.gradle
+project.afterEvaluate {
+    println("afterEvaluate " + project.android)
+}
+```
+
+>  此时可以添加**动态任务**到构建中
+
+####  gradle.addListener( DependencyResolutionListener )
+
+> `DependencyResolutionListener`——监听构建过程中依赖的关系
+
+##### beforeResolve
+
+> 依赖处理前回调
+>
+> **可在此处进行依赖版本统一**
+
+##### afterResolve
+
+> 依赖处理后回调
+>
+> **一般在此处进行依赖的检测，包括版本信息以及是否Release**
+
+```groovy
+//settings.gradle
+gradle.addListener(new DependencyResolutionListener() {
+    @Override
+    void beforeResolve(ResolvableDependencies resolvableDependencies) {
+        println("DependencyResolutionListener:beforeResolve:=====${resolvableDependencies}=====")
+    }
+
+    @Override
+    void afterResolve(ResolvableDependencies resolvableDependencies) {
+        gradle.println "DependencyResolutionListener:afterResolve:=====${resolvableDependencies}====="
+
+        def projectPath = resolvableDependencies.path.toLowerCase()
+        println(projectPath)
+
+        if (projectPath.contains("releasecompile")) {
+            gradle.println "[DependencyResolutionListener] release detect:${resolvableDependencies.path}"
+            resolvableDependencies.resolutionResult.allDependencies.each { dependency ->
+                if (dependency instanceof org.gradle.api.internal.artifacts.result.DefaultUnresolvedDependencyResult) {
+                    gradle.println "DefaultUnresolvedDependencyResult reason: ${dependency.reason}"
+                    gradle.println "DefaultUnresolvedDependencyResult failure: ${dependency.failure}"
+                } else if (dependency instanceof org.gradle.api.internal.artifacts.result.DefaultResolvedDependencyResult) {
+                    String selected = dependency.selected
+                    def from = dependency.from
+                    gradle.println "[DependencyResolutionListener] current dependency : ${selected} which is from:${from}"
+                    if (selected != null && (selected.toLowerCase().contains("snapshot") || selected.toLowerCase().contains("beta"))) {
+                        String errorMessage = "[DependencyResolutionListener] [Error] ${selected} from ${from} contains a snapshot or beta version. you must fix it."
+                        gradle.println errorMessage
+                        throw new IllegalStateException(errorMessage)
+                    }
+                }
+            }
+        }
+    }
+})
+```
+
+上面代码示例 用于检测打包Release时，若存在`snapshot`版本依赖则提示构建失败
+
+`DependencyResolutionListener`回调的对象为`ResolvableDependencies`，主要使用的是`ResolutionResult`
+
+```java
+//ResolvableDependencies
+public interface ResolvableDependencies extends ArtifactView {
+ ...
+       ResolutionResult getResolutionResult();
+  ...
+  
+}
+
+public interface ResolutionResult {
+ ...
+       Set<? extends DependencyResult> getAllDependencies();
+}
+
+public interface DependencyResult {
+    ComponentSelector getRequested();
+
+    ResolvedComponentResult getFrom();
+
+    boolean isConstraint();
+}
+```
+
+`DependencyResult`主要实现类有两个：
+
+- DefaultUnresolvedDependencyResult 加载失败依赖
+
+  ```java
+  public class DefaultUnresolvedDependencyResult extends AbstractDependencyResult implements UnresolvedDependencyResult {
+      private final ComponentSelectionReason reason; //失败原因
+      private final ModuleVersionResolveException failure; //失败详情
+  }
+  ```
+
+- DefaultResolvedDependencyResult 加载成功依赖
+
+  ```java
+  public class DefaultResolvedDependencyResult extends AbstractDependencyResult implements ResolvedDependencyResult {
+      private final ResolvedComponentResult selectedComponent;//加载成功依赖信息
+      private final ResolvedVariantResult selectedVariant;//
+  }
+  ```
+
+  
+
+#### gradle.projectsEvaluated
+
+> 所有`build.script`文件执行完毕后回调
+>
+> 此时可以获取到 gradle settings 以及各Module的Project对象
+
+```groovy
+//settings.gradle
+gradle.projectsEvaluated {
+    println("projectsEvaluated "+it)
+}
+
+```
+
+#### gradle.taskGraph.whenReady
+
+> 根据所有`Task`生成依赖有向无环图之后回调
+>
+> 此时可以根据`taskGraph`获取所有执行的Task详情
+
+```groovy
+//settings.gradle
+gradle.taskGraph.whenReady {
+    TaskExecutionGraph taskGraph ->
+        taskGraph.allTasks.each {
+            Task task ->
+                gradle.println "=========whenReady:taskGraph:${task.getName()}========="
+        }
+}
+
+//或者通过addListener方式处理
+gradle.addListener(new TaskExecutionGraphListener() {
+    @Override
+    void graphPopulated(TaskExecutionGraph graph) {
+        gradle.println "=========from gradle.addListener graphPopulated========="
+        graph.allTasks.each {
+            Task task ->
+                gradle.println "=========TaskExecutionGraph:${task.getName()}========="
+        }
+    }
+})
+```
+
 
 
 ### Execution Hook
+
+#### gradle.addListener( TaskExecutionListener)
+
+> 针对每个`Task`执行前后的Hook点
+
+```groovy
+//settings.gradle
+gradle.addListener(new TaskExecutionListener() {
+    @Override
+    void beforeExecute(Task task) {
+        println("beforeExecute " + task.getName())
+    }
+
+    @Override
+    void afterExecute(Task task, TaskState taskState) {
+        println("afterExecute " + task.getName())
+    }
+})
+```
+
+对应的是`Task`添加的
+
+```groovy
+task clean(type: Delete) {
+    delete rootProject.buildDir
+    beforeEvaluate {
+
+    }
+    afterEvaluate {
+
+    }
+}
+```
+
+
+
+####  gradle.addListener( TaskActionListener)
+
+> `Task`内部是由很多`Action`进行集合，`Action`才是真正要执行的功能。
+>
+> 针对`Task`内`Action`执行前后的Hook点
+
+```groovy
+//settings.gradle
+gradle.addListener(new TaskActionListener() {
+    @Override
+    void beforeActions(Task task) {
+        println("beforeActions " + task.actions)
+    }
+
+    @Override
+    void afterActions(Task task) {
+        println("afterActions " + task.actions)
+    }
+})
+```
+
+
+
+#### gradle.buildFinished 
+
+> 所有`Task`都执行完毕回调
+
+```groovy
+//settings.gradle
+
+gradle.buildFinished {
+    println("整个流程构建完成")
+}
+```
+
+
+
+### 只Hook关键节点-BuildListener
+
+> `BuildListener`在
 
 ## 自定义插件
 
