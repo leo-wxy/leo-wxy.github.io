@@ -3,7 +3,7 @@ title: include、merge及ViewStub相关
 date: 2019-01-03 12:13:11
 tags: 
   - Android
-  - 布局优化
+  - 性能优化
 top: 10
 ---
 
