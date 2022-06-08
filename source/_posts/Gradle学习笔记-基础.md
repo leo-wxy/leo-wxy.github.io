@@ -758,7 +758,33 @@ gradle.buildFinished {
 
 ### 只Hook关键节点-BuildListener
 
-> `BuildListener`在
+> `BuildListener`在整个构建过程中的特定点回调函数。
+
+```groovy
+gradle.addBuildListener(new BuildListener() {
+    @Override
+    void settingsEvaluated(Settings settings) {
+        println("settings.gradle 加载完成")
+    }
+
+    @Override
+    void projectsLoaded(Gradle gradle) {
+        println("build.gradle 加载开始")
+    }
+
+    @Override
+    void projectsEvaluated(Gradle gradle) {
+        println("build.gradle 加载完成")
+    }
+
+    @Override
+    void buildFinished(BuildResult buildResult) {
+        println("流程构建完成")
+    }
+})
+```
+
+//todo 流程细节
 
 ## 自定义插件
 

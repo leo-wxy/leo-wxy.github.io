@@ -152,6 +152,10 @@ third
 
 由于`third`依赖于`first、second`所以在执行`third`时，`first、second`也需要执行。
 
+
+
+此外可通过`shouldRunAfter`和`mustRunAfter`来控制任务之间的执行顺序
+
 ### Task Type(任务类型)
 
 > 默认Type为`DefaultTask`，系统还提供了几种常用的类型以供使用，也可以通过自定义Type来实现功能。
@@ -448,6 +452,26 @@ tasks.all {
     }
 }
 ```
+
+
+
+#### 挂载自定义Task在构建过程
+
+> 在其他`Task`执行过程中，调用`自定义Task`的`execute`
+
+```groo
+task A{
+ ...
+}
+
+task B{
+  doFirst{
+    A.execute()
+  }
+}
+```
+
+
 
 
 
