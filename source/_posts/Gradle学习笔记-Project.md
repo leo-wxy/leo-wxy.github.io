@@ -22,3 +22,5 @@ top: 10
 ## 参考资料
 
 [Project官方文档](https://docs.gradle.org/current/dsl/org.gradle.api.Project.html#N153F9)
+
+[Gradle核心揭秘](https://juejin.cn/post/6844904132092903437#heading-12)
