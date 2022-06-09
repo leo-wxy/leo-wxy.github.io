@@ -784,7 +784,11 @@ gradle.addBuildListener(new BuildListener() {
 })
 ```
 
-//todo 流程细节
+
+
+![Gradle-生命周期Hook](/images/Gradle-生命周期Hook点.webp)
+
+
 
 ## 自定义插件
 
