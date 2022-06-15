@@ -246,17 +246,202 @@ public interface Project extends Comparable<Project>, ExtensionAware, PluginAwar
 }
 ```
 
+- `DEFAULT_BUILD_FILE`：默认读取配置文件
+- `DEFAULT_BUILD_DIR_NAME`：默认生成的build文件存放目录
+- `GRADLE_PROPERTIES`：自定义部分属性读取配置文件
 
+#### 扩展属性
 
-#### ext拓展属性
+##### 通过`ext`实现扩展
+
+```groovy
+//root build.gradle
+ext {
+    compileSdkVersion = 29
+    buildToolsVersion = "29.0.3"
+}
+
+//module build.gradle
+...
+android {
+    compileSdkVersion rootProject.ext.compileSdkVersion
+  
+}
+```
+
+若`ext`扩展属性过多，可以通过依赖`额外Gradle文件`进行统一管理
+
+```groovy
+//version.gradle
+ext {
+    android = [
+            compileSdkVersion   : 30,
+            versionCode         : 1,
+            versionName         : '1.0.0',
+    ]
+}
+
+//Root build.gradle
+apply from: this.file('version.gradle')
+
+//Module build.gradle
+android {
+    compileSdkVersion rootProject.ext.android.compileSdkVersion
+    ...
+}
+```
+
+> 可以将一些`字符串常量、数字常量等`放于`额外Gradle文件`进行管理
+
+##### 配置在`gradle.properties`文件中
+
+> 属性只可以用`key=value`的形式
+
+```properties
+//gradle.properties
+...
+isHaveVersion=true
+
+//build.gradle
+        if(rootProject.hasProperty("isHaveVersion") ? isHaveVersion.toBoolean() : false){
+            println("taskss")
+        }
+```
+
+基于`gradle.properties`设置的扩展属性，主要有以下方法进行操作。
+
+###### hasProperty
+
+> 是否存在指定属性
+
+###### findProperty
+
+> 获取指定属性值
+
+###### setProperty
+
+> 设置指定属性值
 
 ### Project下FileAPI
+
+> 获取及操作**当前Project**下文件
+>
+> **无法进行跨工程调用**
+
+#### 路径获取
+
+> 获取指定目录路径
+
+##### getRootDir
+
+> 获取`Root Project`本地路径
+
+##### getBuildDir
+
+> 获取`当前Project` build文件存放路径
+
+##### getProjectDir
+
+> 获取`当前Project`本地路径
+
+```groovy
+//build.gradle
+afterEvaluate {
+    println("rootDir is ${getRootDir().absolutePath}")
+    println("buildDir is ${getBuildDir().absolutePath}")
+    println("projectDir is ${getProjectDir().absolutePath}")
+}
+```
+
+输出结果
+
+```shell
+rootDir is /Users/xx/Projects/GradlePluginDemo
+buildDir is /Users/xx/Projects/GradlePluginDemo/app/build
+projectDir is /Users/xx/Projects/GradlePluginDemo/app
+```
+
+
+
+#### 文件操作
+
+##### file/files
+
+> 定位文件
+>
+> 输入内容是以当前Project目录作为基础的相对路径信息
+
+```groovy
+//Root build.gradle
+def printFile(List<String> fileNames) {
+    if (!fileNames.isEmpty()) {
+        try {
+            if (fileNames.size() == 1) {
+                println(file(fileNames[0]).absolutePath)
+            } else {
+                println(files(fileNames[0], fileNames[1]).files)
+            }
+        } catch (GradleException e) {
+            e.printStackTrace()
+        }
+    }
+}
+
+//调用
+    def list = new ArrayList()
+    list.add("build.gradle") //Users/xx/Projects/GradlePluginDemo/build.gradle
+    printFile(list)
+
+    list.add("gradle.properties") //Users/xx/Projects/GradlePluginDemo/gradle.properties
+    printFile(list)
+```
+
+`files`返回[FileCollection](https://docs.gradle.org/current/javadoc/org/gradle/api/file/FileCollection.html)，内部是文件的集合
+
+
+
+##### copy/delete/mkdir
+
+> 拷贝文件
+
+```groovy
+copy {
+    from file("build.gradle") //文件(夹)来源路径
+    into "src/" //文件(夹)拷贝目的路径 
+    exclude {
+        // 排除不需要拷贝的文件
+    }
+    rename {
+        // 对拷贝过来的文件进行重命名
+    }
+  }
+```
+
+
+
+##### fileTree/zipTree/tarTree
+
+> 遍历文件
+
+```groovy
+    fileTree("src") { FileTree fileTree ->
+        fileTree.visit { FileTreeElement fileTreeElement ->
+            println "The file is $fileTreeElement.file.name"
+        }
+    }
+```
+
+使用`fileTree`将指定目录转换为**文件树**的形式，后续就可以获取到每一个`树节点(文件)`进行操作。
 
 
 
 ### Project生命周期API
 
+> 监听`build.gradle`加载生成`Project`前后
 
+#### beforeEvaluate
+
+#### afterEvaluate
 
 ### 其他API
 
