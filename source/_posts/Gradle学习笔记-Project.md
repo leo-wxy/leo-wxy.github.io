@@ -441,11 +441,50 @@ copy {
 
 #### beforeEvaluate
 
+> `build.gradle`加载生成`Project`前
+>
+> **在当前build.gradle调用监听是无效的，可以监听子Project**
+
 #### afterEvaluate
+
+> `build.gradle`加载生成`Project`后
+>
+> 此时可以获取到`当前Project`配置的所有数据
 
 ### 其他API
 
+#### 依赖配置相关API
 
+##### buildscript
+
+> **配置核心项目依赖**
+>
+> 配置在`Root build.gradle`中
+
+```groovy
+//Root build.gradle
+buildscript {
+    repositories {
+        google()
+        jcenter()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:4.1.3'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
+}
+```
+
+
+
+##### repositories
+
+##### dependencies
+
+#### 外部命令执行
+
+##### exec/javaexec
 
 
 
