@@ -480,11 +480,65 @@ buildscript {
 
 ##### repositories
 
+> 配置项目依赖的仓库
+
+```groovy
+    repositories {
+        google()
+        jcenter()
+        mavenCentral()
+    }
+```
+
+
+
 ##### dependencies
+
+> 配置项目的依赖信息
+
+```groovy
+dependencies{
+  //本地aar/jar依赖
+  implementation fileTree(dir: 'libs', include: ['*.jar,*.aar'])
+  //本地module依赖
+  api project(":vc_common")
+  //远程仓库依赖
+  implementation 'com.github.chrisbanes:PhotoView:1.3.0'{
+     exclude group:'com.android.support' //避免冲突，移除内部相关依赖
+  }
+}
+```
+
+`substitute` 可在`远程仓库依赖`与`本地Module依赖`之间切换。
+
+> `implementation`与`api`的区别?
+>
+> - `implementation`：**该依赖方式依赖的库不会传递，依赖只在当前Module中生效**
+> - `api`：**该依赖方式依赖的库会传递，其他Module依赖了当前Module时，也可以使用依赖的库**
 
 #### 外部命令执行
 
 ##### exec/javaexec
+
+> 可执行外部命令，通过配置不同的运行环境来支持多种命令。
+
+```groovy
+//build.gradle
+    exec {
+        try {
+            executable 'java'
+            args "-version"
+            println "The command execute is success"
+        } catch (GradleException e) {
+            println "The command execute is failed"
+        }
+    }
+
+//或
+exec {
+    commandLine('java','-version')
+}
+```
 
 
 
