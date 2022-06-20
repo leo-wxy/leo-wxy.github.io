@@ -389,7 +389,13 @@ tasks.whenTaskAdded { task->
 
 #### Task Input/Output(任务输入/输出)
 
-> 任务需要接收
+> 大多数情况下，`Task`需要接收一些`Input(输入)`，并生成一些`Output(输出)`。
+
+![Task Input/Output示例](/images/JavaCompileTask.webp)
+
+
+
+
 
 ### Task Other
 
