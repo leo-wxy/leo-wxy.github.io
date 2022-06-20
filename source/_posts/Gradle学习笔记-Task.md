@@ -1,6 +1,7 @@
 ---
 title: Gradle学习笔记-Task
 date: 2019-05-08 21:30:44
+typora-root-url: ../
 tags: Gradle
 top: 10
 ---
@@ -118,6 +119,8 @@ task Task1 {
 
 > Gradle中的任务执行顺序是不确定的，需要通过task之间的依赖关系，保证被依赖的task优先执行，可通过`dependsOn`来确定依赖关系。
 
+![Task执行顺序](/images/Task执行顺序.webp)
+
 ```groovy
 task first doLast {
     println("first")
@@ -151,6 +154,21 @@ third
 ```
 
 由于`third`依赖于`first、second`所以在执行`third`时，`first、second`也需要执行。
+
+以上属于**静态依赖**。
+
+相对的还存在**动态依赖**。
+
+```groovy
+task forth {
+    dependsOn this.tasks.findAll { task ->
+        return task.name.startsWith("third")
+    }
+    doLast {
+        println "This is forth"
+    }
+}
+```
 
 
 
