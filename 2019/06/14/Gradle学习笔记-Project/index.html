@@ -16,18 +16,18 @@
   <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
   <meta name="author" content="Leo-Wxy">
   <meta name="keywords" content>
-  <meta name="description" content="Project对应着项目中的build.gradle文件，每个gradle文件被解析后都会生成一个Project对象。所有build.gradle中定义的属性及方法都可以通过Project进行调用。  常用属性参考资料Project官方文档">
+  <meta name="description" content="基于Gradle 7.3.3源码分析  可以通过执行./gradlew projects打印工程下所有Project。  Project对应着项目中的build.gradle文件，每个gradle文件被解析后都会生成一个Project对象。所有build.gradle中定义的属性及方法都可以通过Project进行调用。  graph TB A(Project API组成) --- B(Proj">
 <meta name="keywords" content="Gradle">
 <meta property="og:type" content="article">
 <meta property="og:title" content="Gradle学习笔记-Project">
 <meta property="og:url" content="https://leo-wxy.github.io/2019/06/14/Gradle学习笔记-Project/index.html">
 <meta property="og:site_name" content="Wxy的个人博客">
-<meta property="og:description" content="Project对应着项目中的build.gradle文件，每个gradle文件被解析后都会生成一个Project对象。所有build.gradle中定义的属性及方法都可以通过Project进行调用。  常用属性参考资料Project官方文档">
+<meta property="og:description" content="基于Gradle 7.3.3源码分析  可以通过执行./gradlew projects打印工程下所有Project。  Project对应着项目中的build.gradle文件，每个gradle文件被解析后都会生成一个Project对象。所有build.gradle中定义的属性及方法都可以通过Project进行调用。  graph TB A(Project API组成) --- B(Proj">
 <meta property="og:locale" content="zh-CN">
-<meta property="og:updated_time" content="2019-06-14T06:11:56.000Z">
+<meta property="og:updated_time" content="2022-06-19T11:13:54.315Z">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Gradle学习笔记-Project">
-<meta name="twitter:description" content="Project对应着项目中的build.gradle文件，每个gradle文件被解析后都会生成一个Project对象。所有build.gradle中定义的属性及方法都可以通过Project进行调用。  常用属性参考资料Project官方文档">
+<meta name="twitter:description" content="基于Gradle 7.3.3源码分析  可以通过执行./gradlew projects打印工程下所有Project。  Project对应着项目中的build.gradle文件，每个gradle文件被解析后都会生成一个Project对象。所有build.gradle中定义的属性及方法都可以通过Project进行调用。  graph TB A(Project API组成) --- B(Proj">
   
   <title>Gradle学习笔记-Project - Wxy的个人博客</title>
 
@@ -194,7 +194,7 @@
   
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      118 字
+      7.6k 字
     </span>
   
 
@@ -203,7 +203,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      1 分钟
+      24 分钟
     </span>
   
 
@@ -236,9 +236,186 @@
             
             <div class="markdown-body">
               <blockquote>
+<p> 基于<a href="https://github.com/gradle/gradle/tree/v7.3.3/gradle" target="_blank" rel="noopener">Gradle 7.3.3源码</a>分析</p>
+</blockquote>
+<p>可以通过执行<code>./gradlew projects</code>打印工程下所有Project。</p>
+<blockquote>
 <p><code>Project</code>对应着项目中的<code>build.gradle</code>文件，每个gradle文件被解析后都会生成一个Project对象。所有<code>build.gradle</code>中定义的属性及方法都可以通过<code>Project</code>进行调用。</p>
 </blockquote>
-<h2 id="常用属性"><a href="#常用属性" class="headerlink" title="常用属性"></a>常用属性</h2><h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><p><a href="https://docs.gradle.org/current/dsl/org.gradle.api.Project.html#N153F9" target="_blank" rel="noopener">Project官方文档</a></p>
+<pre><code class=" mermaid">graph TB
+A(Project API组成) --- B(Project API)
+A---C(管理Task及Task本身API)
+A---D(Project属性API)
+A---E(Gradle生命周期API)
+A---F(Project下File相关API)
+A---G(其他类型API)
+</code></pre>
+<p><code>Project相关API</code>主要由以下几部分组成，它们分别有以下能力：</p>
+<ul>
+<li><code>Project API</code>：可以操作<code>父Project</code>以及管理<code>子Project</code></li>
+<li><code>Task相关API</code>：可在<code>Project</code>下管理<code>Task</code>，包括新增、修改等</li>
+<li><code>Project属性相关API</code>：获取与设置<code>Project</code>相关属性及配置，包括<code>ext</code>设置</li>
+<li><code>Project下File相关API</code>：获取<code>Project</code>下文件路径以及对文件的操作等</li>
+<li><code>Project生命周期API</code>：可在<code>Project</code>对应生命周期下的操作</li>
+<li><code>其他API</code>：配置项目依赖等</li>
+</ul>
+<h2 id="常用属性"><a href="#常用属性" class="headerlink" title="常用属性"></a>常用属性</h2><blockquote>
+<p>每个<code>build.gradle</code>最后都会编译成一个<code>Project</code>对象，下面对应的API调用也都写在<code>build.gradle</code>中。</p>
+<p><a href="https://docs.gradle.org/current/javadoc/org/gradle/api/Project.html" target="_blank" rel="noopener">Project API文档</a></p>
+</blockquote>
+<h3 id="Project-API"><a href="#Project-API" class="headerlink" title="Project API"></a>Project API</h3><blockquote>
+<p>可获取<code>父Project</code>及<code>子Project</code>，并可对他们进行操作</p>
+</blockquote>
+<h4 id="getAllprojects-allprojects"><a href="#getAllprojects-allprojects" class="headerlink" title="getAllprojects / allprojects"></a>getAllprojects / allprojects</h4><blockquote>
+<p>返回<code>当前Project对象</code>以及<code>所有子Project的集合</code>，后续可对获取的数据进行设置</p>
+</blockquote>
+<figure class="highlight groovy"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><code class="hljs groovy"><span class="hljs-comment">//build.gradle </span><br><span class="hljs-comment">//getAllprojects</span><br>project.getAllprojects().eachWithIndex&#123;Project project , <span class="hljs-keyword">int</span> index-&gt;<br>    <span class="hljs-keyword">if</span>(index == <span class="hljs-number">0</span>)&#123;<br>        println(<span class="hljs-string">"root Project is $project"</span>)<br>    &#125; <span class="hljs-keyword">else</span>&#123;<br>        println(<span class="hljs-string">"child Project is $project"</span>)<br>    &#125;<br>&#125;<br><br><span class="hljs-comment">//allprojects</span><br>allprojects &#123;<br>    println(it)<br>&#125;<br></code></pre></td></tr></table></figure>
+<p>输出结果</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><code class="hljs shell">root Project is root project 'GradlePluginDemo'<br>child Project is project ':app'<br>child Project is project ':mylibrary'<br><br><br>root project 'GradlePluginDemo'<br>project ':app'<br>project ':mylibrary'<br></code></pre></td></tr></table></figure>
+<p>两者最终都是得到<code>Project</code>集合</p>
+<h4 id="getSubprojects-subprojects"><a href="#getSubprojects-subprojects" class="headerlink" title="getSubprojects / subprojects"></a>getSubprojects / subprojects</h4><blockquote>
+<p>返回<code>所有子Project的集合</code>，后续可对获取的数据进行设置</p>
+</blockquote>
+<figure class="highlight groovy"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><code class="hljs groovy"><span class="hljs-comment">//build.gradle</span><br>project.getSubprojects().eachWithIndex &#123; Project project, <span class="hljs-keyword">int</span> index -&gt;<br>    println(<span class="hljs-string">"child Project is $project"</span>)<br>&#125;<br><br>subprojects &#123;<br>    println(it)<br>&#125;<br></code></pre></td></tr></table></figure>
+<p>输出结果</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><code class="hljs shell">child Project is project ':app'<br>child Project is project ':mylibrary'<br><br><br>project ':app'<br>project ':mylibrary'<br></code></pre></td></tr></table></figure>
+<p>两者最终都是得到<code>所有子Project</code>集合</p>
+<h4 id="getParent-getRootProject-getProject-project"><a href="#getParent-getRootProject-getProject-project" class="headerlink" title="getParent / getRootProject / getProject / project"></a>getParent / getRootProject / getProject / project</h4><blockquote>
+<p>返回的都是一个<code>独立的Project</code>对象</p>
+<p><code>getParent</code>：返回<code>当前Project的父类</code>，如果为<code>Root Project</code>，返回则为null</p>
+<p><code>getRootProject</code>：返回<code>Root Project</code></p>
+<p><code>getProject / project</code>：返回<code>当前工程对象</code>，或根据<code>name</code>获取<code>指定Project</code></p>
+</blockquote>
+<figure class="highlight groovy"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><code class="hljs groovy"><span class="hljs-comment">//build.gradle</span><br>project(<span class="hljs-string">"app"</span>,&#123;<br>    println(<span class="hljs-string">"根工程 "</span>+getRootProject())<br>    println(<span class="hljs-string">"父工程 "</span>+getParent())<br>    println(<span class="hljs-string">"当前工程 "</span>+getProject())<br>&#125;)<br></code></pre></td></tr></table></figure>
+<p>输出结果</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><code class="hljs shell">根工程 root project 'GradlePluginDemo'<br>父工程 root project 'GradlePluginDemo'<br>当前工程 project ':app'<br></code></pre></td></tr></table></figure>
+<h4 id="getChildProjects"><a href="#getChildProjects" class="headerlink" title="getChildProjects"></a>getChildProjects</h4><blockquote>
+<p>返回<code>所有直系子Project的集合</code>，可以看作近似于<code>getSubprojects</code></p>
+</blockquote>
+<figure class="highlight groovy"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><code class="hljs groovy">project.getChildProjects().each&#123;<br>    println(<span class="hljs-string">"$&#123;it.key&#125;  : $&#123;it.value&#125;"</span>)<br>&#125;<br></code></pre></td></tr></table></figure>
+<p>输出结果</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><code class="hljs shell">app  : project ':app'<br>mylibrary  : project ':mylibrary'<br></code></pre></td></tr></table></figure>
+<h3 id="Task-相关API"><a href="#Task-相关API" class="headerlink" title="Task 相关API"></a>Task 相关API</h3><blockquote>
+<p>在<code>Project</code>下管理<code>Task</code></p>
+</blockquote>
+<h4 id="task"><a href="#task" class="headerlink" title="task"></a>task</h4><blockquote>
+<p>创建一个<code>Task</code>，添加到<code>Project</code>中</p>
+</blockquote>
+<figure class="highlight groovy"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><code class="hljs groovy"><span class="hljs-comment">//build.gradle</span><br>task clean(<span class="hljs-string">type:</span> Delete) &#123;<br>    delete rootProject.buildDir<br>&#125;<br></code></pre></td></tr></table></figure>
+<h4 id="getAllTasks"><a href="#getAllTasks" class="headerlink" title="getAllTasks"></a>getAllTasks</h4><blockquote>
+<p>获取当前Project下所有<code>Task</code>，通过设置<code>recursive</code>判断是否需要<code>子Project</code>的<code>Task</code></p>
+</blockquote>
+<figure class="highlight groovy"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><code class="hljs groovy"><span class="hljs-comment">//build.gradle</span><br>gradle.buildFinished &#123;<br>    rootProject.getAllTasks(<span class="hljs-literal">false</span>).each &#123;<br>        println(<span class="hljs-string">"$&#123;it.key&#125; and task is $&#123;it.value&#125;"</span>)<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+<p>输出结果</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs shell">root project 'GradlePluginDemo' and task is [task ':buildEnvironment', task ':clean', task ':cleanIdea', task ':cleanIdeaModule', task ':cleanIdeaProject', task ':cleanIdeaWorkspace', task ':components', task ':dependencies', task ':dependencyInsight', task ':dependentComponents', task ':help', task ':idea', task ':ideaModule', task ':ideaProject', task ':ideaWorkspace', task ':init', task ':javaToolchains', task ':model', task ':openIdea', task ':outgoingVariants', task ':prepareKotlinBuildScriptModel', task ':prii', task ':projects', task ':properties', task ':tasks', task ':wrapper']<br></code></pre></td></tr></table></figure>
+<h4 id="getTasks"><a href="#getTasks" class="headerlink" title="getTasks"></a>getTasks</h4><blockquote>
+<p>获取当前Project下所有<code>Task</code>，返回的对象为<code>TaskContainer</code>，可以对<code>Task</code>进行操作</p>
+</blockquote>
+<figure class="highlight groovy"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><code class="hljs groovy"><span class="hljs-comment">//build.gradle</span><br>gradle.buildFinished &#123;<br>    rootProject.getTasks().all &#123;<br>        println(it)<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+<h4 id="getTasksByName"><a href="#getTasksByName" class="headerlink" title="getTasksByName"></a>getTasksByName</h4><blockquote>
+<p>根据<code>TaskName</code>返回所有相关的<code>Task</code></p>
+</blockquote>
+<h3 id="Project属性API"><a href="#Project属性API" class="headerlink" title="Project属性API"></a>Project属性API</h3><blockquote>
+<p>可以获取<code>Project</code>一些默认定义属性，也可以通过<code>ext</code>扩展自定义属性。</p>
+</blockquote>
+<h4 id="默认自定义属性"><a href="#默认自定义属性" class="headerlink" title="默认自定义属性"></a>默认自定义属性</h4><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">interface</span> <span class="hljs-title">Project</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">Comparable</span>&lt;<span class="hljs-title">Project</span>&gt;, <span class="hljs-title">ExtensionAware</span>, <span class="hljs-title">PluginAware</span> </span>&#123;<br>    <span class="hljs-comment">/**<br>     * The default project build file name.<br>     */</span><br>    String DEFAULT_BUILD_FILE = <span class="hljs-string">"build.gradle"</span>;<br><br>    <span class="hljs-comment">/**<br>     * The hierarchy separator for project and task path names.<br>     */</span><br>    String PATH_SEPARATOR = <span class="hljs-string">":"</span>;<br><br>    <span class="hljs-comment">/**<br>     * The default build directory name.<br>     */</span><br>    String DEFAULT_BUILD_DIR_NAME = <span class="hljs-string">"build"</span>;<br><br>    String GRADLE_PROPERTIES = <span class="hljs-string">"gradle.properties"</span>;<br><br>    String SYSTEM_PROP_PREFIX = <span class="hljs-string">"systemProp"</span>;<br><br>    String DEFAULT_VERSION = <span class="hljs-string">"unspecified"</span>;<br><br>    String DEFAULT_STATUS = <span class="hljs-string">"release"</span>;<br>  ...<br>&#125;<br></code></pre></td></tr></table></figure>
+<ul>
+<li><code>DEFAULT_BUILD_FILE</code>：默认读取配置文件</li>
+<li><code>DEFAULT_BUILD_DIR_NAME</code>：默认生成的build文件存放目录</li>
+<li><code>GRADLE_PROPERTIES</code>：自定义部分属性读取配置文件</li>
+</ul>
+<h4 id="扩展属性"><a href="#扩展属性" class="headerlink" title="扩展属性"></a>扩展属性</h4><h5 id="通过ext实现扩展"><a href="#通过ext实现扩展" class="headerlink" title="通过ext实现扩展"></a>通过<code>ext</code>实现扩展</h5><figure class="highlight groovy"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><code class="hljs groovy"><span class="hljs-comment">//root build.gradle</span><br>ext &#123;<br>    compileSdkVersion = <span class="hljs-number">29</span><br>    buildToolsVersion = <span class="hljs-string">"29.0.3"</span><br>&#125;<br><br><span class="hljs-comment">//module build.gradle</span><br>...<br>android &#123;<br>    compileSdkVersion rootProject.ext.compileSdkVersion<br>  <br>&#125;<br></code></pre></td></tr></table></figure>
+<p>若<code>ext</code>扩展属性过多，可以通过依赖<code>额外Gradle文件</code>进行统一管理</p>
+<figure class="highlight groovy"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><code class="hljs groovy"><span class="hljs-comment">//version.gradle</span><br>ext &#123;<br>    android = [<br>            <span class="hljs-string">compileSdkVersion   :</span> <span class="hljs-number">30</span>,<br>            <span class="hljs-string">versionCode         :</span> <span class="hljs-number">1</span>,<br>            <span class="hljs-string">versionName         :</span> <span class="hljs-string">'1.0.0'</span>,<br>    ]<br>&#125;<br><br><span class="hljs-comment">//Root build.gradle</span><br>apply <span class="hljs-string">from:</span> <span class="hljs-keyword">this</span>.file(<span class="hljs-string">'version.gradle'</span>)<br><br><span class="hljs-comment">//Module build.gradle</span><br>android &#123;<br>    compileSdkVersion rootProject.ext.android.compileSdkVersion<br>    ...<br>&#125;<br></code></pre></td></tr></table></figure>
+<blockquote>
+<p>可以将一些<code>字符串常量、数字常量等</code>放于<code>额外Gradle文件</code>进行管理</p>
+</blockquote>
+<h5 id="配置在gradle-properties文件中"><a href="#配置在gradle-properties文件中" class="headerlink" title="配置在gradle.properties文件中"></a>配置在<code>gradle.properties</code>文件中</h5><blockquote>
+<p>属性只可以用<code>key=value</code>的形式</p>
+</blockquote>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><code class="hljs properties">//gradle.properties<br>...<br>isHaveVersion=true<br><br>//build.gradle<br>        if(rootProject.hasProperty(&quot;isHaveVersion&quot;) ? isHaveVersion.toBoolean() : false)&#123;<br>            println(&quot;taskss&quot;)<br>        &#125;<br></code></pre></td></tr></table></figure>
+<p>基于<code>gradle.properties</code>设置的扩展属性，主要有以下方法进行操作。</p>
+<h6 id="hasProperty"><a href="#hasProperty" class="headerlink" title="hasProperty"></a>hasProperty</h6><blockquote>
+<p>是否存在指定属性</p>
+</blockquote>
+<h6 id="findProperty"><a href="#findProperty" class="headerlink" title="findProperty"></a>findProperty</h6><blockquote>
+<p>获取指定属性值</p>
+</blockquote>
+<h6 id="setProperty"><a href="#setProperty" class="headerlink" title="setProperty"></a>setProperty</h6><blockquote>
+<p>设置指定属性值</p>
+</blockquote>
+<h3 id="Project下FileAPI"><a href="#Project下FileAPI" class="headerlink" title="Project下FileAPI"></a>Project下FileAPI</h3><blockquote>
+<p>获取及操作<strong>当前Project</strong>下文件</p>
+<p><strong>无法进行跨工程调用</strong></p>
+</blockquote>
+<h4 id="路径获取"><a href="#路径获取" class="headerlink" title="路径获取"></a>路径获取</h4><blockquote>
+<p>获取指定目录路径</p>
+</blockquote>
+<h5 id="getRootDir"><a href="#getRootDir" class="headerlink" title="getRootDir"></a>getRootDir</h5><blockquote>
+<p>获取<code>Root Project</code>本地路径</p>
+</blockquote>
+<h5 id="getBuildDir"><a href="#getBuildDir" class="headerlink" title="getBuildDir"></a>getBuildDir</h5><blockquote>
+<p>获取<code>当前Project</code> build文件存放路径</p>
+</blockquote>
+<h5 id="getProjectDir"><a href="#getProjectDir" class="headerlink" title="getProjectDir"></a>getProjectDir</h5><blockquote>
+<p>获取<code>当前Project</code>本地路径</p>
+</blockquote>
+<figure class="highlight groovy"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><code class="hljs groovy"><span class="hljs-comment">//build.gradle</span><br>afterEvaluate &#123;<br>    println(<span class="hljs-string">"rootDir is $&#123;getRootDir().absolutePath&#125;"</span>)<br>    println(<span class="hljs-string">"buildDir is $&#123;getBuildDir().absolutePath&#125;"</span>)<br>    println(<span class="hljs-string">"projectDir is $&#123;getProjectDir().absolutePath&#125;"</span>)<br>&#125;<br></code></pre></td></tr></table></figure>
+<p>输出结果</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><code class="hljs shell">rootDir is /Users/xx/Projects/GradlePluginDemo<br>buildDir is /Users/xx/Projects/GradlePluginDemo/app/build<br>projectDir is /Users/xx/Projects/GradlePluginDemo/app<br></code></pre></td></tr></table></figure>
+<h4 id="文件操作"><a href="#文件操作" class="headerlink" title="文件操作"></a>文件操作</h4><h5 id="file-files"><a href="#file-files" class="headerlink" title="file/files"></a>file/files</h5><blockquote>
+<p>定位文件</p>
+<p>输入内容是以当前Project目录作为基础的相对路径信息</p>
+</blockquote>
+<figure class="highlight groovy"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><code class="hljs groovy"><span class="hljs-comment">//Root build.gradle</span><br><span class="hljs-keyword">def</span> printFile(List&lt;String&gt; fileNames) &#123;<br>    <span class="hljs-keyword">if</span> (!fileNames.isEmpty()) &#123;<br>        <span class="hljs-keyword">try</span> &#123;<br>            <span class="hljs-keyword">if</span> (fileNames.size() == <span class="hljs-number">1</span>) &#123;<br>                println(file(fileNames[<span class="hljs-number">0</span>]).absolutePath)<br>            &#125; <span class="hljs-keyword">else</span> &#123;<br>                println(files(fileNames[<span class="hljs-number">0</span>], fileNames[<span class="hljs-number">1</span>]).files)<br>            &#125;<br>        &#125; <span class="hljs-keyword">catch</span> (GradleException e) &#123;<br>            e.printStackTrace()<br>        &#125;<br>    &#125;<br>&#125;<br><br><span class="hljs-comment">//调用</span><br>    <span class="hljs-keyword">def</span> list = <span class="hljs-keyword">new</span> ArrayList()<br>    list.add(<span class="hljs-string">"build.gradle"</span>) <span class="hljs-comment">//Users/xx/Projects/GradlePluginDemo/build.gradle</span><br>    printFile(list)<br><br>    list.add(<span class="hljs-string">"gradle.properties"</span>) <span class="hljs-comment">//Users/xx/Projects/GradlePluginDemo/gradle.properties</span><br>    printFile(list)<br></code></pre></td></tr></table></figure>
+<p><code>files</code>返回<a href="https://docs.gradle.org/current/javadoc/org/gradle/api/file/FileCollection.html" target="_blank" rel="noopener">FileCollection</a>，内部是文件的集合</p>
+<h5 id="copy-delete-mkdir"><a href="#copy-delete-mkdir" class="headerlink" title="copy/delete/mkdir"></a>copy/delete/mkdir</h5><blockquote>
+<p>拷贝文件</p>
+</blockquote>
+<figure class="highlight groovy"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><code class="hljs groovy">copy &#123;<br>    from file(<span class="hljs-string">"build.gradle"</span>) <span class="hljs-comment">//文件(夹)来源路径</span><br>    into <span class="hljs-string">"src/"</span> <span class="hljs-comment">//文件(夹)拷贝目的路径 </span><br>    exclude &#123;<br>        <span class="hljs-comment">// 排除不需要拷贝的文件</span><br>    &#125;<br>    rename &#123;<br>        <span class="hljs-comment">// 对拷贝过来的文件进行重命名</span><br>    &#125;<br>  &#125;<br></code></pre></td></tr></table></figure>
+<h5 id="fileTree-zipTree-tarTree"><a href="#fileTree-zipTree-tarTree" class="headerlink" title="fileTree/zipTree/tarTree"></a>fileTree/zipTree/tarTree</h5><blockquote>
+<p>遍历文件</p>
+</blockquote>
+<figure class="highlight groovy"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><code class="hljs groovy">fileTree(<span class="hljs-string">"src"</span>) &#123; FileTree fileTree -&gt;<br>    fileTree.visit &#123; FileTreeElement fileTreeElement -&gt;<br>        println <span class="hljs-string">"The file is $fileTreeElement.file.name"</span><br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+<p>使用<code>fileTree</code>将指定目录转换为<strong>文件树</strong>的形式，后续就可以获取到每一个<code>树节点(文件)</code>进行操作。</p>
+<h3 id="Project生命周期API"><a href="#Project生命周期API" class="headerlink" title="Project生命周期API"></a>Project生命周期API</h3><blockquote>
+<p>监听<code>build.gradle</code>加载生成<code>Project</code>前后</p>
+</blockquote>
+<h4 id="beforeEvaluate"><a href="#beforeEvaluate" class="headerlink" title="beforeEvaluate"></a>beforeEvaluate</h4><blockquote>
+<p><code>build.gradle</code>加载生成<code>Project</code>前</p>
+<p><strong>在当前build.gradle调用监听是无效的，可以监听子Project</strong></p>
+</blockquote>
+<h4 id="afterEvaluate"><a href="#afterEvaluate" class="headerlink" title="afterEvaluate"></a>afterEvaluate</h4><blockquote>
+<p><code>build.gradle</code>加载生成<code>Project</code>后</p>
+<p>此时可以获取到<code>当前Project</code>配置的所有数据</p>
+</blockquote>
+<h3 id="其他API"><a href="#其他API" class="headerlink" title="其他API"></a>其他API</h3><h4 id="依赖配置相关API"><a href="#依赖配置相关API" class="headerlink" title="依赖配置相关API"></a>依赖配置相关API</h4><h5 id="buildscript"><a href="#buildscript" class="headerlink" title="buildscript"></a>buildscript</h5><blockquote>
+<p><strong>配置核心项目依赖</strong></p>
+<p>配置在<code>Root build.gradle</code>中</p>
+</blockquote>
+<figure class="highlight groovy"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><code class="hljs groovy"><span class="hljs-comment">//Root build.gradle</span><br>buildscript &#123;<br>    repositories &#123;<br>        google()<br>        jcenter()<br>        mavenCentral()<br>    &#125;<br>    dependencies &#123;<br>        classpath <span class="hljs-string">'com.android.tools.build:gradle:4.1.3'</span><br>        classpath <span class="hljs-string">"org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"</span><br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+<h5 id="repositories"><a href="#repositories" class="headerlink" title="repositories"></a>repositories</h5><blockquote>
+<p>配置项目依赖的仓库</p>
+</blockquote>
+<figure class="highlight groovy"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><code class="hljs groovy">repositories &#123;<br>    google()<br>    jcenter()<br>    mavenCentral()<br>&#125;<br></code></pre></td></tr></table></figure>
+<h5 id="dependencies"><a href="#dependencies" class="headerlink" title="dependencies"></a>dependencies</h5><blockquote>
+<p>配置项目的依赖信息</p>
+</blockquote>
+<figure class="highlight groovy"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><code class="hljs groovy">dependencies&#123;<br>  <span class="hljs-comment">//本地aar/jar依赖</span><br>  implementation fileTree(<span class="hljs-string">dir:</span> <span class="hljs-string">'libs'</span>, <span class="hljs-string">include:</span> [<span class="hljs-string">'*.jar,*.aar'</span>])<br>  <span class="hljs-comment">//本地module依赖</span><br>  api project(<span class="hljs-string">":vc_common"</span>)<br>  <span class="hljs-comment">//远程仓库依赖</span><br>  implementation <span class="hljs-string">'com.github.chrisbanes:PhotoView:1.3.0'</span>&#123;<br>     exclude <span class="hljs-string">group:</span><span class="hljs-string">'com.android.support'</span> <span class="hljs-comment">//避免冲突，移除内部相关依赖</span><br>  &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+<p><code>substitute</code> 可在<code>远程仓库依赖</code>与<code>本地Module依赖</code>之间切换。</p>
+<blockquote>
+<p><code>implementation</code>与<code>api</code>的区别?</p>
+<ul>
+<li><code>implementation</code>：<strong>该依赖方式依赖的库不会传递，依赖只在当前Module中生效</strong></li>
+<li><code>api</code>：<strong>该依赖方式依赖的库会传递，其他Module依赖了当前Module时，也可以使用依赖的库</strong></li>
+</ul>
+</blockquote>
+<h4 id="外部命令执行"><a href="#外部命令执行" class="headerlink" title="外部命令执行"></a>外部命令执行</h4><h5 id="exec-javaexec"><a href="#exec-javaexec" class="headerlink" title="exec/javaexec"></a>exec/javaexec</h5><blockquote>
+<p>可执行外部命令，通过配置不同的运行环境来支持多种命令。</p>
+</blockquote>
+<figure class="highlight groovy"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><code class="hljs groovy"><span class="hljs-comment">//build.gradle</span><br>    exec &#123;<br>        <span class="hljs-keyword">try</span> &#123;<br>            executable <span class="hljs-string">'java'</span><br>            args <span class="hljs-string">"-version"</span><br>            println <span class="hljs-string">"The command execute is success"</span><br>        &#125; <span class="hljs-keyword">catch</span> (GradleException e) &#123;<br>            println <span class="hljs-string">"The command execute is failed"</span><br>        &#125;<br>    &#125;<br><br><span class="hljs-comment">//或</span><br>exec &#123;<br>    commandLine(<span class="hljs-string">'java'</span>,<span class="hljs-string">'-version'</span>)<br>&#125;<br></code></pre></td></tr></table></figure>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><p><a href="https://docs.gradle.org/current/dsl/org.gradle.api.Project.html#N153F9" target="_blank" rel="noopener">Project官方文档</a></p>
+<p><a href="https://juejin.cn/post/6844904132092903437#heading-12" target="_blank" rel="noopener">Gradle核心揭秘</a></p>
 
             </div>
             <hr>
