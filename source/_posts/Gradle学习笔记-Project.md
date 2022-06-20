@@ -3,6 +3,7 @@ title: Gradle学习笔记-Project
 date: 2019-06-14 10:50:14
 tags: Gradle
 top: 10
+mermaid: true
 ---
 
 >  基于[Gradle 7.3.3源码](https://github.com/gradle/gradle/tree/v7.3.3/gradle)分析

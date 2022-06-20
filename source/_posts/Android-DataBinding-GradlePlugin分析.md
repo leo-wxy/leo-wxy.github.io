@@ -4,6 +4,7 @@ typora-root-url: ../
 date: 2022-05-10 21:13:03
 tags: 源码解析
 top: 9
+mermaid: true
 ---
 
 > DataBinding 中 Gradle Plugin相关分析，主要实现了以下功能
