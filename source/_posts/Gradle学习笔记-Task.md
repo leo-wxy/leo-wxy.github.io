@@ -387,13 +387,88 @@ tasks.whenTaskAdded { task->
 >
 > 在控制台会显示`up-to-date`表示跳过该次执行。
 
+*Gradle通过对比上一次构建之后，Task的inputs和outputs是否发生变化，来决定是否跳过执行。*
+
 #### Task Input/Output(任务输入/输出)
 
 > 大多数情况下，`Task`需要接收一些`Input(输入)`，并生成一些`Output(输出)`。
 
 ![Task Input/Output示例](/images/JavaCompileTask.webp)
 
+上图是一个简单的示例：
 
+通过`Input——TargetJDKVersion , Sourcefiles`经过`JavaCompileTask`处理后得到`Output——Class files`。
+
+> 可以将其理解为一个函数，`input`为入参，`output`为返回值。
+>
+> 还有两个关键点：
+>
+> - 
+
+在定义Task的输入输出时，要遵循一个原则：**只有Task的属性会影响输出，就需要把该属性注册为输入。**
+
+```groovy
+class VersionMsg {
+    String versionCode
+    String versionName
+    String versionInfo
+}
+ext{
+    destFile = file('releases.xml')
+}
+
+
+task writeTask() {
+    doFirst {
+        if (destFile != null && !destFile.exists()) {
+            destFile.createNewFile()
+        }
+    }
+
+    inputs.property('versionCode', "2")
+    inputs.property('versionName', "1.0.0")
+    inputs.property('versionInfo', "init")
+
+    outputs.file destFile
+    doLast {
+        def data = inputs.getProperties()
+        File file = outputs.getFiles().getSingleFile()
+
+        def versionMsg = new VersionMsg(data)
+        //将实体对象写入到xml文件中
+        def sw = new StringWriter()
+        def xmlBuilder = new MarkupBuilder(sw)
+        //没有内容
+        xmlBuilder.releases {
+            release {
+                versionCode(versionMsg.versionCode)
+                versionName(versionMsg.versionName)
+                versionInfo(versionMsg.versionInfo)
+            }
+        }
+        //直接写入
+        file.withWriter { writer -> writer.append(sw.toString())
+        }
+    }
+}
+
+task readTask() {
+    dependsOn(writeTask)
+    inputs.file this.destFile
+    doLast {
+        //读取输入文件的内容并显示
+        def file = inputs.files.singleFile
+        println file.text
+    }
+}
+
+task IOFinishTask() {
+    dependsOn writeTask, readTask
+    doLast {
+        println("io finish")
+    }
+}
+```
 
 
 
