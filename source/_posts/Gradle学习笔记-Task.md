@@ -118,8 +118,12 @@ task Task1 {
 ### Task DependsOn(执行依赖)
 
 > Gradle中的任务执行顺序是不确定的，需要通过task之间的依赖关系，保证被依赖的task优先执行，可通过`dependsOn`来确定依赖关系。
+>
+> **默认规则与Task名称相关，按照名称进行排序！**
 
 ![Task执行顺序](/images/Task执行顺序.webp)
+
+#### dependsOn 强依赖
 
 ```groovy
 task first doLast {
@@ -170,9 +174,20 @@ task forth {
 }
 ```
 
+#### 顺序依赖
 
+> 此外可通过`shouldRunAfter`和`mustRunAfter`来控制任务之间的执行顺序
 
-此外可通过`shouldRunAfter`和`mustRunAfter`来控制任务之间的执行顺序
+##### mustRunAfter
+
+> 强制按照要求的顺序执行
+
+##### shouldRunAfter
+
+> 非强制的按照顺序执行，在以下两种情况会放弃此规则：
+>
+> 1. `TaskGraph`为有向无环，可能导致环形放弃规则
+> 2. 并行执行任务并且所有任务的依赖项都已完成
 
 ### Task Type(任务类型)
 
@@ -403,7 +418,8 @@ tasks.whenTaskAdded { task->
 >
 > 还有两个关键点：
 >
-> - 
+> - **隐式依赖**：若Task的输入为另一Task的输出，则会被推断出依赖关系。
+> - **配置阶段声明**
 
 在定义Task的输入输出时，要遵循一个原则：**只有Task的属性会影响输出，就需要把该属性注册为输入。**
 
@@ -452,7 +468,7 @@ task writeTask() {
     }
 }
 
-task readTask() {
+task zreadTask() {
     dependsOn(writeTask)
     inputs.file this.destFile
     doLast {
@@ -463,14 +479,18 @@ task readTask() {
 }
 
 task IOFinishTask() {
-    dependsOn writeTask, readTask
+    dependsOn writeTask, zreadTask
     doLast {
         println("io finish")
     }
 }
 ```
 
+以上定义了三个Task：
 
+- writeTask：写入`release.xml`，出参为`release.xml`路径
+- zreadTask：读取`release.xml`，
+- IOFinishTask
 
 ### Task Other
 
