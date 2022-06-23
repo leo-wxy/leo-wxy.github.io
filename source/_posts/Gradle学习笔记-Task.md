@@ -469,7 +469,6 @@ task writeTask() {
 }
 
 task zreadTask() {
-    dependsOn(writeTask)
     inputs.file this.destFile
     doLast {
         //读取输入文件的内容并显示
@@ -489,8 +488,50 @@ task IOFinishTask() {
 以上定义了三个Task：
 
 - writeTask：写入`release.xml`，出参为`release.xml`路径
-- zreadTask：读取`release.xml`，
-- IOFinishTask
+- zreadTask：读取`release.xml`，此时`zreadTask`与`writeTask`建立了隐式依赖
+- IOFinishTask：执行需要依赖`zreadTask`与`writeTask`
+
+第一次执行`IOFinishTask`时，会执行`zreadTask`与`writeTask`，再次执行时，`writeTask`标记为`up-to-date`，表示为**增量构建**。
+
+#### Task-Input
+
+Task-Input有三种形式的输入：
+
+- 简单值：包括数值(int)、字符串(String)和任何实现Serializable的类。 **@Input**
+- 文件：包括单个文件或文件目录 **@InputFile @InputDirectory @InputFiles**
+- 嵌套对象：非以上两种输入，内部含有嵌套的`inputs`和`outputs`类型 **@Nested**
+
+#### Task-Output
+
+Task-Output输出主要为：
+
+- 文件：包括文件或文件目录 **@OutputFile @OutputDirectory**
+
+#### 运行时API
+
+> 可以通过`Runtime API`在自定义Task时使用增量构建。相比与`自定义Task类`可以减少改动成本。
+
+Runtime API主要有三个：
+
+- Task.getInputs
+  - property/proprtrties == @Input
+  - file/files == @InputFile/@InputFiles
+  - dir == @InputDirectory
+- Task.getOutputs
+  - files/file = @OutputFiles/@OutputFile
+  - dirs/dir = @OutputDirectories/@OutputDirectory
+- Task.getDestroyables
+
+```groovy
+
+
+```
+
+
+
+#### 输入校验
+
+> Gradle会默认对`@InputFile、@InputDirectory、@OutputDirectory`进行为空校验，若需要变为可选需要使用**@Optional**
 
 ### Task Other
 
@@ -592,8 +633,8 @@ task B{
 
 
 
-
-
 ## 引用
 
 [Gradle官方文档](https://docs.gradle.org/current/userguide/more_about_tasks.html)
+
+[Gradle增量构建](https://www.cnblogs.com/flydean/p/14409447.html)
