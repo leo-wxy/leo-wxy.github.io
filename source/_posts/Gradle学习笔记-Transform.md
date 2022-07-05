@@ -44,7 +44,7 @@ top: 9
 
 #### Transform Task
 
-每个Transform都对应一个Task，对应名称为 `transformClassesWith${TransformName}For${Variant}`，例如`transformClassesWithMethodTraceForRelease`
+每个Transform都对应一个Task，对应名称为 `transform${inputTypes}With${TransformName}For${Variant}`，例如`transformClassesWithMethodTraceForRelease`
 
 *Transform 内的输入输出实际对应的就是Task 的输入输出。*
 
@@ -69,6 +69,10 @@ class TestTransform : Transform() {
     override fun getInputTypes(): MutableSet<QualifiedContent.ContentType> {
         TODO("Not yet implemented")
     }
+ 
+    override fun getOutputTypes(): MutableSet<QualifiedContent.ContentType> {
+        return super.getOutputTypes()
+    }
 
     override fun getScopes(): MutableSet<in QualifiedContent.Scope> {
         TODO("Not yet implemented")
@@ -87,11 +91,44 @@ class TestTransform : Transform() {
 
 #### getName
 
+> 指定`Transform`名称，后续也是对应的Task名称
+>
+> Task命名规则为：**transform${inputTypes}With${TransformName}For${Variant}**
+
+#### getInputTypes/getOutputTypes
+
+> 指定`Transform`输入/输出类型，对象为`ContentType`。
+>
+> 其中`getOutputTypes`默认与`getInputTypes`一致
+
+##### ContentType——内容类型
+
+> 输入或输出的内容类型。
+
+###### *DefaultContentType(自定义时使用)
+
+```java
+enum DefaultContentType implements ContentType {
+        /**
+         * The content is compiled Java code. This can be in a Jar file or in a folder. If
+         * in a folder, it is expected to in sub-folders matching package names.
+         */
+        CLASSES(0x01),
+
+        /** The content is standard Java resources. */
+        RESOURCES(0x02);
+}
+```
 
 
-#### getInputTypes
+
+###### ExtendedContentType(内部Transform使用)
 
 #### getScopes
+
+> 指定`Transform`处理哪些范围的输入文件
+
+##### Scope——处理范围
 
 #### isIncremental
 
