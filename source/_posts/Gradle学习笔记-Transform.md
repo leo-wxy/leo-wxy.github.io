@@ -5,3 +5,104 @@ date: 2022-03-10 21:54:06
 tags: Gradle
 top: 9
 ---
+
+`Transform API`存在于`AGP`中，存在版本为`4.2-7.0+`，后续在8.0时就会被移除。
+
+## Transform
+
+> `AGP 1.5`引入的特性，**主要用于在构建过程中，在`Class->Dex`修改Class字节码，通过Transform可以获得Class文件。**
+>
+> 再通过`Javassist`或`ASM`对字节码进行修改，插入自定义逻辑。
+
+[AGP插件版本说明](https://developer.android.com/studio/releases/gradle-plugin?hl=zh-cn#groovy)
+
+后面的分析基于以下版本：
+
+- AGP：[7.2.1](https://android.googlesource.com/platform/tools/base/+/studio-master-dev/build-system/README.md) 本次采用依赖 "com.android.tools.build:gradle:7.2.1"来分析
+- Gradle：[7.3.3 ](https://github.com/gradle/gradle/tree/v7.3.3)
+
+### 使用场景
+
+- **埋点统计**：在页面展现和退出等生命周期中插入埋点统计代码，以统计页面展现数据
+- **耗时监控**：在指定方法的前后插入耗时计算，以观察方法执行时间
+- **方法替换**：将方法调用替换为调用另一个方法 
+- 信息读取：解析编译产生的.class文件，得到一些有用的数据，做其他操作
+
+### 工作机制
+
+> 使用`Transform`无需关注相关task的生成与执行，主要在于处理输入的`资源文件`
+
+#### 工作时机
+
+工作在Android构建过程中的`.class Files -> Dex`节点
+
+#### 处理对象
+
+- javac 编译后的Class文件
+- resource资源
+- 本地/远程依赖的jar/aar文件
+
+#### Transform Task
+
+每个Transform都对应一个Task，对应名称为 `transformClassesWith${TransformName}For${Variant}`，例如`transformClassesWithMethodTraceForRelease`
+
+*Transform 内的输入输出实际对应的就是Task 的输入输出。*
+
+最后`Transform`输出的内容都会存储在`${moduleName}/build/intermediates/transforms/${TransformName}/${Variant}`，例如`app/build/intermediates/transforms/MethodTrace/release`
+
+#### Transform链
+
+`TaskManager`将每个`Transform Task`串连起来，前一个的输出会做为下一个的输入信息。
+
+
+
+### 相关API
+
+以下为Transform中的核心方法
+
+```kotlin
+class TestTransform : Transform() {
+    override fun getName(): String {
+        TODO("Not yet implemented")
+    }
+
+    override fun getInputTypes(): MutableSet<QualifiedContent.ContentType> {
+        TODO("Not yet implemented")
+    }
+
+    override fun getScopes(): MutableSet<in QualifiedContent.Scope> {
+        TODO("Not yet implemented")
+    }
+
+    override fun isIncremental(): Boolean {
+        TODO("Not yet implemented")
+    }
+
+    override fun transform(transformInvocation: TransformInvocation?) {
+        super.transform(transformInvocation)
+    }
+    
+}
+```
+
+#### getName
+
+
+
+#### getInputTypes
+
+#### getScopes
+
+#### isIncremental
+
+#### transform
+
+##### TransformOutputProvider
+
+##### TransformInput
+
+
+
+### 工作原理
+
+## TransformAction
