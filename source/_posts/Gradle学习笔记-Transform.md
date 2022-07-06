@@ -105,7 +105,7 @@ class TestTransform : Transform() {
 
 > 输入或输出的内容类型。
 
-###### *DefaultContentType(自定义时使用)
+###### * DefaultContentType(自定义时使用)
 
 ```java
 enum DefaultContentType implements ContentType {
@@ -120,17 +120,153 @@ enum DefaultContentType implements ContentType {
 }
 ```
 
+- **CLASSES**：Java字节码，包括Jar文件
+- **RESOURCES**：Java资源文件
+
 
 
 ###### ExtendedContentType(内部Transform使用)
 
+```java
+public enum ExtendedContentType implements ContentType {
+    /**
+     * The content is dex files.
+     */
+    DEX(0x1000),
+
+    /**
+     * Content is a native library.
+     */
+    NATIVE_LIBS(0x2000),
+
+    /**
+     * Instant Run '$override' classes, which contain code of new method bodies.
+     *
+     * <p>This stream also contains the AbstractPatchesLoaderImpl class for applying HotSwap
+     * changes.
+     */
+    CLASSES_ENHANCED(0x4000),
+
+    /**
+     * The content is an artifact exported by the data binding compiler.
+     */
+    DATA_BINDING(0x10000),
+
+
+    /** The content is a dex archive. It contains a single DEX file per class. */
+    DEX_ARCHIVE(0x40000)
+  
+}
+```
+
+> 通常使用`TransformManager`设置类型
+
+```java
+    public static final Set<ContentType> CONTENT_CLASS = ImmutableSet.of(CLASSES);
+    public static final Set<ContentType> CONTENT_JARS = ImmutableSet.of(CLASSES, RESOURCES);
+    public static final Set<ContentType> CONTENT_RESOURCES = ImmutableSet.of(RESOURCES);
+```
+
+##### 示例代码
+
+```kotlin
+    override fun getInputTypes(): MutableSet<QualifiedContent.ContentType> {
+        return TransformManager.CONTENT_CLASS
+    }
+```
+
+
+
 #### getScopes
 
-> 指定`Transform`处理哪些范围的输入文件
+> 指定`Transform`处理哪些作用域的输入文件
 
 ##### Scope——处理范围
 
+###### * Scope(自定义时使用)
+
+```java
+    enum Scope implements ScopeType {
+        /** Only the project (module) content */
+        PROJECT(0x01),
+        /** Only the sub-projects (other modules) */
+        SUB_PROJECTS(0x04),
+        /** Only the external libraries */
+        EXTERNAL_LIBRARIES(0x10),
+        /** Code that is being tested by the current variant, including dependencies */
+        TESTED_CODE(0x20),
+        /** Local or remote dependencies that are provided-only */
+        PROVIDED_ONLY(0x40)
+    }
+```
+
+- **PROJECT**：当前模块
+
+- **SUB_PROJECTS**：子模块
+
+- **EXTERNAL_LIBRARIES**：外部依赖，包括当前和子模块所依赖的Jar/AAR
+
+- **TESTED_CODE**：测试代码
+
+- **PROVIDED_ONLY**：本地和远程依赖的Jar/AAR
+
+**若为子Module注册Transform，则只能使用`Scope.PROJECT`。**
+
+> 通常使用`TransformManager`设置作用域
+
+```java
+    public static final Set<ScopeType> PROJECT_ONLY = ImmutableSet.of(Scope.PROJECT); 
+    public static final Set<ScopeType> SCOPE_FULL_PROJECT =
+            ImmutableSet.of(Scope.PROJECT, Scope.SUB_PROJECTS, Scope.EXTERNAL_LIBRARIES);//通常使用较多，若为子Module就别用这个
+```
+
+
+
+###### InternalScope(内部Transform使用)
+
+```java
+public enum InternalScope implements QualifiedContent.ScopeType {
+
+    /**
+     * Scope to package classes.dex files in the main split APK in InstantRun mode. All other
+     * classes.dex will be packaged in other split APKs.
+     */
+    MAIN_SPLIT(0x10000),
+
+    /**
+     * Only the project's local dependencies (local jars). This is to be used by the library plugin
+     * only (and only when building the AAR).
+     */
+    LOCAL_DEPS(0x20000),
+
+    /** Only the project's feature or dynamic-feature modules. */
+    FEATURES(0x40000),
+    ;
+}
+```
+
+
+
+##### 示例代码
+
+```kotlin
+    override fun getScopes(): MutableSet<in QualifiedContent.Scope> {
+        val set = mutableSetOf<QualifiedContent.Scope>()
+        set.add(QualifiedContent.Scope.PROJECT)
+        if (isApp) { //是否为app module
+            set.add(QualifiedContent.Scope.EXTERNAL_LIBRARIES)
+        }
+        return set
+    }
+```
+
+
+
 #### isIncremental
+
+> 当前`Transform`是否支持增量编译
+>
+> 
 
 #### transform
 
