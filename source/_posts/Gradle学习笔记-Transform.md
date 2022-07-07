@@ -266,15 +266,194 @@ public enum InternalScope implements QualifiedContent.ScopeType {
 
 > 当前`Transform`是否支持增量编译
 >
-> 
-
-#### transform
-
-##### TransformOutputProvider
-
-##### TransformInput
+> 尽量避免重复执行相同的工作。
 
 
+
+
+
+#### * transform
+
+> 在这个方法中获取输入的Class文件，经过中间过程的修改，最后输出修改的Class文件。
+
+
+
+##### TransformInvocation - 提供输入&输出相关信息
+
+```java
+public interface TransformInvocation {
+
+    /**
+     * Returns the context in which the transform is run.
+     * @return the context in which the transform is run.
+     */
+    @NonNull
+    Context getContext();
+
+    /**
+     * Returns the inputs/outputs of the transform.
+     * @return the inputs/outputs of the transform.
+     */
+    @NonNull
+    Collection<TransformInput> getInputs();
+
+    /**
+     * Returns the referenced-only inputs which are not consumed by this transformation.
+     * @return the referenced-only inputs.
+     */
+    @NonNull Collection<TransformInput> getReferencedInputs();
+    /**
+     * Returns the list of secondary file changes since last. Only secondary files that this
+     * transform can handle incrementally will be part of this change set.
+     * @return the list of changes impacting a {@link SecondaryInput}
+     */
+    @NonNull Collection<SecondaryInput> getSecondaryInputs();
+
+    /**
+     * Returns the output provider allowing to create content.
+     * @return he output provider allowing to create content.
+     */
+    @Nullable
+    TransformOutputProvider getOutputProvider();
+
+
+    /**
+     * Indicates whether the transform execution is incremental.
+     * @return true for an incremental invocation, false otherwise.
+     */
+    boolean isIncremental();
+}
+```
+
+主要包括以下方法：
+
+- **getContext**：返回`Transform`运行相关信息
+- **getInputs**：返回`TransformInput`对象，主要是输入内容信息
+- **getOutputProvider**：返回`TransformOutputProvider`对象，主要是返回输出文件
+- **isIncremental**：当前`Transform`对应Task是否增量构建
+
+
+
+###### TransformInput - 输入文件信息
+
+```java
+public interface TransformInput {
+
+    /**
+     * Returns a collection of {@link JarInput}.
+     */
+    @NonNull
+    Collection<JarInput> getJarInputs();
+
+    /**
+     * Returns a collection of {@link DirectoryInput}.
+     */
+    @NonNull
+    Collection<DirectoryInput> getDirectoryInputs();
+}
+
+```
+
+主要包括以下两个方法：
+
+- getJarInputs:Collection<JarInput>：以jar和aar的依赖方式参与构建的输入文件，包含本地依赖和远程依赖
+- getDirectoryInputs:Collection<DirectoryInput>：以源码方式参与项目编译的所有目录结构及其中的源码文件
+
+
+
+###### TransformOutputProvider - 输出信息
+
+```java
+public interface TransformOutputProvider {
+
+    /**
+     * Delete all content. This is useful when running in non-incremental mode
+     *
+     * @throws IOException if deleting the output failed.
+     */
+    void deleteAll() throws IOException;
+
+
+     /**
+     * Returns the location of content for a given set of Scopes, Content Types, and Format.
+     *
+     * <p>If the format is {@link Format#DIRECTORY} then the result is the file location of the
+     * directory.<br>
+     * If the format is {@link Format#JAR} then the result is a file representing the jar to create.
+     */
+    @NonNull
+    File getContentLocation(
+            @NonNull String name,
+            @NonNull Set<QualifiedContent.ContentType> types,
+            @NonNull Set<? super QualifiedContent.Scope> scopes,
+            @NonNull Format format);
+}
+```
+
+主要包括以下两个方法：
+
+- **deleteAll**：清空输出目录下所有文件，用于非增量构建的情况下(`TransformInvocation.isIncremental == false `)
+
+- **getContentLocation**：获取指定范围(`Scope`)以及指定类型(`ContentType`)还有文件类型(`Format：目前只有Directory，JAR`)的输出目标路径
+
+  
+
+##### 执行流程
+
+###### 获取输入文件
+
+主要对象为`TransformInput`，对应的文件分为两种：
+
+- 源码文件 / `DirectoryInput`
+- 依赖的Jar/aar文件 / `JarInput`
+
+###### 获取输出路径
+
+主要对象为`TransformOutputProvider`，需要采用指定方法获取，输出路径主要是两种：
+
+- 源码文件输出路径 
+
+  ```kotlin
+          val dest = outputProvider.getContentLocation(
+              dirInput.name,
+              dirInput.contentTypes,
+              dirInput.scopes,
+              Format.DIRECTORY
+          )
+  ```
+
+  
+
+- 依赖的Jar/aar文件输出路径
+
+  ```kotlin
+              val dest = outputProvider.getContentLocation(
+                  jarInput.name,
+                  jarInput.contentTypes,
+                  jarInput.scopes,
+                  Format.JAR
+              )
+  ```
+
+主要区别在设置的`Format`上。
+
+###### 处理输入文件
+
+处理上按照输入文件类型分开处理
+
+- 源码文件(编译生成的class文件)
+
+  ```kotlin
+  ```
+
+  
+
+- Jar/aar文件
+
+  ```kotlin
+  ```
+
+  
 
 ### 工作原理
 
