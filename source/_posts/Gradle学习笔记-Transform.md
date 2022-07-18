@@ -268,7 +268,42 @@ public enum InternalScope implements QualifiedContent.ScopeType {
 >
 > 尽量避免重复执行相同的工作。
 
+存在两个标志位：
 
+##### Transform.isIncremental
+
+> `Transform`增量构建的开发
+
+若为`true`，对应的`TransformTask`依然会执行，有可能触发增量构建
+
+##### TransformInvocation.isIncremental
+
+> 当前`Transform`对应的`Task`是否增量执行
+
+若为`true`，对应的`TransformTask`表示增量模式。
+
+在增量模式下，所有的`Input`都是带`Status`的。
+
+```java
+public enum Status {
+    /**
+     * The file was not changed since the last build.
+     */
+    NOTCHANGED, //不需要任何处理
+    /**
+     * The file was added since the last build.
+     */
+    ADDED,//按照正常处理流程并复制
+    /**
+     * The file was modified since the last build.
+     */
+    CHANGED,//按照正常处理流程并复制
+    /**
+     * The file was removed since the last build.
+     */
+    REMOVED;//同步删除outputProvider对应的文件
+}
+```
 
 
 
@@ -444,6 +479,56 @@ public interface TransformOutputProvider {
 - 源码文件(编译生成的class文件)
 
   ```kotlin
+  private  fun foreachDirectory(context: Context, outputProvider: TransformOutputProvider, input: DirectoryInput, isIncremental: Boolean) {
+      //
+          val dir = input.file
+          val dest = outputProvider.getContentLocation(
+              input.name,
+              input.contentTypes,
+              input.scopes,
+              Format.DIRECTORY
+          )
+          FileUtils.forceMkdir(dest)
+          val srcDicPath = dir.absolutePath
+          val destDicPath = dest.absolutePath
+    
+       //增量模式处理
+       if (isIncremental) {
+              val fileStatus = input.changedFiles
+              fileStatus.forEach { file, status ->
+                  val destFilePath = file.absolutePath.replace(srcDicPath, destDicPath)
+                  val destFile = File(destFilePath)       
+                  when (status) {
+                      Status.ADDED, Status.CHANGED -> {
+                          println("File is Updated name： ${file.name} and path ${file.absolutePath}")
+                          if (destFile.exists()) {
+                              destFile.delete()
+                          }
+                          val modifiedFile: File? = null
+                          if (modifiedFile != null) {
+                              FileUtils.copyFile(modifiedFile, destFile)
+                              modifiedFile.delete()
+                          } else {
+                              FileUtils.copyFile(file, destFile)
+                          }
+                      }
+                      Status.REMOVED               -> {
+                          println("File is Removed name： ${file.name}")
+                          if (destFile.exists()) {
+                              destFile.delete()
+                          }
+                      }
+                      else                         -> {
+  
+                      }
+                  }        
+       }
+    
+       //非增量模式处理
+    
+  }
+    
+    
   ```
 
   
@@ -453,7 +538,12 @@ public interface TransformOutputProvider {
   ```kotlin
   ```
 
-  
+
+
+
+#### 注册Transform
+
+
 
 ### 工作原理
 
