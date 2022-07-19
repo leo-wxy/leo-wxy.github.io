@@ -476,7 +476,35 @@ public interface TransformOutputProvider {
 
 处理上按照输入文件类型分开处理
 
-- 源码文件(编译生成的class文件)
+```kotlin
+    override fun transform(transformInvocation: TransformInvocation) {
+      val context = transformInvocation.context
+      val inputs = transformInvocation.inputs
+      val outputProvider = transformInvocation.outputProvider
+      val isIncremental = transformInvocation.isIncremental
+      
+      
+     if (!isIncremental) {
+            //删除所有
+            outputProvider.deleteAll()
+        }
+        inputs.forEach { input ->
+            //遍历 src下文件
+            input.directoryInputs.forEach { directoryInput ->
+                foreachDirectory(context, outputProvider, directoryInput, isIncremental)
+            }
+            //遍历jar/aar内文件
+            input.jarInputs.forEach { jarInput ->
+                foreachJar(context, outputProvider, jarInput, isIncremental)
+            }
+        } 
+      
+    }
+```
+
+
+
+- 源码文件(src下编译生成的class文件)
 
   ```kotlin
   private  fun foreachDirectory(context: Context, outputProvider: TransformOutputProvider, input: DirectoryInput, isIncremental: Boolean) {
@@ -501,16 +529,7 @@ public interface TransformOutputProvider {
                   when (status) {
                       Status.ADDED, Status.CHANGED -> {
                           println("File is Updated name： ${file.name} and path ${file.absolutePath}")
-                          if (destFile.exists()) {
-                              destFile.delete()
-                          }
-                          val modifiedFile: File? = null
-                          if (modifiedFile != null) {
-                              FileUtils.copyFile(modifiedFile, destFile)
-                              modifiedFile.delete()
-                          } else {
-                              FileUtils.copyFile(file, destFile)
-                          }
+                          transformDir(context,dir,inputFile,destFilePath)
                       }
                       Status.REMOVED               -> {
                           println("File is Removed name： ${file.name}")
@@ -522,30 +541,128 @@ public interface TransformOutputProvider {
   
                       }
                   }        
+       }else{
+              FileUtils.copyDirectory(dir, dest)
+              dir.walk().asSequence().filter {//按照指定格式筛选文件
+                  it.isFile && checkDicClassFile(it.name)
+              }.forEach { file ->
+                  transformDir(context, dir, file, file.absolutePath.replace(srcDirPath, destDirPath))
+              }
        }
     
        //非增量模式处理
     
   }
     
+      private fun transformDir(context: Context, dir: File, inputFile: File, destFilePath: String) {
+          val destFile = File(destFilePath)
+          if (destFile.exists()) {
+              destFile.delete()
+          }
+        //编辑class文件
+          val modifiedFile = modifyClassFile(dir,inputFile,context.temporaryDir)
+          if (modifiedFile != null) {
+              FileUtils.copyFile(modifiedFile, destFile)
+              modifiedFile.delete()
+          } else {
+              FileUtils.copyFile(inputFile, destFile)
+          }
+  
+      }
     
   ```
 
-  
+  > 注意⚠️：就算不想修改class文件，也需要**原样拷贝过去**。否则该文件就会丢失！
 
 - Jar/aar文件
 
+  > 相比于class文件多了解压缩过程，解压后得到的class文件处理方式与上面一致，最后需要将处理后的class文件重新压缩即可。
+  
   ```kotlin
+      private fun foreachJar(context: Context, outputProvider: TransformOutputProvider, input: JarInput, isIncremental: Boolean) {
+          if (input.file.absolutePath.endsWith("jar")) {
+              var jarName = input.file.name
+              val md5Name = DigestUtils.md5Hex(input.file.absolutePath)
+              if (jarName.endsWith(".jar")) {
+                  jarName = jarName.substring(0, jarName.length - 4)
+              }
+              val dest = outputProvider.getContentLocation(
+                  "${jarName}_${md5Name}",
+                  input.contentTypes,
+                  input.scopes,
+                  Format.JAR
+              )
+              if (isIncremental) {
+                  when (input.status) {
+                      Status.ADDED, Status.CHANGED -> {
+                          println("Jar is Updated name： ${input.file.name}")
+                          transformJar(context, dest, input)
+                      }
+                      Status.REMOVED               -> {
+                          println("Jar is Removed and ${input.file.name}")
+                          if (dest.exists()) {
+                              FileUtils.forceDelete(dest)
+                          }
+                      }
+                      else                         -> {
+  
+                      }
+                  }
+              } else {
+                  transformJar(context, dest, input)
+              }
+  
+          }
+      }
+  
+      private fun transformJar(context: Context, dest: File, input: JarInput) {
+          var modifyJar: File? = null
+          modifyJar = modifyJarFile(input.file, context.temporaryDir)
+          if (modifyJar == null) {
+              modifyJar = input.file
+          }
+        //操作完成后，最后需要拷贝回去 避免文件丢失
+          FileUtils.copyFile(modifyJar, dest)
+      }
   ```
+  
 
+```mermaid
+flowchart TB
+id1((开始))
+
+
+```
 
 
 
 #### 注册Transform
 
+> 实现一个`Transform`后，需要注册才可以功能生效。
+
+```kotlin
+class CustomPlugin : Plugin<Project> {
+    override fun apply(project: Project) {
+      //处理extension等信息
+      ...
+       //判定当前为 app module
+        val appExtension = project.extensions.findByType(AppExtension::class.java)
+        if (appExtension != null) {
+            appExtension.registerTransform(MethodTraceTransform(project, true))
+        } else {
+          //判定当前为 library module
+            val libExtension = project.extensions.findByType(LibraryExtension::class.java)
+            libExtension?.registerTransform(MethodTraceTransform(project, false))
+        }
+    }
+}
+```
+
 
 
 ### 工作原理
+
+
 
 ## TransformAction
 
