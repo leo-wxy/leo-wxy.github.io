@@ -630,7 +630,33 @@ public interface TransformOutputProvider {
 ```mermaid
 flowchart TB
 id1((开始))
-
+id2(transform)
+id1 --> id2
+id3{isIncremental}
+id2--> id3
+id4(outputProvider.deleteAll)
+id3--非增量模式/false-->id4
+id5(遍历transformInvocation.inputs)
+id4-->id5
+id3--增量模式/true-->id5
+id7(遍历\ndirectoryInputs)
+id6(遍历\njarInputs)
+id5-->id6
+id5-->id7
+id71(遍历\nsrc下class文件)
+id72(执行hook)
+id73(拷贝修改后class文件到\noutputProvider.getContentLocation位置)
+id7-->id71-->id72-->id73
+id61(遍历jarinput下jar/aar文件)
+id62(解压jar/aar文件)
+id63(遍历内部class文件)
+id64(执行hook)
+id65(修改完的class文件打包成jar文件)
+id66(拷贝修改后jar文件到\noutputProvider.getContentLocation位置)
+id6-->id61-->id62-->id63-->id64-->id65-->id66
+id8((transform\n结束))
+id66-->id8
+id73-->id8
 
 ```
 
@@ -661,6 +687,330 @@ class CustomPlugin : Plugin<Project> {
 
 
 ### 工作原理
+
+#### 注册Transform
+
+> 主要是将`Transform`注册在`BaseExtension`中。
+
+```kotlin
+abstract class BaseExtension protected constructor(
+  ...
+    private val _transforms: MutableList<Transform> = mutableListOf()
+    private val _transformDependencies: MutableList<List<Any>> = mutableListOf()
+  ...
+  
+    fun registerTransform(transform: Transform, vararg dependencies: Any) {
+        dslServices.deprecationReporter.reportDeprecatedApi(
+            newApiElement = null,
+            oldApiElement = "android.registerTransform",
+            url = "https://developer.android.com/studio/releases/gradle-plugin-api-updates#transform-api",
+            deprecationTarget = DeprecationReporter.DeprecationTarget.TRANSFORM_API
+        )
+        _transforms.add(transform)
+        _transformDependencies.add(listOf(dependencies))
+    }
+  
+    override val transforms: List<Transform>
+        get() = ImmutableList.copyOf(_transforms)
+
+    override val transformsDependencies: List<List<Any>>
+        get() = ImmutableList.copyOf(_transformDependencies)
+  
+  }
+```
+
+内部的`transforms`由外部调用，`GlobalTaskCreationConfigImpl`使用到了`transforms`
+
+```kotlin
+    override val transforms: List<Transform>
+        get() = oldExtension.transforms
+```
+
+`GlobalTaskCreationConfigImpl`为`GlobalTaskCreationConfig`实现类，所以`GlobalTaskCreationConfig`对应的`transforms`即为`BaseExtension`注册进来的`Transform`。
+
+
+
+#### 创建TransformTask
+
+由{%post_link Gradle学习笔记-AGP原理%}可知Task的构建流程
+
+都是由`BasePlugin.createAndroidTasks`开始的，其他细节在{%post_link Gradle学习笔记-AGP原理%}有详细介绍
+
+##### BasePlugin.createAndroidTasks
+
+```java
+    final void createAndroidTasks() {
+        GlobalTaskCreationConfig globalConfig = variantManager.getGlobalTaskCreationConfig();
+     ...
+        TaskManager<VariantBuilderT, VariantT> taskManager =
+                createTaskManager(
+                        project,
+                        variants,
+                        variantManager.getTestComponents(),
+                        variantManager.getTestFixturesComponents(),
+                        globalConfig,
+                        taskManagerConfig,
+                        extension);
+
+        taskManager.createTasks(variantFactory.getVariantType(), createVariantModel(globalConfig));
+    }
+```
+
+##### TaskManager.createTasks
+
+```kotlin
+    fun createTasks(
+            variantType: VariantType, variantModel: VariantModel) {
+      ...
+        // Create tasks for all variants (main, testFixtures and tests)        
+        for (variant in variants) {
+            createTasksForVariant(variant)
+        }
+    }
+
+    private fun createTasksForVariant(
+            variant: ComponentInfo<VariantBuilderT, VariantT>,
+    ){
+      ...
+        doCreateTasksForVariant(variant)
+    }
+
+    protected abstract fun doCreateTasksForVariant(
+            variantInfo: ComponentInfo<VariantBuilderT, VariantT>)
+```
+
+##### TaskManager.doCreateTasksForVariant
+
+> `TaskManager`是抽象类，主要实现类为
+>
+> - `ApplicationTaskManager`：对应 app module
+> - `LibraryTaskManager`：对应 library module
+
+以`LibraryTaskManager`为例
+
+```java
+    @Override
+    protected void doCreateTasksForVariant(
+            @NotNull ComponentInfo<LibraryVariantBuilderImpl, LibraryVariantImpl> variantInfo) {
+      //创建其他Task
+      ...
+      TransformManager transformManager = libraryVariant.getTransformManager();
+      
+      //对应的BaseExtension 注册的Transform
+       List<Transform> customTransforms = globalConfig.getTransforms();
+       List<List<Object>> customTransformsDependencies = globalConfig.getTransformsDependencies();
+      
+       for (int i = 0, count = customTransforms.size(); i < count; i++) {
+            Transform transform = customTransforms.get(i);
+         //library module 只支持 PROJECT_ONLY
+            Sets.SetView<? super Scope> difference =
+                    Sets.difference(transform.getScopes(), TransformManager.PROJECT_ONLY);
+            if (!difference.isEmpty()) {
+                String scopes = difference.toString();
+                issueReporter.reportError(
+                        Type.GENERIC,
+                        String.format(
+                                "Transforms with scopes '%s' cannot be applied to library projects.",
+                                scopes));
+            }            
+         //创建TransformTask
+            transformManager.addTransform(
+                    taskFactory,
+                    libraryVariant,
+                    transform,
+                    null,
+                    task -> {
+                        if (!deps.isEmpty()) {
+                            task.dependsOn(deps);
+                        }
+                    },
+                    taskProvider -> {
+                        // if the task is a no-op then we make assemble task
+                        // depend on it.
+                        if (transform.getScopes().isEmpty()) {
+                            TaskFactoryUtils.dependsOn(
+                                    libraryVariant.getTaskContainer().getAssembleTask(),
+                                    taskProvider);//依赖assembleXXTask后执行
+                        }
+                    });                
+       }
+    }
+```
+
+##### TransformManager.addTransform
+
+```java
+    @NonNull
+    public <T extends Transform> Optional<TaskProvider<TransformTask>> addTransform(
+            @NonNull TaskFactory taskFactory,
+            @NonNull VariantCreationConfig creationConfig,
+            @NonNull T transform, //the transform to add
+            @Nullable PreConfigAction preConfigAction,
+            @Nullable TaskConfigAction<TransformTask> configAction,
+            @Nullable TaskProviderCallback<TransformTask> providerCallback) {
+      //设置Task name   transform[getInputTypes]With[getName]For[creationConfig.name]
+      //示例名称 transform[Classes]With[MethodTrace]For[Release]
+        String taskName = creationConfig.computeTaskName(getTaskNamePrefix(transform), "");      
+      
+      //创建TransformTask
+        return Optional.of(
+                taskFactory.register(//注册创建的TransformTask
+                        new TransformTask.CreationAction<>(
+                                creationConfig.getName(),
+                                taskName,
+                                transform,
+                                inputStreams,
+                                referencedStreams,
+                                outputStream),
+                        preConfigAction,
+                        wrappedConfigAction,
+                        providerCallback));      
+    }
+
+//最终得到的TaskName格式为 
+    static String getTaskNamePrefix(@NonNull Transform transform) {
+        StringBuilder sb = new StringBuilder(100);
+        sb.append("transform");
+
+        sb.append(
+                transform
+                        .getInputTypes()
+                        .stream()
+                        .map(
+                                inputType ->
+                                        CaseFormat.UPPER_UNDERSCORE.to(
+                                                CaseFormat.UPPER_CAMEL, inputType.name()))
+                        .sorted() // Keep the order stable.
+                        .collect(Collectors.joining("And")));
+        sb.append("With");
+        StringHelper.appendCapitalized(sb, transform.getName());
+        sb.append("For");
+
+        return sb.toString();
+    }
+
+```
+
+##### TransformTask.CreationAction
+
+```java
+@CacheableTask
+public abstract class TransformTask extends StreamBasedTask {
+  //TransformTask 输入
+    @Input
+    @NonNull
+    public Set<? super QualifiedContent.Scope> getScopes() {
+        return transform.getScopes();
+    }
+  
+    @Input
+    @NonNull
+    public Set<QualifiedContent.ContentType> getInputTypes() {
+        return transform.getInputTypes();
+    }  
+  
+  //TransformTask 输出
+    @OutputDirectory
+    @Optional
+    @NonNull
+    public abstract DirectoryProperty getOutputDirectory();
+
+    @OutputFile
+    @Optional
+    @NonNull
+    public abstract RegularFileProperty getOutputFile();
+  
+ ...
+   
+    public static class CreationAction<T extends Transform>
+            extends TaskCreationAction<TransformTask> {
+        @NonNull
+        private final String variantName;
+        @NonNull
+        private final String taskName;
+        @NonNull
+        private final T transform;
+      
+      ...
+        @Override
+        public void configure(@NonNull TransformTask task) {
+            task.transform = transform;
+            transform.setOutputDirectory(task.getOutputDirectory());
+            transform.setOutputFile(task.getOutputFile());
+        ...
+      }
+    }
+  
+}
+```
+
+最后创建一个名为`transform[getInputTypes]With[getName]For[creationConfig.name]`的Task，并注册到当前module中。
+
+#### 执行TransfromTask(执行transform())
+
+执行`Task`实际执行的是`自定义Task`内部实现了`@TaskAction`的方法
+
+```java
+//TransformTask.java
+    @TaskAction
+    void transform(final IncrementalTaskInputs incrementalTaskInputs)
+            throws IOException, TransformException, InterruptedException {
+      ...
+        
+                        transform.transform(
+                                new TransformInvocationBuilder(context)
+                                        .addInputs(consumedInputs.getValue())
+                                        .addReferencedInputs(referencedInputs.getValue())
+                                        .addSecondaryInputs(changedSecondaryInputs.getValue())
+                                        .addOutputProvider(
+                                                outputStream != null
+                                                        ? outputStream.asOutput()
+                                                        : null)
+                                        .setIncrementalMode(isIncremental.getValue())
+                                        .build());        
+      
+    }
+```
+
+最终执行到了`自定义Transform`的`transform()`。
+
+
+
+#### 增量模式实现
+
+> 若`isIncremental`为true，则返回的文件会携带状态，根据不同的状态执行不同的逻辑。
+
+```java
+//TransformTask.java
+    private static void gatherChangedFiles(
+            @NonNull Logger logger,
+            @NonNull IncrementalTaskInputs incrementalTaskInputs,
+            @NonNull final Map<File, Status> changedFileMap,
+            @NonNull final Set<File> removedFiles) {
+        logger.info("Transform inputs calculations based on following changes");
+        incrementalTaskInputs.outOfDate(inputFileDetails -> {
+            logger.info(inputFileDetails.getFile().getAbsolutePath() + ":"
+                    + IntermediateFolderUtils.inputFileDetailsToStatus(inputFileDetails));
+            if (inputFileDetails.isAdded()) {
+                changedFileMap.put(inputFileDetails.getFile(), Status.ADDED);
+            } else if (inputFileDetails.isModified()) {
+                changedFileMap.put(inputFileDetails.getFile(), Status.CHANGED);
+            }
+        });
+
+        incrementalTaskInputs.removed(
+                inputFileDetails -> {
+                        logger.info(inputFileDetails.getFile().getAbsolutePath() + ":REMOVED");
+                        removedFiles.add(inputFileDetails.getFile());
+                });
+    }
+```
+
+由`Gradle`中的`TaskExecution.execute()`处理对应的文件。
+
+会在{%post_link Gradle学习笔记-构建流程%}详细分析。
+
+
 
 
 
