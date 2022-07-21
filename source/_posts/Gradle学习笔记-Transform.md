@@ -1010,16 +1010,57 @@ public abstract class TransformTask extends StreamBasedTask {
 
 会在{%post_link Gradle学习笔记-构建流程%}详细分析。
 
+```mermaid
+flowchart LR
+id(compileReleaseJavaWithJavac\nTask产物)
+id--->id1
+id--->id2
+id--->id3
+subgraph JarInput
+ id2(jar/aar)
+end
 
+ subgraph DirectoryInput
+  id1(class)
+  id3(resource)
+ end
+ 
+ id4(自定义Transform)
+ id1-.->id4
+ id2-.->id4
+ id3-.->id4
+ 
+ id4--->id5
+ 
+ id5(自定义Transform)
+ id5-.->id6
+ 
+ id6(系统Transform)
 
+```
 
+基于上面分析，每个`Transform`都对应一个`TransformTask`，Android编译器中的`TaskManager`将每个`Transform`串连起来。
 
-## TransformAction
+第一个`自定义Transform`接受来自`compileJavaWithJavac(对应源码 JavaCompileCreationAction)`Task的中间产物
 
+- javac编译得到的class文件
+- 远端/本地的第三方依赖
+- resource资源
 
+这些产物在`Transform链`上传递，处理完成后再向下一个进行传递。
 
 
 
 ## Transform模板
 
 > 大部分功能代码是一致的，主要差异在于字节码的处理上，由此可以抽象出一套模板写法，实现方只要处理字节码部分即可。
+
+
+
+## TransformAction
+
+## 参考链接
+
+[Transform-API](http://tools.android.com/tech-docs/new-build-system/transform-api)
+
+[Gradle-Transform 分析](https://juejin.cn/post/7098752199575994405#heading-8)
