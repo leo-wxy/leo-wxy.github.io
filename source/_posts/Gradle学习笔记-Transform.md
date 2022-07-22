@@ -4,6 +4,7 @@ typora-root-url: ../
 date: 2022-03-10 21:54:06
 tags: Gradle
 top: 9
+mermaid: true
 ---
 
 `Transform API`存在于`AGP`中，存在版本为`4.2-7.0+`，后续在8.0时就会被移除。
