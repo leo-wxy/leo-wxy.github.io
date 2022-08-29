@@ -267,7 +267,10 @@ public enum InternalScope implements QualifiedContent.ScopeType {
 
 > 当前`Transform`是否支持增量编译
 >
-> 尽量避免重复执行相同的工作。
+> 不是每次的编译都是可以增量编译的，通过`isIncremental`check当前是否为增量编译
+>
+> - `false`：非增量编译 清空output目录，再对每个`class/jar`进行处理
+> - `true`：增量编译，需要检查每个`class/jar`的`Status`，分别处理
 
 存在两个标志位：
 
@@ -290,23 +293,28 @@ public enum Status {
     /**
      * The file was not changed since the last build.
      */
-    NOTCHANGED, //不需要任何处理
+    NOTCHANGED, 
     /**
      * The file was added since the last build.
      */
-    ADDED,//按照正常处理流程并复制
+    ADDED,
     /**
      * The file was modified since the last build.
      */
-    CHANGED,//按照正常处理流程并复制
+    CHANGED,
     /**
      * The file was removed since the last build.
      */
-    REMOVED;//同步删除outputProvider对应的文件
+    REMOVED;
 }
 ```
 
+`Status`分为以下四种：
 
+- NOTCHANGED：(文件无改变)无操作
+- ADDED：(文件新增) 按照正常流程处理 class/jar
+- CHANGED：(文件修改) 按照正常流程处理 class/jar
+- REMOVED：(文件删除) 清除`outputProvider`对应路径文件
 
 #### * transform
 
@@ -975,7 +983,7 @@ public abstract class TransformTask extends StreamBasedTask {
 
 最终执行到了`自定义Transform`的`transform()`。
 
-
+//todo 流程
 
 #### 增量模式实现
 
@@ -1058,10 +1066,528 @@ end
 
 
 
+
+
+
+
+
+
+>  `Transform`API将在`AGP 8.0`中移除，主要为了**提高构建性能，Transform API很难与其他Gradle特性结合使用。**
+
+基于以上原因，`Transform`后续可以使用`AsmClassVisitorFactory`或`TransformAction`进行替代。
+
+## AsmClassVisitorFactory
+
+> 在`AGP 4.2`后提供`AsmClassVisitorFactory`，主要用于处理`class`文件，与`Transform`主要功能大致相同，可以看做同等替换。
+
+[AsmClassVisitorFactory 文档](https://developer.android.com/reference/tools/gradle-api/7.1/com/android/build/api/instrumentation/AsmClassVisitorFactory)
+
+### 示例代码
+
+#### 新建ClassVisitorFactory对象
+
+```kotlin
+abstract class ExampleClassVisitorFactory : AsmClassVisitorFactory<ExampleClassVisitorFactory.ExampleParams> {
+    interface ExampleParams : InstrumentationParameters {
+        @get:Input
+        val writeToStdout: Property<Boolean>
+    }
+
+    override fun createClassVisitor(classContext: ClassContext, nextClassVisitor: ClassVisitor): ClassVisitor {
+        val className = classContext.currentClassData.className.substringAfterLast(".")
+        return ExampleClassNode(className, nextClassVisitor, PrintWriter(System.out))
+    }
+
+  //控制哪些类需要扫描
+    override fun isInstrumentable(classData: ClassData): Boolean {
+        return !classData.className.contains(".R$")
+                && !classData.className.endsWith(".R")
+                && !classData.className.endsWith(".BuildConfig")
+                && classData.className.startsWith("com.example")
+    }
+}
+
+//ExampleClassNode.kt
+class ExampleClassNode(private val className: String, private val nextVisitor: ClassVisitor, private val printWriter: PrintWriter) :
+    ClassVisitor(Opcodes.ASM7, nextVisitor) {
+    override fun visitMethod(
+        access: Int,
+        name: String?,
+        descriptor: String?,
+        signature: String?,
+        exceptions: Array<out String>?
+    ): MethodVisitor {
+        val methodVisitor = super.visitMethod(access, name, descriptor, signature, exceptions)
+        return PrintLogInterceptor(className, methodVisitor, access, name, descriptor)
+    }
+      
+          inner class PrintLogInterceptor(
+        private val className: String?, private val methodVisitor: MethodVisitor, access: Int, name: String?, descriptor: String?
+    ) : AdviceAdapter(ASM7, methodVisitor, access, name, descriptor) {
+
+        override fun onMethodEnter() {
+            super.onMethodEnter()
+          //在每个方法里添加 Log打印，打印信息为类名和方法名
+            methodVisitor.visitLdcInsn(className)
+            methodVisitor.visitLdcInsn(name)
+            methodVisitor.visitMethodInsn(INVOKESTATIC, "android/util/Log", "d", "(Ljava/lang/String;Ljava/lang/String;)I", false)
+        }
+    }
+      
+ }
+```
+
+#### 注册ClassVisitorFactory对象
+
+```kotlin
+//ExampleClassVisitorFactory.kt
+
+class CustomPlugin : Plugin<Project> {
+    override fun apply(project: Project) {
+      //
+        val androidComponents = project.extensions.findByType(AndroidComponentsExtension::class.java) //获取androidComponent
+        if(androidComponents!=null){
+            androidComponents.onVariants {variant ->
+                variant.instrumentation.transformClassesWith(
+                    ExampleClassVisitorFactory::class.java,
+                    InstrumentationScope.ALL //扫描范围
+                ){
+                    it.writeToStdout.set(true)
+                }
+                variant.instrumentation.setAsmFramesComputationMode(FramesComputationMode.COPY_FRAMES)
+            }
+        } 
+      
+    } 
+}
+```
+
+
+
+可使用 `Android Studio Plugin——ASM ByteCode Viewer`，提前把要插入的代码进行解析获取ASM代码。
+
+### 相关API
+
+#### AsmClassVisitorFactory
+
+```kotlin
+interface AsmClassVisitorFactory<ParametersT : InstrumentationParameters> : Serializable {
+    @get:Nested
+    val parameters: Property<ParametersT>
+  
+    fun createClassVisitor(
+        classContext: ClassContext,
+        nextClassVisitor: ClassVisitor
+    ): ClassVisitor
+  
+    fun isInstrumentable(classData: ClassData): Boolean
+}
+```
+
+- parameters
+
+> 外部可配置`ClassVisitorFactory`的属性
+
+- isInstrumentable
+
+> 设置哪些类需要被扫描，可以提升执行效率
+
+- ClassData
+
+> 对应类的部分数据
+
+```kotlin
+interface ClassData {
+    /**
+     * Fully qualified name of the class.
+     */
+    val className: String
+
+    /**
+     * List of the annotations the class has.
+     */
+    val classAnnotations: List<String>
+
+    /**
+     * List of all the interfaces that this class or a superclass of this class implements.
+     */
+    val interfaces: List<String>
+
+    /**
+     * List of all the super classes that this class or a super class of this class extends.
+     */
+    val superClasses: List<String>
+}
+
+```
+
+
+
+- createClassVisitor
+
+> 创建`ClassVisitor`对象
+
+#### AndroidComponentsExtension
+
+transformClassesWith
+
+> 注册自定义`ClassVisitorFactory`
+
+### 工作原理
+
+与`Transform`类似，实际`AsmClassVisitorFactory`最终也是通过Task执行，使用的就是`TransformClassesWithAsm`Task。
+
+初始也是从`BasePlugin.createAndroidTasks`开始，再执行到`TaskManager.doCreateTasksForVariant`。
+
+#### TaskManager.doCreateTasksForVariant
+
+`TaskManager`是抽象类，主要实现类为
+
+- `ApplicationTaskManager`：对应 app module
+- `LibraryTaskManager`：对应 library module
+
+以`ApplicationTaskManager`为例
+
+#### ApplicationTaskManager.doCreateTasksForVariant
+
+```kotlin
+//    ApplicationTaskManager.kt
+override fun doCreateTasksForVariant(
+        variantInfo: ComponentInfo<ApplicationVariantBuilderImpl, ApplicationVariantImpl>
+    ) {
+      createCommonTasks(variantInfo)
+      ...
+      
+    }
+
+//AbstractAppTaskManager.kt
+protected void createCommonTasks(@NonNull ComponentInfo<VariantBuilderT, VariantT> variant) {
+     ...
+        // Add a compile task class相关处理都需要在compile执行后
+        createCompileTask(appVariantProperties);
+    }
+
+    private void createCompileTask(@NonNull VariantImpl variant) {
+        ApkCreationConfig apkCreationConfig = (ApkCreationConfig) variant;
+
+        TaskProvider<? extends JavaCompile> javacTask = createJavacTask(variant);
+        addJavacClassesStream(variant);
+      //执行compile task
+        setJavaCompilerTask(javacTask, variant);
+        createPostCompilationTasks(apkCreationConfig);
+    }
+
+//TaskManager.kt
+    fun createPostCompilationTasks(creationConfig: ApkCreationConfig) {
+      ...
+        maybeCreateTransformClassesWithAsmTask(
+            creationConfig as ComponentImpl,
+            isTestCoverageEnabled
+        )
+      
+    }
+```
+
+#### TaskManager.maybeCreateTransformClassesWithAsmTask
+
+```kotlin
+    protected fun maybeCreateTransformClassesWithAsmTask(
+        creationConfig: ComponentImpl,
+        isTestCoverageEnabled: Boolean
+    ) {
+     ...
+            creationConfig
+                    .transformManager
+                    .consumeStreams(
+                            mutableSetOf(com.android.build.api.transform.QualifiedContent.Scope.PROJECT),
+                            setOf(com.android.build.api.transform.QualifiedContent.DefaultContentType.CLASSES))
+            taskFactory.register(
+                    TransformClassesWithAsmTask.CreationAction(
+                        creationConfig,
+                        isTestCoverageEnabled
+                    )
+            )
+      
+    }
+```
+
+在此处注册`TransformClassesWithAsmTask`
+
+#### * TransformClassesWithAsmTask
+
+> 实际执行 字节码处理的 任务
+
+```kotlin
+abstract class TransformClassesWithAsmTask : NewIncrementalTask() {
+ ...
+  //输入信息
+    @get:Input
+    abstract val excludes: SetProperty<String>
+
+    @get:Nested
+    abstract val visitorsList: ListProperty<AsmClassVisitorFactory<*>> //AsmClassVisitorFactory列表
+
+    @get:Incremental
+    @get:Classpath
+    abstract val inputClassesDir: ConfigurableFileCollection //输入的classes文件路径
+
+    // This is used when jacoco instrumented jars are used as inputs
+    @get:Incremental
+    @get:Classpath
+    @get:Optional
+    abstract val inputJarsDir: DirectoryProperty //输入的jar包路径
+  
+  
+  //输出目录
+    @get:OutputDirectory
+    abstract val classesOutputDir: DirectoryProperty //输出的classes文件路径
+
+    @get:OutputDirectory
+    abstract val jarsOutputDir: DirectoryProperty //输出的jar包路径
+  
+  ...
+  
+   override fun doTaskAction(inputChanges: InputChanges) {
+        if (inputChanges.isIncremental) {
+          //增量执行
+            doIncrementalTaskAction(inputChanges)
+        } else {
+          //全量执行
+            doFullTaskAction(inputChanges)
+        }
+    }
+}
+```
+
+
+
+##### doFullTaskAction/doIncrementalTaskAction
+
+> 全量执行和增量执行任务，根据`isIncremental`判断是否增量编译。
+
+```kotlin
+    private fun doFullTaskAction(inputChanges: InputChanges) {
+        incrementalFolder.mkdirs()
+        FileUtils.deleteDirectoryContents(classesOutputDir.get().asFile)
+        FileUtils.deleteDirectoryContents(incrementalFolder)
+
+        workerExecutor.noIsolation().submit(TransformClassesFullAction::class.java) {
+            configureParams(it, inputChanges)
+            it.inputClassesDir.from(inputClassesDir)
+            it.inputJarsDir.set(inputJarsDir)
+        }
+    }
+
+    private fun doIncrementalTaskAction(inputChanges: InputChanges) {
+      ...
+        workerExecutor.noIsolation().submit(TransformClassesIncrementalAction::class.java) {
+            configureParams(it, inputChanges)
+            it.inputClassesDirChanges.set(
+                inputChanges.getFileChanges(inputClassesDir).toSerializable()
+            )
+            if (inputJarsDir.isPresent) {
+                it.inputJarsChanges.set(inputChanges.getFileChanges(inputJarsDir).toSerializable())
+            }
+        }
+      
+    }
+
+```
+
+最终执行对应的Action
+
+##### TransformClassesFullAction/TransformClassesIncrementalAction
+
+```kotlin
+    abstract class TransformClassesFullAction:
+        TransformClassesWorkerAction<FullActionWorkerParams>() {
+
+        override fun run() {
+            val classesHierarchyResolver = getClassesHierarchyResolver()
+            getInstrumentationManager(classesHierarchyResolver).use { instrumentationManager ->
+                parameters.inputClassesDir.files.filter(File::exists).forEach {
+                  //处理class
+                    instrumentationManager.instrumentClassesFromDirectoryToDirectory(
+                        it,
+                        parameters.classesOutputDir.get().asFile
+                    )
+                }
+               //处理jar
+                processJars(instrumentationManager)
+            }
+
+            updateIncrementalState(emptySet(), classesHierarchyResolver)
+        }
+          ... 
+        }
+
+//增量
+    abstract class TransformClassesIncrementalAction:
+        TransformClassesWorkerAction<IncrementalWorkerParams>() {
+        override fun run() {
+          //处理增量文件 状态为added & modified
+                classesChanges.addedFiles.plus(classesChanges.modifiedFiles).forEach {
+                    val outputFile =
+                        parameters.classesOutputDir.get().asFile.resolve(it.normalizedPath)
+                    instrumentationManager.instrumentModifiedFile(
+                        inputFile = it.file,
+                        outputFile = outputFile,
+                        relativePath = it.normalizedPath
+                    )
+                }
+           //处理jar
+                processJars(instrumentationManager)          
+        }
+          
+     }
+
+//处理jar包
+        fun processJars(instrumentationManager: AsmInstrumentationManager) {
+         ...
+                mappingState.jarsInfo.forEach { (file, info) ->
+                    if (info.hasChanged) {
+                        val instrumentedJar =
+                            File(parameters.jarsOutputDir.get().asFile, info.identity + DOT_JAR)
+                        FileUtils.deleteIfExists(instrumentedJar)
+                        instrumentationManager.instrumentClassesFromJarToJar(file, instrumentedJar)
+                    }
+                }          
+        }
+```
+
+以上`instrumentXX()`最终都指向`doInstrumentClass()`
+
+
+
+##### AsmInstrumentationManager.doInstrumentClass
+
+```kotlin
+    private fun doInstrumentClass(
+        packageName: String,
+        className: String,
+        classInputStream: () -> InputStream
+    ): ByteArray? {
+      ...
+      //记录class相关信息
+        val classData = ClassDataLazyImpl(
+            classFullName,
+            { classesHierarchyResolver.getAnnotations(classInternalName) },
+            { classesHierarchyResolver.getAllInterfaces(classInternalName) },
+            { classesHierarchyResolver.getAllSuperClasses(classInternalName) }
+        )      
+      //根据isInstrumentable 筛选所需classVisitor
+        val filteredVisitors = visitors.filter { entry ->
+            entry.isInstrumentable(classData)
+        }.reversed()
+      
+      //执行字节码处理
+      ...
+                                return@use doInstrumentByteCode(
+                                    classContext,
+                                    byteCode,
+                                    filteredVisitors,
+                                    containsJsrOrRetInstruction = true
+                                )      
+    }
+```
+
+接下来执行自定义的 字节码处理逻辑
+
+##### AsmInstrumentationManager.doInstrumentByteCode
+
+```kotlin
+    private fun doInstrumentByteCode(
+        classContext: ClassContext,
+        byteCode: ByteArray,
+        visitors: List<AsmClassVisitorFactory<*>>,
+        containsJsrOrRetInstruction: Boolean
+    ): ByteArray {
+        val classReader = ClassReader(byteCode)
+        val classWriter =
+            FixFramesClassWriter(
+                classReader,
+                getClassWriterFlags(containsJsrOrRetInstruction),
+                classesHierarchyResolver
+            )
+        var nextVisitor: ClassVisitor = classWriter
+
+        if (framesComputationMode == FramesComputationMode.COMPUTE_FRAMES_FOR_INSTRUMENTED_CLASSES) {
+            nextVisitor = MaxsInvalidatingClassVisitor(apiVersion, classWriter)
+        }
+
+        val originalVisitor = nextVisitor
+
+        visitors.forEach { entry ->
+            nextVisitor = entry.createClassVisitor(classContext, nextVisitor)
+        }
+
+        // No external visitor will instrument this class
+        if (nextVisitor == originalVisitor) {
+            return byteCode
+        }
+
+        classReader.accept(nextVisitor, getClassReaderFlags(containsJsrOrRetInstruction))
+        return classWriter.toByteArray()
+    }
+```
+
+在`doInstrumentByteCode`执行自定义处理逻辑
+
+
+
+```mermaid
+flowchart TD
+TransformClassesWithAsmTask执行流程
+a((开始))
+b(doTaskAction)
+a-->b
+c{isIncremental\n是否增量编译?}
+b-->c
+d(doFullTaskAction)
+c--全量编译-->d
+d1(执行\nTransformClassesFullAction)
+d2(处理class/jar文件)
+d-->d1-->d2
+
+e(doIncrementalTaskAction)
+c--增量编译-->e
+e1(TransformClassesIncrementalAction)
+e2(处理增量class/jar文件\nFileStatus.NEW或FileStatus.CHANGED)
+e-->e1-->e2
+
+f(AsmInstrumentationManager\n.doInstrumentClass)
+d2-->f
+e2-->f
+
+g(筛选isInstrumentable=true\n的AsmClassVisitorFactory)
+h(AsmInstrumentationManager\n.doInstrumentByteCode)
+f-->g
+g-->h
+
+i(执行自定义 字节码处理 逻辑)
+h-->i
+j((结束))
+i-->j
+```
+
+
+
+
+
+### 优点&缺点
+
+
+
+ 
+
 ## TransformAction
+
+
 
 ## 参考链接
 
 [Transform-API](http://tools.android.com/tech-docs/new-build-system/transform-api)
 
 [Gradle-Transform 分析](https://juejin.cn/post/7098752199575994405#heading-8)
+
+[TransformAction介绍](https://juejin.cn/post/7131889789787176974)
