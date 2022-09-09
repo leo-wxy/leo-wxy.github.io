@@ -1079,6 +1079,8 @@ end
 ## AsmClassVisitorFactory
 
 > 在`AGP 4.2`后提供`AsmClassVisitorFactory`，主要用于处理`class`文件，与`Transform`主要功能大致相同，可以看做同等替换。
+>
+> *根据官方的说法，`AsmClassVisitoFactory`会带来约18%的性能提升，同时可以减少约5倍代码*
 
 [AsmClassVisitorFactory 文档](https://developer.android.com/reference/tools/gradle-api/7.1/com/android/build/api/instrumentation/AsmClassVisitorFactory)
 
@@ -1570,15 +1572,171 @@ j((结束))
 i-->j
 ```
 
+#### transformClassesWith
 
+> 通过`AndroidComponentsExtension`注册自定义的`AsmClassVisitorFactory`对象
+
+```kotlin
+//注册AsmClassVisitorFactory
+
+        val androidComponents = project.extensions.findByType(AndroidComponentsExtension::class.java)
+        if(androidComponents!=null){
+            androidComponents.onVariants {variant ->
+                println("variant.name == ${variant.name}")
+                variant.instrumentation.transformClassesWith(
+                    ExampleClassVisitorFactory::class.java,
+                    InstrumentationScope.ALL
+                ){
+                    it.writeToStdout.set(true)
+                }
+                variant.instrumentation.setAsmFramesComputationMode(FramesComputationMode.COPY_FRAMES)
+            }
+        }
+```
+
+AndroidComponentsExtension结构如下
+
+```kotlin
+//AndroidComponentsExtension.kt
+interface AndroidComponentsExtension<
+        DslExtensionT: CommonExtension<*, *, *, *>,
+        VariantBuilderT: VariantBuilder,
+        VariantT: Variant>
+    : DslLifecycle<DslExtensionT>{...}
+
+//Variant.kt
+interface Variant : Component, HasAndroidResources {...}
+
+//Component.kt
+interface Component: ComponentIdentity {
+  ...
+   val instrumentation: Instrumentation
+}
+
+//Instrumentation.kt
+interface Instrumentation {
+ ...
+    fun <ParamT : InstrumentationParameters> transformClassesWith(
+        classVisitorFactoryImplClass: Class<out AsmClassVisitorFactory<ParamT>>,
+        scope: InstrumentationScope,
+        instrumentationParamsConfig: (ParamT) -> Unit
+    )  
+}
+
+//实现类 InstrumentationImpl.kt
+class InstrumentationImpl(
+    services: TaskCreationServices,
+    variantPropertiesApiServices: VariantPropertiesApiServices,
+    private val isLibraryVariant: Boolean
+) : Instrumentation {
+   private val asmClassVisitorsRegistry = AsmClassVisitorsFactoryRegistry(services.issueReporter) 
+  
+    override fun <ParamT : InstrumentationParameters> transformClassesWith(
+        classVisitorFactoryImplClass: Class<out AsmClassVisitorFactory<ParamT>>,
+        scope: InstrumentationScope,
+        instrumentationParamsConfig: (ParamT) -> Unit
+    ) {
+        if (isLibraryVariant && scope == InstrumentationScope.ALL) {
+            throw RuntimeException(
+                "Can't register ${classVisitorFactoryImplClass.name} to " +
+                        "instrument library dependencies.\n" +
+                        "Instrumenting library dependencies will have no effect on library " +
+                        "consumers, move the dependencies instrumentation to be done in the " +
+                        "consuming app or test component."
+            )
+        }
+        asmClassVisitorsRegistry.register(
+            classVisitorFactoryImplClass,
+            scope,
+            instrumentationParamsConfig
+        )
+    }  
+  
+}
+```
+
+##### AsmClassVisitorsFactoryRegistry.register
+
+```kotlin
+class AsmClassVisitorsFactoryRegistry(private val issueReporter: IssueReporter) {
+  //class 
+    val projectClassesVisitors =
+        ArrayList<AsmClassVisitorFactoryEntry<out InstrumentationParameters>>()
+  //jar
+    val dependenciesClassesVisitors =
+        ArrayList<AsmClassVisitorFactoryEntry<out InstrumentationParameters>>()
+  
+    fun <ParamT : InstrumentationParameters> register(
+        classVisitorFactoryImplClass: Class<out AsmClassVisitorFactory<ParamT>>,
+        scope: InstrumentationScope,
+        instrumentationParamsConfig: (ParamT) -> Unit
+    ) {
+        val visitorEntry = AsmClassVisitorFactoryEntry(
+            classVisitorFactoryImplClass,
+            instrumentationParamsConfig
+        )
+        if (scope == InstrumentationScope.ALL) {
+          //对依赖的aar/jar进行处理
+            dependenciesClassesVisitors.add(visitorEntry)
+        }
+      //对依赖的module中class进行处理
+        projectClassesVisitors.add(visitorEntry)
+    }
+}
+```
+
+通过`transformClassesWith`注册的`ClassVisitorFactory`最终记录在`projectClassesVisitors`中。
+
+`AsmClassVisitorsFactoryRegistry.projectClassesVisitors`-->`InstrumentationImpl.registeredProjectClassesVisitors`-->`ComponentImpl.registeredProjectClassesVisitors`
+
+##### TransformClassesWithAsmTask.CreationAction.configure
+
+```kotlin
+//TransformClassesWithAsmTask.kt
+        protected fun getInstrumentationManager(
+            classesHierarchyResolver: ClassesHierarchyResolver
+        ): AsmInstrumentationManager {
+            return AsmInstrumentationManager(
+                visitors = parameters.visitorsList.get(),//外部注册的ClassVisitorFactory
+                apiVersion = parameters.asmApiVersion.get(),
+                classesHierarchyResolver = classesHierarchyResolver,
+                framesComputationMode = parameters.framesComputationMode.get(),
+                excludes = parameters.excludes.get(),
+                profilingTransforms = parameters.profilingTransforms.getOrElse(emptyList())
+            )
+        }
+
+
+class CreationAction(
+        component: ComponentImpl,
+        val isTestCoverageEnabled: Boolean
+    ) : VariantTaskCreationAction<TransformClassesWithAsmTask, ComponentImpl>(
+        component
+ ) {
+...
+    override fun configure(task: TransformClassesWithAsmTask) {
+            super.configure(task)
+            task.incrementalFolder = creationConfig.paths.getIncrementalDir(task.name)
+
+            task.visitorsList.setDisallowChanges(creationConfig.registeredProjectClassesVisitors)      
+      ...
+  }
+}
+```
 
 
 
 ### 优点&缺点
 
+#### 优点
 
+- 不需要像`Transform`写一堆模版代码，包括全量/增量文件处理，jar包处理，`TransformClassesWithAsmTask`内部已实现相关逻辑
+- 可注册多个`AsmClassVisitorFactory`，在一次IO过程中，进行多次处理，提升构建性能。
 
- 
+#### 缺点
+
+- 内部实现与`ASM`绑定，需要有一定的认知了解
+- 不像`Transform`那样灵活，可以进行除字节码处理以外的操作（基本也够用）
 
 ## TransformAction
 
@@ -1591,3 +1749,5 @@ i-->j
 [Gradle-Transform 分析](https://juejin.cn/post/7098752199575994405#heading-8)
 
 [TransformAction介绍](https://juejin.cn/post/7131889789787176974)
+
+[TransformAction-Gradle文档](https://docs.gradle.org/current/userguide/artifact_transforms.html)
