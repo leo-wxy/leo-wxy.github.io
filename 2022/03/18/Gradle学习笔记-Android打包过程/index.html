@@ -16,18 +16,20 @@
   <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
   <meta name="author" content="Leo-Wxy">
   <meta name="keywords" content>
-  <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
+  <meta name="description" content="概述APK组成 对Apk文件进行解压处理，本质是Zip，解压后可以看到若干文件。  主要由以下部分组成：    文件/目录 描述     lib/ 存放so文件，一般情况下包含armeabi-v7a、arm64-v8a这两个目录，其他还有x86、armeabi等。   res/ 存放编译后的资源文件，例如drawable、layout等   META_INF/ 一般存在于已经签名的Apk中，记录签">
 <meta name="keywords" content="Gradle">
 <meta property="og:type" content="article">
 <meta property="og:title" content="Gradle学习笔记-Android打包过程">
 <meta property="og:url" content="https://leo-wxy.github.io/2022/03/18/Gradle学习笔记-Android打包过程/index.html">
 <meta property="og:site_name" content="Wxy的个人博客">
-<meta property="og:description" content="如果我没有见过光明，那我本可以忍受黑暗">
+<meta property="og:description" content="概述APK组成 对Apk文件进行解压处理，本质是Zip，解压后可以看到若干文件。  主要由以下部分组成：    文件/目录 描述     lib/ 存放so文件，一般情况下包含armeabi-v7a、arm64-v8a这两个目录，其他还有x86、armeabi等。   res/ 存放编译后的资源文件，例如drawable、layout等   META_INF/ 一般存在于已经签名的Apk中，记录签">
 <meta property="og:locale" content="zh-CN">
-<meta property="og:updated_time" content="2022-05-18T13:59:12.700Z">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Android_Build_Process.svg">
+<meta property="og:updated_time" content="2022-09-12T08:19:11.510Z">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Gradle学习笔记-Android打包过程">
-<meta name="twitter:description" content="如果我没有见过光明，那我本可以忍受黑暗">
+<meta name="twitter:description" content="概述APK组成 对Apk文件进行解压处理，本质是Zip，解压后可以看到若干文件。  主要由以下部分组成：    文件/目录 描述     lib/ 存放so文件，一般情况下包含armeabi-v7a、arm64-v8a这两个目录，其他还有x86、armeabi等。   res/ 存放编译后的资源文件，例如drawable、layout等   META_INF/ 一般存在于已经签名的Apk中，记录签">
+<meta name="twitter:image" content="https://leo-wxy.github.io/images/Android_Build_Process.svg">
   
   <title>Gradle学习笔记-Android打包过程 - Wxy的个人博客</title>
 
@@ -194,7 +196,7 @@
   
     <span class="post-meta mr-2">
       <i class="iconfont icon-chart"></i>
-      0 字
+      7.2k 字
     </span>
   
 
@@ -203,7 +205,7 @@
       <i class="iconfont icon-clock-fill"></i>
       
       
-      1 分钟
+      22 分钟
     </span>
   
 
@@ -235,7 +237,202 @@
             <h1 style="display: none">Gradle学习笔记-Android打包过程</h1>
             
             <div class="markdown-body">
-              
+              <h2 id="概述"><a href="#概述" class="headerlink" title="概述"></a>概述</h2><h3 id="APK组成"><a href="#APK组成" class="headerlink" title="APK组成"></a>APK组成</h3><blockquote>
+<p>对<code>Apk文件</code>进行解压处理，本质是<code>Zip</code>，解压后可以看到若干文件。</p>
+</blockquote>
+<p>主要由以下部分组成：</p>
+<table>
+<thead>
+<tr>
+<th>文件/目录</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>lib/</td>
+<td>存放<code>so文件</code>，一般情况下包含<code>armeabi-v7a</code>、<code>arm64-v8a</code>这两个目录，其他还有<code>x86</code>、<code>armeabi</code>等。</td>
+</tr>
+<tr>
+<td>res/</td>
+<td>存放编译后的资源文件，例如<code>drawable</code>、<code>layout</code>等</td>
+</tr>
+<tr>
+<td>META_INF/</td>
+<td>一般存在于已经签名的Apk中，记录<code>签名摘要</code>等信息</td>
+</tr>
+<tr>
+<td>assets/</td>
+<td>应用程序的资源，可通过<code>AssetManager</code>来检索对应资源</td>
+</tr>
+<tr>
+<td>classes(n).dex</td>
+<td><code>classes</code>对应<code>Java Class</code>，被编译成<code>Dex</code>后，可以被<code>Dalvik/ART</code>虚拟机所理解</td>
+</tr>
+<tr>
+<td>resources.arsc</td>
+<td>打包过程中产生的资源索引文件。<strong>用于包体积优化，可对重复资源、资源文件名混淆提供分析</strong></td>
+</tr>
+<tr>
+<td>AndroidManifest.xml</td>
+<td>用于描述<code>App名称、版本、所需权限以及注册的四大组件</code>。</td>
+</tr>
+</tbody>
+</table>
+<p>后续打包流程的介绍，也会分析具体部分生成的时机以及内容。</p>
+<h3 id="打包流程"><a href="#打包流程" class="headerlink" title="打包流程"></a>打包流程</h3><p><img src="/images/Android_Build_Process.svg" srcset="/img/loading.gif" lazyload alt="Apk构建流程"></p>
+<p>流程中的椭圆形部分为打包过程中所需要用到的工具，下面简单的介绍下</p>
+<blockquote>
+<p>主要执行文件的位置在${ANDROID_SDK_HOME}/build-tools/XX/</p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th>名称</th>
+<th>功能介绍</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>aapt(<code>aapt2</code>)</td>
+<td>Android资源打包工具</td>
+</tr>
+<tr>
+<td>aidl</td>
+<td>Android接口描述语言 -&gt; Java文件</td>
+</tr>
+<tr>
+<td>javac</td>
+<td>Java编译器</td>
+</tr>
+<tr>
+<td>dex(<code>d8</code>)</td>
+<td>打包<code>class文件</code>为<code>dex</code></td>
+</tr>
+<tr>
+<td>apkbuilder(<code>apkfinger</code>)</td>
+<td>生成apk</td>
+</tr>
+<tr>
+<td>zipalign</td>
+<td>字节码对齐工具</td>
+</tr>
+</tbody>
+</table>
+<p>根据上图可以得出，Android打包流程主要分为两部分：</p>
+<ul>
+<li><strong>编译</strong><ul>
+<li>资源文件编译 - 通过<code>AAPT2</code>编译</li>
+<li>aidl文件编译 - 编译成Java文件</li>
+<li>kotlin/java文件编译 - <code>javac</code>编译成class文件 </li>
+<li>jni相关文件编译 - 编译成so文件</li>
+</ul>
+</li>
+<li><strong>打包</strong><ul>
+<li>打包class为dex文件 - 使用<code>D8 R8</code>编译</li>
+<li>打包dex和编译后资源为apk - 使用<code>ApkFlinger</code>打包</li>
+<li>给apk签名 - 使用<code>v2/v3/v4</code>方式签名</li>
+</ul>
+</li>
+</ul>
+<h3 id="打包相关Task"><a href="#打包相关Task" class="headerlink" title="打包相关Task"></a>打包相关Task</h3><p>通过执行<code>./gradlew assembleRelease</code> 观察执行哪些Task</p>
+<figure class="highlight ruby"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br></pre></td><td class="code"><pre><code class="hljs ruby">=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>buildKotlinToolingMetadata=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>preBuild=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>preReleaseBuild=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>compileReleaseAidl=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>compileReleaseRenderscript=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>generateReleaseBuildConfig=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>checkReleaseAarMetadata=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>generateReleaseResValues=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>generateReleaseResources=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>mergeReleaseResources=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>packageReleaseResources=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>mapReleaseSourceSetPaths=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>parseReleaseLocalResources=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>createReleaseCompatibleScreenManifests=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>extractDeepLinksRelease=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>processReleaseMainManifest=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>processReleaseManifest=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>processReleaseManifestForPackage=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>processReleaseResources=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>compileReleaseKotlin=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>javaPreCompileRelease=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>compileReleaseJavaWithJavac=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>extractProguardFiles=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>lintVitalAnalyzeRelease=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>lintVitalReportRelease=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>lintVitalRelease=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>mergeReleaseJniLibFolders=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>mergeReleaseNativeLibs=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>stripReleaseDebugSymbols=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>extractReleaseNativeSymbolTables=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>mergeReleaseNativeDebugMetadata=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>checkReleaseDuplicateClasses=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>transformReleaseClassesWithAsm=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>dexBuilderRelease=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>desugarReleaseFileDependencies=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>mergeExtDexRelease=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>mergeDexRelease=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>mergeReleaseArtProfile=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>compileReleaseArtProfile=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>mergeReleaseShaders=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>compileReleaseShaders=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>generateReleaseAssets=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>mergeReleaseAssets=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>compressReleaseAssets=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>processReleaseJavaRes=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>mergeReleaseJavaResource=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>optimizeReleaseResources=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>collectReleaseDependencies=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>sdkReleaseDependencyData=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>writeReleaseAppMetadata=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>writeReleaseSigningConfigVersions=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>packageRelease=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>createReleaseApkListingFileRedirect=========<br>=========<span class="hljs-symbol">TaskExecutionGraph:</span><span class="hljs-symbol">app:</span>assembleRelease=========<br></code></pre></td></tr></table></figure>
+<p>以上是执行<code>assembleRelease</code>相关的Task，与上述打包流程相关的主要是以下Task，重点分析的也是这些关联Task</p>
+<ul>
+<li><p><strong>编译</strong></p>
+<ul>
+<li><p>资源文件编译 - 通过<code>AAPT2</code>编译</p>
+<blockquote>
+<p>generateBuildConfig - 生成BuildConfig.java</p>
+<p>mergeResources - merge资源文件</p>
+<p>mergeAssets - merge assets/下资源文件</p>
+<p>processManifest - merge AndroidManifest.xml文件</p>
+<p>processResources -  生成R.java文件 处于AAPT2链接阶段</p>
+</blockquote>
+</li>
+<li><p>aidl文件编译 - 编译成Java文件 </p>
+<blockquote>
+<p>compileAidl - 编译aidl文件</p>
+</blockquote>
+</li>
+<li><p>kotlin/java文件编译 - <code>javac</code>编译成class文件 </p>
+<blockquote>
+<p>compileKotlin - 编译kotlin文件</p>
+<p>compileJavaWithJavac - 编译java文件为class文件</p>
+</blockquote>
+</li>
+<li><p>jni相关文件编译 - 编译成so文件</p>
+<blockquote>
+<p>externalNativeBuild - 编译C/C++等文件为so</p>
+<p>mergeJniLibFolders - 合并依赖的Native库</p>
+<p>stripDebugSymbols - 剔除debug符号</p>
+</blockquote>
+</li>
+<li><p>class文件处理 - 类似<code>Transform</code>进行字节码操作</p>
+<blockquote>
+<p>transformClassesWithAsm - 实现<code>AsmClassVisitorFactory</code></p>
+</blockquote>
+</li>
+</ul>
+</li>
+<li><p><strong>打包</strong></p>
+<ul>
+<li><p>打包class为dex文件 - 使用<code>D8 R8</code>编译</p>
+<blockquote>
+<p>dexBuilder - 打包class</p>
+</blockquote>
+</li>
+<li><p>打包dex和编译后资源为apk - 使用<code>ApkFlinger</code>打包</p>
+<blockquote>
+<p>package - 打包Apk</p>
+</blockquote>
+</li>
+<li><p>给apk签名 - 使用<code>v2/v3/v4</code>方式签名</p>
+</li>
+</ul>
+</li>
+</ul>
+<h2 id="主流程分析"><a href="#主流程分析" class="headerlink" title="主流程分析"></a>主流程分析</h2><h3 id="资源与代码编译"><a href="#资源与代码编译" class="headerlink" title="资源与代码编译"></a>资源与代码编译</h3><h4 id="资源文件编译"><a href="#资源文件编译" class="headerlink" title="资源文件编译"></a>资源文件编译</h4><blockquote>
+<p>Apk资源主要包含以下几种：</p>
+<ul>
+<li><code>res</code>目录下所有文件，例如<code>drawable</code>、<code>layout</code>等文件目录下</li>
+<li><code>assets</code>目录下文件</li>
+<li>各Module下的<code>AndroidManifest.xml</code></li>
+</ul>
+</blockquote>
+<h5 id="mergeAssets-amp-packageAssets-合并assets文件"><a href="#mergeAssets-amp-packageAssets-合并assets文件" class="headerlink" title="mergeAssets&amp;packageAssets-合并assets文件"></a>mergeAssets&amp;packageAssets-合并assets文件</h5><blockquote>
+<ul>
+<li>mergeAssets：合并所有的<code>assets</code>文件</li>
+<li>packageAssets：合并<strong>子module</strong>中的<code>assets</code>文件</li>
+</ul>
+</blockquote>
+<p>上述Task对应的源码实现类位于<code>com.android.build.gradle.tasks.MergeSourceSetFolders</code>中</p>
+<figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">MergeAppAssetCreationAction</span></span>(creationConfig: ComponentCreationConfig) :<br>    MergeAssetBaseCreationAction(<br>        creationConfig,<br>        <span class="hljs-literal">true</span><br>    ) &#123;<br><br>    <span class="hljs-keyword">override</span> <span class="hljs-keyword">val</span> name: String<br>        <span class="hljs-keyword">get</span>() = computeTaskName(<span class="hljs-string">"merge"</span>, <span class="hljs-string">"Assets"</span>)<br><br>    <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">handleProvider</span><span class="hljs-params">(<br>        taskProvider: <span class="hljs-type">TaskProvider</span>&lt;<span class="hljs-type">MergeSourceSetFolders</span>&gt;<br>    )</span></span> &#123;<br>        <span class="hljs-keyword">super</span>.handleProvider(taskProvider)<br><br>        creationConfig.artifacts.use(taskProvider)<br>            .wiredWith &#123; it.outputDir &#125;<br>            .toAppendTo(MultipleArtifact.ASSETS)<br>    &#125;<br>&#125;<br><br><span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">LibraryAssetCreationAction</span></span>(creationConfig: ComponentCreationConfig) :<br>    MergeAssetBaseCreationAction(<br>        creationConfig,<br>        <span class="hljs-literal">false</span><br>    ) &#123;<br><br>    <span class="hljs-keyword">override</span> <span class="hljs-keyword">val</span> name: String<br>        <span class="hljs-keyword">get</span>() = computeTaskName(<span class="hljs-string">"package"</span>, <span class="hljs-string">"Assets"</span>)<br><br>    <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">handleProvider</span><span class="hljs-params">(<br>        taskProvider: <span class="hljs-type">TaskProvider</span>&lt;<span class="hljs-type">MergeSourceSetFolders</span>&gt;<br>    )</span></span> &#123;<br>        <span class="hljs-keyword">super</span>.handleProvider(taskProvider)<br><br>        creationConfig.artifacts.setInitialProvider(<br>            taskProvider,<br>            MergeSourceSetFolders::outputDir<br>        ).withName(<span class="hljs-string">"out"</span>).on(InternalArtifactType.LIBRARY_ASSETS)<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+<p>最终合并完成的<code>assets</code>位于<code>build/intermediates/assets</code>下。</p>
+<blockquote>
+<p>以<code>MergeAssets</code>Task为契机，可以实现类似<code>assets</code>文件压缩或者无用文件删除功能。</p>
+</blockquote>
+<p>//todo 示例</p>
+<h5 id="processManifest-合并AndroidManifest-xml文件"><a href="#processManifest-合并AndroidManifest-xml文件" class="headerlink" title="processManifest-合并AndroidManifest.xml文件"></a>processManifest-合并AndroidManifest.xml文件</h5><blockquote>
+<ul>
+<li>processManifest - 处理<code>子module</code>的<code>AndroidManifest.xml</code>文件</li>
+<li>processMainManifest - 处理<code>app module</code>的<code>AndroidManifest.xml</code>文件</li>
+<li>processManifestForPackage - 处理<code>merged_manifests</code>，位于<code>build/intermediates/merged_manifests</code>。最后合并得到打到Apk里的<code>AndroidManifest.xml</code>，位于<code>build/intermediates/packaged_manifest</code></li>
+</ul>
+</blockquote>
+<p>上述Task对应源码分别如下：</p>
+<p>processManifest - <code>ProcessLibraryManifest</code></p>
+<figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><code class="hljs kotlin">```<br><br>processMainManifest - `ProcessApplicationManifest`<br><br>```kotlin<br></code></pre></td></tr></table></figure>
+<p>processManifestForPackage - <code>ProcessPackagedManifestTask</code></p>
+<pre><code class="kotlin">
+</code></pre>
+<blockquote>
+<p>以<code>processManifestForPackage</code>为契机，可以实现类似<code>隐私权限检测</code>、<code>新增页面检查</code>等功能</p>
+</blockquote>
+<p>//todo 示例</p>
+<h5 id="mergeResources-amp-processResources-处理res下资源文件"><a href="#mergeResources-amp-processResources-处理res下资源文件" class="headerlink" title="*mergeResources&amp;processResources-处理res下资源文件"></a>*mergeResources&amp;processResources-处理res下资源文件</h5><h4 id="AIDL文件编译"><a href="#AIDL文件编译" class="headerlink" title="AIDL文件编译"></a>AIDL文件编译</h4><h5 id="compileAidl-编译aidl为java"><a href="#compileAidl-编译aidl为java" class="headerlink" title="compileAidl-编译aidl为java"></a>compileAidl-编译aidl为java</h5><h4 id="Kotlin-Java文件编译"><a href="#Kotlin-Java文件编译" class="headerlink" title="Kotlin/Java文件编译"></a>Kotlin/Java文件编译</h4><h5 id="compileKotlin"><a href="#compileKotlin" class="headerlink" title="compileKotlin"></a>compileKotlin</h5><h5 id="compileJavaWithJavac"><a href="#compileJavaWithJavac" class="headerlink" title="compileJavaWithJavac"></a>compileJavaWithJavac</h5><h4 id="jni相关文件编译"><a href="#jni相关文件编译" class="headerlink" title="jni相关文件编译"></a>jni相关文件编译</h4><h5 id="externalNativeBuild"><a href="#externalNativeBuild" class="headerlink" title="externalNativeBuild"></a>externalNativeBuild</h5><h5 id="mergeNativeLibs"><a href="#mergeNativeLibs" class="headerlink" title="mergeNativeLibs"></a>mergeNativeLibs</h5><h3 id="打包流程-1"><a href="#打包流程-1" class="headerlink" title="打包流程"></a>打包流程</h3><h4 id="打包成Dex"><a href="#打包成Dex" class="headerlink" title="打包成Dex"></a>打包成Dex</h4><h5 id="dexBuilder"><a href="#dexBuilder" class="headerlink" title="dexBuilder"></a>dexBuilder</h5><h4 id="打包成Apk"><a href="#打包成Apk" class="headerlink" title="打包成Apk"></a>打包成Apk</h4><h5 id="package"><a href="#package" class="headerlink" title="package"></a>package</h5><h2 id="相关链接"><a href="#相关链接" class="headerlink" title="相关链接"></a>相关链接</h2><p><a href="http://tools.android.com/tech-docs/new-build-system/build-workflow" target="_blank" rel="noopener">Apk构建流程</a></p>
+<p><a href="https://source.android.com/docs/security/apksigning?hl=zh-cn" target="_blank" rel="noopener">Android签名相关</a></p>
+
             </div>
             <hr>
             <div>
