@@ -278,11 +278,213 @@ a[0] // 1
 
 ### 函数(`Functions`)
 
+> 使用`fn`来声明函数，其中`fn main()`是程序的入口点。
 
+#### 参数
+
+> 是函数签名的一部分，**必须声明每个参数的类型。**
+
+```rust
+fn another_function(x: i32) {
+    println!("The value of x is: {x}");
+}
+```
+
+
+
+#### 语句&表达式
+
+> 函数体由一系列的语句和一个可选的结尾表达式构成。
+
+- **语句**：执行一些操作但不返回值的指令
+- **表达式**：计算并产生一个值。
+
+主要区分最后有无`;`
+
+```rust
+fn main() {
+    let y = {
+        let x = 3; //语句
+        x + 1 //表达式
+    };
+
+    println!("The value of y is: {y}");
+}
+```
+
+
+
+#### 返回值
+
+> 不对返回值命名，需要在`->`后声明返回值类型
+
+```rust
+fn plus_one(x: i32) -> i32 {
+    x + 1
+}
+```
 
 
 
 ### 控制流(`Control Flow`)
+
+> 根据条件来决定是否执行某些代码。
+
+#### if / while / for
+
+主要就是一些`if`，`while`，`for`，这些的使用方式与Java的一致，不做细节说明
+
+```rust
+// if
+fn main() {
+    let mut x = 10;
+    x = if x % 2 == 0 {
+        x / 2
+    } else {
+        3 * x + 1
+    };
+}
+
+//while
+fn main() {
+    let mut x = 10;
+    while x != 1 {
+        x = if x % 2 == 0 {
+            x / 2
+        } else {
+            3 * x + 1
+        };
+    }
+    println!("Final x: {x}");
+}
+
+//for
+fn main() {
+    let v = vec![10, 20, 30];
+
+    for x in v {
+        println!("x: {x}");
+    }
+    
+    for i in (0..10).step_by(2) {
+        println!("i: {i}");
+    }
+}
+```
+
+#### loop
+
+> 重复执行代码，直到某些条件停止(执行到`break`)
+
+```rust
+fn main() {
+    let mut counter = 0;
+
+    let result = loop {
+        counter += 1;
+
+        if counter == 10 {
+            break counter * 2; //返回该值到result
+        }
+    };
+
+    println!("The result is {result}");
+}
+```
+
+##### 循环标签
+
+> 如果存在多重嵌套循环，通过在循环上指定循环标签用于退出
+
+```rust
+fn main() {
+    let mut count = 0;
+    'counting_up: loop {
+        println!("count = {count}");
+        let mut remaining = 10;
+
+        loop {
+            println!("remaining = {remaining}");
+            if remaining == 9 {
+                break; //退出当前loop
+            }
+            if count == 2 {
+                break 'counting_up; //退出 counting_up对应的loop
+            }
+            remaining -= 1;
+        }
+
+        count += 1;
+    }
+    println!("End count = {count}");
+}
+```
+
+
+
+#### [match](https://kaisery.github.io/trpl-zh-cn/ch06-02-match.html)
+
+> 将一个值与一系列的模式进行比较，并根据匹配的模式执行相应的代码。
+>
+> 功能类似Java的`when`
+
+```rust
+enum Coin {
+    YIFEN,
+    WUFEN,
+    WUMAO,
+    YIYUAN(String),
+}
+
+fn value_in_cents(coin: Coin) {
+    match coin {
+        Coin::YIFEN => { println!("1") }
+        Coin::WUFEN => { println!("5") }
+        Coin::WUMAO => {
+            println!("50")
+        }
+        Coin::YIYUAN(str) => {
+            println!("100 {str}")
+        }
+    }
+}
+```
+
+#### if let
+
+> `if let`属于`match`的一种语法糖，简化了使用。
+>
+> 只能匹配某一模式
+
+```rust
+fn value_in_cents(coin: Coin) {
+     if let Coin::YIYUAN(str) = coin {
+        println!("100 {str}")
+    } else{
+        println!("1")
+    }
+}    
+```
+
+### String
+
+
+
+### 常见集合
+
+
+
+### 枚举
+
+
+
+### 结构体
+
+
+
+## Rust所有权
+
+
 
 
 
