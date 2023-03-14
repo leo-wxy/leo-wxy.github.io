@@ -274,6 +274,14 @@ a[0] // 1
     println!("a:{a:#?}"); //打印出来更好看
 ```
 
+#### 字符串(&str/String)
+
+#### 切片(Slice)
+
+#### 枚举(Enum)
+
+#### 集合体(Struct)
+
 
 
 ### 函数(`Functions`)
@@ -326,7 +334,7 @@ fn plus_one(x: i32) -> i32 {
 
 
 
-### 控制流(`Control Flow`)
+### 流程控制(`Control Flow`)
 
 > 根据条件来决定是否执行某些代码。
 
@@ -422,6 +430,8 @@ fn main() {
 
 
 
+### 模式匹配(Match)
+
 #### [match](https://kaisery.github.io/trpl-zh-cn/ch06-02-match.html)
 
 > 将一个值与一系列的模式进行比较，并根据匹配的模式执行相应的代码。
@@ -450,6 +460,24 @@ fn value_in_cents(coin: Coin) {
 }
 ```
 
+#### matches
+
+> 功能与`match`差不多，支持多条件匹配
+
+```rust
+fn value_in_cents(coin: Coin) {
+    if matches!(coin,Coin::YIFEN | Coin::WUFEN) { //coin匹配上 yifen / wufen
+        println!("1")
+    } else if matches!(coin,Coin::YIYUAN(str) if str > 130) { //coin匹配上 yiyuan 且 数值>130
+        println!("100");
+    } else {
+        println!("50")
+    }
+}
+```
+
+
+
 #### if let
 
 > `if let`属于`match`的一种语法糖，简化了使用。
@@ -466,23 +494,17 @@ fn value_in_cents(coin: Coin) {
 }    
 ```
 
-### String
+
 
 
 
 ### 常见集合
 
+#### Vector
+
+#### HashMap
 
 
-### 枚举
-
-
-
-### 结构体
-
-
-
-## Rust所有权
 
 
 
@@ -497,4 +519,6 @@ fn value_in_cents(coin: Coin) {
 [Rust程序设计语言](https://kaisery.github.io/trpl-zh-cn/title-page.html)
 
 [给Android开发者的Rust综合学习(Google出品)](https://google.github.io/comprehensive-rust/welcome.html)
+
+[Rust在线练习](https://zh.practice.rs/why-exercise.html)
 
