@@ -274,13 +274,200 @@ a[0] // 1
     println!("a:{a:#?}"); //打印出来更好看
 ```
 
-#### 字符串(&str/String)
+##### 字符串(&str/String)
 
-#### 切片(Slice)
+###### &str / &String
 
-#### 枚举(Enum)
+> 字符串字面量类型为`&str`。
+>
+> `&String`是String的borrow类型，可以看作`&str`
+>
+> 不可变的固定长度的字符串。
 
-#### 集合体(Struct)
+```rust
+fn main(){
+  let s: &str = "hello, world";
+}
+```
+
+
+
+###### String
+
+> `String`是定义在标准库中的类型，分配在`堆`上，可以动态的增长。底层存储为`动态字节数组`。
+>
+> **String是 UTF-8编码的。**
+
+- 新建字符串
+
+  > 主要有如下方式
+  >
+  > - **String::new()**
+  > - **String::from("")**
+  > - **"".to_string()**
+
+  ```rust
+  fn main() {
+      // let mut s = String::new(); //新建一个空的String
+      let mut s = String::from(""); //从字符串创建String
+      // let mut s = "".to_string(); //同上
+      s.push_str("hello, world");
+      s.push('!');
+  
+      assert_eq!(s, "hello, world!");
+  }
+  ```
+
+  
+
+- 更新字符串
+
+  > 主要有如下方式
+  >
+  > - **push( ch: char)**
+  > - **push_str(string: &str)**
+  > - **+string:&str**
+  > - **replace(string: &str)**
+  > - **format!()**
+
+  ```rust
+  fn main(){
+      let mut s2: String = String::from("Hello "); //Hello
+      s2.push('W'); //Hello W
+      s2.push_str("or"); //Hello Wor
+      s2+="ld"; //Hello World
+      s2 = s2.replace("W","w"); //Hello world
+      println!("s2: {s2}");
+  }
+  
+  fn main1(){
+      let ss1 = String::from("tic");
+      let ss2 = String::from("toc");
+      let ss3 = String::from("toe");
+  
+      let hh = format!("{ss1}-{ss2}-{ss3}");
+      println!("hh: {hh}"); //tic-toc-toe
+  
+  }
+  ```
+
+  注意事项：
+
+  > 当使用`+`进行字符串拼接时，只能用`String`与`&str`进行拼接，并且此时的`String`的所有权会在此过程中被move(后续所有权会介绍)
+
+  ```rust
+  fn main() {
+      let s1 = String::from("hello,");
+      let s2 = String::from("world!");
+      let s3 = s1 + &s2; //需要使用& 将String转换为&str
+      assert_eq!(s3,"hello,world!");
+      println!("{}",s1); //报错 value borrowed here after move
+      println!("{}",s2);
+  }
+  ```
+
+  
+
+- 索引字符串
+
+  > 例如`s[0]`在Rust下是无法使用的，主要由于底层为`Vec<u8>`的封装，按照字节长度进行返回。
+  >
+  > 想要实现索引功能，就需要依赖后面介绍的`Slice`相关，此处先写上示例代码
+
+  ```rust
+  fn main() {
+      let s1 = String::from("hi,中国");
+      let h = s1[0..1]; //  `h` 字符在 UTF-8 格式中只需要 1 个字节来表示
+      assert_eq!(h, "h");
+  
+      let h1 = &s1[3..6];//  `中` 字符在 UTF-8 格式中需要 3 个字节来表示
+      assert_eq!(h1, "中");
+  }
+  ```
+
+  
+
+- 遍历字符串
+
+  > 按照字符(char)或字节(byte)对字符串进行便利
+  >
+  > - chars：字符
+  > - bytes：字节
+
+  ```rust
+  fn main() {
+      // 填空，打印出 "你好，世界" 中的每一个字符
+      for c in "你好，世界".chars() {
+          println!("{}", c)
+      }
+  }
+  ```
+
+###### &str与String相互转换
+
+- &str => String
+
+  ```rust
+  fn test_str_to_string() {
+      let a: &str = "Hello";
+      let b = a.to_string();
+      let c = String::from(a);
+      let d = a.to_owned();
+  }
+  ```
+
+  
+
+- String => &str
+
+  ```rust
+  fn test_string_to_str() {
+      let a = String::from("Hello");
+      let b = a.as_str();
+      let c = &a;
+  
+      let d = &String::from("Hello");
+  }
+  ```
+
+###### &str与String的使用场景
+
+> 如果只想要一个字符串的只读视图，或者作为一个函数的参数，首选 **`&str`**
+>
+> 如果想拥有所有权，或者修改字符串就使用 **`String`**
+
+##### 切片(Slice)
+
+> 跟数组类似，但是切片的长度无法在编译期得知。
+
+###### 其他类型Slice
+
+```rust
+fn test_other_slice() {
+    let a = [1, 2, 3, 4, 5];
+    let slice = &a[0..3]; //[0,3)
+    let slice2 = &a[..3];
+    assert_eq!(slice,slice2);
+    println!("{slice:?}")
+}
+```
+
+
+
+###### 字符串Slice
+
+```rust
+```
+
+
+
+
+
+##### 枚举(Enum)
+
+
+
+##### 集合体(Struct)
 
 
 
