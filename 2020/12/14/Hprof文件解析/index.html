@@ -22,29 +22,29 @@
     <meta name="description" content="Hprof对应的就是内存快照。可以方便的凭借Hprof进行OOM分析以及异常治理。   OOM治理 内存快照保存的对象信息和依赖关系也是静态分析内存泄漏的关键。  Crash治理 保存的数据，也可用于分析异常问题。    Hprof文件格式Hprof文件格式有明确组织方式，Android在Java的基础上新增了部分Tag。 Java Hprof格式![Java Hprof格式](&#x2F;im">
 <meta property="og:type" content="article">
 <meta property="og:title" content="Hprof文件解析">
-<meta property="og:url" content="http://example.com/2020/12/14/Hprof%E6%96%87%E4%BB%B6%E8%A7%A3%E6%9E%90/index.html">
+<meta property="og:url" content="https://leo-wxy.github.io/2020/12/14/Hprof%E6%96%87%E4%BB%B6%E8%A7%A3%E6%9E%90/index.html">
 <meta property="og:site_name" content="Wxy的个人博客">
 <meta property="og:description" content="Hprof对应的就是内存快照。可以方便的凭借Hprof进行OOM分析以及异常治理。   OOM治理 内存快照保存的对象信息和依赖关系也是静态分析内存泄漏的关键。  Crash治理 保存的数据，也可用于分析异常问题。    Hprof文件格式Hprof文件格式有明确组织方式，Android在Java的基础上新增了部分Tag。 Java Hprof格式![Java Hprof格式](&#x2F;im">
 <meta property="og:locale" content="zh_CN">
-<meta property="og:image" content="http://example.com/images/Hprof%E6%96%87%E4%BB%B6%E8%A7%A3%E6%9E%90.png">
-<meta property="og:image" content="http://example.com/images/Hprof-Header">
-<meta property="og:image" content="http://example.com/images/Hprof-Record">
-<meta property="og:image" content="http://example.com/images/Hprof%E6%96%87%E4%BB%B6%E7%94%9F%E6%88%90%E5%8E%9F%E7%90%86.png">
-<meta property="og:image" content="http://example.com/images/Hprof-ScopedSuspendAll.png">
-<meta property="og:image" content="http://example.com/images/Hprof-ProcessHeap.png">
-<meta property="og:image" content="http://example.com/images/Hprof%E6%96%87%E4%BB%B6%E8%A3%81%E5%89%AA.png">
-<meta property="og:image" content="http://example.com/images/Dump%E6%96%87%E4%BB%B6%E5%90%8E%E8%A3%81%E5%89%AA.png">
-<meta property="og:image" content="http://example.com/images/Dump%E5%AE%9E%E6%97%B6%E8%A3%81%E5%89%AA.png">
-<meta property="og:image" content="http://example.com/images/Hprof%E5%AE%9E%E6%97%B6%E8%A3%81%E5%89%AA%E6%B5%81%E7%A8%8B.png">
-<meta property="og:image" content="http://example.com/images/Hprof-%E8%A3%81%E5%89%AA%E7%9A%84%E5%86%85%E5%AE%B9.png">
-<meta property="og:image" content="http://example.com/images/fork%E5%AD%90%E8%BF%9B%E7%A8%8B">
-<meta property="og:image" content="http://example.com/images/%E5%AD%90%E8%BF%9B%E7%A8%8BDump%E5%86%85%E5%AD%98%E6%B5%81%E7%A8%8B%E5%9B%BE">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Hprof%E6%96%87%E4%BB%B6%E8%A7%A3%E6%9E%90.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Hprof-Header">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Hprof-Record">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Hprof%E6%96%87%E4%BB%B6%E7%94%9F%E6%88%90%E5%8E%9F%E7%90%86.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Hprof-ScopedSuspendAll.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Hprof-ProcessHeap.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Hprof%E6%96%87%E4%BB%B6%E8%A3%81%E5%89%AA.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Dump%E6%96%87%E4%BB%B6%E5%90%8E%E8%A3%81%E5%89%AA.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Dump%E5%AE%9E%E6%97%B6%E8%A3%81%E5%89%AA.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Hprof%E5%AE%9E%E6%97%B6%E8%A3%81%E5%89%AA%E6%B5%81%E7%A8%8B.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/Hprof-%E8%A3%81%E5%89%AA%E7%9A%84%E5%86%85%E5%AE%B9.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/fork%E5%AD%90%E8%BF%9B%E7%A8%8B">
+<meta property="og:image" content="https://leo-wxy.github.io/images/%E5%AD%90%E8%BF%9B%E7%A8%8BDump%E5%86%85%E5%AD%98%E6%B5%81%E7%A8%8B%E5%9B%BE">
 <meta property="article:published_time" content="2020-12-14T06:45:43.000Z">
 <meta property="article:modified_time" content="2020-12-22T02:09:35.000Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="Java">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="http://example.com/images/Hprof%E6%96%87%E4%BB%B6%E8%A7%A3%E6%9E%90.png">
+<meta name="twitter:image" content="https://leo-wxy.github.io/images/Hprof%E6%96%87%E4%BB%B6%E8%A7%A3%E6%9E%90.png">
   
   
   
@@ -86,7 +86,7 @@
   <script id="fluid-configs">
     var Fluid = window.Fluid || {};
     Fluid.ctx = Object.assign({}, Fluid.ctx)
-    var CONFIG = {"hostname":"example.com","root":"/","version":"1.9.8","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false,"scope":[]},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"code_language":{"enable":true,"default":"TEXT"},"copy_btn":true,"image_caption":{"enable":true},"image_zoom":{"enable":true,"img_url_replace":["",""]},"toc":{"enable":true,"placement":"right","headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"loading_img":"/img/loading.gif","onlypost":false,"offset_factor":2},"web_analytics":{"enable":false,"follow_dnt":true,"baidu":null,"google":null,"tencent":{"sid":null,"cid":null},"leancloud":{"app_id":null,"app_key":null,"server_url":null,"path":"window.location.pathname","ignore_local":false},"umami":{"src":null,"website_id":null,"domains":null,"start_time":"2024-01-01T00:00:00.000Z","token":null,"api_server":null},"gtag":null,"woyaola":null,"cnzz":null},"search_path":"/local-search.xml","include_content_in_search":false};
+    var CONFIG = {"hostname":"leo-wxy.github.io","root":"/","version":"1.9.8","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false,"scope":[]},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"code_language":{"enable":true,"default":"TEXT"},"copy_btn":true,"image_caption":{"enable":true},"image_zoom":{"enable":true,"img_url_replace":["",""]},"toc":{"enable":true,"placement":"left","headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"loading_img":"/img/loading.gif","onlypost":false,"offset_factor":2},"web_analytics":{"enable":false,"follow_dnt":true,"baidu":null,"google":null,"tencent":{"sid":null,"cid":null},"leancloud":{"app_id":null,"app_key":null,"server_url":null,"path":"window.location.pathname","ignore_local":false},"umami":{"src":null,"website_id":null,"domains":null,"start_time":"2024-01-01T00:00:00.000Z","token":null,"api_server":null},"gtag":null,"woyaola":null,"cnzz":null},"search_path":"/local-search.xml","include_content_in_search":false};
 
     if (CONFIG.web_analytics.follow_dnt) {
       var dntVal = navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack;
@@ -108,7 +108,7 @@
   <header>
     
 
-<div class="header-inner" style="height: 30vh;">
+<div class="header-inner" style="height: 60vh;">
   <nav id="navbar" class="navbar fixed-top  navbar-expand-lg navbar-dark scrolling-navbar">
   <div class="container">
     <a class="navbar-brand" href="/">
@@ -280,6 +280,19 @@
   <div class="row nomargin-x">
     <div class="side-col d-none d-lg-block col-lg-2">
       
+  <aside class="sidebar" style="padding-left: 2rem; margin-right: -1rem">
+    <div id="toc">
+  <p class="toc-header">
+    <i class="iconfont icon-list"></i>
+    <span>目录</span>
+  </p>
+  <div class="toc-body" id="toc-body"></div>
+</div>
+
+
+
+  </aside>
+
 
     </div>
 
@@ -542,7 +555,7 @@
   <div class="license-box my-3">
     <div class="license-title">
       <div>Hprof文件解析</div>
-      <div>http://example.com/2020/12/14/Hprof文件解析/</div>
+      <div>https://leo-wxy.github.io/2020/12/14/Hprof文件解析/</div>
     </div>
     <div class="license-meta">
       
@@ -615,19 +628,6 @@
 
     <div class="side-col d-none d-lg-block col-lg-2">
       
-  <aside class="sidebar" style="margin-left: -1rem">
-    <div id="toc">
-  <p class="toc-header">
-    <i class="iconfont icon-list"></i>
-    <span>目录</span>
-  </p>
-  <div class="toc-body" id="toc-body"></div>
-</div>
-
-
-
-  </aside>
-
 
     </div>
   </div>

@@ -22,17 +22,17 @@
     <meta name="description" content="布局加载过程中存在两个耗时点：  布局文件读取慢，涉及IO操作 根据&lt;tag&gt;创建View慢(createViewFromTag())，使用反射的方式创建View。布局嵌套层数越多，控件个数越多，反射的次数就会越多。  当XML文件过大、嵌套过深时，就会导致页面发生卡顿甚至ANR。 解决方案有两种：  直接解决：不使用IO操作以及反射 侧面缓解：把耗时操作放到子线程，等待加载完毕返回">
 <meta property="og:type" content="article">
 <meta property="og:title" content="Android布局优化-AsyncLayoutInflater简析">
-<meta property="og:url" content="http://example.com/2020/11/02/Android-%E5%B8%83%E5%B1%80%E4%BC%98%E5%8C%96-AsyncLayoutInflater%E7%AE%80%E6%9E%90/index.html">
+<meta property="og:url" content="https://leo-wxy.github.io/2020/11/02/Android-%E5%B8%83%E5%B1%80%E4%BC%98%E5%8C%96-AsyncLayoutInflater%E7%AE%80%E6%9E%90/index.html">
 <meta property="og:site_name" content="Wxy的个人博客">
 <meta property="og:description" content="布局加载过程中存在两个耗时点：  布局文件读取慢，涉及IO操作 根据&lt;tag&gt;创建View慢(createViewFromTag())，使用反射的方式创建View。布局嵌套层数越多，控件个数越多，反射的次数就会越多。  当XML文件过大、嵌套过深时，就会导致页面发生卡顿甚至ANR。 解决方案有两种：  直接解决：不使用IO操作以及反射 侧面缓解：把耗时操作放到子线程，等待加载完毕返回">
 <meta property="og:locale" content="zh_CN">
-<meta property="og:image" content="http://example.com/images/AsyncLayoutInflater.png">
+<meta property="og:image" content="https://leo-wxy.github.io/images/AsyncLayoutInflater.png">
 <meta property="article:published_time" content="2020-11-02T11:46:03.000Z">
 <meta property="article:modified_time" content="2020-11-03T13:01:08.000Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="Android">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="http://example.com/images/AsyncLayoutInflater.png">
+<meta name="twitter:image" content="https://leo-wxy.github.io/images/AsyncLayoutInflater.png">
   
   
   
@@ -74,7 +74,7 @@
   <script id="fluid-configs">
     var Fluid = window.Fluid || {};
     Fluid.ctx = Object.assign({}, Fluid.ctx)
-    var CONFIG = {"hostname":"example.com","root":"/","version":"1.9.8","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false,"scope":[]},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"code_language":{"enable":true,"default":"TEXT"},"copy_btn":true,"image_caption":{"enable":true},"image_zoom":{"enable":true,"img_url_replace":["",""]},"toc":{"enable":true,"placement":"right","headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"loading_img":"/img/loading.gif","onlypost":false,"offset_factor":2},"web_analytics":{"enable":false,"follow_dnt":true,"baidu":null,"google":null,"tencent":{"sid":null,"cid":null},"leancloud":{"app_id":null,"app_key":null,"server_url":null,"path":"window.location.pathname","ignore_local":false},"umami":{"src":null,"website_id":null,"domains":null,"start_time":"2024-01-01T00:00:00.000Z","token":null,"api_server":null},"gtag":null,"woyaola":null,"cnzz":null},"search_path":"/local-search.xml","include_content_in_search":false};
+    var CONFIG = {"hostname":"leo-wxy.github.io","root":"/","version":"1.9.8","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false,"scope":[]},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"code_language":{"enable":true,"default":"TEXT"},"copy_btn":true,"image_caption":{"enable":true},"image_zoom":{"enable":true,"img_url_replace":["",""]},"toc":{"enable":true,"placement":"left","headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"loading_img":"/img/loading.gif","onlypost":false,"offset_factor":2},"web_analytics":{"enable":false,"follow_dnt":true,"baidu":null,"google":null,"tencent":{"sid":null,"cid":null},"leancloud":{"app_id":null,"app_key":null,"server_url":null,"path":"window.location.pathname","ignore_local":false},"umami":{"src":null,"website_id":null,"domains":null,"start_time":"2024-01-01T00:00:00.000Z","token":null,"api_server":null},"gtag":null,"woyaola":null,"cnzz":null},"search_path":"/local-search.xml","include_content_in_search":false};
 
     if (CONFIG.web_analytics.follow_dnt) {
       var dntVal = navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack;
@@ -96,7 +96,7 @@
   <header>
     
 
-<div class="header-inner" style="height: 30vh;">
+<div class="header-inner" style="height: 60vh;">
   <nav id="navbar" class="navbar fixed-top  navbar-expand-lg navbar-dark scrolling-navbar">
   <div class="container">
     <a class="navbar-brand" href="/">
@@ -268,6 +268,19 @@
   <div class="row nomargin-x">
     <div class="side-col d-none d-lg-block col-lg-2">
       
+  <aside class="sidebar" style="padding-left: 2rem; margin-right: -1rem">
+    <div id="toc">
+  <p class="toc-header">
+    <i class="iconfont icon-list"></i>
+    <span>目录</span>
+  </p>
+  <div class="toc-body" id="toc-body"></div>
+</div>
+
+
+
+  </aside>
+
 
     </div>
 
@@ -367,7 +380,7 @@
   <div class="license-box my-3">
     <div class="license-title">
       <div>Android布局优化-AsyncLayoutInflater简析</div>
-      <div>http://example.com/2020/11/02/Android-布局优化-AsyncLayoutInflater简析/</div>
+      <div>https://leo-wxy.github.io/2020/11/02/Android-布局优化-AsyncLayoutInflater简析/</div>
     </div>
     <div class="license-meta">
       
@@ -440,19 +453,6 @@
 
     <div class="side-col d-none d-lg-block col-lg-2">
       
-  <aside class="sidebar" style="margin-left: -1rem">
-    <div id="toc">
-  <p class="toc-header">
-    <i class="iconfont icon-list"></i>
-    <span>目录</span>
-  </p>
-  <div class="toc-body" id="toc-body"></div>
-</div>
-
-
-
-  </aside>
-
 
     </div>
   </div>
