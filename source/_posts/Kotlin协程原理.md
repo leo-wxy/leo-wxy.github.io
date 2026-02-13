@@ -6,7 +6,7 @@ top: 9
 typora-root-url: ../
 ---
 
-在{% post_link Koltin协程体验 Kotlin协程基础%}介绍了大部分概念，现在需要针对这些概念进行详细的说明以及分析。
+在{% post_link Kotlin-协程%}介绍了大部分概念，现在需要针对这些概念进行详细的说明以及分析。
 
 {% blockquote %}
 协程是轻量级的线程

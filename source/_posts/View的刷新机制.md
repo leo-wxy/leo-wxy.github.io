@@ -1418,7 +1418,7 @@ void NativeDisplayEventReceiver::dispatchVsync(nsecs_t timestamp, PhysicalDispla
 
 2. `Choreographer.CALLBACK_INPUT`使用场景？
 
-   {%post_link Android事件分发%}
+   {%post_link Android-事件分发机制%}
 
 ## 参考链接
 

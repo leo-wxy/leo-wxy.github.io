@@ -293,7 +293,7 @@ public void startScroll(int startX, int startY, int dx, int dy, int duration) {
 
 ## View的事件分发机制
 
-{%post_link Android事件分发%}
+{%post_link Android-事件分发机制%}
 
 
 

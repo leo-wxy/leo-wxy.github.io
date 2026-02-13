@@ -1,7 +1,6 @@
 ---
 title: Gradle学习笔记-Task
 date: 2019-05-08 21:30:44
-typora-root-url: ../
 tags: Gradle
 top: 10
 ---
@@ -118,12 +117,6 @@ task Task1 {
 ### Task DependsOn(执行依赖)
 
 > Gradle中的任务执行顺序是不确定的，需要通过task之间的依赖关系，保证被依赖的task优先执行，可通过`dependsOn`来确定依赖关系。
->
-> **默认规则与Task名称相关，按照名称进行排序！**
-
-![Task执行顺序](/images/Task执行顺序.webp)
-
-#### dependsOn 强依赖
 
 ```groovy
 task first doLast {
@@ -158,36 +151,6 @@ third
 ```
 
 由于`third`依赖于`first、second`所以在执行`third`时，`first、second`也需要执行。
-
-以上属于**静态依赖**。
-
-相对的还存在**动态依赖**。
-
-```groovy
-task forth {
-    dependsOn this.tasks.findAll { task ->
-        return task.name.startsWith("third")
-    }
-    doLast {
-        println "This is forth"
-    }
-}
-```
-
-#### 顺序依赖
-
-> 此外可通过`shouldRunAfter`和`mustRunAfter`来控制任务之间的执行顺序
-
-##### mustRunAfter
-
-> 强制按照要求的顺序执行
-
-##### shouldRunAfter
-
-> 非强制的按照顺序执行，在以下两种情况会放弃此规则：
->
-> 1. `TaskGraph`为有向无环，可能导致环形放弃规则
-> 2. 并行执行任务并且所有任务的依赖项都已完成
 
 ### Task Type(任务类型)
 
@@ -402,136 +365,9 @@ tasks.whenTaskAdded { task->
 >
 > 在控制台会显示`up-to-date`表示跳过该次执行。
 
-*Gradle通过对比上一次构建之后，Task的inputs和outputs是否发生变化，来决定是否跳过执行。*
-
 #### Task Input/Output(任务输入/输出)
 
-> 大多数情况下，`Task`需要接收一些`Input(输入)`，并生成一些`Output(输出)`。
-
-![Task Input/Output示例](/images/JavaCompileTask.webp)
-
-上图是一个简单的示例：
-
-通过`Input——TargetJDKVersion , Sourcefiles`经过`JavaCompileTask`处理后得到`Output——Class files`。
-
-> 可以将其理解为一个函数，`input`为入参，`output`为返回值。
->
-> 还有两个关键点：
->
-> - **隐式依赖**：若Task的输入为另一Task的输出，则会被推断出依赖关系。
-> - **配置阶段声明**
-
-在定义Task的输入输出时，要遵循一个原则：**只有Task的属性会影响输出，就需要把该属性注册为输入。**
-
-```groovy
-class VersionMsg {
-    String versionCode
-    String versionName
-    String versionInfo
-}
-ext{
-    destFile = file('releases.xml')
-}
-
-
-task writeTask() {
-    doFirst {
-        if (destFile != null && !destFile.exists()) {
-            destFile.createNewFile()
-        }
-    }
-
-    inputs.property('versionCode', "2")
-    inputs.property('versionName', "1.0.0")
-    inputs.property('versionInfo', "init")
-
-    outputs.file destFile
-    doLast {
-        def data = inputs.getProperties()
-        File file = outputs.getFiles().getSingleFile()
-
-        def versionMsg = new VersionMsg(data)
-        //将实体对象写入到xml文件中
-        def sw = new StringWriter()
-        def xmlBuilder = new MarkupBuilder(sw)
-        //没有内容
-        xmlBuilder.releases {
-            release {
-                versionCode(versionMsg.versionCode)
-                versionName(versionMsg.versionName)
-                versionInfo(versionMsg.versionInfo)
-            }
-        }
-        //直接写入
-        file.withWriter { writer -> writer.append(sw.toString())
-        }
-    }
-}
-
-task zreadTask() {
-    inputs.file this.destFile
-    doLast {
-        //读取输入文件的内容并显示
-        def file = inputs.files.singleFile
-        println file.text
-    }
-}
-
-task IOFinishTask() {
-    dependsOn writeTask, zreadTask
-    doLast {
-        println("io finish")
-    }
-}
-```
-
-以上定义了三个Task：
-
-- writeTask：写入`release.xml`，出参为`release.xml`路径
-- zreadTask：读取`release.xml`，此时`zreadTask`与`writeTask`建立了隐式依赖
-- IOFinishTask：执行需要依赖`zreadTask`与`writeTask`
-
-第一次执行`IOFinishTask`时，会执行`zreadTask`与`writeTask`，再次执行时，`writeTask`标记为`up-to-date`，表示为**增量构建**。
-
-#### Task-Input
-
-Task-Input有三种形式的输入：
-
-- 简单值：包括数值(int)、字符串(String)和任何实现Serializable的类。 **@Input**
-- 文件：包括单个文件或文件目录 **@InputFile @InputDirectory @InputFiles**
-- 嵌套对象：非以上两种输入，内部含有嵌套的`inputs`和`outputs`类型 **@Nested**
-
-#### Task-Output
-
-Task-Output输出主要为：
-
-- 文件：包括文件或文件目录 **@OutputFile @OutputDirectory**
-
-#### 运行时API
-
-> 可以通过`Runtime API`在自定义Task时使用增量构建。相比与`自定义Task类`可以减少改动成本。
-
-Runtime API主要有三个：
-
-- Task.getInputs
-  - property/proprtrties == @Input
-  - file/files == @InputFile/@InputFiles
-  - dir == @InputDirectory
-- Task.getOutputs
-  - files/file = @OutputFiles/@OutputFile
-  - dirs/dir = @OutputDirectories/@OutputDirectory
-- Task.getDestroyables
-
-```groovy
-
-
-```
-
-
-
-#### 输入校验
-
-> Gradle会默认对`@InputFile、@InputDirectory、@OutputDirectory`进行为空校验，若需要变为可选需要使用**@Optional**
+> 任务需要接收
 
 ### Task Other
 
@@ -615,26 +451,6 @@ tasks.all {
 
 
 
-#### 挂载自定义Task在构建过程
-
-> 在其他`Task`执行过程中，调用`自定义Task`的`execute`
-
-```groo
-task A{
- ...
-}
-
-task B{
-  doFirst{
-    A.execute()
-  }
-}
-```
-
-
-
 ## 引用
 
 [Gradle官方文档](https://docs.gradle.org/current/userguide/more_about_tasks.html)
-
-[Gradle增量构建](https://www.cnblogs.com/flydean/p/14409447.html)

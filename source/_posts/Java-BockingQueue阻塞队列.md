@@ -171,7 +171,7 @@ public interface Queue<E> extends Collection<E> {
 
 `ArrayBlockingQueue`阻塞功能的实现就是依赖了`ReentrantLock`以及`Condition`实现了`等待机制`。
 
-具体可参考{% post_link Java-ReenTrantLock%}
+具体可参考{% post_link Java-ReentrantLock原理及解析%}
 
 ##### 构造函数
 

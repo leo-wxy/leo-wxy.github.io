@@ -22,7 +22,3 @@ https://dl.google.com/dl/android/studio/install/3.6.3.0/android-studio-ide-192.6
 
 
 
-010-Editor
-
-用于查看字节码软件，支持各种类型文件解析，`dex`，`resource.arsc`
-

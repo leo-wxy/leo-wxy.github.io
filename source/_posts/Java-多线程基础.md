@@ -550,5 +550,4 @@ public class InterruptThreadTest extends Thread {
 
 ## 线程池
 
-{% post_link Android-Study-Plan-XVII %}
 

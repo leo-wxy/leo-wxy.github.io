@@ -467,11 +467,11 @@ public class ImmutableExample {
 
 ##### synchronized
 
-{%post_link synchorized关键字分析%}
+{%post_link Java-synchronized原理及解析%}
 
 ##### ReentrantLock
 
-{%post_link ReenTrantLock关键字分析%}
+{%post_link Java-ReentrantLock原理及解析%}
 
 
 

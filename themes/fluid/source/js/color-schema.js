@@ -1,7 +1,7 @@
 /* global Fluid */
 
 /**
- * Modify by https://blog.skk.moe/post/hello-darkmode-my-old-friend/
+ * Modified from https://blog.skk.moe/post/hello-darkmode-my-old-friend/
  */
 (function(window, document) {
   var rootElement = document.documentElement;
@@ -11,6 +11,7 @@
   var defaultColorSchemaAttributeName = 'data-default-color-scheme';
   var colorToggleButtonSelector = '#color-toggle-btn';
   var colorToggleIconSelector = '#color-toggle-icon';
+  var iframeSelector = 'iframe';
 
   function setLS(k, v) {
     try {
@@ -101,6 +102,9 @@
     // 根据当前模式设置图标
     setButtonIcon(current);
 
+    // 设置代码高亮
+    setHighlightCSS(current);
+
     // 设置其他应用
     setApplications(current);
   }
@@ -173,7 +177,44 @@
           }
         });
       }
+      if (document.documentElement.getAttribute('data-user-color-scheme')) {
+        var color = getComputedStyle(document.documentElement).getPropertyValue('--navbar-bg-color').trim()
+        document.querySelector('meta[name="theme-color"]').setAttribute('content', color)
+      }
     }
+  }
+
+  function setHighlightCSS(schema) {
+    // 启用对应的代码高亮的样式
+    var lightCss = document.getElementById('highlight-css');
+    var darkCss = document.getElementById('highlight-css-dark');
+    if (schema === 'dark') {
+      if (darkCss) {
+        darkCss.removeAttribute('disabled');
+      }
+      if (lightCss) {
+        lightCss.setAttribute('disabled', '');
+      }
+    } else {
+      if (lightCss) {
+        lightCss.removeAttribute('disabled');
+      }
+      if (darkCss) {
+        darkCss.setAttribute('disabled', '');
+      }
+    }
+
+    setTimeout(function() {
+      // 设置代码块组件样式
+      document.querySelectorAll('.markdown-body pre').forEach((pre) => {
+        var cls = Fluid.utils.getBackgroundLightness(pre) >= 0 ? 'code-widget-light' : 'code-widget-dark';
+        var widget = pre.querySelector('.code-widget-light, .code-widget-dark');
+        if (widget) {
+          widget.classList.remove('code-widget-light', 'code-widget-dark');
+          widget.classList.add(cls);
+        }
+      });
+    }, 200);
   }
 
   function setApplications(schema) {
@@ -188,17 +229,27 @@
     }
 
     // 设置 utterances 评论主题
-    var utterances = document.querySelector('iframe');
+    var utterances = document.querySelector('.utterances-frame');
     if (utterances) {
-      var theme = window.UtterancesThemeLight;
-      if (schema === 'dark') {
-        theme = window.UtterancesThemeDark;
-      }
+      var utterancesTheme = schema === 'dark' ? window.UtterancesThemeDark : window.UtterancesThemeLight;
       const message = {
         type : 'set-theme',
-        theme: theme
+        theme: utterancesTheme
       };
       utterances.contentWindow.postMessage(message, 'https://utteranc.es');
+    }
+
+    // 设置 giscus 评论主题
+    var giscus = document.querySelector('iframe.giscus-frame');
+    if (giscus) {
+      var giscusTheme = schema === 'dark' ? window.GiscusThemeDark : window.GiscusThemeLight;
+      const message = {
+        setConfig: {
+          theme: giscusTheme,
+        }
+      };
+      // giscus.style.cssText += 'color-scheme: normal;';
+      giscus.contentWindow.postMessage({ 'giscus': message }, 'https://giscus.app');
     }
   }
 
@@ -227,4 +278,9 @@
       }
     }
   });
+
+  Fluid.utils.waitElementLoaded(iframeSelector, function() {
+    applyCustomColorSchemaSettings();
+  });
+  
 })(window, document);

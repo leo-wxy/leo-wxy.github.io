@@ -81,7 +81,7 @@ LiveDataBus.instance.getChannel("web", String::class.java)
 
 ## LiveDataBus改进
 
-根据{% post_link LiveData简析%}这部分源码分析可知，LiveData中的数据分发流程如下图所示：
+根据LiveData简析这部分源码分析可知，LiveData中的数据分发流程如下图所示：
 
 {% fullimage /images/LiveData-dispatch.png,LiveData Dispatch,LiveData Dispatch%}
 

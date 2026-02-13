@@ -1801,11 +1801,11 @@ JMM天生具有一定的`有序性`，不需要任何手段保证有序性，通
 
 ### volatile
 
-{%post_link volatile关键字分析%}
+volatile关键字分析
 
 ## 线程
 
-{%post_link Java线程相关合集整理%}
+Java线程相关合集整理
 
 
 
