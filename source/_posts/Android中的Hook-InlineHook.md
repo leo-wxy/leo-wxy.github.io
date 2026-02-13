@@ -6,6 +6,8 @@ tags: Hook
 top: 10
 ---
 
+![InlineHook](/images/InlineHook.png)
+
 # Inline Hook
 
 > 本文定位：面向 Android 开发者的 Inline Hook 原理入门，重点是理解“为什么要用、怎么工作、如何验证生效”。
