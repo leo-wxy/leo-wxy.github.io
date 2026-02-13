@@ -1,0 +1,706 @@
+
+
+<!DOCTYPE html>
+<html lang="zh-CN" data-default-color-scheme=auto>
+
+
+
+<head>
+  <meta charset="UTF-8">
+
+  <link rel="apple-touch-icon" sizes="76x76" href="/img/favicon.png">
+  <link rel="icon" href="/img/favicon.png">
+  
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, shrink-to-fit=no">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  
+  <meta name="theme-color" content="#11527b">
+  <meta name="author" content="Leo-Wxy">
+  <meta name="keywords" content="">
+  
+    <meta name="description" content="Dex文件加载 加载Dex文件后会生成DexFile对象，里面储存了多个类文件信息。  通过PathClassLoader或者DexClassLoader去加载Dex文件，最后还是调用到BaseDexClassLoader的加载方法 12345678class BaseDexClassLoader extends ClassLaoder&#123;      public BaseDexClass">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Android-Art类加载过程">
+<meta property="og:url" content="http://example.com/2019/12/19/Android-Art%E7%B1%BB%E5%8A%A0%E8%BD%BD%E8%BF%87%E7%A8%8B/index.html">
+<meta property="og:site_name" content="Wxy的个人博客">
+<meta property="og:description" content="Dex文件加载 加载Dex文件后会生成DexFile对象，里面储存了多个类文件信息。  通过PathClassLoader或者DexClassLoader去加载Dex文件，最后还是调用到BaseDexClassLoader的加载方法 12345678class BaseDexClassLoader extends ClassLaoder&#123;      public BaseDexClass">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="http://example.com/images/jvm/Dex%E5%8A%A0%E8%BD%BD%E8%BF%87%E7%A8%8B.png">
+<meta property="article:published_time" content="2019-12-19T05:45:11.000Z">
+<meta property="article:modified_time" content="2020-05-31T12:19:08.000Z">
+<meta property="article:author" content="Leo-Wxy">
+<meta property="article:tag" content="Android">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="http://example.com/images/jvm/Dex%E5%8A%A0%E8%BD%BD%E8%BF%87%E7%A8%8B.png">
+  
+  
+  
+  <title>Android-Art类加载过程 - Wxy的个人博客</title>
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css" />
+
+
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@4.0.0/github-markdown.min.css" />
+
+  <link  rel="stylesheet" href="/lib/hint/hint.min.css" />
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.css" />
+
+
+
+<!-- 主题依赖的图标库，不要自行修改 -->
+<!-- Do not modify the link that theme dependent icons -->
+
+<link rel="stylesheet" href="//at.alicdn.com/t/c/font_1749284_5i9bdhy70f8.css">
+
+
+
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1736178_kmeydafke9r.css">
+
+
+<link  rel="stylesheet" href="/css/main.css" />
+
+
+  <link id="highlight-css" rel="stylesheet" href="/css/highlight.css" />
+  
+    <link id="highlight-css-dark" rel="stylesheet" href="/css/highlight-dark.css" />
+  
+
+
+
+
+  <script id="fluid-configs">
+    var Fluid = window.Fluid || {};
+    Fluid.ctx = Object.assign({}, Fluid.ctx)
+    var CONFIG = {"hostname":"example.com","root":"/","version":"1.9.8","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false,"scope":[]},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"code_language":{"enable":true,"default":"TEXT"},"copy_btn":true,"image_caption":{"enable":true},"image_zoom":{"enable":true,"img_url_replace":["",""]},"toc":{"enable":true,"placement":"right","headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"loading_img":"/img/loading.gif","onlypost":false,"offset_factor":2},"web_analytics":{"enable":false,"follow_dnt":true,"baidu":null,"google":null,"tencent":{"sid":null,"cid":null},"leancloud":{"app_id":null,"app_key":null,"server_url":null,"path":"window.location.pathname","ignore_local":false},"umami":{"src":null,"website_id":null,"domains":null,"start_time":"2024-01-01T00:00:00.000Z","token":null,"api_server":null},"gtag":null,"woyaola":null,"cnzz":null},"search_path":"/local-search.xml","include_content_in_search":false};
+
+    if (CONFIG.web_analytics.follow_dnt) {
+      var dntVal = navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack;
+      Fluid.ctx.dnt = dntVal && (dntVal.startsWith('1') || dntVal.startsWith('yes') || dntVal.startsWith('on'));
+    }
+  </script>
+  <script  src="/js/utils.js" ></script>
+  <script  src="/js/color-schema.js" ></script>
+  
+
+
+  
+<meta name="generator" content="Hexo 8.1.1"></head>
+
+
+<body>
+  
+
+  <header>
+    
+
+<div class="header-inner" style="height: 30vh;">
+  <nav id="navbar" class="navbar fixed-top  navbar-expand-lg navbar-dark scrolling-navbar">
+  <div class="container">
+    <a class="navbar-brand" href="/">
+      <strong>Wxy&#39;s Blog</strong>
+    </a>
+
+    <button id="navbar-toggler-btn" class="navbar-toggler" type="button" data-toggle="collapse"
+            data-target="#navbarSupportedContent"
+            aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+      <div class="animated-icon"><span></span><span></span><span></span></div>
+    </button>
+
+    <!-- Collapsible content -->
+    <div class="collapse navbar-collapse" id="navbarSupportedContent">
+      <ul class="navbar-nav ml-auto text-center">
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/" target="_self">
+                <i class="iconfont icon-home-fill"></i>
+                <span>首页</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/archives/" target="_self">
+                <i class="iconfont icon-archive-fill"></i>
+                <span>归档</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/tags/" target="_self">
+                <i class="iconfont icon-tags-fill"></i>
+                <span>标签</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/about/" target="_self">
+                <i class="iconfont icon-user-fill"></i>
+                <span>关于</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/links/" target="_self">
+                <i class="iconfont icon-link-fill"></i>
+                <span>友链</span>
+              </a>
+            </li>
+          
+        
+        
+          <li class="nav-item" id="search-btn">
+            <a class="nav-link" target="_self" href="javascript:;" data-toggle="modal" data-target="#modalSearch" aria-label="Search">
+              <i class="iconfont icon-search"></i>
+            </a>
+          </li>
+          
+        
+        
+          <li class="nav-item" id="color-toggle-btn">
+            <a class="nav-link" target="_self" href="javascript:;" aria-label="Color Toggle">
+              <i class="iconfont icon-dark" id="color-toggle-icon"></i>
+            </a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+  
+
+<div id="banner" class="banner" parallax=true
+     style="background: url('/img/default.png') no-repeat center center; background-size: cover;">
+  <div class="full-bg-img">
+    <div class="mask flex-center" style="background-color: rgba(0, 0, 0, 0.3)">
+      <div class="banner-text text-center fade-in-up">
+        <div class="h2">
+          
+            <span id="subtitle">Android-Art类加载过程</span>
+          
+        </div>
+
+        
+          
+  <div class="mt-3">
+    
+    
+      <span class="post-meta">
+        <i class="iconfont icon-date-fill" aria-hidden="true"></i>
+        <time datetime="2019-12-19 13:45" pubdate>
+          2019年12月19日 下午
+        </time>
+      </span>
+    
+  </div>
+
+  <div class="mt-1">
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-chart"></i>
+        
+          <!-- compatible with older versions-->
+          1.5k 字
+        
+      </span>
+    
+
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-clock-fill"></i>
+        
+        
+        
+          <!-- compatible with older versions-->
+          5 分钟
+        
+      </span>
+    
+
+    
+    
+  </div>
+
+
+        
+      </div>
+
+      
+    </div>
+  </div>
+</div>
+
+</div>
+
+  </header>
+
+  <main>
+    
+      
+
+<div class="container-fluid nopadding-x">
+  <div class="row nomargin-x">
+    <div class="side-col d-none d-lg-block col-lg-2">
+      
+
+    </div>
+
+    <div class="col-lg-8 nopadding-x-md">
+      <div class="container nopadding-x-md" id="board-ctn">
+        <div id="board">
+          <article class="post-content mx-auto">
+            <h1 id="seo-header">Android-Art类加载过程</h1>
+            
+            
+              <div class="markdown-body">
+                
+                <h2 id="Dex文件加载"><a href="#Dex文件加载" class="headerlink" title="Dex文件加载"></a>Dex文件加载</h2><blockquote>
+<p>加载Dex文件后会生成<code>DexFile</code>对象，里面储存了多个类文件信息。</p>
+</blockquote>
+<p>通过<code>PathClassLoader</code>或者<code>DexClassLoader</code>去加载<code>Dex</code>文件，最后还是调用到<code>BaseDexClassLoader</code>的加载方法</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">class</span> <span class="hljs-title class_">BaseDexClassLoader</span> <span class="hljs-keyword">extends</span> <span class="hljs-title class_">ClassLaoder</span>&#123;<br>      <span class="hljs-keyword">public</span> <span class="hljs-title function_">BaseDexClassLoader</span><span class="hljs-params">(String dexPath, File optimizedDirectory,</span><br><span class="hljs-params">            String librarySearchPath, ClassLoader parent)</span> &#123;<br>        <span class="hljs-built_in">super</span>(parent);<br>        <span class="hljs-built_in">this</span>.pathList = <span class="hljs-keyword">new</span> <span class="hljs-title class_">DexPathList</span>(<span class="hljs-built_in">this</span>, dexPath, librarySearchPath, <span class="hljs-literal">null</span>);<br>				...<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<ul>
+<li><p>DexPathList</p>
+<figure class="highlight java"><figcaption><span>DexPathList.java</span></figcaption><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">final</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">DexPathList</span>&#123;<br>  <span class="hljs-keyword">private</span> Element[] dexElements;<br>  <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> NativeLibraryElement[] nativeLibraryPathElements;<br>  <br>  ...<br>      <span class="hljs-keyword">public</span> <span class="hljs-title function_">DexPathList</span><span class="hljs-params">(ClassLoader definingContext, String dexPath,</span><br><span class="hljs-params">            String librarySearchPath, File optimizedDirectory)</span> &#123;<br>   ...<br>   <span class="hljs-comment">// 记录所有的dexFile</span><br>   <span class="hljs-built_in">this</span>.dexElements = makeDexElements(splitDexPath(dexPath), optimizedDirectory,                       suppressedExceptions, definingContext);<br>    <br>   <span class="hljs-comment">//记录app目录的Native库</span><br>   <span class="hljs-built_in">this</span>.nativeLibraryDirectories = splitPaths(librarySearchPath, <span class="hljs-literal">false</span>);<br>   <span class="hljs-comment">//记录系统使用的Native库</span><br>   <span class="hljs-built_in">this</span>.systemNativeLibraryDirectories =                splitPaths(System.getProperty(<span class="hljs-string">&quot;java.library.path&quot;</span>), <span class="hljs-literal">true</span>);<br>   <span class="hljs-comment">//记录所有使用的Native库</span><br>   <span class="hljs-built_in">this</span>.nativeLibraryPathElements = makePathElements(allNativeLibraryDirectories);<br>  &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>为了初始化以下两个字段：</p>
+<ul>
+<li><code>dexElements</code>：记录所有的DexFile，按照<code>;</code>进行路径分割</li>
+<li><code>nativeLibraryPathElements</code>：记录所有的Native代码库，包括<code>app</code>和<code>系统</code>使用的Native库</li>
+</ul>
+</li>
+<li><p>makeDexElements</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> Element[] makeDexElements(List&lt;File&gt; files, File optimizedDirectory,<br>        List&lt;IOException&gt; suppressedExceptions, ClassLoader loader) &#123;<br>  Element[] elements = <span class="hljs-keyword">new</span> <span class="hljs-title class_">Element</span>[files.size()];<br> <span class="hljs-keyword">for</span> (File file : files) &#123;<br>  ...<br>    <span class="hljs-comment">//以 dex 文件名结尾</span><br>    <span class="hljs-keyword">if</span> (name.endsWith(DEX_SUFFIX)) &#123;<br>      <span class="hljs-keyword">try</span> &#123;<br>        <span class="hljs-comment">//加载Dex文件</span><br>         <span class="hljs-type">DexFile</span> <span class="hljs-variable">dex</span> <span class="hljs-operator">=</span> loadDexFile(file, optimizedDirectory, loader, elements);<br>         <span class="hljs-keyword">if</span> (dex != <span class="hljs-literal">null</span>) &#123;<br>             elements[elementsPos++] = <span class="hljs-keyword">new</span> <span class="hljs-title class_">Element</span>(dex, <span class="hljs-literal">null</span>);<br>         &#125;<br>         &#125; <span class="hljs-keyword">catch</span> (IOException suppressed) &#123;<br>  <br>         &#125;<br>    &#125;<span class="hljs-keyword">else</span>&#123;<br>      dex = loadDexFile(file, optimizedDirectory, loader, elements);              <br>          <span class="hljs-keyword">if</span> (dex == <span class="hljs-literal">null</span>) &#123;<br>              elements[elementsPos++] = <span class="hljs-keyword">new</span> <span class="hljs-title class_">Element</span>(file);<br>          &#125; <span class="hljs-keyword">else</span> &#123;<br>              elements[elementsPos++] = <span class="hljs-keyword">new</span> <span class="hljs-title class_">Element</span>(dex, file);<br>          &#125;<br>    &#125;<br> &#125;<br> ... <br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>根据传入的Dex文件路径转换<code>Element</code>数组</p>
+</li>
+<li><p>loadDexFile</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> DexFile <span class="hljs-title function_">loadDexFile</span><span class="hljs-params">(File file, File optimizedDirectory, ClassLoader loader,</span><br><span class="hljs-params">                                   Element[] elements)</span><br>        <span class="hljs-keyword">throws</span> IOException &#123;<br>   <span class="hljs-comment">//优化后Dex文件 存放地址是否为空</span><br>    <span class="hljs-keyword">if</span> (optimizedDirectory == <span class="hljs-literal">null</span>) &#123;<br>        <span class="hljs-comment">//为空创建DexFile对象</span><br>        <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">DexFile</span>(file, loader, elements);<br>    &#125; <span class="hljs-keyword">else</span> &#123;<br>        <span class="hljs-type">String</span> <span class="hljs-variable">optimizedPath</span> <span class="hljs-operator">=</span> optimizedPathFor(file, optimizedDirectory);<br>      <span class="hljs-comment">//不为空将优化后的Dex文件存放到指定目录</span><br>        <span class="hljs-keyword">return</span> DexFile.loadDex(file.getPath(), optimizedPath, <span class="hljs-number">0</span>, loader, elements);<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>此处为了加载Dex文件</p>
+</li>
+<li><p>DexFile</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">DexFile</span> &#123;<br>     DexFile(File file, ClassLoader loader, DexPathList.Element[] elements)<br>            <span class="hljs-keyword">throws</span> IOException &#123;<br>        <span class="hljs-built_in">this</span>(file.getPath(), loader, elements);<br>    &#125;<br>  <br>  ...<br>        DexFile(String fileName, ClassLoader loader, DexPathList.Element[] elements) <span class="hljs-keyword">throws</span> IOException &#123;<br>        mCookie = openDexFile(fileName, <span class="hljs-literal">null</span>, <span class="hljs-number">0</span>, loader, elements);<br>        mInternalCookie = mCookie;<br>        mFileName = fileName;<br>    &#125;<br>  ...<br>        <span class="hljs-keyword">static</span> DexFile <span class="hljs-title function_">loadDex</span><span class="hljs-params">(String sourcePathName, String outputPathName,</span><br><span class="hljs-params">        <span class="hljs-type">int</span> flags, ClassLoader loader, DexPathList.Element[] elements)</span> <span class="hljs-keyword">throws</span> IOException &#123;<br>        <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">DexFile</span>(sourcePathName, outputPathName, flags, loader, elements);<br>    &#125;<br>  ...<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p><code>loadDex</code>本质也是调用了<code>new DexFile(...)</code>去加载Dex文件的。</p>
+</li>
+<li><p>openDexFile</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> Object <span class="hljs-title function_">openDexFile</span><span class="hljs-params">(String sourceName, String outputName, <span class="hljs-type">int</span> flags,</span><br><span class="hljs-params">        ClassLoader loader, DexPathList.Element[] elements)</span> <span class="hljs-keyword">throws</span> IOException &#123;<br>    <span class="hljs-comment">// Use absolute paths to enable the use of relative paths when testing on host.</span><br>    <span class="hljs-comment">//加载Dex文件</span><br>    <span class="hljs-keyword">return</span> openDexFileNative(<span class="hljs-keyword">new</span> <span class="hljs-title class_">File</span>(sourceName).getAbsolutePath(),<br>                             (outputName == <span class="hljs-literal">null</span>)<br>                                 ? <span class="hljs-literal">null</span><br>                                 : <span class="hljs-keyword">new</span> <span class="hljs-title class_">File</span>(outputName).getAbsolutePath(),<br>                             flags,<br>                             loader,<br>                             elements);<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p><code>openDexFile</code>为了加载Dex文件</p>
+</li>
+<li><p>openDexFileNative</p>
+<figure class="highlight c"><figcaption><span>dalvik_system_DexFile.cc</span></figcaption><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><code class="hljs c"><span class="hljs-comment">// art/runtime/native/dalvik_system_DexFile.cc</span><br><span class="hljs-type">static</span> jobject <span class="hljs-title function_">DexFile_openDexFileNative</span><span class="hljs-params">(JNIEnv* env,</span><br><span class="hljs-params">                                         jclass,</span><br><span class="hljs-params">                                         jstring javaSourceName,</span><br><span class="hljs-params">                                         jstring javaOutputName ATTRIBUTE_UNUSED,</span><br><span class="hljs-params">                                         jint flags ATTRIBUTE_UNUSED,</span><br><span class="hljs-params">                                         jobject class_loader,</span><br><span class="hljs-params">                                         jobjectArray dex_elements)</span> &#123;<br>  ScopedUtfChars <span class="hljs-title function_">sourceName</span><span class="hljs-params">(env, javaSourceName)</span>;<br>  <span class="hljs-keyword">if</span> (sourceName.c_str() == nullptr) &#123;<br>    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;<br>  &#125;<br><br>  Runtime* <span class="hljs-type">const</span> runtime = Runtime::Current();<br>  ClassLinker* linker = runtime-&gt;GetClassLinker();<br>  <span class="hljs-built_in">std</span>::<span class="hljs-built_in">vector</span>&lt;<span class="hljs-built_in">std</span>::<span class="hljs-built_in">unique_ptr</span>&lt;<span class="hljs-type">const</span> DexFile&gt;&gt; dex_files;<br>  <span class="hljs-built_in">std</span>::<span class="hljs-built_in">vector</span>&lt;<span class="hljs-built_in">std</span>::<span class="hljs-built_in">string</span>&gt; error_msgs;<br>  <span class="hljs-type">const</span> OatFile* oat_file = nullptr;<br><br>  dex_files = runtime-&gt;GetOatFileManager().OpenDexFilesFromOat(sourceName.c_str(),<br>                                                               class_loader,<br>                                                               dex_elements,<br>                                                               <span class="hljs-comment">/*out*/</span> &amp;oat_file,<br>                                                               <span class="hljs-comment">/*out*/</span> &amp;error_msgs);<br><br>...<br><br>    <span class="hljs-keyword">return</span> nullptr;<br>  &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p><code>openDexFileNative</code>主要处理dex文件，并生成<code>odex</code>到<code>optimizedDirectory</code>里</p>
+</li>
+<li><p>openDexFilesFromOat</p>
+<p>&#x2F;&#x2F;TODO 版本差异较大</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><code class="hljs c"><span class="hljs-comment">//art/runtime/oat_file_manager.cc</span><br><br><span class="hljs-built_in">std</span>::<span class="hljs-built_in">vector</span>&lt;<span class="hljs-built_in">std</span>::<span class="hljs-built_in">unique_ptr</span>&lt;<span class="hljs-type">const</span> DexFile&gt;&gt; OatFileManager::OpenDexFilesFromOat(<br>    <span class="hljs-type">const</span> <span class="hljs-type">char</span>* dex_location,<br>    <span class="hljs-type">const</span> <span class="hljs-type">char</span>* oat_location,<br>    jobject class_loader,<br>    jobjectArray dex_elements,<br>    <span class="hljs-type">const</span> OatFile** out_oat_file,<br>    <span class="hljs-built_in">std</span>::<span class="hljs-built_in">vector</span>&lt;<span class="hljs-built_in">std</span>::<span class="hljs-built_in">string</span>&gt;* error_msgs) &#123;<br>  <br>&#125;<br><br>oat_file_manager.cc<br>  <br>oat_file_assistant.cc<br></code></pre></td></tr></table></figure></li>
+</ul>
+<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/jvm/Dex加载过程.png" srcset="/img/loading.gif" lazyload class="full-image" alt="Dex加载过程" title="Dex加载过程" /><meta itemprop="width" content="auto"/><meta itemprop="height" content="auto"/></span>
+
+
+
+<h2 id="Dex中的类文件加载"><a href="#Dex中的类文件加载" class="headerlink" title="Dex中的类文件加载"></a>Dex中的类文件加载</h2><blockquote>
+<p>Dex文件是由多个Class类文件组成，Android加载类需要从Dex中找到对应类进行加载，实际<code>从DexFile找到Class</code></p>
+</blockquote>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">BaseDexClassLoader</span> <span class="hljs-keyword">extends</span> <span class="hljs-title class_">ClassLoader</span> &#123;<br> ...<br>   <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> DexPathList pathList;<br>   <br>     <span class="hljs-meta">@Override</span><br>    <span class="hljs-keyword">protected</span> Class&lt;?&gt; findClass(String name) <span class="hljs-keyword">throws</span> ClassNotFoundException &#123;<br>        <span class="hljs-comment">// First, check whether the class is present in our shared libraries.</span><br>        <span class="hljs-comment">//加载需要使用的Native库</span><br>        <span class="hljs-keyword">if</span> (sharedLibraryLoaders != <span class="hljs-literal">null</span>) &#123;<br>            <span class="hljs-keyword">for</span> (ClassLoader loader : sharedLibraryLoaders) &#123;<br>                <span class="hljs-keyword">try</span> &#123;<br>                    <span class="hljs-keyword">return</span> loader.loadClass(name);<br>                &#125; <span class="hljs-keyword">catch</span> (ClassNotFoundException ignored) &#123;<br>                &#125;<br>            &#125;<br>        &#125;<br>        <span class="hljs-comment">// Check whether the class in question is present in the dexPath that</span><br>        <span class="hljs-comment">// this classloader operates on.</span><br>        List&lt;Throwable&gt; suppressedExceptions = <span class="hljs-keyword">new</span> <span class="hljs-title class_">ArrayList</span>&lt;Throwable&gt;();<br>        <span class="hljs-comment">// 找寻Dex中对应class</span><br>        <span class="hljs-type">Class</span> <span class="hljs-variable">c</span> <span class="hljs-operator">=</span> pathList.findClass(name, suppressedExceptions);<br>        <span class="hljs-keyword">if</span> (c == <span class="hljs-literal">null</span>) &#123;<br>            <span class="hljs-type">ClassNotFoundException</span> <span class="hljs-variable">cnfe</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">ClassNotFoundException</span>(<br>                    <span class="hljs-string">&quot;Didn&#x27;t find class \&quot;&quot;</span> + name + <span class="hljs-string">&quot;\&quot; on path: &quot;</span> + pathList);<br>            <span class="hljs-keyword">for</span> (Throwable t : suppressedExceptions) &#123;<br>                cnfe.addSuppressed(t);<br>            &#125;<br>            <span class="hljs-keyword">throw</span> cnfe;<br>        &#125;<br>        <span class="hljs-keyword">return</span> c;<br>    &#125;<br><br>&#125;<br></code></pre></td></tr></table></figure>
+
+<ul>
+<li><p>DexPathList - findClass</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> Class&lt;?&gt; findClass(String name, List&lt;Throwable&gt; suppressed) &#123;<br>    <span class="hljs-keyword">for</span> (Element element : dexElements) &#123;<br>        Class&lt;?&gt; clazz = element.findClass(name, definingContext, suppressed);<br>        <span class="hljs-keyword">if</span> (clazz != <span class="hljs-literal">null</span>) &#123;<br>            <span class="hljs-keyword">return</span> clazz;<br>        &#125;<br>    &#125;<br>  <br>    <span class="hljs-keyword">if</span> (dexElementsSuppressedExceptions != <span class="hljs-literal">null</span>) &#123;<br>        suppressed.addAll(Arrays.asList(dexElementsSuppressedExceptions));<br>    &#125;<br>    <span class="hljs-keyword">return</span> <span class="hljs-literal">null</span>;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p><code>findClass</code>为了找到Dex文件中的对应类</p>
+<blockquote>
+<p><code>dexElements</code>是由<code>Dex</code>文件加载后得到的<code>DexFile</code>组装成的<code>Element</code>集合形成的。</p>
+<p><code>findClass</code>实质是去遍历已加载完成的<code>Dex</code>文件中的Class，只要找到对应的Class就会结束循环。</p>
+<p><strong>当两个相同的类出现在不同的Dex时，系统会优先处理排在前面的Dex文件中的类，后面出现的就不会被加载。</strong></p>
+<p>热修复的核心逻辑：<code>将需要修复的类所打包的Dex文件插入到dexElements的首位</code>。</p>
+</blockquote>
+</li>
+<li><p>Element - findClass</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> Class&lt;?&gt; findClass(String name, ClassLoader definingContext,<br>         List&lt;Throwable&gt; suppressed) &#123;<br>     <span class="hljs-keyword">return</span> dexFile != <span class="hljs-literal">null</span> ? dexFile.loadClassBinaryName(name, definingContext, suppressed)<br>             : <span class="hljs-literal">null</span>;<br> &#125;<br></code></pre></td></tr></table></figure>
+
+
+</li>
+<li><p>DexFile - loadClassBinaryName</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> Class <span class="hljs-title function_">loadClassBinaryName</span><span class="hljs-params">(String name, ClassLoader loader, List&lt;Throwable&gt; suppressed)</span> &#123;<br>    <span class="hljs-keyword">return</span> defineClass(name, loader, mCookie, <span class="hljs-built_in">this</span>, suppressed);<br>&#125;<br>  <br><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> Class <span class="hljs-title function_">defineClass</span><span class="hljs-params">(String name, ClassLoader loader, Object cookie,</span><br><span class="hljs-params">                                 DexFile dexFile, List&lt;Throwable&gt; suppressed)</span> &#123;<br>    <span class="hljs-type">Class</span> <span class="hljs-variable">result</span> <span class="hljs-operator">=</span> <span class="hljs-literal">null</span>;<br>    <span class="hljs-keyword">try</span> &#123;<br>        <span class="hljs-comment">//定义Class</span><br>        result = defineClassNative(name, loader, cookie, dexFile);<br>    &#125; <span class="hljs-keyword">catch</span> (NoClassDefFoundError e) &#123;<br>        <span class="hljs-keyword">if</span> (suppressed != <span class="hljs-literal">null</span>) &#123;<br>            suppressed.add(e);<br>        &#125;<br>    &#125; <span class="hljs-keyword">catch</span> (ClassNotFoundException e) &#123;<br>        <span class="hljs-keyword">if</span> (suppressed != <span class="hljs-literal">null</span>) &#123;<br>            suppressed.add(e);<br>        &#125;<br>    &#125;<br>    <span class="hljs-keyword">return</span> result;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+
+</li>
+<li><p>Dalvik_system_DexFile.cc - DexFile_defineClassNative</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br></pre></td><td class="code"><pre><code class="hljs c"><span class="hljs-type">static</span> jclass <span class="hljs-title function_">DexFile_defineClassNative</span><span class="hljs-params">(JNIEnv* env,</span><br><span class="hljs-params">                                        jclass,</span><br><span class="hljs-params">                                        jstring javaName,</span><br><span class="hljs-params">                                        jobject javaLoader,</span><br><span class="hljs-params">                                        jobject cookie,</span><br><span class="hljs-params">                                        jobject dexFile)</span> &#123;<br>  <span class="hljs-built_in">std</span>::<span class="hljs-built_in">vector</span>&lt;<span class="hljs-type">const</span> DexFile*&gt; dex_files;<br>  <span class="hljs-type">const</span> OatFile* oat_file;<br>  <span class="hljs-keyword">if</span> (!ConvertJavaArrayToDexFiles(env, cookie, <span class="hljs-comment">/*out*/</span> dex_files, <span class="hljs-comment">/*out*/</span> oat_file)) &#123;<br>    VLOG(class_linker) &lt;&lt; <span class="hljs-string">&quot;Failed to find dex_file&quot;</span>;<br>    DCHECK(env-&gt;ExceptionCheck());<br>    <span class="hljs-keyword">return</span> nullptr;<br>  &#125;<br><br>  ScopedUtfChars <span class="hljs-title function_">class_name</span><span class="hljs-params">(env, javaName)</span>;<br>  <span class="hljs-keyword">if</span> (class_name.c_str() == nullptr) &#123;<br>    VLOG(class_linker) &lt;&lt; <span class="hljs-string">&quot;Failed to find class_name&quot;</span>;<br>    <span class="hljs-keyword">return</span> nullptr;<br>  &#125;<br>  <span class="hljs-type">const</span> <span class="hljs-built_in">std</span>::<span class="hljs-built_in">string</span> <span class="hljs-title function_">descriptor</span><span class="hljs-params">(DotToDescriptor(class_name.c_str()))</span>;<br>  <span class="hljs-type">const</span> <span class="hljs-type">size_t</span> <span class="hljs-title function_">hash</span><span class="hljs-params">(ComputeModifiedUtf8Hash(descriptor.c_str()))</span>;<br>  <span class="hljs-keyword">for</span> (<span class="hljs-keyword">auto</span>&amp; dex_file : dex_files) &#123;<br>    <span class="hljs-type">const</span> DexFile::ClassDef* dex_class_def =<br>        OatDexFile::FindClassDef(*dex_file, descriptor.c_str(), hash);<br>    <span class="hljs-keyword">if</span> (dex_class_def != nullptr) &#123;<br>      ScopedObjectAccess <span class="hljs-title function_">soa</span><span class="hljs-params">(env)</span>;<br>      ClassLinker* class_linker = Runtime::Current()-&gt;GetClassLinker();<br>			...<br>        <span class="hljs-keyword">return</span> nullptr;<br>      &#125;<br>      <span class="hljs-comment">//创建目标类对象</span><br>      ObjPtr&lt;mirror::Class&gt; result = class_linker-&gt;DefineClass(soa.Self(),<br>                                                               descriptor.c_str(),<br>                                                               hash,<br>                                                               class_loader,<br>                                                               *dex_file,<br>                                                               *dex_class_def);<br>      <span class="hljs-comment">// Add the used dex file. This only required for the DexFile.loadClass API since normal</span><br>      <span class="hljs-comment">// class loaders already keep their dex files live.</span><br>      class_linker-&gt;InsertDexFileInToClassLoader(soa.Decode&lt;mirror::Object&gt;(dexFile),<br>                                                 class_loader.Get());<br>      <span class="hljs-keyword">if</span> (result != nullptr) &#123;<br>        VLOG(class_linker) &lt;&lt; <span class="hljs-string">&quot;DexFile_defineClassNative returning &quot;</span> &lt;&lt; result<br>                           &lt;&lt; <span class="hljs-string">&quot; for &quot;</span> &lt;&lt; class_name.c_str();<br>        <span class="hljs-keyword">return</span> soa.AddLocalReference&lt;jclass&gt;(result);<br>      &#125;<br>    &#125;<br>  &#125;<br>  VLOG(class_linker) &lt;&lt; <span class="hljs-string">&quot;Failed to find dex_class_def &quot;</span> &lt;&lt; class_name.c_str();<br>  <span class="hljs-keyword">return</span> nullptr;<br>&#125;<br></code></pre></td></tr></table></figure>
+</li>
+<li><p>Class_linker.cc  - DefineClass</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><code class="hljs c">mirror::Class* <span class="hljs-title function_">ClassLinker::DefineClass</span><span class="hljs-params">(Thread* self,</span><br><span class="hljs-params">                                        <span class="hljs-type">const</span> <span class="hljs-type">char</span>* descriptor,</span><br><span class="hljs-params">                                        <span class="hljs-type">size_t</span> hash,</span><br><span class="hljs-params">                                        Handle&lt;mirror::ClassLoader&gt; class_loader,</span><br><span class="hljs-params">                                        <span class="hljs-type">const</span> DexFile&amp; dex_file,</span><br><span class="hljs-params">                                        <span class="hljs-type">const</span> DexFile::ClassDef&amp; dex_class_def)</span> &#123;<br>  ...<br>  <span class="hljs-keyword">if</span> (klass == nullptr) &#123;<br>    <span class="hljs-comment">//加载类实例</span><br>    klass.Assign(AllocClass(self, SizeOfClassWithoutEmbeddedTables(dex_file, dex_class_def)));<br>  &#125;<br>  ObjPtr&lt;mirror::DexCache&gt; dex_cache = RegisterDexFile(*new_dex_file, class_loader.Get());<br>  <span class="hljs-keyword">if</span> (dex_cache == nullptr) &#123;<br>    self-&gt;AssertPendingException();<br>    <span class="hljs-keyword">return</span> nullptr;<br>  &#125;<br>  <span class="hljs-comment">//设置Dex缓存，后续数据从缓存中读取</span><br>  klass-&gt;SetDexCache(dex_cache);<br>  <span class="hljs-comment">//设置Class信息</span><br>  SetupClass(*new_dex_file, *new_class_def, klass, class_loader.Get());<br>  <span class="hljs-comment">// 把 Class 插入 ClassLoader 的 class_table 中做一个缓存</span><br>  ObjPtr&lt;mirror::Class&gt; existing = InsertClass(descriptor, klass.Get(), hash);<br>  <span class="hljs-comment">// 加载类属性</span><br>  LoadClass(self, *new_dex_file, *new_class_def, klass);<br><br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>每当一个类被加载时，ART运行时都会检查该类所属的Dex文件是否已经关联一个<code>dex_cache</code>。</p>
+<p>如果尚未关联，就会创建一个<code>dex_cache</code>与Dex文件建立关联，建立关联后，通过调用<code>RegisterDexFile</code>注册到aRT运行时中去，后续可以直接使用。</p>
+<p><code>dex_cache</code>用来缓存包含在一个Dex文件里的<code>类型(Type)、方法(Method)、域(Field)、字符串(String)和静态存储区(Static Storage)</code>等信息。</p>
+<p><code>通过dex_cache间接调用类方法，可以做到延时解析类方法(只有方法第一次调用才会被解析，可以避免解析永远不调用的方法)；一个类方法只会被解析一次，解析的结果存在dex_cache中，下次调用时可以直接从dex_cache进行调用。</code></p>
+</li>
+</ul>
+<h3 id="加载类成员"><a href="#加载类成员" class="headerlink" title="加载类成员"></a>加载类成员</h3><h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a target="_blank" rel="noopener" href="http://gityuan.com/2017/03/19/android-classloader/">Android类加载器ClassLoader</a></p>
+<p><a href="cs.android.com">相关源码</a></p>
+<p><a target="_blank" rel="noopener" href="https://juejin.im/post/5d6a79de5188256c3920b8f7#heading-4">谈谈 Android 中的 PathClassLoader 和 DexClassLoader</a></p>
+
+                
+              </div>
+            
+            <hr/>
+            <div>
+              <div class="post-metas my-3">
+  
+  
+    <div class="post-meta">
+      <i class="iconfont icon-tags"></i>
+      
+        <a href="/tags/Android/" class="print-no-link">#Android</a>
+      
+    </div>
+  
+</div>
+
+
+              
+  
+
+  <div class="license-box my-3">
+    <div class="license-title">
+      <div>Android-Art类加载过程</div>
+      <div>http://example.com/2019/12/19/Android-Art类加载过程/</div>
+    </div>
+    <div class="license-meta">
+      
+        <div class="license-meta-item">
+          <div>作者</div>
+          <div>Leo-Wxy</div>
+        </div>
+      
+      
+        <div class="license-meta-item license-meta-date">
+          <div>发布于</div>
+          <div>2019年12月19日</div>
+        </div>
+      
+      
+      
+        <div class="license-meta-item">
+          <div>许可协议</div>
+          <div>
+            
+              
+              
+                <a class="print-no-link" target="_blank" href="https://creativecommons.org/licenses/by/4.0/">
+                  <span class="hint--top hint--rounded" aria-label="BY - 署名">
+                    <i class="iconfont icon-cc-by"></i>
+                  </span>
+                </a>
+              
+            
+          </div>
+        </div>
+      
+    </div>
+    <div class="license-icon iconfont"></div>
+  </div>
+
+
+
+              
+                <div class="post-prevnext my-3">
+                  <article class="post-prev col-6">
+                    
+                    
+                      <a href="/2020/02/19/OKHTTP-HTTPDNS%E5%AE%9E%E8%B7%B5/" title="OkHttp-HTTPDNS实践">
+                        <i class="iconfont icon-arrowleft"></i>
+                        <span class="hidden-mobile">OkHttp-HTTPDNS实践</span>
+                        <span class="visible-mobile">上一篇</span>
+                      </a>
+                    
+                  </article>
+                  <article class="post-next col-6">
+                    
+                    
+                      <a href="/2019/12/11/%E5%B8%B8%E8%A7%81%E5%90%8D%E8%AF%8D%E6%A6%82%E5%BF%B5/" title="常见名词概念">
+                        <span class="hidden-mobile">常见名词概念</span>
+                        <span class="visible-mobile">下一篇</span>
+                        <i class="iconfont icon-arrowright"></i>
+                      </a>
+                    
+                  </article>
+                </div>
+              
+            </div>
+
+            
+          </article>
+        </div>
+      </div>
+    </div>
+
+    <div class="side-col d-none d-lg-block col-lg-2">
+      
+  <aside class="sidebar" style="margin-left: -1rem">
+    <div id="toc">
+  <p class="toc-header">
+    <i class="iconfont icon-list"></i>
+    <span>目录</span>
+  </p>
+  <div class="toc-body" id="toc-body"></div>
+</div>
+
+
+
+  </aside>
+
+
+    </div>
+  </div>
+</div>
+
+
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+
+
+
+
+    
+
+    
+      <a id="scroll-top-button" aria-label="TOP" href="#" role="button">
+        <i class="iconfont icon-arrowup" aria-hidden="true"></i>
+      </a>
+    
+
+    
+      <div class="modal fade" id="modalSearch" tabindex="-1" role="dialog" aria-labelledby="ModalLabel"
+     aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header text-center">
+        <h4 class="modal-title w-100 font-weight-bold">搜索</h4>
+        <button type="button" id="local-search-close" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body mx-3">
+        <div class="md-form mb-5">
+          <input type="text" id="local-search-input" class="form-control validate">
+          <label data-error="x" data-success="v" for="local-search-input">关键词</label>
+        </div>
+        <div class="list-group" id="local-search-result"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+    
+
+    
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+  
+    <div class="footer-content">
+       <a href="https://hexo.io" target="_blank" rel="nofollow noopener"><span>Hexo</span></a> <i class="iconfont icon-love"></i> <a href="https://github.com/fluid-dev/hexo-theme-fluid" target="_blank" rel="nofollow noopener"><span>Fluid</span></a> 
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+
+  <!-- Scripts -->
+  
+  <script  src="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.js" ></script>
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.css" />
+
+  <script>
+    NProgress.configure({"showSpinner":false,"trickleSpeed":100})
+    NProgress.start()
+    window.addEventListener('load', function() {
+      NProgress.done();
+    })
+  </script>
+
+
+<script  src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" ></script>
+<script  src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.min.js" ></script>
+<script  src="/js/events.js" ></script>
+<script  src="/js/plugins.js" ></script>
+
+
+
+
+
+  
+    <script  src="/js/img-lazyload.js" ></script>
+  
+
+
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/tocbot@4.12.0/dist/tocbot.min.js', function() {
+    var toc = jQuery('#toc');
+    if (toc.length === 0 || !window.tocbot) { return; }
+    var boardCtn = jQuery('#board-ctn');
+    var boardTop = boardCtn.offset().top;
+
+    window.tocbot.init(Object.assign({
+      tocSelector     : '#toc-body',
+      contentSelector : '.markdown-body',
+      linkClass       : 'tocbot-link',
+      activeLinkClass : 'tocbot-active-link',
+      listClass       : 'tocbot-list',
+      isCollapsedClass: 'tocbot-is-collapsed',
+      collapsibleClass: 'tocbot-is-collapsible',
+      scrollSmooth    : true,
+      includeTitleTags: true,
+      headingsOffset  : -boardTop,
+    }, CONFIG.toc));
+    if (toc.find('.toc-list-item').length > 0) {
+      toc.css('visibility', 'visible');
+    }
+
+    Fluid.events.registerRefreshCallback(function() {
+      if ('tocbot' in window) {
+        tocbot.refresh();
+        var toc = jQuery('#toc');
+        if (toc.length === 0 || !tocbot) {
+          return;
+        }
+        if (toc.find('.toc-list-item').length > 0) {
+          toc.css('visibility', 'visible');
+        }
+      }
+    });
+  });
+</script>
+
+
+  <script src=https://cdn.jsdelivr.net/npm/clipboard@2.0.6/dist/clipboard.min.js></script>
+
+  <script>Fluid.plugins.codeWidget();</script>
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/anchor-js@4.3.0/anchor.min.js', function() {
+    window.anchors.options = {
+      placement: CONFIG.anchorjs.placement,
+      visible  : CONFIG.anchorjs.visible
+    };
+    if (CONFIG.anchorjs.icon) {
+      window.anchors.options.icon = CONFIG.anchorjs.icon;
+    }
+    var el = (CONFIG.anchorjs.element || 'h1,h2,h3,h4,h5,h6').split(',');
+    var res = [];
+    for (var item of el) {
+      res.push('.markdown-body > ' + item.trim());
+    }
+    if (CONFIG.anchorjs.placement === 'left') {
+      window.anchors.options.class = 'anchorjs-link-left';
+    }
+    window.anchors.add(res.join(', '));
+
+    Fluid.events.registerRefreshCallback(function() {
+      if ('anchors' in window) {
+        anchors.removeAll();
+        var el = (CONFIG.anchorjs.element || 'h1,h2,h3,h4,h5,h6').split(',');
+        var res = [];
+        for (var item of el) {
+          res.push('.markdown-body > ' + item.trim());
+        }
+        if (CONFIG.anchorjs.placement === 'left') {
+          anchors.options.class = 'anchorjs-link-left';
+        }
+        anchors.add(res.join(', '));
+      }
+    });
+  });
+</script>
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.js', function() {
+    Fluid.plugins.fancyBox();
+  });
+</script>
+
+
+  <script>Fluid.plugins.imageCaption();</script>
+
+  <script  src="/js/local-search.js" ></script>
+
+
+
+
+
+<!-- 主题的启动项，将它保持在最底部 -->
+<!-- the boot of the theme, keep it at the bottom -->
+<script  src="/js/boot.js" ></script>
+
+
+  
+
+  <noscript>
+    <div class="noscript-warning">博客在允许 JavaScript 运行的环境下浏览效果更佳</div>
+  </noscript>
+</body>
+</html>

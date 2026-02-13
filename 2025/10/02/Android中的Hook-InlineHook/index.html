@@ -1,0 +1,835 @@
+
+
+<!DOCTYPE html>
+<html lang="zh-CN" data-default-color-scheme=auto>
+
+
+
+<head>
+  <meta charset="UTF-8">
+
+  <link rel="apple-touch-icon" sizes="76x76" href="/img/favicon.png">
+  <link rel="icon" href="/img/favicon.png">
+  
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, shrink-to-fit=no">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  
+  <meta name="theme-color" content="#11527b">
+  <meta name="author" content="Leo-Wxy">
+  <meta name="keywords" content="">
+  
+    <meta name="description" content="Inline Hook 本文定位：面向 Android 开发者的 Inline Hook 原理入门，重点是理解“为什么要用、怎么工作、如何验证生效”。  在 &#123;% post_link Android中的Hook-PLTHook %&#125; 里，PLT Hook 的切入点是“导入方模块的 GOT 表项”。这意味着它拦截的是调用路径，不是函数本体。 与 PLT Hook 的边界差异PLT">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Android中的Hook-InlineHook">
+<meta property="og:url" content="http://example.com/2025/10/02/Android%E4%B8%AD%E7%9A%84Hook-InlineHook/index.html">
+<meta property="og:site_name" content="Wxy的个人博客">
+<meta property="og:description" content="Inline Hook 本文定位：面向 Android 开发者的 Inline Hook 原理入门，重点是理解“为什么要用、怎么工作、如何验证生效”。  在 &#123;% post_link Android中的Hook-PLTHook %&#125; 里，PLT Hook 的切入点是“导入方模块的 GOT 表项”。这意味着它拦截的是调用路径，不是函数本体。 与 PLT Hook 的边界差异PLT">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="http://example.com/images/InlineHookDemo.png">
+<meta property="article:published_time" content="2025-10-02T03:10:44.000Z">
+<meta property="article:modified_time" content="2026-02-13T03:20:14.235Z">
+<meta property="article:author" content="Leo-Wxy">
+<meta property="article:tag" content="Hook">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="http://example.com/images/InlineHookDemo.png">
+  
+  
+  
+  <title>Android中的Hook-InlineHook - Wxy的个人博客</title>
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css" />
+
+
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@4.0.0/github-markdown.min.css" />
+
+  <link  rel="stylesheet" href="/lib/hint/hint.min.css" />
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.css" />
+
+
+
+<!-- 主题依赖的图标库，不要自行修改 -->
+<!-- Do not modify the link that theme dependent icons -->
+
+<link rel="stylesheet" href="//at.alicdn.com/t/c/font_1749284_5i9bdhy70f8.css">
+
+
+
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1736178_kmeydafke9r.css">
+
+
+<link  rel="stylesheet" href="/css/main.css" />
+
+
+  <link id="highlight-css" rel="stylesheet" href="/css/highlight.css" />
+  
+    <link id="highlight-css-dark" rel="stylesheet" href="/css/highlight-dark.css" />
+  
+
+
+
+
+  <script id="fluid-configs">
+    var Fluid = window.Fluid || {};
+    Fluid.ctx = Object.assign({}, Fluid.ctx)
+    var CONFIG = {"hostname":"example.com","root":"/","version":"1.9.8","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false,"scope":[]},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"code_language":{"enable":true,"default":"TEXT"},"copy_btn":true,"image_caption":{"enable":true},"image_zoom":{"enable":true,"img_url_replace":["",""]},"toc":{"enable":true,"placement":"right","headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"loading_img":"/img/loading.gif","onlypost":false,"offset_factor":2},"web_analytics":{"enable":false,"follow_dnt":true,"baidu":null,"google":null,"tencent":{"sid":null,"cid":null},"leancloud":{"app_id":null,"app_key":null,"server_url":null,"path":"window.location.pathname","ignore_local":false},"umami":{"src":null,"website_id":null,"domains":null,"start_time":"2024-01-01T00:00:00.000Z","token":null,"api_server":null},"gtag":null,"woyaola":null,"cnzz":null},"search_path":"/local-search.xml","include_content_in_search":false};
+
+    if (CONFIG.web_analytics.follow_dnt) {
+      var dntVal = navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack;
+      Fluid.ctx.dnt = dntVal && (dntVal.startsWith('1') || dntVal.startsWith('yes') || dntVal.startsWith('on'));
+    }
+  </script>
+  <script  src="/js/utils.js" ></script>
+  <script  src="/js/color-schema.js" ></script>
+  
+
+
+  
+<meta name="generator" content="Hexo 8.1.1"></head>
+
+
+<body>
+  
+
+  <header>
+    
+
+<div class="header-inner" style="height: 30vh;">
+  <nav id="navbar" class="navbar fixed-top  navbar-expand-lg navbar-dark scrolling-navbar">
+  <div class="container">
+    <a class="navbar-brand" href="/">
+      <strong>Wxy&#39;s Blog</strong>
+    </a>
+
+    <button id="navbar-toggler-btn" class="navbar-toggler" type="button" data-toggle="collapse"
+            data-target="#navbarSupportedContent"
+            aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+      <div class="animated-icon"><span></span><span></span><span></span></div>
+    </button>
+
+    <!-- Collapsible content -->
+    <div class="collapse navbar-collapse" id="navbarSupportedContent">
+      <ul class="navbar-nav ml-auto text-center">
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/" target="_self">
+                <i class="iconfont icon-home-fill"></i>
+                <span>首页</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/archives/" target="_self">
+                <i class="iconfont icon-archive-fill"></i>
+                <span>归档</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/tags/" target="_self">
+                <i class="iconfont icon-tags-fill"></i>
+                <span>标签</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/about/" target="_self">
+                <i class="iconfont icon-user-fill"></i>
+                <span>关于</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/links/" target="_self">
+                <i class="iconfont icon-link-fill"></i>
+                <span>友链</span>
+              </a>
+            </li>
+          
+        
+        
+          <li class="nav-item" id="search-btn">
+            <a class="nav-link" target="_self" href="javascript:;" data-toggle="modal" data-target="#modalSearch" aria-label="Search">
+              <i class="iconfont icon-search"></i>
+            </a>
+          </li>
+          
+        
+        
+          <li class="nav-item" id="color-toggle-btn">
+            <a class="nav-link" target="_self" href="javascript:;" aria-label="Color Toggle">
+              <i class="iconfont icon-dark" id="color-toggle-icon"></i>
+            </a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+  
+
+<div id="banner" class="banner" parallax=true
+     style="background: url('/img/default.png') no-repeat center center; background-size: cover;">
+  <div class="full-bg-img">
+    <div class="mask flex-center" style="background-color: rgba(0, 0, 0, 0.3)">
+      <div class="banner-text text-center fade-in-up">
+        <div class="h2">
+          
+            <span id="subtitle">Android中的Hook-InlineHook</span>
+          
+        </div>
+
+        
+          
+  <div class="mt-3">
+    
+    
+      <span class="post-meta">
+        <i class="iconfont icon-date-fill" aria-hidden="true"></i>
+        <time datetime="2025-10-02 11:10" pubdate>
+          2025年10月2日 上午
+        </time>
+      </span>
+    
+  </div>
+
+  <div class="mt-1">
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-chart"></i>
+        
+          <!-- compatible with older versions-->
+          3.8k 字
+        
+      </span>
+    
+
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-clock-fill"></i>
+        
+        
+        
+          <!-- compatible with older versions-->
+          12 分钟
+        
+      </span>
+    
+
+    
+    
+  </div>
+
+
+        
+      </div>
+
+      
+    </div>
+  </div>
+</div>
+
+</div>
+
+  </header>
+
+  <main>
+    
+      
+
+<div class="container-fluid nopadding-x">
+  <div class="row nomargin-x">
+    <div class="side-col d-none d-lg-block col-lg-2">
+      
+
+    </div>
+
+    <div class="col-lg-8 nopadding-x-md">
+      <div class="container nopadding-x-md" id="board-ctn">
+        <div id="board">
+          <article class="post-content mx-auto">
+            <h1 id="seo-header">Android中的Hook-InlineHook</h1>
+            
+            
+              <div class="markdown-body">
+                
+                <h1 id="Inline-Hook"><a href="#Inline-Hook" class="headerlink" title="Inline Hook"></a>Inline Hook</h1><blockquote>
+<p>本文定位：面向 Android 开发者的 Inline Hook 原理入门，重点是理解“为什么要用、怎么工作、如何验证生效”。</p>
+</blockquote>
+<p>在 <code>&#123;% post_link Android中的Hook-PLTHook %&#125;</code> 里，PLT Hook 的切入点是“导入方模块的 GOT 表项”。<br>这意味着它拦截的是<strong>调用路径</strong>，不是<strong>函数本体</strong>。</p>
+<h2 id="与-PLT-Hook-的边界差异"><a href="#与-PLT-Hook-的边界差异" class="headerlink" title="与 PLT Hook 的边界差异"></a>与 PLT Hook 的边界差异</h2><p>PLT Hook 生效的前提是：目标调用必须经过动态链接导入表（PLT&#x2F;GOT）。因此：</p>
+<ul>
+<li>能拦截：跨 so 的外部符号调用。</li>
+<li>常拦不到：同一 so 内部直接调用、<code>static</code> 函数、被内联后不存在的调用点。</li>
+<li>可能失效：<code>-Bsymbolic</code>、LTO、符号裁剪、符号版本不匹配等场景。</li>
+</ul>
+<p>Inline Hook 的切入点是“目标函数入口指令”。<br>只要执行流进入该函数入口，就会先跳转到 Hook 函数，因此覆盖范围通常更大。</p>
+<h2 id="典型适用场景（为什么必须用-Inline）"><a href="#典型适用场景（为什么必须用-Inline）" class="headerlink" title="典型适用场景（为什么必须用 Inline）"></a>典型适用场景（为什么必须用 Inline）</h2><ol>
+<li>目标函数是 so 内部实现，不经过导入表，PLT Hook 没有命中点。  </li>
+<li>需要拦截库内高频逻辑（编解码、渲染、加解密等）做行为观测。  </li>
+<li>需要在不改业务源码的前提下注入逻辑、定位问题或灰度防护。  </li>
+<li>需要保留原函数能力，在 Hook 函数中按条件回调原逻辑。</li>
+</ol>
+<p>一句话：<strong>PLT Hook 改“调用入口”，Inline Hook 改“函数入口”。</strong></p>
+<h1 id="Inline-Hook-核心原理"><a href="#Inline-Hook-核心原理" class="headerlink" title="Inline Hook 核心原理"></a>Inline Hook 核心原理</h1><p>从 Android 开发者角度，Inline Hook 可以抽象成三个动作：<strong>改写入口、搭建跳板、回跳原流程</strong>。主要理解这条主链路</p>
+<h2 id="1-函数入口改写（Patch-Prologue）"><a href="#1-函数入口改写（Patch-Prologue）" class="headerlink" title="1. 函数入口改写（Patch Prologue）"></a>1. 函数入口改写（Patch Prologue）</h2><p>在目标函数起始地址覆盖若干条机器指令，写入“跳转到 Hook 函数”的指令序列。<br>改写后，任何进入该函数入口的执行流都会先进入 Hook 函数。</p>
+<p>关键点：</p>
+<ul>
+<li>覆盖长度必须满足最小跳转需求，并按指令边界覆盖（AArch64 固定 4 字节）。  </li>
+<li>不能覆盖半条指令，否则通常直接崩溃。</li>
+</ul>
+<h2 id="2-跳板函数（Trampoline）"><a href="#2-跳板函数（Trampoline）" class="headerlink" title="2. 跳板函数（Trampoline）"></a>2. 跳板函数（Trampoline）</h2><p>被覆盖的原始指令不能丢弃，否则“调用原函数”会断链。<br>通常会申请一段可执行内存作为 trampoline，写入：</p>
+<ol>
+<li>被覆盖的原始指令（必要时重定位修复）；  </li>
+<li>一条回跳指令，跳回 <code>target + patched_len</code> 继续执行。</li>
+</ol>
+<p>这样 Hook 函数就可以通过 trampoline 调用原函数剩余逻辑。</p>
+<h2 id="3-指令重定位（概念了解）"><a href="#3-指令重定位（概念了解）" class="headerlink" title="3. 指令重定位（概念了解）"></a>3. 指令重定位（概念了解）</h2><p>Inline Hook 最难的不是“写跳转”，而是“搬指令”。<br>如果被搬走的指令包含 PC 相对寻址（如 <code>ADR/ADRP/LDR literal/B/BL</code>），直接复制到 trampoline 会因为地址变化而语义错误。</p>
+<p>入门阶段先记住结论：实现里通常要做“指令重定位”，把这类指令在 trampoline 中改写成等价逻辑，保证地址语义不变。</p>
+<h2 id="4-内存权限与缓存一致性"><a href="#4-内存权限与缓存一致性" class="headerlink" title="4. 内存权限与缓存一致性"></a>4. 内存权限与缓存一致性</h2><p>代码段通常是只读可执行（RX），写入前后要处理权限和缓存：</p>
+<ol>
+<li>页对齐后用 <code>mprotect</code> 临时把代码页改为可写（通常会保持可执行权限）；  </li>
+<li>写入补丁指令；  </li>
+<li>刷新 I-Cache（如 <code>__builtin___clear_cache</code>），确保 CPU 能执行到新指令；  </li>
+<li>恢复为只读可执行（通常 <code>RX</code>）。</li>
+</ol>
+<p>否则会出现“写入成功但仍执行旧指令”或权限异常。</p>
+<h2 id="5-调用链闭环"><a href="#5-调用链闭环" class="headerlink" title="5. 调用链闭环"></a>5. 调用链闭环</h2><p>一个完整调用链通常是：</p>
+<p><code>caller -&gt; target(入口已改写) -&gt; hook -&gt; (可选) trampoline -&gt; target+N -&gt; return</code></p>
+<p>如果继续做工程化，通常还会补这些能力：</p>
+<ul>
+<li>防递归（TLS guard），避免 Hook 内再次命中自己；  </li>
+<li>线程安全（安装&#x2F;卸载加锁）；  </li>
+<li>可回滚（保存原始字节，支持 unhook）。</li>
+</ul>
+<h1 id="ARCH-ARM64（arm64-v8a-AArch64）最小知识集"><a href="#ARCH-ARM64（arm64-v8a-AArch64）最小知识集" class="headerlink" title="ARCH_ARM64（arm64-v8a &#x2F; AArch64）最小知识集"></a>ARCH_ARM64（arm64-v8a &#x2F; AArch64）最小知识集</h1><p>在 Android 上，<code>ARCH_ARM64</code> 对应 ABI <code>arm64-v8a</code>，执行状态是 <code>AArch64</code>。<br>Inline Hook 在该架构下的实现与 <code>ARMv7(A32/Thumb)</code> 有明显差异，必须分开理解。</p>
+<p>这一节只保留和 Android 开发面试&#x2F;排障最相关的概念。</p>
+<h2 id="1-AArch64-基础模型"><a href="#1-AArch64-基础模型" class="headerlink" title="1. AArch64 基础模型"></a>1. AArch64 基础模型</h2><h3 id="执行状态与-ABI"><a href="#执行状态与-ABI" class="headerlink" title="执行状态与 ABI"></a>执行状态与 ABI</h3><ul>
+<li><code>arm64-v8a</code> 是 Android NDK 的 64 位 ABI，对应 CPU 运行在 <code>AArch64</code> 状态，执行 <code>A64</code> 指令。</li>
+<li><code>armeabi-v7a</code> 是 32 位 ABI（A32&#x2F;Thumb），Inline Hook 的很多细节不可直接复用。</li>
+<li>工程里常用 <code>__aarch64__</code> &#x2F; <code>__arm__</code> 做编译分支（有些实现会抽象成 <code>ARCH_ARM64</code> 宏）：</li>
+</ul>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-meta">#<span class="hljs-keyword">if</span> defined(__aarch64__)</span><br><span class="hljs-comment">// ARM64 inline hook path</span><br><span class="hljs-meta">#<span class="hljs-keyword">elif</span> defined(__arm__)</span><br><span class="hljs-comment">// ARM32/Thumb inline hook path</span><br><span class="hljs-meta">#<span class="hljs-keyword">endif</span></span><br><br></code></pre></td></tr></table></figure>
+
+<h3 id="寄存器与调用约定（AAPCS64）"><a href="#寄存器与调用约定（AAPCS64）" class="headerlink" title="寄存器与调用约定（AAPCS64）"></a>寄存器与调用约定（AAPCS64）</h3><ul>
+<li>通用寄存器：<code>X0 ~ X30</code>（<code>W0 ~ W30</code> 是低 32 位视图）。</li>
+<li><code>X0 ~ X7</code>：参数与返回值（返回通常在 <code>X0</code>）。</li>
+<li><code>X30</code>：链接寄存器（LR，保存返回地址），<code>SP</code> 需要 16 字节对齐。</li>
+</ul>
+<blockquote>
+<p>对 Hook 的意义：保存&#x2F;恢复现场、构造 trampoline、回调原函数都依赖这些约定。</p>
+</blockquote>
+<h2 id="2-指令集差异（A64-vs-A32-Thumb）"><a href="#2-指令集差异（A64-vs-A32-Thumb）" class="headerlink" title="2. 指令集差异（A64 vs A32&#x2F;Thumb）"></a>2. 指令集差异（A64 vs A32&#x2F;Thumb）</h2><table>
+<thead>
+<tr>
+<th align="left">维度</th>
+<th align="left">ARM64 (A64)</th>
+<th align="left">ARMv7 (A32&#x2F;Thumb)</th>
+<th align="left">对 Inline Hook 的影响</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">指令长度</td>
+<td align="left">固定 4 字节</td>
+<td align="left">Thumb 2&#x2F;4 字节混合</td>
+<td align="left">ARM64 更容易按指令边界覆盖入口</td>
+</tr>
+<tr>
+<td align="left">状态位</td>
+<td align="left">无 Thumb</td>
+<td align="left">需要区分 ARM&#x2F;Thumb（函数地址 bit0 常携带状态）</td>
+<td align="left">ARM64 不需要处理 Thumb bit</td>
+</tr>
+<tr>
+<td align="left">PC 相对指令</td>
+<td align="left"><code>ADR/ADRP/LDR literal/B/BL</code> 很常见</td>
+<td align="left">编码与语义不同</td>
+<td align="left">trampoline 的重定位逻辑不能复用 ARM32</td>
+</tr>
+</tbody></table>
+<h2 id="3-ARM64-中与-Hook-最相关的指令"><a href="#3-ARM64-中与-Hook-最相关的指令" class="headerlink" title="3. ARM64 中与 Hook 最相关的指令"></a>3. ARM64 中与 Hook 最相关的指令</h2><p>Inline Hook 里常见且需要优先记住的就是下面三类：</p>
+<ul>
+<li><code>B</code> &#x2F; <code>BL</code>：分支&#x2F;调用指令，PC 相对跳转，范围约 <code>±128MB</code></li>
+<li><code>ADR</code> &#x2F; <code>ADRP</code>：生成地址（常用于取全局&#x2F;常量地址），属于 PC 相对寻址</li>
+<li><code>LDR (literal)</code>：从常量池取值&#x2F;地址，属于 PC 相对寻址</li>
+</ul>
+<p>其它如 <code>B.cond</code> &#x2F; <code>CBZ</code> &#x2F; <code>TBZ</code> 等本质也是“短距 PC-relative 分支”，搬运到 trampoline 时同样需要重定位处理。</p>
+<blockquote>
+<p>这些指令一旦被“搬到 trampoline”，若不重算偏移，通常会直接跑偏。</p>
+</blockquote>
+<h2 id="4-指令差异对-Inline-Hook-的直接影响"><a href="#4-指令差异对-Inline-Hook-的直接影响" class="headerlink" title="4. 指令差异对 Inline Hook 的直接影响"></a>4. 指令差异对 Inline Hook 的直接影响</h2><h3 id="入口改写（Patch-Prologue）"><a href="#入口改写（Patch-Prologue）" class="headerlink" title="入口改写（Patch Prologue）"></a>入口改写（Patch Prologue）</h3><p>ARM64 固定 4 字节指令，让入口覆盖更可控，但仍要满足：</p>
+<ul>
+<li><code>patch_len</code> 必须是 4 的倍数；</li>
+<li>必须覆盖完整跳转模板；</li>
+<li>不能覆盖半条指令。</li>
+</ul>
+<h3 id="近跳与远跳策略"><a href="#近跳与远跳策略" class="headerlink" title="近跳与远跳策略"></a>近跳与远跳策略</h3><ul>
+<li>目标地址在 <code>±128MB</code> 内，可用单条 <code>B</code>（4B）近跳；</li>
+<li>超出范围通常使用“寄存器间接跳转”模板（常见 16B 或 20B）。</li>
+</ul>
+<p>示意（远跳）：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><code class="hljs asm">LDR X17, [PC, #8]<br>BR  X17<br>.quad hook_addr<br></code></pre></td></tr></table></figure>
+
+
+
+<h3 id="Trampoline-不是“简单复制”"><a href="#Trampoline-不是“简单复制”" class="headerlink" title="Trampoline 不是“简单复制”"></a>Trampoline 不是“简单复制”</h3><p>被覆盖指令若包含 <code>ADR/ADRP/LDR literal/B/BL/...</code>，直接复制会失效。<br>正确做法是：<strong>按指令类型重定位</strong>，保证在新地址执行时仍指向原目标。</p>
+<h3 id="32-位时代常见坑在-ARM64-的变化"><a href="#32-位时代常见坑在-ARM64-的变化" class="headerlink" title="32 位时代常见坑在 ARM64 的变化"></a>32 位时代常见坑在 ARM64 的变化</h3><ul>
+<li>ARM32&#x2F;Thumb 常见“bit0 表示 Thumb 状态”，ARM64 不存在该问题；</li>
+<li>但 ARM64 对 PC-relative 指令使用更频繁，重定位工作量反而更集中在“偏移修复”。</li>
+</ul>
+<h2 id="5-进阶注意点（可选展开）"><a href="#5-进阶注意点（可选展开）" class="headerlink" title="5. 进阶注意点（可选展开）"></a>5. 进阶注意点（可选展开）</h2><p>以下内容偏工程化，入门阶段可以先略过：</p>
+<ul>
+<li>Hook 框架通常会处理更多边界（并发安装、递归保护、cache flush、回滚）；</li>
+<li>自研实现建议先收敛 <code>arm64 + 最小指令集子集</code>，再扩展到复杂指令重定位。</li>
+</ul>
+<h1 id="InlineHook基础流程（原理向）"><a href="#InlineHook基础流程（原理向）" class="headerlink" title="InlineHook基础流程（原理向）"></a>InlineHook基础流程（原理向）</h1><p>基础可运行的 Inline Hook，可以压缩为 5 步：</p>
+<ol>
+<li>准备输入：拿到 <code>target_addr</code>、<code>hook_addr</code>，并确定入口覆盖长度 <code>hook_len</code>。</li>
+<li>构建 trampoline：备份目标入口指令，复制到 trampoline，末尾追加跳回 <code>target + hook_len</code>。</li>
+<li>刷新 trampoline 缓存：对 trampoline 写入区执行指令缓存刷新。</li>
+<li>改写目标入口：临时放开页写权限，写入跳到 hook 的指令，并刷新目标入口缓存。</li>
+<li>恢复与收尾：恢复页权限并返回结果；失败时回滚原始字节并释放 trampoline。</li>
+</ol>
+<h1 id="InlineHook开发实践（Demo-验证）"><a href="#InlineHook开发实践（Demo-验证）" class="headerlink" title="InlineHook开发实践（Demo 验证）"></a>InlineHook开发实践（Demo 验证）</h1><h2 id="Demo-结构（按模块理解）"><a href="#Demo-结构（按模块理解）" class="headerlink" title="Demo 结构（按模块理解）"></a>Demo 结构（按模块理解）</h2><p><img src="/images/InlineHookDemo.png" srcset="/img/loading.gif" lazyload alt="Demo结构"></p>
+<h3 id="App"><a href="#App" class="headerlink" title="App"></a>App</h3><blockquote>
+<p>加载目标 so 与 hook so，并触发待 Hook 函数调用。</p>
+</blockquote>
+<figure class="highlight cmake"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br></pre></td><td class="code"><pre><code class="hljs cmake"><span class="hljs-keyword">cmake_minimum_required</span>(VERSION <span class="hljs-number">3.10</span>)<br><span class="hljs-keyword">project</span>(<span class="hljs-string">&quot;plthook_combined&quot;</span>)<br><br><span class="hljs-keyword">set</span>(CMAKE_CXX_STANDARD <span class="hljs-number">17</span>)<br><span class="hljs-keyword">set</span>(CMAKE_CXX_STANDARD_REQUIRED <span class="hljs-keyword">ON</span>)<br><br><span class="hljs-keyword">if</span> (<span class="hljs-variable">$&#123;ANDROID_ABI&#125;</span> <span class="hljs-keyword">STREQUAL</span> <span class="hljs-string">&quot;arm64-v8a&quot;</span>)<br>    <span class="hljs-keyword">add_definitions</span>(-DARCH_ARM64)<br><span class="hljs-keyword">elseif</span> (<span class="hljs-variable">$&#123;ANDROID_ABI&#125;</span> <span class="hljs-keyword">STREQUAL</span> <span class="hljs-string">&quot;armeabi-v7a&quot;</span>)<br>    <span class="hljs-keyword">add_definitions</span>(-DARCH_ARM32)<br><span class="hljs-keyword">endif</span> ()<br><br><span class="hljs-comment"># 生成 libcombined.so</span><br><span class="hljs-keyword">add_library</span>(combined SHARED combined.cpp)<br><br><span class="hljs-comment"># hook 库</span><br><span class="hljs-keyword">add_library</span>(plthook SHARED plthook.cpp)<br><br><span class="hljs-comment"># inlinehook 库</span><br><span class="hljs-keyword">add_library</span>(inlinehook SHARED inlinehook.cpp)<br><br><span class="hljs-comment"># 链接库</span><br><span class="hljs-keyword">target_link_libraries</span>(combined<br>        android<br>        log<br>        inlinehook)<br><br><span class="hljs-keyword">target_link_libraries</span>(plthook<br>        android<br>        log<br>        dl)<br><br><span class="hljs-keyword">target_link_libraries</span>(inlinehook<br>        android<br>        log<br>        dl)<br><br></code></pre></td></tr></table></figure>
+
+
+
+<h3 id="目标SO"><a href="#目标SO" class="headerlink" title="目标SO"></a>目标SO</h3><blockquote>
+<p>提供待 Hook 的 native 函数（建议 <code>noinline</code>，避免被编译器优化掉调用点）。</p>
+</blockquote>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;jni.h&gt;</span></span><br><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;android/log.h&gt;</span></span><br><br><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;jni.h&gt;</span></span><br><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;android/log.h&gt;</span></span><br><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&quot;inlinehook.h&quot;</span></span><br><br><span class="hljs-meta">#<span class="hljs-keyword">define</span> LOGI(...) __android_log_print(ANDROID_LOG_INFO, <span class="hljs-string">&quot;Inline_COMBINED&quot;</span>, __VA_ARGS__)</span><br><span class="hljs-meta">#<span class="hljs-keyword">define</span> LOGE(...) __android_log_print(ANDROID_LOG_ERROR, <span class="hljs-string">&quot;PLT_COMBINED&quot;</span>, __VA_ARGS__)</span><br><br><span class="hljs-comment">// ----------------------------</span><br><span class="hljs-comment">// target_function（待 hook）</span><br><span class="hljs-comment">// ----------------------------</span><br><span class="hljs-keyword">extern</span> <span class="hljs-string">&quot;C&quot;</span> __attribute__((noinline)) <span class="hljs-function"><span class="hljs-type">int</span> <span class="hljs-title">target_function</span><span class="hljs-params">(<span class="hljs-type">int</span> x)</span> </span>&#123;<br>    <span class="hljs-built_in">LOGI</span>(<span class="hljs-string">&quot;target_function called with %d&quot;</span>, x);<br>    <span class="hljs-keyword">return</span> x + <span class="hljs-number">1</span>;<br>&#125;<br><br><span class="hljs-comment">// 保存原函数指针</span><br><span class="hljs-function"><span class="hljs-type">static</span> <span class="hljs-title">int</span> <span class="hljs-params">(*orig_target_function)</span><span class="hljs-params">(<span class="hljs-type">int</span>)</span> </span>= <span class="hljs-literal">nullptr</span>;<br><br><span class="hljs-comment">// ✅ 保存 hook 上下文，用于 unhook</span><br><span class="hljs-type">static</span> <span class="hljs-type">hook_context_t</span>* g_hook_ctx = <span class="hljs-literal">nullptr</span>;<br><br><span class="hljs-comment">// Hook 函数</span><br><span class="hljs-keyword">extern</span> <span class="hljs-string">&quot;C&quot;</span> __attribute__((noinline)) <span class="hljs-function"><span class="hljs-type">int</span> <span class="hljs-title">hook_target_function</span><span class="hljs-params">(<span class="hljs-type">int</span> x)</span> </span>&#123;<br>    <span class="hljs-built_in">LOGI</span>(<span class="hljs-string">&quot;hook_target_function called with %d (intercepted!)&quot;</span>, x);<br>    <span class="hljs-comment">// 调用原函数，修改参数或返回值</span><br><span class="hljs-comment">//  int result = orig_target_function(x);</span><br>    <span class="hljs-type">int</span> result = x;<br>    <span class="hljs-built_in">LOGI</span>(<span class="hljs-string">&quot;hook_target_function: original returned %d, we return %d&quot;</span>, result, result * <span class="hljs-number">100</span>);<br>    <span class="hljs-keyword">return</span> x * <span class="hljs-number">100</span>;  <span class="hljs-comment">// 修改返回值</span><br>&#125;<br><br><span class="hljs-comment">// ----------------------------</span><br><span class="hljs-comment">// callTarget 调用 target_function</span><br><span class="hljs-comment">// ----------------------------</span><br><span class="hljs-keyword">extern</span> <span class="hljs-string">&quot;C&quot;</span> <span class="hljs-function">JNIEXPORT jint JNICALL</span><br><span class="hljs-function"><span class="hljs-title">Java_com_example_plthookdemo_MainActivity_callTarget</span><span class="hljs-params">(JNIEnv* env, jobject thiz, jint v)</span> </span>&#123;<br>    <span class="hljs-built_in">LOGI</span>(<span class="hljs-string">&quot;callTarget: before calling target_function&quot;</span>);<br>    <span class="hljs-type">int</span> r = <span class="hljs-built_in">target_function</span>((<span class="hljs-type">int</span>)v);  <span class="hljs-comment">// 通过 PLT 调用</span><br>    <span class="hljs-built_in">LOGI</span>(<span class="hljs-string">&quot;callTarget: after calling target_function, result=%d&quot;</span>, r);<br>    <span class="hljs-keyword">return</span> r;<br>&#125;<br><br><span class="hljs-keyword">extern</span> <span class="hljs-string">&quot;C&quot;</span> <span class="hljs-function">JNIEXPORT jint JNICALL</span><br><span class="hljs-function"><span class="hljs-title">Java_com_example_plthookdemo_MainActivity_installHook</span><span class="hljs-params">(JNIEnv* env, jobject thiz)</span> </span>&#123;<br>    <span class="hljs-built_in">LOGI</span>(<span class="hljs-string">&quot;Installing inline hook...&quot;</span>);<br>    g_hook_ctx = <span class="hljs-built_in">inline_hook</span>((<span class="hljs-type">void</span>*)target_function, (<span class="hljs-type">void</span>*)hook_target_function, (<span class="hljs-type">void</span>**)&amp;orig_target_function);<br>    <span class="hljs-keyword">if</span>(g_hook_ctx == <span class="hljs-literal">nullptr</span>)&#123;<br>        <span class="hljs-built_in">LOGI</span>(<span class="hljs-string">&quot;inline_hook failed&quot;</span>);<br>        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;<br>    &#125;<br>    <span class="hljs-built_in">LOGI</span>(<span class="hljs-string">&quot;inline_hook orig_target_function=%p&quot;</span>, orig_target_function);<br>    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;<br>&#125;<br><br><span class="hljs-keyword">extern</span> <span class="hljs-string">&quot;C&quot;</span> <span class="hljs-function">JNIEXPORT jint JNICALL</span><br><span class="hljs-function"><span class="hljs-title">Java_com_example_plthookdemo_MainActivity_uninstallHook</span><span class="hljs-params">(JNIEnv *env, jobject thiz)</span> </span>&#123;<br>    <span class="hljs-built_in">LOGI</span>(<span class="hljs-string">&quot;Installing inline hook...&quot;</span>);<br>    <span class="hljs-keyword">if</span> (g_hook_ctx == <span class="hljs-literal">nullptr</span>) &#123;<br>        <span class="hljs-built_in">LOGI</span>(<span class="hljs-string">&quot;inline_unhook failed, g_hook_ctx is nullptr&quot;</span>);<br>        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;<br>    &#125;<br>    <span class="hljs-type">int</span> ret = <span class="hljs-built_in">inline_unhook</span>(g_hook_ctx);<br>    <span class="hljs-keyword">if</span> (ret == <span class="hljs-number">0</span>) &#123;<br>        g_hook_ctx = <span class="hljs-literal">nullptr</span>;<br>        orig_target_function = <span class="hljs-literal">nullptr</span>;<br>        <span class="hljs-built_in">LOGI</span>(<span class="hljs-string">&quot;inline_unhook success&quot;</span>);<br>    &#125; <span class="hljs-keyword">else</span> &#123;<br>        <span class="hljs-built_in">LOGI</span>(<span class="hljs-string">&quot;inline_unhook failed, ret=%d&quot;</span>, ret);<br>    &#125;<br>    <span class="hljs-keyword">return</span> ret;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>主要是提供 注册&#x2F;卸载 hook的方法</p>
+<h3 id="Hook-SO"><a href="#Hook-SO" class="headerlink" title="Hook SO"></a>Hook SO</h3><blockquote>
+<p>安装 Inline Hook，保存原函数地址，并在 Hook 函数里按需回调原函数。</p>
+</blockquote>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br><span class="line">158</span><br><span class="line">159</span><br><span class="line">160</span><br><span class="line">161</span><br><span class="line">162</span><br><span class="line">163</span><br><span class="line">164</span><br><span class="line">165</span><br><span class="line">166</span><br><span class="line">167</span><br><span class="line">168</span><br><span class="line">169</span><br><span class="line">170</span><br><span class="line">171</span><br><span class="line">172</span><br><span class="line">173</span><br><span class="line">174</span><br><span class="line">175</span><br><span class="line">176</span><br><span class="line">177</span><br><span class="line">178</span><br><span class="line">179</span><br><span class="line">180</span><br><span class="line">181</span><br><span class="line">182</span><br><span class="line">183</span><br><span class="line">184</span><br><span class="line">185</span><br><span class="line">186</span><br><span class="line">187</span><br><span class="line">188</span><br><span class="line">189</span><br><span class="line">190</span><br><span class="line">191</span><br><span class="line">192</span><br><span class="line">193</span><br><span class="line">194</span><br><span class="line">195</span><br><span class="line">196</span><br><span class="line">197</span><br><span class="line">198</span><br><span class="line">199</span><br><span class="line">200</span><br><span class="line">201</span><br><span class="line">202</span><br><span class="line">203</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-comment">//</span><br><span class="hljs-comment">// Created by 王晓勇 on 2025-10-14.</span><br><span class="hljs-comment">//</span><br><br><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&quot;inlinehook.h&quot;</span></span><br><br><span class="hljs-comment">/**</span><br><span class="hljs-comment"> *  修改内存页保护属性</span><br><span class="hljs-comment"> */</span><br><span class="hljs-function"><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title">change_page_protection</span><span class="hljs-params">(<span class="hljs-type">void</span> *addr, <span class="hljs-type">size_t</span> len, <span class="hljs-type">int</span> prot)</span> </span>&#123;<br>    <span class="hljs-type">size_t</span> page_size = <span class="hljs-built_in">sysconf</span>(_SC_PAGESIZE);<br>    <span class="hljs-comment">// 计算页对齐地址</span><br>    <span class="hljs-type">void</span> *page_addr = (<span class="hljs-type">void</span> *)((<span class="hljs-type">uintptr_t</span>)addr &amp; ~(page_size - <span class="hljs-number">1</span>));<br>    <span class="hljs-type">size_t</span> page_len = (((<span class="hljs-type">uintptr_t</span>)addr + len - (<span class="hljs-type">uintptr_t</span>)page_addr +<br>                        page_size - <span class="hljs-number">1</span>) / page_size) * page_size;<br><br>    <span class="hljs-comment">// 修改保护属性</span><br>    <span class="hljs-keyword">return</span> <span class="hljs-built_in">mprotect</span>(page_addr, page_len, prot);<br>&#125;<br><br><span class="hljs-comment">/**</span><br><span class="hljs-comment">* 刷新指令缓存</span><br><span class="hljs-comment">*/</span><br><span class="hljs-function"><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title">cache_flush</span><span class="hljs-params">(<span class="hljs-type">void</span> *addr, <span class="hljs-type">size_t</span> len)</span> </span>&#123;<br><span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> ARCH_ARM32</span><br>    __builtin___clear_cache((<span class="hljs-type">char</span> *)addr, (<span class="hljs-type">char</span> *)addr + len);<br><span class="hljs-meta">#<span class="hljs-keyword">elif</span> defined(ARCH_ARM64)</span><br>    __builtin___clear_cache((<span class="hljs-type">char</span> *)addr, (<span class="hljs-type">char</span> *)addr + len);<br><span class="hljs-meta">#<span class="hljs-keyword">endif</span></span><br>&#125;<br><br><span class="hljs-comment">/**</span><br><span class="hljs-comment">* 判断指令集模式</span><br><span class="hljs-comment"> *ARM64 只有一种指令集模式</span><br><span class="hljs-comment"> * A64指令集</span><br><span class="hljs-comment"> * ARM64 (AArch64) = A64 指令集（64位）</span><br><span class="hljs-comment">- 所有指令固定 32 位（4 字节）</span><br><span class="hljs-comment">- 没有 Thumb 模式</span><br><span class="hljs-comment">- 不需要模式切换</span><br><span class="hljs-comment"> *</span><br><span class="hljs-comment">// ARM 有两种主要指令集模式:</span><br><span class="hljs-comment"></span><br><span class="hljs-comment">// 1. ARM 模式 (32位指令) - a32</span><br><span class="hljs-comment">// - 所有指令固定32位长度</span><br><span class="hljs-comment">// - 性能高但代码体积大</span><br><span class="hljs-comment"></span><br><span class="hljs-comment">// 2. Thumb 模式 (16位指令) - t16 / t32</span><br><span class="hljs-comment">// - 指令16位或32位混合</span><br><span class="hljs-comment">// - Thumb-1只支持16位指令</span><br><span class="hljs-comment">// - Thumb-2扩展支持32位指令</span><br><span class="hljs-comment">// - 代码密度高</span><br><span class="hljs-comment">*/</span><br><span class="hljs-function"><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title">is_thumb_mode</span><span class="hljs-params">(<span class="hljs-type">void</span> *addr)</span> </span>&#123;<br>    <span class="hljs-keyword">return</span> ((<span class="hljs-type">uintptr_t</span>)addr &amp; <span class="hljs-number">1</span>) != <span class="hljs-number">0</span>;<br>&#125;<br><br><span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> ARCH_ARM32</span><br><span class="hljs-comment">/**</span><br><span class="hljs-comment"> * ARM指令集跳转指令</span><br><span class="hljs-comment"> * @param dest</span><br><span class="hljs-comment"> * @param target</span><br><span class="hljs-comment"> */</span><br><span class="hljs-function"><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title">build_arm_jump</span><span class="hljs-params">(<span class="hljs-type">void</span> *dest, <span class="hljs-type">void</span> *target)</span> </span>&#123;<br>  <span class="hljs-type">uint32_t</span> *code = (<span class="hljs-type">uint32_t</span> *)dest;<br>  <span class="hljs-comment">// 构造跳转指令序列:</span><br>  <span class="hljs-comment">// LDR PC, [PC, #-4]   ; 加载地址到PC</span><br>  <span class="hljs-comment">// .word target        ; 目标地址</span><br>  code[<span class="hljs-number">0</span>] = <span class="hljs-number">0xe51ff004</span>; <span class="hljs-comment">// ldr pc, [pc, #-4]</span><br>  code[<span class="hljs-number">1</span>] = (<span class="hljs-type">uint32_t</span>)(target);<br>&#125;<br><br><span class="hljs-comment">/**</span><br><span class="hljs-comment"> * thumb指令集</span><br><span class="hljs-comment"> */</span><br><span class="hljs-function"><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title">build_thumb_jump</span><span class="hljs-params">(<span class="hljs-type">void</span> *dest, <span class="hljs-type">void</span> *target)</span> </span>&#123;<br>  <span class="hljs-type">uint16_t</span> *code = (<span class="hljs-type">uint16_t</span> *)dest;<br><br>  <span class="hljs-comment">// ✅ 适用于任意对齐的地址</span><br>  <span class="hljs-comment">// PUSH &#123;R0&#125;              ; 保存 R0</span><br>  <span class="hljs-comment">// LDR R0, [PC, #4]       ; 加载目标</span><br>  <span class="hljs-comment">// STR R0, [SP, #4]       ; 替换栈上的返回地址</span><br>  <span class="hljs-comment">// POP &#123;R0, PC&#125;           ; 恢复 R0 并跳转</span><br><br>  code[<span class="hljs-number">0</span>] = <span class="hljs-number">0xB401</span>;      <span class="hljs-comment">// PUSH &#123;R0&#125;</span><br>  code[<span class="hljs-number">1</span>] = <span class="hljs-number">0x4801</span>;      <span class="hljs-comment">// LDR R0, [PC, #4]</span><br>  code[<span class="hljs-number">2</span>] = <span class="hljs-number">0x9001</span>;      <span class="hljs-comment">// STR R0, [SP, #4]</span><br>  code[<span class="hljs-number">3</span>] = <span class="hljs-number">0xBD01</span>;      <span class="hljs-comment">// POP &#123;R0, PC&#125;</span><br>  *((<span class="hljs-type">uint32_t</span> *)&amp;code[<span class="hljs-number">4</span>]) = (<span class="hljs-type">uint32_t</span>)target;<br>&#125;<br><br><span class="hljs-comment">/**</span><br><span class="hljs-comment"> * thumb2指令集</span><br><span class="hljs-comment"> */</span><br><span class="hljs-function"><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title">build_thumb2_jump</span><span class="hljs-params">(<span class="hljs-type">void</span> *dest, <span class="hljs-type">void</span> *target)</span> </span>&#123;<br>  <span class="hljs-type">uint16_t</span> *code = (<span class="hljs-type">uint16_t</span> *)dest;<br>  <span class="hljs-comment">// 构造跳转指令序列:</span><br>  <span class="hljs-comment">// LDR.W PC, [PC]      ; Thumb-2指令</span><br>  <span class="hljs-comment">// NOP                 ; 对齐</span><br>  <span class="hljs-comment">// .word target        ; 目标地址</span><br><br>  code[<span class="hljs-number">0</span>] = <span class="hljs-number">0xF8DF</span>;      <span class="hljs-comment">// LDR.W PC, [PC]</span><br>  code[<span class="hljs-number">1</span>] = <span class="hljs-number">0xF000</span>;      <span class="hljs-comment">// 偏移为0</span><br>  code[<span class="hljs-number">2</span>] = <span class="hljs-number">0xBF00</span>;      <span class="hljs-comment">// NOP</span><br>  code[<span class="hljs-number">3</span>] = <span class="hljs-number">0xBF00</span>;      <span class="hljs-comment">// NOP</span><br>  *((<span class="hljs-type">uint32_t</span> *)&amp;code[<span class="hljs-number">4</span>]) = (<span class="hljs-type">uint32_t</span>)target;<br>&#125;<br><br><span class="hljs-meta">#<span class="hljs-keyword">endif</span></span><br><br><span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> ARCH_ARM64</span><br><span class="hljs-comment">/**</span><br><span class="hljs-comment"> * 构建Arm64跳转指令</span><br><span class="hljs-comment"> * A64指令集</span><br><span class="hljs-comment"> */</span><br><span class="hljs-function"><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title">build_arm64_jump</span><span class="hljs-params">(<span class="hljs-type">void</span> *dest, <span class="hljs-type">void</span> *target)</span> </span>&#123;<br>  <span class="hljs-type">uint32_t</span> *code = (<span class="hljs-type">uint32_t</span> *)dest;<br><br>  <span class="hljs-comment">// 构造跳转指令序列:</span><br>  <span class="hljs-comment">// LDR X16, #8         ; 加载目标地址到X16</span><br>  <span class="hljs-comment">// BR X16              ; 跳转到X16</span><br>  <span class="hljs-comment">// .quad target        ; 64位目标地址</span><br><br>  code[<span class="hljs-number">0</span>] = <span class="hljs-number">0x58000050</span>;  <span class="hljs-comment">// LDR X16, #8</span><br>  code[<span class="hljs-number">1</span>] = <span class="hljs-number">0xD61F0200</span>;  <span class="hljs-comment">// BR X16</span><br>  *((<span class="hljs-type">uint64_t</span> *)&amp;code[<span class="hljs-number">2</span>]) = (<span class="hljs-type">uint64_t</span>)target;<br>&#125;<br><br><span class="hljs-function"><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title">arm64_hook_install</span><span class="hljs-params">(<span class="hljs-type">hook_context_t</span> *ctx)</span> </span>&#123;<br>  <span class="hljs-type">void</span> *target = ctx-&gt;target_addr;<br>  <span class="hljs-type">void</span> *hook = ctx-&gt;hook_addr;<br>  <span class="hljs-comment">// 固定16字节</span><br>  ctx-&gt;hook_len = <span class="hljs-number">16</span>;<br><br>  <span class="hljs-comment">//从 target读取数据，复制 hook_len长度 到 original_code 中，实际就是备份 target</span><br>  <span class="hljs-built_in">memcpy</span>(ctx-&gt;original_code, target, ctx-&gt;hook_len);<br><br>  <span class="hljs-comment">//分配 跳板内存</span><br>  ctx-&gt;trampoline_addr = <span class="hljs-built_in">mmap</span>(<span class="hljs-literal">NULL</span>, <span class="hljs-number">4096</span>, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, <span class="hljs-number">-1</span>, <span class="hljs-number">0</span>);<br>  <span class="hljs-keyword">if</span> (ctx-&gt;trampoline_addr == MAP_FAILED) &#123;<br>	<span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;<br>  &#125;<br><br>  <span class="hljs-comment">// 从 original_code 实际就是target读取数据到 trampoline_addr 中</span><br>  <span class="hljs-built_in">memcpy</span>(ctx-&gt;trampoline_addr, ctx-&gt;original_code, ctx-&gt;hook_len);<br><br>  <span class="hljs-comment">// 跳回原函数</span><br>  <span class="hljs-type">void</span> *return_addr = (<span class="hljs-type">void</span> *)((<span class="hljs-type">uintptr_t</span>)target + ctx-&gt;hook_len);<br>  <span class="hljs-built_in">build_arm64_jump</span>((<span class="hljs-type">char</span> *)ctx-&gt;trampoline_addr + ctx-&gt;hook_len, return_addr);<br><br>  <span class="hljs-comment">//Arm64缓存行大小通常为 64字节，可以保证覆盖完整</span><br>  <span class="hljs-built_in">cache_flush</span>(ctx-&gt;trampoline_addr, <span class="hljs-number">64</span>);<br><br>  <span class="hljs-comment">// 修改目标函数</span><br>  <span class="hljs-comment">// 修改内存页保护属性 - 可写</span><br>  <span class="hljs-built_in">change_page_protection</span>(target, ctx-&gt;hook_len, PROT_READ | PROT_WRITE | PROT_EXEC);<br>  <span class="hljs-built_in">build_arm64_jump</span>(target, hook);<br>  <span class="hljs-comment">// 刷新缓存</span><br>  <span class="hljs-built_in">cache_flush</span>(target, <span class="hljs-number">64</span>);<br>  <span class="hljs-comment">// 恢复内存页保护属性 - 只读</span><br>  <span class="hljs-built_in">change_page_protection</span>(target, ctx-&gt;hook_len, PROT_READ | PROT_EXEC);<br><br>  <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;<br>&#125;<br><span class="hljs-meta">#<span class="hljs-keyword">endif</span></span><br><br><span class="hljs-function"><span class="hljs-type">hook_context_t</span> *<span class="hljs-title">inline_hook</span><span class="hljs-params">(<span class="hljs-type">void</span> *target, <span class="hljs-type">void</span> *hook, <span class="hljs-type">void</span> **original)</span> </span>&#123;<br>    <span class="hljs-type">hook_context_t</span> *ctx = (<span class="hljs-type">hook_context_t</span> *)<span class="hljs-built_in">malloc</span>(<span class="hljs-built_in">sizeof</span>(<span class="hljs-type">hook_context_t</span>));<br>    <span class="hljs-keyword">if</span> (!ctx) &#123;<br>        <span class="hljs-keyword">return</span> <span class="hljs-literal">nullptr</span>;<br>    &#125;<br>    ctx-&gt;target_addr = target;<br>    ctx-&gt;hook_addr = hook;<br><br><span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> ARCH_ARM64</span><br>    <span class="hljs-keyword">if</span> (<span class="hljs-built_in">arm64_hook_install</span>(ctx) != <span class="hljs-number">0</span>) &#123;<br>	<span class="hljs-built_in">free</span>(ctx);<br>	<span class="hljs-keyword">return</span> <span class="hljs-literal">nullptr</span>;<br>  &#125;<br><span class="hljs-meta">#<span class="hljs-keyword">endif</span></span><br><br>    <span class="hljs-keyword">if</span> (original) &#123;<br>        *original = ctx-&gt;trampoline_addr;<br>    &#125;<br>    <span class="hljs-keyword">return</span> ctx;<br>&#125;<br><br><span class="hljs-function"><span class="hljs-type">int</span> <span class="hljs-title">inline_unhook</span><span class="hljs-params">(<span class="hljs-type">hook_context_t</span> *ctx)</span> </span>&#123;<br>    <span class="hljs-keyword">if</span> (!ctx) &#123;<br>        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;<br>    &#125;<br>    <span class="hljs-type">void</span> *target = ctx-&gt;target_addr;<br><br>    <span class="hljs-built_in">change_page_protection</span>(target, ctx-&gt;hook_len, PROT_READ | PROT_WRITE | PROT_EXEC);<br>    <span class="hljs-built_in">memcpy</span>(target, ctx-&gt;original_code, ctx-&gt;hook_len);<br>    <span class="hljs-built_in">cache_flush</span>(target, <span class="hljs-number">64</span>);<br>    <span class="hljs-built_in">change_page_protection</span>(target, ctx-&gt;hook_len, PROT_READ | PROT_EXEC);<br><br>    <span class="hljs-keyword">if</span> (ctx-&gt;trampoline_addr) &#123;<br>        <span class="hljs-built_in">munmap</span>(ctx-&gt;trampoline_addr, <span class="hljs-number">4096</span>);<br>    &#125;<br>    <span class="hljs-built_in">free</span>(ctx);<br>    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>为了更容易看懂这份 Hook SO 代码，可以按“安装&#x2F;卸载链路”拆成 5 个小节：</p>
+<h4 id="1-前置能力：改页权限-刷缓存"><a href="#1-前置能力：改页权限-刷缓存" class="headerlink" title="1) 前置能力：改页权限 + 刷缓存"></a>1) 前置能力：改页权限 + 刷缓存</h4><ul>
+<li><code>change_page_protection</code>：对目标地址做页对齐后调用 <code>mprotect</code>，解决代码段默认不可写的问题。</li>
+<li><code>cache_flush</code>：写入新指令后刷新 I-Cache，避免 CPU 继续执行旧指令。</li>
+</ul>
+<p>这两个函数是 Inline Hook 的基础设施，后面的 trampoline 写入和入口改写都会依赖它们。</p>
+<h4 id="2-跳转模板：build-arm64-jump"><a href="#2-跳转模板：build-arm64-jump" class="headerlink" title="2) 跳转模板：build_arm64_jump"></a>2) 跳转模板：<code>build_arm64_jump</code></h4><p>ARM64 分支里用的是“间接跳转”模板：</p>
+<ul>
+<li><code>LDR X16, #8</code></li>
+<li><code>BR X16</code></li>
+<li>紧跟 8 字节目标地址（<code>.quad target</code>）</li>
+</ul>
+<p>这样可以稳定跳到任意 64 位地址，不受近跳范围限制。</p>
+<h4 id="3-安装核心：arm64-hook-install"><a href="#3-安装核心：arm64-hook-install" class="headerlink" title="3) 安装核心：arm64_hook_install"></a>3) 安装核心：<code>arm64_hook_install</code></h4><p>这个函数基本对应 Inline Hook 的主流程：</p>
+<ol>
+<li>固定 <code>hook_len = 16</code>（覆盖 4 条 A64 指令）。</li>
+<li>备份目标函数入口到 <code>original_code</code>。</li>
+<li><code>mmap</code> 一页 RXW 内存作为 trampoline。</li>
+<li>把备份指令写入 trampoline，并在末尾追加“跳回 <code>target + hook_len</code>”。</li>
+<li>刷新 trampoline 缓存。</li>
+<li>临时放开目标页写权限，把入口改写为“跳到 hook 函数”。</li>
+<li>刷新目标入口缓存并恢复页权限。</li>
+</ol>
+<p>到这一步后，执行流进入 <code>target</code> 时会先进入 <code>hook</code>。</p>
+<h4 id="4-对外入口：inline-hook"><a href="#4-对外入口：inline-hook" class="headerlink" title="4) 对外入口：inline_hook"></a>4) 对外入口：<code>inline_hook</code></h4><ul>
+<li>分配并初始化 <code>hook_context_t</code>。</li>
+<li>在 ARM64 下调用 <code>arm64_hook_install</code> 完成安装。</li>
+<li>通过 <code>*original = ctx-&gt;trampoline_addr</code> 把“原函数可调用入口”返回给调用方。</li>
+</ul>
+<p>也就是说，业务层保存的 <code>orig_target_function</code> 本质上是 trampoline 地址。</p>
+<h4 id="5-卸载回滚：inline-unhook"><a href="#5-卸载回滚：inline-unhook" class="headerlink" title="5) 卸载回滚：inline_unhook"></a>5) 卸载回滚：<code>inline_unhook</code></h4><ul>
+<li>临时放开目标页写权限。</li>
+<li>把 <code>original_code</code> 原样写回目标函数入口。</li>
+<li>刷新缓存并恢复为 <code>RX</code>。</li>
+<li>释放 trampoline（<code>munmap</code>）和上下文（<code>free</code>）。</li>
+</ul>
+<p>这一步保证 Hook 可逆：安装后可恢复到未 Hook 状态。</p>
+<h2 id="最小调用链"><a href="#最小调用链" class="headerlink" title="最小调用链"></a>最小调用链</h2><p><code>Java/Kotlin -&gt; JNI wrapper -&gt; target_func(入口已改写) -&gt; hook_func -&gt; (可选) trampoline/original -&gt; target+N -&gt; return</code></p>
+<h1 id="要点总结"><a href="#要点总结" class="headerlink" title="要点总结"></a>要点总结</h1><h3 id="1-InlineHook功能简述"><a href="#1-InlineHook功能简述" class="headerlink" title="1. InlineHook功能简述"></a>1. InlineHook功能简述</h3><ol>
+<li>Inline Hook 改的是“函数入口指令”，PLT Hook 改的是“调用方 GOT 表项”，两者切入点不同。</li>
+<li>Inline 的核心是：入口改写 + trampoline + 回跳 <code>target + N</code>。</li>
+<li>真正难点不是跳转，而是“被搬运指令的重定位”和“并发安装时机”。</li>
+<li>工程上必须处理页权限、I-Cache 刷新、回滚能力和线程安全。</li>
+</ol>
+<h3 id="2-相关QA"><a href="#2-相关QA" class="headerlink" title="2. 相关QA"></a>2. 相关QA</h3><p><strong>Q1：为什么要 trampoline？</strong></p>
+<ul>
+<li>入口被覆盖后，原始前几条指令会丢失；trampoline 用来保留这些指令并回跳到 <code>target + hook_len</code>，保证“还能调用原函数”。</li>
+</ul>
+<p><strong>Q2：为什么写完指令后必须 flush cache？</strong></p>
+<ul>
+<li>因为 I-Cache &#x2F; D-Cache 可能不一致，CPU 可能继续执行旧指令；刷新后才能保证新补丁生效。</li>
+</ul>
+<p><strong>Q3：ARM64 下 <code>hook_len</code> 为什么常见是 16？</strong></p>
+<ul>
+<li>常用远跳模板 <code>LDR + BR + .quad</code> 需要 16B，且 A64 固定 4B 指令，覆盖 16B 可保证按指令边界改写。</li>
+</ul>
+<p><strong>Q4：为什么会崩溃？最常见原因是什么？</strong></p>
+<ul>
+<li>覆盖半条指令、PC-relative 指令未重定位、页权限没放开&#x2F;没恢复、并发线程命中 patch 窗口，都会导致 <code>SIGILL/SIGSEGV</code>。</li>
+</ul>
+<p><strong>Q5：Inline Hook 一定比 PLT Hook 强吗？</strong></p>
+<ul>
+<li>覆盖范围通常更大，但风险和复杂度也更高；若目标调用可被 PLT 命中，PLT Hook 往往更稳、更易维护。</li>
+</ul>
+
+                
+              </div>
+            
+            <hr/>
+            <div>
+              <div class="post-metas my-3">
+  
+  
+    <div class="post-meta">
+      <i class="iconfont icon-tags"></i>
+      
+        <a href="/tags/Hook/" class="print-no-link">#Hook</a>
+      
+    </div>
+  
+</div>
+
+
+              
+  
+
+  <div class="license-box my-3">
+    <div class="license-title">
+      <div>Android中的Hook-InlineHook</div>
+      <div>http://example.com/2025/10/02/Android中的Hook-InlineHook/</div>
+    </div>
+    <div class="license-meta">
+      
+        <div class="license-meta-item">
+          <div>作者</div>
+          <div>Leo-Wxy</div>
+        </div>
+      
+      
+        <div class="license-meta-item license-meta-date">
+          <div>发布于</div>
+          <div>2025年10月2日</div>
+        </div>
+      
+      
+      
+        <div class="license-meta-item">
+          <div>许可协议</div>
+          <div>
+            
+              
+              
+                <a class="print-no-link" target="_blank" href="https://creativecommons.org/licenses/by/4.0/">
+                  <span class="hint--top hint--rounded" aria-label="BY - 署名">
+                    <i class="iconfont icon-cc-by"></i>
+                  </span>
+                </a>
+              
+            
+          </div>
+        </div>
+      
+    </div>
+    <div class="license-icon iconfont"></div>
+  </div>
+
+
+
+              
+                <div class="post-prevnext my-3">
+                  <article class="post-prev col-6">
+                    
+                    
+                      <a href="/2025/10/06/Android%E4%B8%ADso%E5%8A%A0%E8%BD%BD%E6%B5%81%E7%A8%8B/" title="Android中so加载流程">
+                        <i class="iconfont icon-arrowleft"></i>
+                        <span class="hidden-mobile">Android中so加载流程</span>
+                        <span class="visible-mobile">上一篇</span>
+                      </a>
+                    
+                  </article>
+                  <article class="post-next col-6">
+                    
+                    
+                      <a href="/2025/10/02/Android%E4%B8%AD%E7%9A%84Hook-PLTHook/" title="Android中的Hook-PLTHook">
+                        <span class="hidden-mobile">Android中的Hook-PLTHook</span>
+                        <span class="visible-mobile">下一篇</span>
+                        <i class="iconfont icon-arrowright"></i>
+                      </a>
+                    
+                  </article>
+                </div>
+              
+            </div>
+
+            
+          </article>
+        </div>
+      </div>
+    </div>
+
+    <div class="side-col d-none d-lg-block col-lg-2">
+      
+  <aside class="sidebar" style="margin-left: -1rem">
+    <div id="toc">
+  <p class="toc-header">
+    <i class="iconfont icon-list"></i>
+    <span>目录</span>
+  </p>
+  <div class="toc-body" id="toc-body"></div>
+</div>
+
+
+
+  </aside>
+
+
+    </div>
+  </div>
+</div>
+
+
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+
+
+
+
+    
+
+    
+      <a id="scroll-top-button" aria-label="TOP" href="#" role="button">
+        <i class="iconfont icon-arrowup" aria-hidden="true"></i>
+      </a>
+    
+
+    
+      <div class="modal fade" id="modalSearch" tabindex="-1" role="dialog" aria-labelledby="ModalLabel"
+     aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header text-center">
+        <h4 class="modal-title w-100 font-weight-bold">搜索</h4>
+        <button type="button" id="local-search-close" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body mx-3">
+        <div class="md-form mb-5">
+          <input type="text" id="local-search-input" class="form-control validate">
+          <label data-error="x" data-success="v" for="local-search-input">关键词</label>
+        </div>
+        <div class="list-group" id="local-search-result"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+    
+
+    
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+  
+    <div class="footer-content">
+       <a href="https://hexo.io" target="_blank" rel="nofollow noopener"><span>Hexo</span></a> <i class="iconfont icon-love"></i> <a href="https://github.com/fluid-dev/hexo-theme-fluid" target="_blank" rel="nofollow noopener"><span>Fluid</span></a> 
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+
+  <!-- Scripts -->
+  
+  <script  src="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.js" ></script>
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.css" />
+
+  <script>
+    NProgress.configure({"showSpinner":false,"trickleSpeed":100})
+    NProgress.start()
+    window.addEventListener('load', function() {
+      NProgress.done();
+    })
+  </script>
+
+
+<script  src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" ></script>
+<script  src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.min.js" ></script>
+<script  src="/js/events.js" ></script>
+<script  src="/js/plugins.js" ></script>
+
+
+
+
+
+  
+    <script  src="/js/img-lazyload.js" ></script>
+  
+
+
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/tocbot@4.12.0/dist/tocbot.min.js', function() {
+    var toc = jQuery('#toc');
+    if (toc.length === 0 || !window.tocbot) { return; }
+    var boardCtn = jQuery('#board-ctn');
+    var boardTop = boardCtn.offset().top;
+
+    window.tocbot.init(Object.assign({
+      tocSelector     : '#toc-body',
+      contentSelector : '.markdown-body',
+      linkClass       : 'tocbot-link',
+      activeLinkClass : 'tocbot-active-link',
+      listClass       : 'tocbot-list',
+      isCollapsedClass: 'tocbot-is-collapsed',
+      collapsibleClass: 'tocbot-is-collapsible',
+      scrollSmooth    : true,
+      includeTitleTags: true,
+      headingsOffset  : -boardTop,
+    }, CONFIG.toc));
+    if (toc.find('.toc-list-item').length > 0) {
+      toc.css('visibility', 'visible');
+    }
+
+    Fluid.events.registerRefreshCallback(function() {
+      if ('tocbot' in window) {
+        tocbot.refresh();
+        var toc = jQuery('#toc');
+        if (toc.length === 0 || !tocbot) {
+          return;
+        }
+        if (toc.find('.toc-list-item').length > 0) {
+          toc.css('visibility', 'visible');
+        }
+      }
+    });
+  });
+</script>
+
+
+  <script src=https://cdn.jsdelivr.net/npm/clipboard@2.0.6/dist/clipboard.min.js></script>
+
+  <script>Fluid.plugins.codeWidget();</script>
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/anchor-js@4.3.0/anchor.min.js', function() {
+    window.anchors.options = {
+      placement: CONFIG.anchorjs.placement,
+      visible  : CONFIG.anchorjs.visible
+    };
+    if (CONFIG.anchorjs.icon) {
+      window.anchors.options.icon = CONFIG.anchorjs.icon;
+    }
+    var el = (CONFIG.anchorjs.element || 'h1,h2,h3,h4,h5,h6').split(',');
+    var res = [];
+    for (var item of el) {
+      res.push('.markdown-body > ' + item.trim());
+    }
+    if (CONFIG.anchorjs.placement === 'left') {
+      window.anchors.options.class = 'anchorjs-link-left';
+    }
+    window.anchors.add(res.join(', '));
+
+    Fluid.events.registerRefreshCallback(function() {
+      if ('anchors' in window) {
+        anchors.removeAll();
+        var el = (CONFIG.anchorjs.element || 'h1,h2,h3,h4,h5,h6').split(',');
+        var res = [];
+        for (var item of el) {
+          res.push('.markdown-body > ' + item.trim());
+        }
+        if (CONFIG.anchorjs.placement === 'left') {
+          anchors.options.class = 'anchorjs-link-left';
+        }
+        anchors.add(res.join(', '));
+      }
+    });
+  });
+</script>
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.js', function() {
+    Fluid.plugins.fancyBox();
+  });
+</script>
+
+
+  <script>Fluid.plugins.imageCaption();</script>
+
+  <script  src="/js/local-search.js" ></script>
+
+
+
+
+
+<!-- 主题的启动项，将它保持在最底部 -->
+<!-- the boot of the theme, keep it at the bottom -->
+<script  src="/js/boot.js" ></script>
+
+
+  
+
+  <noscript>
+    <div class="noscript-warning">博客在允许 JavaScript 运行的环境下浏览效果更佳</div>
+  </noscript>
+</body>
+</html>

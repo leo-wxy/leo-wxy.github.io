@@ -1,0 +1,931 @@
+
+
+<!DOCTYPE html>
+<html lang="zh-CN" data-default-color-scheme=auto>
+
+
+
+<head>
+  <meta charset="UTF-8">
+
+  <link rel="apple-touch-icon" sizes="76x76" href="/img/favicon.png">
+  <link rel="icon" href="/img/favicon.png">
+  
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, shrink-to-fit=no">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  
+  <meta name="theme-color" content="#11527b">
+  <meta name="author" content="Leo-Wxy">
+  <meta name="keywords" content="">
+  
+    <meta name="description" content="强引用置为null时，不会立即回收对象，帮助回收器加快回收。但是会帮助GC 等到下次回收周期时即会回收  死锁的四个必要条件：互斥，占有且等待，不可抢占，循环等待  CAS(原子操作)是乐观锁用到的主要机制，乐观锁是不用加锁去执行操作，如果产生冲突则失败重试，直到成功为止，也叫做“自旋”。与乐观锁相对应的是悲观锁，synchronized就是悲观锁，也叫“独占锁”需要加锁进行操作，并且加锁代码块">
+<meta property="og:type" content="article">
+<meta property="og:title" content="日常细节记录">
+<meta property="og:url" content="http://example.com/2018/04/03/%E6%97%A5%E5%B8%B8%E7%BB%86%E8%8A%82%E8%AE%B0%E5%BD%95/index.html">
+<meta property="og:site_name" content="Wxy的个人博客">
+<meta property="og:description" content="强引用置为null时，不会立即回收对象，帮助回收器加快回收。但是会帮助GC 等到下次回收周期时即会回收  死锁的四个必要条件：互斥，占有且等待，不可抢占，循环等待  CAS(原子操作)是乐观锁用到的主要机制，乐观锁是不用加锁去执行操作，如果产生冲突则失败重试，直到成功为止，也叫做“自旋”。与乐观锁相对应的是悲观锁，synchronized就是悲观锁，也叫“独占锁”需要加锁进行操作，并且加锁代码块">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2018-04-03T05:04:15.000Z">
+<meta property="article:modified_time" content="2021-12-29T09:45:46.310Z">
+<meta property="article:author" content="Leo-Wxy">
+<meta property="article:tag" content="Android">
+<meta property="article:tag" content="Java">
+<meta name="twitter:card" content="summary_large_image">
+  
+  
+  
+  <title>日常细节记录 - Wxy的个人博客</title>
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css" />
+
+
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@4.0.0/github-markdown.min.css" />
+
+  <link  rel="stylesheet" href="/lib/hint/hint.min.css" />
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.css" />
+
+
+
+<!-- 主题依赖的图标库，不要自行修改 -->
+<!-- Do not modify the link that theme dependent icons -->
+
+<link rel="stylesheet" href="//at.alicdn.com/t/c/font_1749284_5i9bdhy70f8.css">
+
+
+
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1736178_kmeydafke9r.css">
+
+
+<link  rel="stylesheet" href="/css/main.css" />
+
+
+  <link id="highlight-css" rel="stylesheet" href="/css/highlight.css" />
+  
+    <link id="highlight-css-dark" rel="stylesheet" href="/css/highlight-dark.css" />
+  
+
+
+
+
+  <script id="fluid-configs">
+    var Fluid = window.Fluid || {};
+    Fluid.ctx = Object.assign({}, Fluid.ctx)
+    var CONFIG = {"hostname":"example.com","root":"/","version":"1.9.8","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false,"scope":[]},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"code_language":{"enable":true,"default":"TEXT"},"copy_btn":true,"image_caption":{"enable":true},"image_zoom":{"enable":true,"img_url_replace":["",""]},"toc":{"enable":true,"placement":"right","headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"loading_img":"/img/loading.gif","onlypost":false,"offset_factor":2},"web_analytics":{"enable":false,"follow_dnt":true,"baidu":null,"google":null,"tencent":{"sid":null,"cid":null},"leancloud":{"app_id":null,"app_key":null,"server_url":null,"path":"window.location.pathname","ignore_local":false},"umami":{"src":null,"website_id":null,"domains":null,"start_time":"2024-01-01T00:00:00.000Z","token":null,"api_server":null},"gtag":null,"woyaola":null,"cnzz":null},"search_path":"/local-search.xml","include_content_in_search":false};
+
+    if (CONFIG.web_analytics.follow_dnt) {
+      var dntVal = navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack;
+      Fluid.ctx.dnt = dntVal && (dntVal.startsWith('1') || dntVal.startsWith('yes') || dntVal.startsWith('on'));
+    }
+  </script>
+  <script  src="/js/utils.js" ></script>
+  <script  src="/js/color-schema.js" ></script>
+  
+
+
+  
+<meta name="generator" content="Hexo 8.1.1"></head>
+
+
+<body>
+  
+
+  <header>
+    
+
+<div class="header-inner" style="height: 30vh;">
+  <nav id="navbar" class="navbar fixed-top  navbar-expand-lg navbar-dark scrolling-navbar">
+  <div class="container">
+    <a class="navbar-brand" href="/">
+      <strong>Wxy&#39;s Blog</strong>
+    </a>
+
+    <button id="navbar-toggler-btn" class="navbar-toggler" type="button" data-toggle="collapse"
+            data-target="#navbarSupportedContent"
+            aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+      <div class="animated-icon"><span></span><span></span><span></span></div>
+    </button>
+
+    <!-- Collapsible content -->
+    <div class="collapse navbar-collapse" id="navbarSupportedContent">
+      <ul class="navbar-nav ml-auto text-center">
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/" target="_self">
+                <i class="iconfont icon-home-fill"></i>
+                <span>首页</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/archives/" target="_self">
+                <i class="iconfont icon-archive-fill"></i>
+                <span>归档</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/tags/" target="_self">
+                <i class="iconfont icon-tags-fill"></i>
+                <span>标签</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/about/" target="_self">
+                <i class="iconfont icon-user-fill"></i>
+                <span>关于</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/links/" target="_self">
+                <i class="iconfont icon-link-fill"></i>
+                <span>友链</span>
+              </a>
+            </li>
+          
+        
+        
+          <li class="nav-item" id="search-btn">
+            <a class="nav-link" target="_self" href="javascript:;" data-toggle="modal" data-target="#modalSearch" aria-label="Search">
+              <i class="iconfont icon-search"></i>
+            </a>
+          </li>
+          
+        
+        
+          <li class="nav-item" id="color-toggle-btn">
+            <a class="nav-link" target="_self" href="javascript:;" aria-label="Color Toggle">
+              <i class="iconfont icon-dark" id="color-toggle-icon"></i>
+            </a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+  
+
+<div id="banner" class="banner" parallax=true
+     style="background: url('/img/default.png') no-repeat center center; background-size: cover;">
+  <div class="full-bg-img">
+    <div class="mask flex-center" style="background-color: rgba(0, 0, 0, 0.3)">
+      <div class="banner-text text-center fade-in-up">
+        <div class="h2">
+          
+            <span id="subtitle">日常细节记录</span>
+          
+        </div>
+
+        
+          
+  <div class="mt-3">
+    
+    
+      <span class="post-meta">
+        <i class="iconfont icon-date-fill" aria-hidden="true"></i>
+        <time datetime="2018-04-03 13:04" pubdate>
+          2018年4月3日 下午
+        </time>
+      </span>
+    
+  </div>
+
+  <div class="mt-1">
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-chart"></i>
+        
+          <!-- compatible with older versions-->
+          5.3k 字
+        
+      </span>
+    
+
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-clock-fill"></i>
+        
+        
+        
+          <!-- compatible with older versions-->
+          17 分钟
+        
+      </span>
+    
+
+    
+    
+  </div>
+
+
+        
+      </div>
+
+      
+    </div>
+  </div>
+</div>
+
+</div>
+
+  </header>
+
+  <main>
+    
+      
+
+<div class="container-fluid nopadding-x">
+  <div class="row nomargin-x">
+    <div class="side-col d-none d-lg-block col-lg-2">
+      
+
+    </div>
+
+    <div class="col-lg-8 nopadding-x-md">
+      <div class="container nopadding-x-md" id="board-ctn">
+        <div id="board">
+          <article class="post-content mx-auto">
+            <h1 id="seo-header">日常细节记录</h1>
+            
+            
+              <div class="markdown-body">
+                
+                <ol>
+<li><p>强引用置为null时，不会立即回收对象，帮助回收器加快回收。但是会帮助GC 等到下次回收周期时即会回收</p>
+</li>
+<li><p>死锁的四个必要条件：互斥，占有且等待，不可抢占，循环等待</p>
+</li>
+<li><p>CAS(原子操作)是乐观锁用到的主要机制，乐观锁是不用加锁去执行操作，如果产生冲突则失败重试，直到成功为止，也叫做“自旋”。与乐观锁相对应的是悲观锁，synchronized就是悲观锁，也叫“独占锁”需要加锁进行操作，并且加锁代码块中的只能有一个线程进行操作。</p>
+</li>
+<li><p>点击App图标，系统最开始执行的是ActivityThread的main()方法</p>
+</li>
+<li><p>应用的启动方式：</p>
+</li>
+<li><p>冷启动：启动应用时，后台没有该应用的进程。系统创建一个新的进程来进行重新分配。</p>
+</li>
+<li><p>热启动：启动应用时，后台已有该应用的进程。</p>
+</li>
+<li><p>Application的生命周期：<code>onCreate()//应用开始时执行-&gt;onLowMemory()//内存低时执行-&gt;onTrimMemory()//关闭应用时执行  onTerminate()//在真机上不会调用</code></p>
+</li>
+<li><p>进程相关： <code>优先级最低的进程首先被杀死、进程的等级会因为其他进程的依赖而提高一个进程服务于另一个进程，则它的优先级不会比它服务的进程优先级低</code> 按重要性分类：</p>
+</li>
+<li><p>前台进程：进程持有一个正在与用户交互的Activity或者和交互Activity绑定的Service，前台运行的Service（执行<code>startForeground()</code>）,执行<code>onReceive()</code>的BroadcastReceiver</p>
+</li>
+<li><p>可见进程：进程持有一个被用户可见但没有显示在最前端的Activity(调用到了<code>onPause()</code>)或者和可见Activity绑定的Service</p>
+</li>
+<li><p>服务进程：进程持有一个<code>startService()</code>启动的Service进程，例如播放音乐，下载文件等Service</p>
+</li>
+<li><p>后台进程：进程持有一个用户不可见的Activity(调用到<code>onStop()</code>没有到<code>onDestroy()</code>)，进程被存放在一个LRU列表中，即很长时间没用的Activity会被优先杀死</p>
+</li>
+<li><p>空进程：进程不包含任何活跃的应用组件，唯一的作用是<code>为了缓存需要，缩短下次启动的时间</code></p>
+</li>
+<li><p>统计应用启动时间：<code>adb shell am start -W [packageName]/[packageName.MainActivity]</code></p>
+</li>
+<li><p><code>volatile</code>作用是<code>可见性</code>(当一个线程修改了某一个全局变量的值，其他线程能否知道这个修改)，<code>有序性</code>（禁止指令重排优化,防止代码执行指令被重新排序）。<code>volatile</code>并不能保证线程安全即保证不了线程间操作的原子性。</p>
+</li>
+<li><p>SharedPreference中<code>apply</code>和<code>commit</code>方法的区别：<code>commit</code>同步保存更改，<code>apply</code>异步保存到磁盘，原子提交，性能较高，但不保存结果。SharedPreference不支持多线程操作，<code>MODE_MULTI_PROCESS</code>这个标记位并没有实际作用。可以利用<code>ContentProvider</code>去实现多进程，_方案后续会有介绍_。</p>
+</li>
+<li><p>MD5不是加密算法，是一种散列算法。加密算法一般是对称加密算法</p>
+</li>
+<li><p>使用ADB启动Activity：<code>adb shell am start -n 包名/需启动Activity路径</code></p>
+</li>
+<li><p>Fragment中<code>replace</code>与<code>add</code>区别：</p>
+<ul>
+<li><code>replcae</code>：把容器内所有内容进行替换，都需要重新走一遍fragment的生命周期</li>
+<li><code>add</code>：添加不会清空容器内的内容。</li>
+</ul>
+</li>
+<li><p>在三星手机上，进行原生分享文件时需要设置mimeType</p>
+</li>
+<li><p><code>invalidate()</code>、<code>postInvalidate()</code>和<code>requestLayout()</code>的区别：</p>
+<ul>
+<li><code>invalidate()</code>：当子View调用invalidate方法时，会给View添加一个标记位，同时不断向父容器请求刷新，父容器通过计算得出自身需要重绘的区域，直到传递至ViewRootImpl中，最终触发performTraversals方法，进行View的重绘（即调用onDraw方法）。<strong>该方法只能在UI线程中调用</strong></li>
+<li><code>postInvalidate()</code>：与invalidate作用一致，都是使View进行重绘，<strong>该方法是在非UI线程中调用的</strong>。内部主要实现是提供一个Handler实现，然后直接调用了invalidate方法，继续执行重绘流程。</li>
+<li><code>requestLayout()</code>：调用了这个方法会重新执行View的绘制流程，即重新执行测量(<code>onMeasure</code>)，布局(<code>onLayout</code>)，绘制(<code>onDraw</code>)方法。<strong>利用责任链模式-不断向上传递该事件，直到找到能处理该事件的上级</strong>。</li>
+</ul>
+</li>
+<li><p>Bitmap所占用的内存 &#x3D; 图片长度 x 图片宽度 x （屏幕分辨率÷图片资源目录分辨率）²×一个像素点占用的字节数</p>
+</li>
+<li><p>HashMap扩容机制 在1.8之前只要达到负载就进行扩容，1.8之后是防止Hash冲突才进行扩容，如果不冲突不会触发扩容。</p>
+</li>
+<li><p><code>px转换为dp</code>：<strong>px&#x2F;(DPI&#x2F;160) &#x3D; dp</strong>，例如<code>1920 * 1080 , 480dpi</code>，最终转化就会得到360dp</p>
+</li>
+<li><p>内部类可以访问外部类 <code>private</code>变量。在内部类需要引用外部类的<code>private</code>变量时，会默认生成一个<code>access$XXX()</code>，内部会返回当前对象</p>
+</li>
+<li><p>Java与Dart一样都是采用了<strong>值传递</strong>的<code>求值策略</code>：</p>
+<table>
+<thead>
+<tr>
+<th>求值策略</th>
+<th>求值时间</th>
+<th>传值方式</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>值传递</strong></td>
+<td>调用前</td>
+<td>值的结果(值的副本)</td>
+</tr>
+<tr>
+<td><strong>引用传递</strong></td>
+<td>调用前</td>
+<td>原始值</td>
+</tr>
+<tr>
+<td><strong>名传递</strong></td>
+<td>调用后</td>
+<td>与值无关的一个名</td>
+</tr>
+</tbody></table>
+<p>其中最常见的是<strong>值传递</strong>(主要应用于Java、Dart、OC等)，然后是<strong>引用传递</strong>(C、C++、C#)。</p>
+<p>这两者主要的区别如下：</p>
+<blockquote>
+<p><code>值传递</code>：调用函数时将参数<strong>复制</strong>一份传递到函数中，函数中对参数进行修改，也不会影响到实际参数<br><code>引用传递</code>：调用函数时传递的是<strong>实际参数的地址</strong>，函数中对参数进行修改时，也会影响到实际参数的值</p>
+</blockquote>
+<p><code>值传递</code>无论参数类型是<code>值类型或引用类型</code>，都会调用栈上创建的一个副本。</p>
+<ul>
+<li>对于<code>值类型</code>，栈上的副本是<strong>整个原始值的复制</strong></li>
+<li>对于<code>引用类型</code>，由于<code>引用类型</code>的实例在堆上，栈上的副本是<strong>该变量在堆上的引用地址</strong></li>
+</ul>
+</li>
+<li><p><code>UncaughtExceptionHandler</code>在<code>uncaughtException()</code>中接收应用所发生的异常，如果在该方法内再次发生异常<strong>就会导致进入无限崩溃状态</strong>。</p>
+</li>
+<li><p><code>build.gradle</code>中<code>compileSdkVersion</code>,<code>minSdkVersion</code>,**<code>targetSdkVersion</code>**这三个参数的说明：</p>
+</li>
+</ol>
+<p>  <code>compileSdkVersion</code>：编译应用使用的SDK版本，单纯在编译时使用。*使用最新的编译SDK的好处就在于可以及时了解到API的状态例如弃用并可以提前使用新的API。*此处需要注意一点：<strong>如果使用最新的<code>support library</code>，compileSdkVersion的版本至少要大于support的版本以保证编译通过。</strong></p>
+<p>  <code>minSdkVersion</code>：<strong>应用可以运行的最低版本</strong>。*主要可以用于在应用使用高于该版本的api时进行提示，避免运行过程出现崩溃。*当依赖多个Module都制定了<code>minSdkVersion</code>时，自身推荐使用依赖库中最大的<code>minSdkVersion</code>避免出现问题。如果使用了比依赖库小的版本号，可以使用<code>tools:overrideLibrary</code>标志避免提示。</p>
+<p>  <code>targetSdkVersion</code>：**应用向前兼容的主要依据。**为了保证老Apk在新版本系统上的兼容性，只要老Apk的<code>targetSdkVersion</code>版本不发生变化，在新系统依然会保持老系统上的行为。<br>Android系统通过获取<code>apk配置的targetSdkVersion</code>在调用系统对应Api时进行版本判断去执行不同的逻辑。</p>
+<p>这三者的大小顺序应该为** minSdkVersion &lt;&#x3D; targetSdkVersion &lt;&#x3D; compileSdkVersion**这个是比较合理的顺序。</p>
+<ol start="23">
+<li><p><code>==</code>与<code>equals()</code>的区别</p>
+<ul>
+<li><code>==</code>：所以基本类型比较的是<strong>值是否相等</strong>，所以引用类型比较的是<strong>两者在内存中存放的地址(堆内存地址)</strong>。</li>
+<li><code>equals()</code>：默认比较的是<strong>对象的内存地址值</strong>，如果重写了<code>equals()</code>，则按照重写规则比较(例如String 重写了<code>equals()</code>这样就变成值比较)。<ul>
+<li><code>hashcode()</code>：在比较<code>equals()</code>之前会先比较<code>hashcode</code>，如果不同则表示两个值不相等，若相同再进行<code>equals()</code>比较</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p>自动装箱&#x2F;拆箱相关知识</p>
+</li>
+</ol>
+<p>   以下拿<code>int</code>，<code>Integer</code>举例：<code>int</code>就是原始类型，<code>Integer</code>就是包装类型。</p>
+<p>   <code>自动装箱</code>：<strong>将原始类型转换为包装类型</strong> ── <code>Interger x = 1000</code>&#x3D;&gt;<code>Integer x = Integer.valueOf(1000);</code>转换成如下代码</p>
+<p>   <code>自动拆箱</code>：<strong>将包装类型转换为原始类型</strong>──<code>Integer x = 1000;System.out.println(x)</code>&#x3D;&gt;<code>System.out.println(x.intValue())</code>转换成如下代码</p>
+<p>   拓展知识：</p>
+<p>   <code>Integer</code>的缓存策略：<code>Integer</code>中存在一个缓存池(<code>IntegetCache</code>)将使用频繁的值进行缓存避免创建过多对象提高性能。默认缓存池范围为<code>-128~127</code>，如果在该范围内返回的就是 <code>IntegerCache</code>中的对象，否则返回<code>new Integer(XX)</code>。</p>
+   <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-type">Integer</span> <span class="hljs-variable">a</span> <span class="hljs-operator">=</span> <span class="hljs-number">127</span>;<br><span class="hljs-type">Integer</span> <span class="hljs-variable">a1</span> <span class="hljs-operator">=</span> <span class="hljs-number">127</span>;<br>  <br><span class="hljs-type">Integer</span> <span class="hljs-variable">b</span> <span class="hljs-operator">=</span> <span class="hljs-number">128</span>;<br><span class="hljs-type">Integer</span> <span class="hljs-variable">b1</span> <span class="hljs-operator">=</span> <span class="hljs-number">128</span>;<br><br>System.out.println(a==a1); <span class="hljs-comment">//true 返回的实际上是缓存池的对象</span><br>System.out.println(a.equals(a1)); <span class="hljs-comment">//true</span><br>System.out.println(b==b1); <span class="hljs-comment">//false 重新new Integer</span><br>System.out.println(b.equals(b1)); <span class="hljs-comment">//true</span><br></code></pre></td></tr></table></figure>
+
+<ol start="25">
+<li>Linux中的<code>epoll、select、inotify</code>机制简析</li>
+</ol>
+<p>   都是<code>IO多路复用机制</code>，一个进程可以监视多个描述符，一旦某个描述符就位，就会通知系统回写。</p>
+<blockquote>
+<p><code>IO多路复用</code>：内核一旦发现进程指定的一个或者多个IO条件准备读取，就会通知该进程。</p>
+<p>优势在于系统开销小，系统不需要创建进程&#x2F;线程，也无需维护。</p>
+</blockquote>
+<ul>
+<li><p><code>inotify</code>：允许监控程序打开一个独立文件描述符，并针对事件集监控一个或多个文件，例如：打开、关闭、重命名、创建、删除等功能。（用于&#96;&#96;FileObserver&#96;监听对应文件的打开、修改、创建等事件）</p>
+<ul>
+<li><code>inotify_init()</code>创建一个监听文件变动的inotify实例,并返回指向该实例的文件描述符（fd）</li>
+<li><code>inotify_add_watch</code>增加对文件或目录的监控，并指定监控事件</li>
+<li><code>inotify_rm_watch</code>移除对文件或目录的监控</li>
+</ul>
+</li>
+<li><p><code>select</code>：允许进程指示内核等待多个事件的任何一个发送，并只有在一个或多个事件发生或经历一段指定的时间后才唤醒。</p>
+<p><code>select</code>需要遍历所有句柄才可以获取到哪个句柄有事件通知，并且最多支持1024个句柄，超过则可能导致溢出异常。</p>
+</li>
+<li><p><code>epoll</code>：epoll使用一个文件描述符管理多个文件描述符，将用户关系的文件描述符的事件存放到一个内核的事件表中。</p>
+<ul>
+<li><p><code>epoll_create(int size)</code>：告诉内核需要监听的文件描述符个数</p>
+</li>
+<li><p><code>epoll_ctl(int epfd,int op,int fd,struct epoll_event *event)</code>：对指定文件描述符进行<code>op</code>操作</p>
+<ul>
+<li><p>epfd：epoll_create 返回的文件描述符</p>
+</li>
+<li><p>op：1)EPOLL_CTL_ADD 增加监听事件</p>
+<p>​      2)EPOLL_CTL_DEL 删除监听事件</p>
+<p>​      3)EPOLL_CTL_MOD 修改监听事件</p>
+</li>
+<li><p>fd：需要监听的文件描述符</p>
+</li>
+<li><p>event：告诉内核需要监听的事件</p>
+</li>
+</ul>
+</li>
+<li><p><code>epoll_wait()</code>：等待epfd的监听回调</p>
+<p><code>epoll</code>对于句柄事件的选择不是遍历的，当事件响应时会通知到epoll。</p>
+<p><code>epoll</code>有两种工作模式：</p>
+<ul>
+<li>LT模式-水平触发(默认模式)：<code>epoll_wait</code>检测到描述符事件时会通知到应用程序，应用程序可以不立即处理该事件，等待下次<code>epoll_wait</code>时会继续发出通知。<strong>效率较低但是不用担心数据丢失。</strong></li>
+<li>ET模式-边缘触发：<code>epoll_wait</code>检测到描述符事件时会通知到应用程序，应用程序必须立即处理该事件，等待下次<code>epoll_wait</code>时不会继续发出通知。<strong>效率最高但是需要对每个请求进行处理，避免丢失事件造成影响。必须使用非阻塞套接口，避免堵塞造成任务堵死。</strong></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p><a target="_blank" rel="noopener" href="https://segmentfault.com/a/1190000003063859">Linux IO模式及 select、poll、epoll详解</a></p>
+<ol start="26">
+<li><p>MarkDown在嵌套<code>&lt;html&gt;&lt;/html&gt;</code>时会产生多余的<code>&lt;br&gt;</code>，需要使用 <code>  包html table</code></p>
+</li>
+<li><p><code>i++</code>与<code>++i</code>的区别？</p>
+</li>
+</ol>
+<p>   <strong>1、 i++ 返回原来的值，++i 返回加1后的值。</strong><br>   <strong>2、 i++ 不能作为左值，而++i 可以。</strong></p>
+<p>   <strong>首先解释下什么是左值</strong>（以下两段引用自中文维基百科『右值引用』词条）。</p>
+<blockquote>
+<p>左值是对应内存中有确定存储地址的对象的表达式的值，而右值是所有不是左值的表达式的值。</p>
+</blockquote>
+<p>   一般来说，<strong>左值是可以放到赋值符号左边的变量</strong>。但</p>
+<blockquote>
+<p>能否被赋值不是区分左值与右值的依据。比如，C++的const左值是不可赋值的；而作为临时对象的右值可能允许被赋值。<strong>左值与右值的根本区别在于是否允许取地址&amp;运算符获得对应的内存地址。</strong></p>
+</blockquote>
+<p>   <code>i++</code>的字节码表示为：</p>
+   <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-number">37</span>: lload         <span class="hljs-number">9</span><br>  <span class="hljs-number">39</span>: dup2 <span class="hljs-comment">//复制栈顶数据并压入栈顶，此时压入为i</span><br>  <span class="hljs-number">40</span>: lconst_1<br>  <span class="hljs-number">41</span>: ladd<br>  <span class="hljs-number">42</span>: lstore        <span class="hljs-number">9</span><br></code></pre></td></tr></table></figure>
+
+<p>   <code>++i</code>的字节码表示为：</p>
+   <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-number">37</span>: lload         <span class="hljs-number">9</span><br><span class="hljs-number">39</span>: lconst_1<br><span class="hljs-number">40</span>: ladd<br><span class="hljs-number">41</span>: dup2  <span class="hljs-comment">//复制栈顶数据并压入栈顶，此时压入为i+1</span><br><span class="hljs-number">42</span>: lstore        <span class="hljs-number">9</span><br></code></pre></td></tr></table></figure>
+
+<ol start="28">
+<li><p><code>Boolean</code>在数组中占到了一个字节，在单独变量中等价于<code>int</code>占用了4个字节。</p>
+</li>
+<li><p><code>快速失败(fast-fail)</code>与<code>安全失败(safe-fail)</code>的概念</p>
+<p><code> 快速失败</code>：迭代器遍历集合时，在过程中对集合的内容进行了修改（增加、删除、修改），则会抛出<code>ConcurrentModificationException</code></p>
+<p>因为遍历过程中会使用一个<code>modCount</code>变量，遍历期间如果内容发生了变化，<code>modCount</code>会发生改变，迭代器在执行<code>hasNext()/next()</code>时，都会检测该值是否发生变化，发生变化则终止遍历并抛出异常。</p>
+<p><code>java.util</code>下的类都是<code>快速失败</code>的！</p>
+<p><code>安全失败</code>：迭代器遍历的不是原有集合，而是原有集合的复制集合</p>
+<p>因为遍历的是复制集合，所以遍历期间原有集合发生变化不会影响到遍历过程，就不会触发异常抛出。<strong>由于遍历的是复制集合，导致遍历时无法获取最新的修改。</strong></p>
+<p><code>java.util.concurrent</code>下的类都是<code>安全失败</code>的！</p>
+</li>
+<li><p><code>Class.forName()</code>与<code>ClassLoader.class</code>的区别</p>
+<p><code>Class.forName()</code></p>
+<figure class="highlight gradle"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><code class="hljs gradle"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">Class</span>&lt;?&gt; forName(String name, <span class="hljs-comment">/*要加载的Class名字*/</span><br>										 <span class="hljs-keyword">boolean</span> initialize,<span class="hljs-comment">/*是否需要初始化-调用静态代码快及静态变量初始化*/</span><br>                               ClassLoader loader<span class="hljs-comment">/*指定ClassLoader进行加载*/</span>)<br>                                <br></code></pre></td></tr></table></figure>
+
+<p>执行时默认会调用静态代码块<code>static&#123;...&#125;</code>，以及分配静态变量存储空间</p>
+<p><code>ClassLoader.loadClass()</code></p>
+<figure class="highlight delphi"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs delphi"><span class="hljs-keyword">protected</span> <span class="hljs-keyword">Class</span>&lt;?&gt; loadClass(<span class="hljs-keyword">String</span> <span class="hljs-keyword">name</span>, boolean resolve)<br></code></pre></td></tr></table></figure>
+
+<p>执行时不会对类进行初始化，只是将类加载到了虚拟机中。</p>
+</li>
+<li><p>编译期Debug</p>
+<p>配置编译命令终端输入  <code>./gradlew :app:clean :app:assembleDebug -Dorg.gradle.daemon=false -Dorg.gradle.debug=true</code>，此时进入等待状态</p>
+<p>配置<code>Run/Debug Configurations</code>，新增一个<code>Remote</code>配置，使用默认配置即可</p>
+<p>切换到<code>Remote</code>配置，点击Debug按钮，然后debug attach成功</p>
+<p>此时运行<code>Make Project</code>等待断点执行到</p>
+</li>
+<li><p>JNI抛出Java异常</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">throwException</span><span class="hljs-params">(JNIEnv *env, <span class="hljs-type">char</span> *msg)</span> </span>&#123;<br>    jclass exClass;<br>    <span class="hljs-type">char</span> *className = <span class="hljs-string">&quot;java/lang/NullPointerException&quot;</span>;<br>    exClass = env-&gt;<span class="hljs-built_in">FindClass</span>(className);<br>  	<span class="hljs-comment">//调用ThrowNew 抛出异常</span><br>    env-&gt;<span class="hljs-built_in">ThrowNew</span>(exClass, msg);<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p><code>ThrowNew</code>的实现方法在<code>jni_interal.cc</code></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br></pre></td><td class="code"><pre><code class="hljs c"><span class="hljs-type">int</span> <span class="hljs-title function_">ThrowNewException</span><span class="hljs-params">(JNIEnv* env, jclass exception_class, <span class="hljs-type">const</span> <span class="hljs-type">char</span>* msg, jobject cause)</span><br>    <span class="hljs-title function_">REQUIRES</span><span class="hljs-params">(!Locks::mutator_lock_)</span> &#123;<br>  <span class="hljs-comment">// Turn the const char* into a java.lang.String.</span><br>  ScopedLocalRef&lt;jstring&gt; <span class="hljs-title function_">s</span><span class="hljs-params">(env, env-&gt;NewStringUTF(msg))</span>;<br>  <span class="hljs-keyword">if</span> (msg != nullptr &amp;&amp; s.get() == nullptr) &#123;<br>    <span class="hljs-keyword">return</span> JNI_ERR;<br>  &#125;<br><br>  <span class="hljs-comment">// Choose an appropriate constructor and set up the arguments.</span><br>  jvalue args[<span class="hljs-number">2</span>];<br>  <span class="hljs-type">const</span> <span class="hljs-type">char</span>* signature;<br>  <span class="hljs-keyword">if</span> (msg == nullptr &amp;&amp; cause == nullptr) &#123;<br>    signature = <span class="hljs-string">&quot;()V&quot;</span>;<br>  &#125; <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (msg != nullptr &amp;&amp; cause == nullptr) &#123;<br>    signature = <span class="hljs-string">&quot;(Ljava/lang/String;)V&quot;</span>;<br>    args[<span class="hljs-number">0</span>].l = s.get();<br>  &#125; <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (msg == nullptr &amp;&amp; cause != nullptr) &#123;<br>    signature = <span class="hljs-string">&quot;(Ljava/lang/Throwable;)V&quot;</span>;<br>    args[<span class="hljs-number">0</span>].l = cause;<br>  &#125; <span class="hljs-keyword">else</span> &#123;<br>    signature = <span class="hljs-string">&quot;(Ljava/lang/String;Ljava/lang/Throwable;)V&quot;</span>;<br>    args[<span class="hljs-number">0</span>].l = s.get();<br>    args[<span class="hljs-number">1</span>].l = cause;<br>  &#125;<br>  jmethodID mid = env-&gt;GetMethodID(exception_class, <span class="hljs-string">&quot;&lt;init&gt;&quot;</span>, signature);<br>  <span class="hljs-keyword">if</span> (mid == nullptr) &#123;<br>    ScopedObjectAccess <span class="hljs-title function_">soa</span><span class="hljs-params">(env)</span>;<br>    LOG(ERROR) &lt;&lt; <span class="hljs-string">&quot;No &lt;init&gt;&quot;</span> &lt;&lt; signature &lt;&lt; <span class="hljs-string">&quot; in &quot;</span><br>        &lt;&lt; mirror::Class::PrettyClass(soa.Decode&lt;mirror::Class&gt;(exception_class));<br>    <span class="hljs-keyword">return</span> JNI_ERR;<br>  &#125;<br><br>  ScopedLocalRef&lt;jthrowable&gt; <span class="hljs-title function_">exception</span><span class="hljs-params">(</span><br><span class="hljs-params">      env, reinterpret_cast&lt;jthrowable&gt;(env-&gt;NewObjectA(exception_class, mid, args)))</span>;<br>  <span class="hljs-keyword">if</span> (exception.get() == nullptr) &#123;<br>    <span class="hljs-keyword">return</span> JNI_ERR;<br>  &#125;<br>  ScopedObjectAccess <span class="hljs-title function_">soa</span><span class="hljs-params">(env)</span>;<br>  soa.Self()-&gt;SetException(soa.Decode&lt;mirror::Throwable&gt;(exception.get()));<br>  <span class="hljs-keyword">return</span> JNI_OK;<br>&#125;<br><br><span class="hljs-comment">//thread.cc</span><br><span class="hljs-type">void</span> <span class="hljs-title function_">Thread::SetException</span><span class="hljs-params">(ObjPtr&lt;mirror::Throwable&gt; new_exception)</span> &#123;<br>  CHECK(new_exception != nullptr);<br>  <span class="hljs-comment">// <span class="hljs-doctag">TODO:</span> DCHECK(!IsExceptionPending());</span><br>  <span class="hljs-comment">//此处设置了 jni插入的异常信息 ,会触发ART的checkPoint的检测，检测到该信息时抛出对应异常</span><br>  tlsPtr_.exception = new_exception.Ptr();<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>插入位置在<strong>方法调用</strong>或<strong>循环</strong>处。</p>
+</li>
+<li><p>使用Gradle命令更新 dependenices</p>
+<figure class="highlight groovy"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs groovy">./gradlew --configure-on-demand<br></code></pre></td></tr></table></figure>
+
+
+</li>
+<li><p>Markdown常用操作</p>
+<figure class="highlight markdown"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><code class="hljs markdown">[<span class="hljs-string">显示内容</span>](<span class="hljs-link">#标题</span>) 锚点跳转<br><br>&#123;%post<span class="hljs-emphasis">_link 文章标题%&#125;  文章跳转</span><br></code></pre></td></tr></table></figure>
+
+
+</li>
+<li><p>设置hexo的博客置顶规则，按照tops进行配置</p>
+<figure class="highlight js"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><code class="hljs js"><span class="hljs-keyword">var</span> posts = locals.<span class="hljs-property">posts</span>.<span class="hljs-property">data</span>.<span class="hljs-title function_">sort</span>(<span class="hljs-keyword">function</span> (<span class="hljs-params">a, b</span>) &#123;<br><span class="hljs-comment">//两个post都定义了top</span><br><span class="hljs-keyword">if</span> (a.<span class="hljs-property">top</span> &amp;&amp; b.<span class="hljs-property">top</span>) &#123;<br><span class="hljs-comment">//按日期将降序</span><br><span class="hljs-keyword">if</span> (a.<span class="hljs-property">top</span> == b.<span class="hljs-property">top</span>) <span class="hljs-keyword">return</span> b.<span class="hljs-property">date</span> - a.<span class="hljs-property">date</span>;<br><span class="hljs-comment">//按top排序</span><br><span class="hljs-keyword">else</span> <span class="hljs-keyword">return</span> b.<span class="hljs-property">top</span> - a.<span class="hljs-property">top</span>;<br>&#125;<br><span class="hljs-comment">//定义了top的排前面</span><br><span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (a.<span class="hljs-property">top</span> &amp;&amp; !b.<span class="hljs-property">top</span>) &#123;<br><span class="hljs-keyword">return</span> -<span class="hljs-number">1</span>;<br>&#125;<br><span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (!a.<span class="hljs-property">top</span> &amp;&amp; b.<span class="hljs-property">top</span>) &#123;<br><span class="hljs-keyword">return</span> <span class="hljs-number">1</span>;<br>&#125;<br><span class="hljs-comment">//没有定义top就按照日期降序</span><br><span class="hljs-keyword">else</span> <span class="hljs-keyword">return</span> b.<span class="hljs-property">date</span> - a.<span class="hljs-property">date</span>;<br>&#125;);<br></code></pre></td></tr></table></figure>
+
+<p>需要配置在<code>node-modules/hexo-generator-index2/lib/generator.js</code>里面</p>
+</li>
+<li><p>kotlin中的<code>inline</code>、<code>noinline</code>、<code>crossinline</code>的作用、</p>
+<p><code>inline</code>：函数进行内联，将<code>inline fun</code>直接插入到调用函数的代码内，优化代码结构，从而减少函数类型对象的创建。</p>
+<figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">main</span><span class="hljs-params">(args:<span class="hljs-type">Array</span>&lt;<span class="hljs-type">String</span>&gt;)</span></span>&#123;<br>  testInline()<br>  print(<span class="hljs-string">&quot;world&quot;</span>)<br>&#125;<br><br><span class="hljs-keyword">inline</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">testInline</span><span class="hljs-params">()</span></span>&#123;<br>  print(<span class="hljs-string">&quot;Hello&quot;</span>)<br>&#125;<br><br>输出结果：<br>HelloWorld<br><br>实际编译结果：<br><span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">main</span><span class="hljs-params">(args:<span class="hljs-type">Array</span>&lt;<span class="hljs-type">String</span>&gt;)</span></span>&#123;<br>  print(<span class="hljs-string">&quot;Hello&quot;</span>)<br>  print(<span class="hljs-string">&quot;world&quot;</span>)<br>&#125;<br></code></pre></td></tr></table></figure>
+
+
+<p><code>noinline</code>：局部关掉函数内联优化，摆脱<code>inline不能使用函数类型的参数当对象用</code>的限制。作用于<strong>函数的参数且参数必须为函数类型</strong></p>
+<figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-keyword">inline</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">test</span><span class="hljs-params">(<span class="hljs-keyword">noinline</span> a : <span class="hljs-type">Int</span>)</span></span> &#123;<br>   <span class="hljs-comment">//Modifier &#x27;noinline&#x27; is allowed only for function parameters of an inline function</span><br>   <span class="hljs-comment">//错误使用方法 `noinline`只能使用在函数参数上</span><br>&#125;<br><br><span class="hljs-keyword">inline</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">test</span><span class="hljs-params">(a: <span class="hljs-type">Int</span>,  b: (<span class="hljs-type">Int</span>) -&gt; <span class="hljs-type">Unit</span>)</span></span>: (<span class="hljs-built_in">Int</span>) -&gt; <span class="hljs-built_in">Unit</span> &#123;<br>    <span class="hljs-keyword">return</span> b<br>  <span class="hljs-comment">//Illegal usage of inline-parameter &#x27;b&#x27; </span><br>  <span class="hljs-comment">//错误使用方法 不能直接返回 函数类型，因为经过内联后，函数类型无法被调用，失去了存在意义</span><br>  <span class="hljs-comment">//这种错误写法，编译器可以直接检测出来</span><br>&#125;<br><br><span class="hljs-keyword">inline</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">test</span><span class="hljs-params">(a:<span class="hljs-type">Int</span> , <span class="hljs-keyword">noinline</span> b :(<span class="hljs-type">String</span>)-&gt;<span class="hljs-type">Unit</span>)</span></span> : (String) -&gt; <span class="hljs-built_in">Unit</span> &#123;<br>  println(a)<br>  b(<span class="hljs-string">&quot;World&quot;</span>)<br>  <span class="hljs-keyword">return</span> b<br>&#125;<br><br><span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">main</span><span class="hljs-params">(args:<span class="hljs-type">Array</span>&lt;<span class="hljs-type">String</span>&gt;)</span></span>&#123;<br>  println(<span class="hljs-string">&quot;Hello&quot;</span>)<br>  test(<span class="hljs-number">3</span>)&#123; it-&gt;<br>    println(it)<br>  &#125;<br>&#125;<br><br>输出结果：<br>Hello<br><span class="hljs-number">3</span><br>World<br><br>实际编辑结果：<br><span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">main</span><span class="hljs-params">(args:<span class="hljs-type">Array</span>&lt;<span class="hljs-type">String</span>&gt;)</span></span>&#123;<br>  println(<span class="hljs-string">&quot;Hello&quot;</span>)<br>  println(<span class="hljs-number">3</span>)<br>  b.invoke(<span class="hljs-string">&quot;World&quot;</span>)<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p><code>crossinline</code>：局部加强函数内联优化，将内联函数里的函数类型参数可以当作对象使用。</p>
+<p>首先声明两个概念：</p>
+<ul>
+<li><p>Lambda表达式不允许使用<code>return</code>，可以使用<code>return@XX</code>来指定返回位置</p>
+<figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">test</span><span class="hljs-params">(a:()-&gt;<span class="hljs-type">Unit</span>)</span></span>&#123;<br>  ...<br>&#125;<br><br><span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">main</span><span class="hljs-params">(args:<span class="hljs-type">Array</span>&lt;<span class="hljs-type">String</span>&gt;)</span></span>&#123;<br> test &#123;<br>   ...<br>   <span class="hljs-keyword">return</span> <span class="hljs-comment">//这个是不被允许使用的</span><br> <span class="hljs-comment">//return@test 这个是可以的  </span><br> &#125; <br>&#125;<br></code></pre></td></tr></table></figure>
+</li>
+<li><p>只有被<code>inline</code>修饰的内联函数的<code>Lambda表达式</code>可以使用return。在<code>间接调用</code>是被禁止的操作</p>
+<figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-keyword">inline</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">test</span><span class="hljs-params">(action:()-&gt;<span class="hljs-type">Unit</span>)</span></span>&#123;<br>  println(<span class="hljs-string">&quot;Hello&quot;</span>)<br>  action()<br>&#125;<br><br><span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">main</span><span class="hljs-params">(args:<span class="hljs-type">Array</span>&lt;<span class="hljs-type">String</span>&gt;)</span></span>&#123;<br>  test&#123;<br>    println(<span class="hljs-string">&quot;World&quot;</span>)<br>    <span class="hljs-keyword">return</span> <span class="hljs-comment">//是被允许这么做的</span><br>  &#125;<br>&#125;<br></code></pre></td></tr></table></figure></li>
+</ul>
+<p><code>crossinline</code>实质为了<strong>声明函数参数的<code>lambda</code>不能写<code>return</code>，避免lambda中的return影响外部的执行流程</strong>。</p>
+<p>使用<code>inline</code>修饰函数时需要注意以下几点：</p>
+<ul>
+<li><p><code>inline</code>修饰函数，最好函数参数也是<code>函数类型</code>，否则无法获得性能提升</p>
+</li>
+<li><p><strong>避免内联大型函数</strong>，因为<code>inline</code>会增加代码的生成量</p>
+</li>
+<li><p><code>inline</code>修饰的函数不持有函数的对象引用，也不能将函数参数传递给另一个函数</p>
+<figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">test123</span><span class="hljs-params">(a:()-&gt;<span class="hljs-type">Unit</span>)</span></span>&#123;<br><br>&#125;<br><br><span class="hljs-keyword">inline</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">test12</span><span class="hljs-params">(a:()-&gt;<span class="hljs-type">Unit</span>)</span></span>&#123;<br>    test123(a) <span class="hljs-comment">//无法编译</span><br>&#125;<br></code></pre></td></tr></table></figure></li>
+</ul>
+</li>
+</ol>
+<p>​      </p>
+<ol start="37">
+<li><p>匿名内存(Ashmem)</p>
+<p>以Android Q为目标平台(<code>targetVersion 29</code>)的应用无法直接使用<code>ashmem</code>，必须通过NDK的<code>AsharedMemory</code>来访问共享内存，也无法直接使用<code>ioctl</code>，必须改为<code>AShredMemory</code>来创建共享内存区域。</p>
+</li>
+<li><p>当出现<code>您的连接不是私密连接</code>时，点击高级后，并直接输入<strong>thisisunsafe</strong>关键字并回车。</p>
+</li>
+<li><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">class</span> <span class="hljs-title class_">A</span>&#123;<br>  <span class="hljs-keyword">void</span> <span class="hljs-title function_">test</span><span class="hljs-params">()</span>&#123;<br>    <span class="hljs-type">B</span> <span class="hljs-variable">b</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">B</span>;<br>  &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>此时调用<code>A</code>类，是否触发<code>B</code>的加载？</p>
+</li>
+<li><p>如何获取当前Activity展示的Dialog？</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br></pre></td><td class="code"><pre><code class="hljs java">    <span class="hljs-meta">@SuppressWarnings(&quot;unchecked&quot;)</span><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> List&lt;View&gt; <span class="hljs-title function_">getViewRoots</span><span class="hljs-params">()</span> &#123;<br><br>        List&lt;View&gt; viewRoots = <span class="hljs-keyword">new</span> <span class="hljs-title class_">ArrayList</span>&lt;&gt;();<br><br>        <span class="hljs-keyword">try</span> &#123;<br>            Object windowManager;<br>            windowManager = Class.forName(<span class="hljs-string">&quot;android.view.WindowManagerGlobal&quot;</span>)<br>                    .getMethod(<span class="hljs-string">&quot;getInstance&quot;</span>).invoke(<span class="hljs-literal">null</span>);<br><span class="hljs-comment">//WindowManagerGlobal 内部持有 mRoots(ViewRootImpl列表) mViews(DecorView列表) </span><br>            <span class="hljs-type">Field</span> <span class="hljs-variable">rootsField</span> <span class="hljs-operator">=</span> windowManager.getClass().getDeclaredField(<span class="hljs-string">&quot;mRoots&quot;</span>);<br>            rootsField.setAccessible(<span class="hljs-literal">true</span>);<br><br>            <span class="hljs-type">Field</span> <span class="hljs-variable">stoppedField</span> <span class="hljs-operator">=</span> Class.forName(<span class="hljs-string">&quot;android.view.ViewRootImpl&quot;</span>)<br>                    .getDeclaredField(<span class="hljs-string">&quot;mStopped&quot;</span>);<br>            stoppedField.setAccessible(<span class="hljs-literal">true</span>);<br><span class="hljs-comment">//ViewRootImpl mView对应了 DecorView</span><br>            <span class="hljs-type">Field</span> <span class="hljs-variable">rootViewField</span> <span class="hljs-operator">=</span> Class.forName(<span class="hljs-string">&quot;android.view.ViewRootImpl&quot;</span>)<br>                    .getDeclaredField(<span class="hljs-string">&quot;mView&quot;</span>);<br>            rootViewField.setAccessible(<span class="hljs-literal">true</span>);<br><span class="hljs-comment">//DecorView mWindow对应了 PhoneWindow</span><br>            <span class="hljs-type">Field</span> <span class="hljs-variable">windowField</span> <span class="hljs-operator">=</span> Class.forName(<span class="hljs-string">&quot;com.android.internal.policy.DecorView&quot;</span>)<br>                    .getDeclaredField(<span class="hljs-string">&quot;mWindow&quot;</span>);<br>            windowField.setAccessible(<span class="hljs-literal">true</span>);<br><br>            List&lt;ViewParent&gt; viewParents = (List&lt;ViewParent&gt;) rootsField.get(windowManager);<br>            <span class="hljs-comment">// Filter out inactive view roots</span><br>            <span class="hljs-keyword">for</span> (ViewParent viewParent : viewParents) &#123;<br>                <span class="hljs-type">boolean</span> <span class="hljs-variable">stopped</span> <span class="hljs-operator">=</span> (<span class="hljs-type">boolean</span>) stoppedField.get(viewParent);<br>                <span class="hljs-keyword">if</span> (!stopped) &#123;<br>                    <span class="hljs-type">View</span> <span class="hljs-variable">view</span> <span class="hljs-operator">=</span> (View) rootViewField.get(viewParent);<br>                    <span class="hljs-type">Window</span> <span class="hljs-variable">w</span> <span class="hljs-operator">=</span> (Window) windowField.get(view);<br>                  <span class="hljs-comment">//Window setCallback 一般对应Window的创建者 </span><br>                    Log.w(<span class="hljs-string">&quot;sss&quot;</span>,w.getCallback().toString());<br>                    viewRoots.add(view);<br>                &#125;<br>            &#125;<br>        &#125; <span class="hljs-keyword">catch</span> (Exception e) &#123;<br>            e.printStackTrace();<br>        &#125;<br><br>        <span class="hljs-keyword">return</span> viewRoots;<br>    &#125;<br></code></pre></td></tr></table></figure>
+
+<p>当有dialog弹出时，此时页面就会有两个window对象。通过反射也可以获取两个对象。</p>
+<blockquote>
+<p>一般Activity和Dialog的布局都比较复杂，可能会存在标题栏等信息，需要封装一层DecorView。</p>
+<p>然后通过<code>windowManager</code>管理。</p>
+<p><code>Toast</code>与<code>PopupWindow</code>布局比较简单，直接addView即可。</p>
+</blockquote>
+</li>
+<li><p><code>PrecomputedText</code></p>
+</li>
+<li><p>Mac 下 MAT启动失败</p>
+<p>原因：mat暂不支持高版本的jdk，需要手动指定jdk版本</p>
+<p>解决方法：</p>
+<ul>
+<li><p>打开 <code>/Applications/mat.app/Contents/Eclipse/MemoryAnalyzer.ini</code></p>
+</li>
+<li><p>添加如下配置</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><code class="hljs java">-vm<br>/Library/Java/JavaVirtualMachines/jdk1<span class="hljs-number">.8</span><span class="hljs-number">.0_171</span>.jdk/Contents/Home/bin # 替换自己的jdk目录<br></code></pre></td></tr></table></figure></li>
+</ul>
+</li>
+<li><p>在<code>Android 6.0</code>以下的机型可能存在SVG图片加载异常导致崩溃，使用<code>app:srcCompat</code>替代<code>android:src</code>使用，可以兼容后续更新的<code>SVG</code>语法。</p>
+</li>
+<li><p>dependencySubstitution</p>
+<p>dependencySubstitution接收一系列替换规则，允许你通过substitute函数为项目中的依赖替换为你希望的依赖项，例如：</p>
+<figure class="highlight groovy"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><code class="hljs groovy">configurations.all &#123;<br>    resolutionStrategy.dependencySubstitution &#123;<br>      <span class="hljs-comment">//可以 在远程依赖 与 本地依赖进行转换，满足源码依赖要求</span><br>        substitute module(<span class="hljs-string">&quot;io.reactivex.rxjava2:rxjava&quot;</span>) with module(<span class="hljs-string">&quot;io.reactivex.rxjava3:rxjava:3.0.0-RC1&quot;</span>)<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure></li>
+</ol>
+
+                
+              </div>
+            
+            <hr/>
+            <div>
+              <div class="post-metas my-3">
+  
+  
+    <div class="post-meta">
+      <i class="iconfont icon-tags"></i>
+      
+        <a href="/tags/Android/" class="print-no-link">#Android</a>
+      
+        <a href="/tags/Java/" class="print-no-link">#Java</a>
+      
+    </div>
+  
+</div>
+
+
+              
+  
+
+  <div class="license-box my-3">
+    <div class="license-title">
+      <div>日常细节记录</div>
+      <div>http://example.com/2018/04/03/日常细节记录/</div>
+    </div>
+    <div class="license-meta">
+      
+        <div class="license-meta-item">
+          <div>作者</div>
+          <div>Leo-Wxy</div>
+        </div>
+      
+      
+        <div class="license-meta-item license-meta-date">
+          <div>发布于</div>
+          <div>2018年4月3日</div>
+        </div>
+      
+      
+      
+        <div class="license-meta-item">
+          <div>许可协议</div>
+          <div>
+            
+              
+              
+                <a class="print-no-link" target="_blank" href="https://creativecommons.org/licenses/by/4.0/">
+                  <span class="hint--top hint--rounded" aria-label="BY - 署名">
+                    <i class="iconfont icon-cc-by"></i>
+                  </span>
+                </a>
+              
+            
+          </div>
+        </div>
+      
+    </div>
+    <div class="license-icon iconfont"></div>
+  </div>
+
+
+
+              
+                <div class="post-prevnext my-3">
+                  <article class="post-prev col-6">
+                    
+                    
+                      <a href="/2018/04/03/Gradle%E6%93%8D%E4%BD%9C%E5%B0%8F%E8%AE%B0/" title="Gradle操作小记">
+                        <i class="iconfont icon-arrowleft"></i>
+                        <span class="hidden-mobile">Gradle操作小记</span>
+                        <span class="visible-mobile">上一篇</span>
+                      </a>
+                    
+                  </article>
+                  <article class="post-next col-6">
+                    
+                    
+                      <a href="/2018/04/01/Activity-Window-View%E7%9A%84%E5%85%B3%E8%81%94%E4%B8%8E%E7%90%86%E8%A7%A3/" title="Activity,Window,View的关联与理解">
+                        <span class="hidden-mobile">Activity,Window,View的关联与理解</span>
+                        <span class="visible-mobile">下一篇</span>
+                        <i class="iconfont icon-arrowright"></i>
+                      </a>
+                    
+                  </article>
+                </div>
+              
+            </div>
+
+            
+          </article>
+        </div>
+      </div>
+    </div>
+
+    <div class="side-col d-none d-lg-block col-lg-2">
+      
+  <aside class="sidebar" style="margin-left: -1rem">
+    <div id="toc">
+  <p class="toc-header">
+    <i class="iconfont icon-list"></i>
+    <span>目录</span>
+  </p>
+  <div class="toc-body" id="toc-body"></div>
+</div>
+
+
+
+  </aside>
+
+
+    </div>
+  </div>
+</div>
+
+
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+
+
+
+
+    
+
+    
+      <a id="scroll-top-button" aria-label="TOP" href="#" role="button">
+        <i class="iconfont icon-arrowup" aria-hidden="true"></i>
+      </a>
+    
+
+    
+      <div class="modal fade" id="modalSearch" tabindex="-1" role="dialog" aria-labelledby="ModalLabel"
+     aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header text-center">
+        <h4 class="modal-title w-100 font-weight-bold">搜索</h4>
+        <button type="button" id="local-search-close" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body mx-3">
+        <div class="md-form mb-5">
+          <input type="text" id="local-search-input" class="form-control validate">
+          <label data-error="x" data-success="v" for="local-search-input">关键词</label>
+        </div>
+        <div class="list-group" id="local-search-result"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+    
+
+    
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+  
+    <div class="footer-content">
+       <a href="https://hexo.io" target="_blank" rel="nofollow noopener"><span>Hexo</span></a> <i class="iconfont icon-love"></i> <a href="https://github.com/fluid-dev/hexo-theme-fluid" target="_blank" rel="nofollow noopener"><span>Fluid</span></a> 
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+
+  <!-- Scripts -->
+  
+  <script  src="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.js" ></script>
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.css" />
+
+  <script>
+    NProgress.configure({"showSpinner":false,"trickleSpeed":100})
+    NProgress.start()
+    window.addEventListener('load', function() {
+      NProgress.done();
+    })
+  </script>
+
+
+<script  src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" ></script>
+<script  src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.min.js" ></script>
+<script  src="/js/events.js" ></script>
+<script  src="/js/plugins.js" ></script>
+
+
+
+
+
+  
+    <script  src="/js/img-lazyload.js" ></script>
+  
+
+
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/tocbot@4.12.0/dist/tocbot.min.js', function() {
+    var toc = jQuery('#toc');
+    if (toc.length === 0 || !window.tocbot) { return; }
+    var boardCtn = jQuery('#board-ctn');
+    var boardTop = boardCtn.offset().top;
+
+    window.tocbot.init(Object.assign({
+      tocSelector     : '#toc-body',
+      contentSelector : '.markdown-body',
+      linkClass       : 'tocbot-link',
+      activeLinkClass : 'tocbot-active-link',
+      listClass       : 'tocbot-list',
+      isCollapsedClass: 'tocbot-is-collapsed',
+      collapsibleClass: 'tocbot-is-collapsible',
+      scrollSmooth    : true,
+      includeTitleTags: true,
+      headingsOffset  : -boardTop,
+    }, CONFIG.toc));
+    if (toc.find('.toc-list-item').length > 0) {
+      toc.css('visibility', 'visible');
+    }
+
+    Fluid.events.registerRefreshCallback(function() {
+      if ('tocbot' in window) {
+        tocbot.refresh();
+        var toc = jQuery('#toc');
+        if (toc.length === 0 || !tocbot) {
+          return;
+        }
+        if (toc.find('.toc-list-item').length > 0) {
+          toc.css('visibility', 'visible');
+        }
+      }
+    });
+  });
+</script>
+
+
+  <script src=https://cdn.jsdelivr.net/npm/clipboard@2.0.6/dist/clipboard.min.js></script>
+
+  <script>Fluid.plugins.codeWidget();</script>
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/anchor-js@4.3.0/anchor.min.js', function() {
+    window.anchors.options = {
+      placement: CONFIG.anchorjs.placement,
+      visible  : CONFIG.anchorjs.visible
+    };
+    if (CONFIG.anchorjs.icon) {
+      window.anchors.options.icon = CONFIG.anchorjs.icon;
+    }
+    var el = (CONFIG.anchorjs.element || 'h1,h2,h3,h4,h5,h6').split(',');
+    var res = [];
+    for (var item of el) {
+      res.push('.markdown-body > ' + item.trim());
+    }
+    if (CONFIG.anchorjs.placement === 'left') {
+      window.anchors.options.class = 'anchorjs-link-left';
+    }
+    window.anchors.add(res.join(', '));
+
+    Fluid.events.registerRefreshCallback(function() {
+      if ('anchors' in window) {
+        anchors.removeAll();
+        var el = (CONFIG.anchorjs.element || 'h1,h2,h3,h4,h5,h6').split(',');
+        var res = [];
+        for (var item of el) {
+          res.push('.markdown-body > ' + item.trim());
+        }
+        if (CONFIG.anchorjs.placement === 'left') {
+          anchors.options.class = 'anchorjs-link-left';
+        }
+        anchors.add(res.join(', '));
+      }
+    });
+  });
+</script>
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.js', function() {
+    Fluid.plugins.fancyBox();
+  });
+</script>
+
+
+  <script>Fluid.plugins.imageCaption();</script>
+
+  <script  src="/js/local-search.js" ></script>
+
+
+
+
+
+<!-- 主题的启动项，将它保持在最底部 -->
+<!-- the boot of the theme, keep it at the bottom -->
+<script  src="/js/boot.js" ></script>
+
+
+  
+
+  <noscript>
+    <div class="noscript-warning">博客在允许 JavaScript 运行的环境下浏览效果更佳</div>
+  </noscript>
+</body>
+</html>

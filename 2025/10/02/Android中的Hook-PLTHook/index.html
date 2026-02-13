@@ -1,0 +1,860 @@
+
+
+<!DOCTYPE html>
+<html lang="zh-CN" data-default-color-scheme=auto>
+
+
+
+<head>
+  <meta charset="UTF-8">
+
+  <link rel="apple-touch-icon" sizes="76x76" href="/img/favicon.png">
+  <link rel="icon" href="/img/favicon.png">
+  
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, shrink-to-fit=no">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  
+  <meta name="theme-color" content="#11527b">
+  <meta name="author" content="Leo-Wxy">
+  <meta name="keywords" content="">
+  
+    <meta name="description" content="基本原理Linux在执行 动态链接的ELF时候，为了优化性能会使用一个 延迟绑定 的策略。 （延迟绑定：为了解决原本静态编译时要把各种系统API的具体实现代码都编译进ELF文件导致文件巨大臃肿的问题。） 当动态链接的ELF程序调用共享库的函数时，会去查找PLT表中的对应项目，PLT表在跳跃到GOT表中找到执行函数的实际地址，后续再调用的时候会直接去执行GOT表中对应的目标函数。(通过 _dl_r">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Android中的Hook-PLTHook">
+<meta property="og:url" content="http://example.com/2025/10/02/Android%E4%B8%AD%E7%9A%84Hook-PLTHook/index.html">
+<meta property="og:site_name" content="Wxy的个人博客">
+<meta property="og:description" content="基本原理Linux在执行 动态链接的ELF时候，为了优化性能会使用一个 延迟绑定 的策略。 （延迟绑定：为了解决原本静态编译时要把各种系统API的具体实现代码都编译进ELF文件导致文件巨大臃肿的问题。） 当动态链接的ELF程序调用共享库的函数时，会去查找PLT表中的对应项目，PLT表在跳跃到GOT表中找到执行函数的实际地址，后续再调用的时候会直接去执行GOT表中对应的目标函数。(通过 _dl_r">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="http://example.com/images/PLTHook.png">
+<meta property="og:image" content="http://example.com/images/ELF%E7%BB%93%E6%9E%84.awebp">
+<meta property="og:image" content="http://example.com/images/LinkingView.png">
+<meta property="og:image" content="http://example.com/images/executionview.png">
+<meta property="og:image" content="http://example.com/images/linker.awebp">
+<meta property="og:image" content="http://example.com/images/PLTHookDemo-Tree.png">
+<meta property="article:published_time" content="2025-10-02T03:10:38.000Z">
+<meta property="article:modified_time" content="2026-02-12T04:32:10.433Z">
+<meta property="article:author" content="Leo-Wxy">
+<meta property="article:tag" content="Hook">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="http://example.com/images/PLTHook.png">
+  
+  
+  
+  <title>Android中的Hook-PLTHook - Wxy的个人博客</title>
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css" />
+
+
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@4.0.0/github-markdown.min.css" />
+
+  <link  rel="stylesheet" href="/lib/hint/hint.min.css" />
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.css" />
+
+
+
+<!-- 主题依赖的图标库，不要自行修改 -->
+<!-- Do not modify the link that theme dependent icons -->
+
+<link rel="stylesheet" href="//at.alicdn.com/t/c/font_1749284_5i9bdhy70f8.css">
+
+
+
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1736178_kmeydafke9r.css">
+
+
+<link  rel="stylesheet" href="/css/main.css" />
+
+
+  <link id="highlight-css" rel="stylesheet" href="/css/highlight.css" />
+  
+    <link id="highlight-css-dark" rel="stylesheet" href="/css/highlight-dark.css" />
+  
+
+
+
+
+  <script id="fluid-configs">
+    var Fluid = window.Fluid || {};
+    Fluid.ctx = Object.assign({}, Fluid.ctx)
+    var CONFIG = {"hostname":"example.com","root":"/","version":"1.9.8","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false,"scope":[]},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"code_language":{"enable":true,"default":"TEXT"},"copy_btn":true,"image_caption":{"enable":true},"image_zoom":{"enable":true,"img_url_replace":["",""]},"toc":{"enable":true,"placement":"right","headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"loading_img":"/img/loading.gif","onlypost":false,"offset_factor":2},"web_analytics":{"enable":false,"follow_dnt":true,"baidu":null,"google":null,"tencent":{"sid":null,"cid":null},"leancloud":{"app_id":null,"app_key":null,"server_url":null,"path":"window.location.pathname","ignore_local":false},"umami":{"src":null,"website_id":null,"domains":null,"start_time":"2024-01-01T00:00:00.000Z","token":null,"api_server":null},"gtag":null,"woyaola":null,"cnzz":null},"search_path":"/local-search.xml","include_content_in_search":false};
+
+    if (CONFIG.web_analytics.follow_dnt) {
+      var dntVal = navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack;
+      Fluid.ctx.dnt = dntVal && (dntVal.startsWith('1') || dntVal.startsWith('yes') || dntVal.startsWith('on'));
+    }
+  </script>
+  <script  src="/js/utils.js" ></script>
+  <script  src="/js/color-schema.js" ></script>
+  
+
+
+  
+<meta name="generator" content="Hexo 8.1.1"></head>
+
+
+<body>
+  
+
+  <header>
+    
+
+<div class="header-inner" style="height: 30vh;">
+  <nav id="navbar" class="navbar fixed-top  navbar-expand-lg navbar-dark scrolling-navbar">
+  <div class="container">
+    <a class="navbar-brand" href="/">
+      <strong>Wxy&#39;s Blog</strong>
+    </a>
+
+    <button id="navbar-toggler-btn" class="navbar-toggler" type="button" data-toggle="collapse"
+            data-target="#navbarSupportedContent"
+            aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+      <div class="animated-icon"><span></span><span></span><span></span></div>
+    </button>
+
+    <!-- Collapsible content -->
+    <div class="collapse navbar-collapse" id="navbarSupportedContent">
+      <ul class="navbar-nav ml-auto text-center">
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/" target="_self">
+                <i class="iconfont icon-home-fill"></i>
+                <span>首页</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/archives/" target="_self">
+                <i class="iconfont icon-archive-fill"></i>
+                <span>归档</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/tags/" target="_self">
+                <i class="iconfont icon-tags-fill"></i>
+                <span>标签</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/about/" target="_self">
+                <i class="iconfont icon-user-fill"></i>
+                <span>关于</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/links/" target="_self">
+                <i class="iconfont icon-link-fill"></i>
+                <span>友链</span>
+              </a>
+            </li>
+          
+        
+        
+          <li class="nav-item" id="search-btn">
+            <a class="nav-link" target="_self" href="javascript:;" data-toggle="modal" data-target="#modalSearch" aria-label="Search">
+              <i class="iconfont icon-search"></i>
+            </a>
+          </li>
+          
+        
+        
+          <li class="nav-item" id="color-toggle-btn">
+            <a class="nav-link" target="_self" href="javascript:;" aria-label="Color Toggle">
+              <i class="iconfont icon-dark" id="color-toggle-icon"></i>
+            </a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+  
+
+<div id="banner" class="banner" parallax=true
+     style="background: url('/img/default.png') no-repeat center center; background-size: cover;">
+  <div class="full-bg-img">
+    <div class="mask flex-center" style="background-color: rgba(0, 0, 0, 0.3)">
+      <div class="banner-text text-center fade-in-up">
+        <div class="h2">
+          
+            <span id="subtitle">Android中的Hook-PLTHook</span>
+          
+        </div>
+
+        
+          
+  <div class="mt-3">
+    
+    
+      <span class="post-meta">
+        <i class="iconfont icon-date-fill" aria-hidden="true"></i>
+        <time datetime="2025-10-02 11:10" pubdate>
+          2025年10月2日 上午
+        </time>
+      </span>
+    
+  </div>
+
+  <div class="mt-1">
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-chart"></i>
+        
+          <!-- compatible with older versions-->
+          4.9k 字
+        
+      </span>
+    
+
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-clock-fill"></i>
+        
+        
+        
+          <!-- compatible with older versions-->
+          16 分钟
+        
+      </span>
+    
+
+    
+    
+  </div>
+
+
+        
+      </div>
+
+      
+    </div>
+  </div>
+</div>
+
+</div>
+
+  </header>
+
+  <main>
+    
+      
+
+<div class="container-fluid nopadding-x">
+  <div class="row nomargin-x">
+    <div class="side-col d-none d-lg-block col-lg-2">
+      
+
+    </div>
+
+    <div class="col-lg-8 nopadding-x-md">
+      <div class="container nopadding-x-md" id="board-ctn">
+        <div id="board">
+          <article class="post-content mx-auto">
+            <h1 id="seo-header">Android中的Hook-PLTHook</h1>
+            
+            
+              <div class="markdown-body">
+                
+                <p><img src="/images/PLTHook.png" srcset="/img/loading.gif" lazyload alt="PLTHook"></p>
+<h1 id="基本原理"><a href="#基本原理" class="headerlink" title="基本原理"></a>基本原理</h1><p>Linux在执行 动态链接的ELF时候，为了优化性能会使用一个 <strong>延迟绑定</strong> 的策略。</p>
+<p>（延迟绑定：为了解决原本静态编译时要把各种系统API的具体实现代码都编译进ELF文件导致文件巨大臃肿的问题。）</p>
+<p>当动态链接的ELF程序调用共享库的函数时，会去查找PLT表中的对应项目，PLT表在跳跃到GOT表中找到执行函数的实际地址，后续再调用的时候会直接去执行GOT表中对应的目标函数。(通过 _dl_runtime_solve()执行)，</p>
+<p><strong>PLT Hook通过直接修改GOT表，使得在调用对应共享库的函数时跳转到用户自定义的Hook功能代码。</strong></p>
+<h1 id="ELF"><a href="#ELF" class="headerlink" title="ELF"></a>ELF</h1><blockquote>
+<p>需要真正了解 PLT Hook的原理，需要从ELF开始，逐步的了解 linker（动态链接器）以及加载ELF文件的过程。</p>
+</blockquote>
+<h2 id="ELF格式"><a href="#ELF格式" class="headerlink" title="ELF格式"></a>ELF格式</h2><blockquote>
+<p>行业标准的二进制数据封装格式，主要用于封装可执行文件、动态库、object和coew dumps文件。</p>
+<p>so库就是ELF格式的文件，了解了ELF结构是PLT Hook的基础知识。</p>
+<p>用 <strong>readelf</strong> 可以查看ELF文件的基本信息。</p>
+<p>用 <strong>objdump</strong> 可以查看ELF文件的反汇编输出。</p>
+</blockquote>
+<p><img src="/images/ELF%E7%BB%93%E6%9E%84.awebp" srcset="/img/loading.gif" lazyload alt="ELF结构"></p>
+<h3 id="ELF文件头"><a href="#ELF文件头" class="headerlink" title="ELF文件头"></a>ELF文件头</h3><blockquote>
+<p>固定格式的定长文件头（32位架构为 52字节，64位架构为 64字节）。</p>
+</blockquote>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><code class="hljs shell"><span class="hljs-meta prompt_">&gt; </span><span class="language-bash">aarch64-linux-android-readelf -h libbytehook.so</span><br>ELF Header:<br>  Magic:   7f 45 4c 46 02 01 01 00 00 00 00 00 00 00 00 00 <br>  Class:                             ELF64<br>  Data:                              2&#x27;s complement, little endian<br>  Version:                           1 (current)<br>  OS/ABI:                            UNIX - System V<br>  ABI Version:                       0<br>  Type:                              DYN (Shared object file)<br>  Machine:                           AArch64<br>  Version:                           0x1<br>  Entry point address:               0x55ec<br>  Start of program headers:          64 (bytes into file)<br>  Start of section headers:          319720 (bytes into file)<br>  Flags:                             0x0<br>  Size of this header:               64 (bytes)<br>  Size of program headers:           56 (bytes)<br>  Number of program headers:         9<br>  Size of section headers:           64 (bytes)<br>  Number of section headers:         34<br>  Section header string table index: 32<br><br></code></pre></td></tr></table></figure>
+
+
+
+<h4 id="固定头字符"><a href="#固定头字符" class="headerlink" title="固定头字符"></a>固定头字符</h4><p>7f 45 4c 46 （后三个字符对应 E L F）</p>
+<h3 id="PHT-Program-header-table-对应执行视图"><a href="#PHT-Program-header-table-对应执行视图" class="headerlink" title="PHT(Program header table) - 对应执行视图"></a>PHT(Program header table) - 对应执行视图</h3><blockquote>
+<p>ELF被加载到内存时，以<code>segment</code>为单位，一个<code>segment</code>包含一个或多个<code>section</code>。</p>
+<p>PHT则是用来记录所有 segment的基本信息。</p>
+<p>主要包括如下信息：</p>
+<ul>
+<li>segment类型</li>
+<li>文件中的偏移量</li>
+<li>大小</li>
+<li>加载到内存后的虚拟内存相对地址</li>
+<li>内存中字节对齐方式</li>
+</ul>
+</blockquote>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br></pre></td><td class="code"><pre><code class="hljs shell">aarch64-linux-android-readelf -l libbytehook.so<br><br>Elf file type is DYN (Shared object file)<br>Entry point 0x55ec<br>There are 9 program headers, starting at offset 64<br><br>Program Headers:<br>  Type           Offset             VirtAddr           PhysAddr<br>                 FileSiz            MemSiz              Flags  Align<br>  PHDR           0x0000000000000040 0x0000000000000040 0x0000000000000040<br>                 0x00000000000001f8 0x00000000000001f8  R      8<br>  LOAD           0x0000000000000000 0x0000000000000000 0x0000000000000000<br>                 0x000000000000d7a0 0x000000000000d7a0  R E    4000<br>  LOAD           0x000000000000d7a0 0x00000000000117a0 0x00000000000117a0<br>                 0x0000000000000638 0x0000000000000638  RW     4000<br>  LOAD           0x000000000000ddd8 0x0000000000015dd8 0x0000000000015dd8<br>                 0x0000000000000054 0x00000000000004c8  RW     4000<br>  DYNAMIC        0x000000000000d8c0 0x00000000000118c0 0x00000000000118c0<br>                 0x00000000000001e0 0x00000000000001e0  RW     8<br>  GNU_RELRO      0x000000000000d7a0 0x00000000000117a0 0x00000000000117a0<br>                 0x0000000000000638 0x0000000000000860  R      1<br>  GNU_EH_FRAME   0x0000000000002d70 0x0000000000002d70 0x0000000000002d70<br>                 0x0000000000000884 0x0000000000000884  R      4<br>  GNU_STACK      0x0000000000000000 0x0000000000000000 0x0000000000000000<br>                 0x0000000000000000 0x0000000000000000  RW     0<br>  NOTE           0x0000000000000238 0x0000000000000238 0x0000000000000238<br>                 0x00000000000000bc 0x00000000000000bc  R      4<br><br> Section to Segment mapping:<br>  Segment Sections...<br>   00     <br>   01     .note.android.ident .note.gnu.build-id .dynsym .gnu.version .gnu.version_r .gnu.hash .hash .dynstr .rela.dyn .rela.plt .rodata .eh_frame_hdr .eh_frame .text .plt <br>   02     .data.rel.ro .fini_array .init_array .dynamic .got .got.plt <br>   03     .data .bss <br>   04     .dynamic <br>   05     .data.rel.ro .fini_array .init_array .dynamic .got .got.plt <br>   06     .eh_frame_hdr <br>   07     <br>   08     .note.android.ident .note.gnu.build-id <br><br></code></pre></td></tr></table></figure>
+
+<p>其中类型（Type）为 <strong>LOAD</strong>的segment都会被 linker 通过mmap 映射到内存中。</p>
+<h3 id="SHT-Section-header-table-对应连接视图"><a href="#SHT-Section-header-table-对应连接视图" class="headerlink" title="* SHT(Section header table) - 对应连接视图"></a>* SHT(Section header table) - 对应连接视图</h3><blockquote>
+<p>ELF 以 section 为单位来组织和管理各种信息。使用 <strong>SHT</strong> 来记录所有section的基本信息。</p>
+<p>主要包括：</p>
+<ul>
+<li>section类型</li>
+<li>文件中的偏移量</li>
+<li>大小</li>
+<li>加载内存后的虚拟内存相对地址</li>
+<li>内存中的字节对齐方式</li>
+</ul>
+</blockquote>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br></pre></td><td class="code"><pre><code class="hljs shell"><span class="hljs-meta prompt_">&gt; </span><span class="language-bash">aarch64-linux-android-readelf -S libbytehook.so</span><br>There are 34 section headers, starting at offset 0x4e0e8:<br><br>Section Headers:<br>  [Nr] Name              Type             Address           Offset<br>       Size              EntSize          Flags  Link  Info  Align<br>  [ 0]                   NULL             0000000000000000  00000000<br>       0000000000000000  0000000000000000           0     0     0<br>  [ 1] .note.android.ide NOTE             0000000000000238  00000238<br>       0000000000000098  0000000000000000   A       0     0     4<br>  [ 2] .note.gnu.build-i NOTE             00000000000002d0  000002d0<br>       0000000000000024  0000000000000000   A       0     0     4<br>  [ 3] .dynsym           DYNSYM           00000000000002f8  000002f8<br>       0000000000000900  0000000000000018   A       8     1     8<br>  [ 4] .gnu.version      VERSYM           0000000000000bf8  00000bf8<br>       00000000000000c0  0000000000000002   A       3     0     2<br>  [ 5] .gnu.version_r    VERNEED          0000000000000cb8  00000cb8<br>       0000000000000040  0000000000000000   A       8     2     4<br>  [ 6] .gnu.hash         GNU_HASH         0000000000000cf8  00000cf8<br>       0000000000000094  0000000000000000   A       3     0     8<br>  [ 7] .hash             HASH             0000000000000d8c  00000d8c<br>       0000000000000308  0000000000000004   A       3     0     4<br>  [ 8] .dynstr           STRTAB           0000000000001094  00001094<br>       0000000000000598  0000000000000000   A       0     0     1<br>  [ 9] .rela.dyn         RELA             0000000000001630  00001630<br>       00000000000004f8  0000000000000018   A       3     0     8<br>  [10] .rela.plt         RELA             0000000000001b28  00001b28<br>       0000000000000828  0000000000000018  AI       3    21     8<br>  [11] .rodata           PROGBITS         0000000000002350  00002350<br>       0000000000000a20  0000000000000000 AMS       0     0     8<br>  [12] .eh_frame_hdr     PROGBITS         0000000000002d70  00002d70<br>       0000000000000884  0000000000000000   A       0     0     4<br>  [13] .eh_frame         PROGBITS         00000000000035f8  000035f8<br>       0000000000001ff4  0000000000000000   A       0     0     8<br>  [14] .text             PROGBITS         00000000000055ec  000055ec<br>       0000000000007c18  0000000000000000  AX       0     0     4<br>  [15] .plt              PROGBITS         000000000000d210  0000d210<br>       0000000000000590  0000000000000000  AX       0     0     16<br>  [16] .data.rel.ro      PROGBITS         00000000000117a0  0000d7a0<br>       00000000000000f8  0000000000000000  WA       0     0     8<br>  [17] .fini_array       FINI_ARRAY       0000000000011898  0000d898<br>       0000000000000010  0000000000000000  WA       0     0     8<br>  [18] .init_array       INIT_ARRAY       00000000000118a8  0000d8a8<br>       0000000000000018  0000000000000000  WA       0     0     8<br>  [19] .dynamic          DYNAMIC          00000000000118c0  0000d8c0<br>       00000000000001e0  0000000000000010  WA       8     0     8<br>  [20] .got              PROGBITS         0000000000011aa0  0000daa0<br>       0000000000000068  0000000000000000  WA       0     0     8<br>  [21] .got.plt          PROGBITS         0000000000011b08  0000db08<br>       00000000000002d0  0000000000000000  WA       0     0     8<br>  [22] .data             PROGBITS         0000000000015dd8  0000ddd8<br>       0000000000000054  0000000000000000  WA       0     0     8<br>  [23] .bss              NOBITS           0000000000015e30  0000de2c<br>       0000000000000470  0000000000000000  WA       0     0     8<br>  [24] .comment          PROGBITS         0000000000000000  0000de2c<br>       0000000000000125  0000000000000001  MS       0     0     1<br>  [25] .debug_loc        PROGBITS         0000000000000000  0000df51<br>       000000000000f965  0000000000000000           0     0     1<br>  [26] .debug_abbrev     PROGBITS         0000000000000000  0001d8b6<br>       000000000000332c  0000000000000000           0     0     1<br>  [27] .debug_info       PROGBITS         0000000000000000  00020be2<br>       0000000000013a92  0000000000000000           0     0     1<br>  [28] .debug_ranges     PROGBITS         0000000000000000  00034674<br>       0000000000001d80  0000000000000000           0     0     1<br>  [29] .debug_str        PROGBITS         0000000000000000  000363f4<br>       0000000000005705  0000000000000001  MS       0     0     1<br>  [30] .debug_line       PROGBITS         0000000000000000  0003baf9<br>       000000000000ac7d  0000000000000000           0     0     1<br>  [31] .symtab           SYMTAB           0000000000000000  00046778<br>       0000000000005970  0000000000000018          33   859     8<br>  [32] .shstrtab         STRTAB           0000000000000000  0004c0e8<br>       0000000000000157  0000000000000000           0     0     1<br>  [33] .strtab           STRTAB           0000000000000000  0004c23f<br>       0000000000001ea8  0000000000000000           0     0     1<br>Key to Flags:<br>  W (write), A (alloc), X (execute), M (merge), S (strings), I (info),<br>  L (link order), O (extra OS processing required), G (group), T (TLS),<br>  C (compressed), x (unknown), o (OS specific), E (exclude),<br>  p (processor specific)<br><br></code></pre></td></tr></table></figure>
+
+<p>其中 <code>starting at offset 0x4e0e8</code> 对应 header中  <code>Start of section headers:          319720 (bytes into file)</code></p>
+<p>其中与 PLT Hook相关的Section如下：</p>
+<h5 id="dynstr"><a href="#dynstr" class="headerlink" title=".dynstr"></a>.dynstr</h5><p>保存所有字符串常量信息</p>
+<h5 id="dynsym"><a href="#dynsym" class="headerlink" title=".dynsym"></a>.dynsym</h5><p>保存符号（symbol）的信息。</p>
+<ul>
+<li>符号的类型</li>
+<li>符号起始地址</li>
+<li>符号大小</li>
+<li>符号名称在 <code>.dynstr</code>中的索引编号</li>
+</ul>
+<h5 id="text"><a href="#text" class="headerlink" title=".text"></a>.text</h5><p>代码经过编译后生成的二进制机器指令</p>
+<h5 id="data"><a href="#data" class="headerlink" title=".data"></a>.data</h5><p>已初始化的非只读数据</p>
+<h5 id="dynamic"><a href="#dynamic" class="headerlink" title=".dynamic"></a><strong>.dynamic</strong></h5><p>专门为<code>linker</code>设计的，记录了当前ELF的外部依赖，各个重要的section起始位置。</p>
+<p>linker解析和加载ELF会用到的各项数据的索引信息。</p>
+<h5 id="got-plt"><a href="#got-plt" class="headerlink" title=".got.plt"></a>.got.plt</h5><p>给plt用的函数地址表，存储真实使用的函数地址</p>
+<h5 id="got-Global-Offset-Table"><a href="#got-Global-Offset-Table" class="headerlink" title=".got (Global Offset Table)"></a>.got (Global Offset Table)</h5><p>用于记录外部调用的入口地址，当linker执行 relocate 之后，表里会记录真实的外部调用绝对地址。</p>
+<h5 id="plt-Procedure-Linkage-Table"><a href="#plt-Procedure-Linkage-Table" class="headerlink" title=".plt (Procedure Linkage Table)"></a>.plt (Procedure Linkage Table)</h5><p>外部调用的跳板，主要用于支持 Lazy binding 方式的外部调用重定位。（目前只有MIPS架构支持）</p>
+<p>.plt 会从 <code>.got</code>,<code>.data</code>,<code>.data.rel.ro</code>中查询符号的绝对地址，然后执行跳转。</p>
+<h3 id="连接视图-Linking-View"><a href="#连接视图-Linking-View" class="headerlink" title="连接视图 - Linking View"></a>连接视图 - Linking View</h3><blockquote>
+<p>ELF 未被加载到内存执行前，以section为单位的数据组织形式</p>
+</blockquote>
+<p><img src="/images/LinkingView.png" srcset="/img/loading.gif" lazyload alt="Linking View"></p>
+<h3 id="执行视图-Execution-View"><a href="#执行视图-Execution-View" class="headerlink" title="*执行视图 - Execution View"></a>*执行视图 - Execution View</h3><blockquote>
+<p>ELF 被加载到内存后，以 segment 为单位的数据组织形式</p>
+<p>PLT Hook主要关心 <strong>执行视图</strong>。</p>
+</blockquote>
+<p><img src="/images/executionview.png" srcset="/img/loading.gif" lazyload alt="Execution View"></p>
+<p>PLT Hook的执行时机是在 linker 使用 mmap 将ELF加载到内存中，再通过执行 relocation 把外部引用的绝对地址填入 GOT表和 DATA中。</p>
+<h3 id="dynamic-section"><a href="#dynamic-section" class="headerlink" title="* .dynamic section"></a>* .dynamic section</h3><blockquote>
+<p>专门为 <code>linker</code> 设计的，其中包含了 linker解析和加载ELF会用到的各项数据的索引信息。</p>
+<p>对应 PHT中 type为 <code>DYNAMIC</code>的segment，再通过这个 segment 找到 .dynamic session。</p>
+</blockquote>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><code class="hljs shell">aarch64-linux-android-readelf -d libbytehook.so<br><br>Dynamic section at offset 0xd8c0 contains 30 entries:<br>  Tag        Type                         Name/Value<br> 0x0000000000000001 (NEEDED)             Shared library: [liblog.so]<br> 0x0000000000000001 (NEEDED)             Shared library: [libshadowhook.so]<br> 0x0000000000000001 (NEEDED)             Shared library: [libm.so]<br> 0x0000000000000001 (NEEDED)             Shared library: [libdl.so]<br> 0x0000000000000001 (NEEDED)             Shared library: [libc.so]<br> 0x000000000000000e (SONAME)             Library soname: [libbytehook.so]<br> 0x000000000000001e (FLAGS)              BIND_NOW<br> 0x000000006ffffffb (FLAGS_1)            Flags: NOW<br> 0x0000000000000007 (RELA)               0x1630<br> 0x0000000000000008 (RELASZ)             1272 (bytes)<br> 0x0000000000000009 (RELAENT)            24 (bytes)<br> 0x000000006ffffff9 (RELACOUNT)          47<br> 0x0000000000000017 (JMPREL)             0x1b28<br> 0x0000000000000002 (PLTRELSZ)           2088 (bytes)<br> 0x0000000000000003 (PLTGOT)             0x11b08<br> 0x0000000000000014 (PLTREL)             RELA<br> 0x0000000000000006 (SYMTAB)             0x2f8<br> 0x000000000000000b (SYMENT)             24 (bytes)<br> 0x0000000000000005 (STRTAB)             0x1094<br> 0x000000000000000a (STRSZ)              1432 (bytes)<br> 0x000000006ffffef5 (GNU_HASH)           0xcf8<br> 0x0000000000000004 (HASH)               0xd8c<br> 0x0000000000000019 (INIT_ARRAY)         0x118a8<br> 0x000000000000001b (INIT_ARRAYSZ)       24 (bytes)<br> 0x000000000000001a (FINI_ARRAY)         0x11898<br> 0x000000000000001c (FINI_ARRAYSZ)       16 (bytes)<br> 0x000000006ffffff0 (VERSYM)             0xbf8<br> 0x000000006ffffffe (VERNEED)            0xcb8<br> 0x000000006fffffff (VERNEEDNUM)         2<br> 0x0000000000000000 (NULL)               0x0<br><br></code></pre></td></tr></table></figure>
+
+
+
+
+
+<h3 id="参考文献"><a href="#参考文献" class="headerlink" title="参考文献"></a>参考文献</h3><p><a target="_blank" rel="noopener" href="https://en.wikipedia.org/wiki/Executable_and_Linkable_Format">ELF概述</a></p>
+<p><a target="_blank" rel="noopener" href="http://refspecs.linuxbase.org/elf/elf.pdf">ELF完整结构</a></p>
+<h2 id="linker（动态链接器）"><a href="#linker（动态链接器）" class="headerlink" title="linker（动态链接器）"></a>linker（动态链接器）</h2><p><img src="/images/linker.awebp" srcset="/img/loading.gif" lazyload alt="linker"></p>
+<p><a target="_blank" rel="noopener" href="https://cs.android.com/android/platform/superproject/main/+/main:bionic/linker/">linker源码</a></p>
+<h3 id="大致步骤"><a href="#大致步骤" class="headerlink" title="大致步骤"></a>大致步骤</h3><h4 id="动态链接（dlopen）"><a href="#动态链接（dlopen）" class="headerlink" title="动态链接（dlopen）"></a>动态链接（dlopen）</h4><figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-function"><span class="hljs-type">void</span>* <span class="hljs-title">do_dlopen</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">char</span>* name, <span class="hljs-type">int</span> flags,</span></span><br><span class="hljs-params"><span class="hljs-function">                <span class="hljs-type">const</span> android_dlextinfo* extinfo,</span></span><br><span class="hljs-params"><span class="hljs-function">                <span class="hljs-type">const</span> <span class="hljs-type">void</span>* caller_addr)</span> </span>&#123;<br> ... <br>   <span class="hljs-comment">// load ELF</span><br> soinfo* si = <span class="hljs-built_in">find_library</span>(ns, translated_name, flags, extinfo, caller);<br>  loading_trace.<span class="hljs-built_in">End</span>();<br><br>  <span class="hljs-keyword">if</span> (si != <span class="hljs-literal">nullptr</span>) &#123;<br>    <span class="hljs-type">void</span>* handle = si-&gt;<span class="hljs-built_in">to_handle</span>();<br>    <span class="hljs-built_in">LD_LOG</span>(kLogDlopen,<br>           <span class="hljs-string">&quot;... dlopen calling constructors: realpath=\&quot;%s\&quot;, soname=\&quot;%s\&quot;, handle=%p&quot;</span>,<br>           si-&gt;<span class="hljs-built_in">get_realpath</span>(), si-&gt;<span class="hljs-built_in">get_soname</span>(), handle);<br>    <span class="hljs-comment">// 调用构造函数</span><br>    si-&gt;<span class="hljs-built_in">call_constructors</span>();<br>    failure_guard.<span class="hljs-built_in">Disable</span>();<br>    <span class="hljs-built_in">LD_LOG</span>(kLogDlopen,<br>           <span class="hljs-string">&quot;... dlopen successful: realpath=\&quot;%s\&quot;, soname=\&quot;%s\&quot;, handle=%p&quot;</span>,<br>           si-&gt;<span class="hljs-built_in">get_realpath</span>(), si-&gt;<span class="hljs-built_in">get_soname</span>(), handle);<br>    <span class="hljs-keyword">return</span> handle;<br>  &#125;<br><br>  <span class="hljs-keyword">return</span> <span class="hljs-literal">nullptr</span>;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+
+
+<h4 id="加载ELF"><a href="#加载ELF" class="headerlink" title="加载ELF"></a>加载ELF</h4><figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-function"><span class="hljs-type">static</span> soinfo* <span class="hljs-title">find_library</span><span class="hljs-params">(<span class="hljs-type">android_namespace_t</span>* ns,</span></span><br><span class="hljs-params"><span class="hljs-function">                            <span class="hljs-type">const</span> <span class="hljs-type">char</span>* name, <span class="hljs-type">int</span> rtld_flags,</span></span><br><span class="hljs-params"><span class="hljs-function">                            <span class="hljs-type">const</span> android_dlextinfo* extinfo,</span></span><br><span class="hljs-params"><span class="hljs-function">                            soinfo* needed_by)</span> </span>&#123;<br>  soinfo* si = <span class="hljs-literal">nullptr</span>;<br><br>  <span class="hljs-keyword">if</span> (name == <span class="hljs-literal">nullptr</span>) &#123;<br>    si = <span class="hljs-built_in">solist_get_somain</span>();<br>  &#125; <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (!<span class="hljs-built_in">find_libraries</span>(ns,<br>                             needed_by,<br>                             &amp;name,<br>                             <span class="hljs-number">1</span>,<br>                             &amp;si,<br>                             <span class="hljs-literal">nullptr</span>,<br>                             <span class="hljs-number">0</span>,<br>                             rtld_flags,<br>                             extinfo,<br>                             <span class="hljs-literal">false</span> <span class="hljs-comment">/* add_as_children */</span>)) &#123;<br>    <span class="hljs-keyword">if</span> (si != <span class="hljs-literal">nullptr</span>) &#123;<br>      <span class="hljs-built_in">soinfo_unload</span>(si);<br>    &#125;<br>    <span class="hljs-keyword">return</span> <span class="hljs-literal">nullptr</span>;<br>  &#125;<br><br>  si-&gt;<span class="hljs-built_in">increment_ref_count</span>();<br><br>  <span class="hljs-keyword">return</span> si;<br>&#125;<br><br><span class="hljs-function"><span class="hljs-type">bool</span> <span class="hljs-title">find_libraries</span><span class="hljs-params">(<span class="hljs-type">android_namespace_t</span>* ns,</span></span><br><span class="hljs-params"><span class="hljs-function">                    soinfo* start_with,</span></span><br><span class="hljs-params"><span class="hljs-function">                    <span class="hljs-type">const</span> <span class="hljs-type">char</span>* <span class="hljs-type">const</span> library_names[],</span></span><br><span class="hljs-params"><span class="hljs-function">                    <span class="hljs-type">size_t</span> library_names_count,</span></span><br><span class="hljs-params"><span class="hljs-function">                    soinfo* soinfos[],</span></span><br><span class="hljs-params"><span class="hljs-function">                    std::vector&lt;soinfo*&gt;* ld_preloads,</span></span><br><span class="hljs-params"><span class="hljs-function">                    <span class="hljs-type">size_t</span> ld_preloads_count,</span></span><br><span class="hljs-params"><span class="hljs-function">                    <span class="hljs-type">int</span> rtld_flags,</span></span><br><span class="hljs-params"><span class="hljs-function">                    <span class="hljs-type">const</span> android_dlextinfo* extinfo,</span></span><br><span class="hljs-params"><span class="hljs-function">                    <span class="hljs-type">bool</span> add_as_children,</span></span><br><span class="hljs-params"><span class="hljs-function">                    std::vector&lt;<span class="hljs-type">android_namespace_t</span>*&gt;* namespaces)</span> </span>&#123;<br> ... <br>&#125;<br><br></code></pre></td></tr></table></figure>
+
+<h5 id="prelink-image"><a href="#prelink-image" class="headerlink" title="prelink_image"></a>prelink_image</h5><blockquote>
+<p>加载ELF中的 .dynamic section 从里面读取外部以来的ELF列表信息<br>从PHT读取</p>
+</blockquote>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-function"><span class="hljs-type">bool</span> <span class="hljs-title">soinfo::prelink_image</span><span class="hljs-params">(<span class="hljs-type">bool</span> dlext_use_relro)</span> </span>&#123;<br>  <span class="hljs-keyword">if</span> (flags_ &amp; FLAG_PRELINKED) <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;<br>  <span class="hljs-comment">/* Extract dynamic section */</span><br>  <span class="hljs-built_in">ElfW</span>(Word) dynamic_flags = <span class="hljs-number">0</span>;<br>  <span class="hljs-built_in">phdr_table_get_dynamic_section</span>(phdr, phnum, load_bias, &amp;dynamic, &amp;dynamic_flags);<br>  <br>&#125;<br><br><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">phdr_table_get_dynamic_section</span><span class="hljs-params">(<span class="hljs-type">const</span> ElfW(Phdr)* phdr_table, <span class="hljs-type">size_t</span> phdr_count,</span></span><br><span class="hljs-params"><span class="hljs-function">                                    ElfW(Addr) load_bias, ElfW(Dyn)** dynamic,</span></span><br><span class="hljs-params"><span class="hljs-function">                                    ElfW(Word)* dynamic_flags)</span> </span>&#123;<br>  *dynamic = <span class="hljs-literal">nullptr</span>;<br>  <span class="hljs-keyword">for</span> (<span class="hljs-type">size_t</span> i = <span class="hljs-number">0</span>; i&lt;phdr_count; ++i) &#123;<br>    <span class="hljs-function"><span class="hljs-type">const</span> <span class="hljs-title">ElfW</span><span class="hljs-params">(Phdr)</span>&amp; phdr </span>= phdr_table[i];<br>    <span class="hljs-keyword">if</span> (phdr.p_type == PT_DYNAMIC) &#123;<br>      *dynamic = <span class="hljs-built_in">reinterpret_cast</span>&lt;<span class="hljs-built_in">ElfW</span>(Dyn)*&gt;(load_bias + phdr.p_vaddr);<br>      <span class="hljs-keyword">if</span> (dynamic_flags) &#123;<br>        *dynamic_flags = phdr.p_flags;<br>      &#125;<br>      <span class="hljs-keyword">return</span>;<br>    &#125;<br>  &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<h5 id="link-image"><a href="#link-image" class="headerlink" title="link_image"></a>link_image</h5><blockquote>
+<p>执行 relocation 操作</p>
+</blockquote>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-function"><span class="hljs-type">bool</span> <span class="hljs-title">soinfo::link_image</span><span class="hljs-params">(<span class="hljs-type">const</span> SymbolLookupList&amp; lookup_list, soinfo* local_group_root,</span></span><br><span class="hljs-params"><span class="hljs-function">                        <span class="hljs-type">const</span> android_dlextinfo* extinfo, <span class="hljs-type">size_t</span>* relro_fd_offset)</span> </span>&#123;<br> <br>  <br>  <span class="hljs-keyword">if</span> (<span class="hljs-keyword">this</span> != <span class="hljs-built_in">solist_get_vdso</span>() &amp;&amp; !<span class="hljs-built_in">relocate</span>(lookup_list)) &#123;<br>    <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;<br>  &#125;<br>...<br>  ++g_module_load_counter;<br>  <span class="hljs-built_in">notify_gdb_of_load</span>(<span class="hljs-keyword">this</span>);<br>  <span class="hljs-built_in">set_image_linked</span>();<br>  <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;<br>  <br>&#125;<br></code></pre></td></tr></table></figure>
+
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-comment">// bionic/linker/linker_relocate.cpp</span><br><span class="hljs-function"><span class="hljs-type">bool</span> <span class="hljs-title">soinfo::relocate</span><span class="hljs-params">(<span class="hljs-type">const</span> SymbolLookupList&amp; lookup_list)</span> </span>&#123;<br>  ...<br>      <span class="hljs-keyword">if</span> (relr_ != <span class="hljs-literal">nullptr</span> &amp;&amp; !<span class="hljs-built_in">is_linker</span>()) &#123;<br>    <span class="hljs-built_in">LD_DEBUG</span>(reloc, <span class="hljs-string">&quot;[ relocating %s relr ]&quot;</span>, <span class="hljs-built_in">get_realpath</span>());<br>    <span class="hljs-function"><span class="hljs-type">const</span> <span class="hljs-title">ElfW</span><span class="hljs-params">(Relr)</span>* begin </span>= relr_;<br>    <span class="hljs-function"><span class="hljs-type">const</span> <span class="hljs-title">ElfW</span><span class="hljs-params">(Relr)</span>* end </span>= relr_ + relr_count_;<br>    <span class="hljs-keyword">if</span> (!<span class="hljs-built_in">relocate_relr</span>(begin, end, load_bias, <span class="hljs-built_in">should_tag_memtag_globals</span>())) &#123;<br>      <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;<br>    &#125;<br>  &#125;<br>  ...<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-comment">// Process relocations in SHT_RELR section (experimental).</span><br><span class="hljs-comment">// Details of the encoding are described in this post:</span><br><span class="hljs-comment">//   https://groups.google.com/d/msg/generic-abi/bX460iggiKg/Pi9aSwwABgAJ</span><br><span class="hljs-function"><span class="hljs-type">bool</span> <span class="hljs-title">relocate_relr</span><span class="hljs-params">(<span class="hljs-type">const</span> ElfW(Relr) * begin, <span class="hljs-type">const</span> ElfW(Relr) * end, ElfW(Addr) load_bias,</span></span><br><span class="hljs-params"><span class="hljs-function">                   <span class="hljs-type">bool</span> has_memtag_globals)</span> </span>&#123;<br>  <span class="hljs-keyword">constexpr</span> <span class="hljs-type">size_t</span> wordsize = <span class="hljs-built_in">sizeof</span>(<span class="hljs-built_in">ElfW</span>(Addr));<br><br>  <span class="hljs-built_in">ElfW</span>(Addr) base = <span class="hljs-number">0</span>;<br>  <span class="hljs-keyword">for</span> (<span class="hljs-type">const</span> <span class="hljs-built_in">ElfW</span>(Relr)* current = begin; current &lt; end; ++current) &#123;<br>    <span class="hljs-built_in">ElfW</span>(Relr) entry = *current;<br>    <span class="hljs-built_in">ElfW</span>(Addr) offset;<br><br>    <span class="hljs-keyword">if</span> ((entry&amp;<span class="hljs-number">1</span>) == <span class="hljs-number">0</span>) &#123;<br>      <span class="hljs-comment">// Even entry: encodes the offset for next relocation.</span><br>      offset = <span class="hljs-built_in">static_cast</span>&lt;<span class="hljs-built_in">ElfW</span>(Addr)&gt;(entry);<br>      <span class="hljs-built_in">apply_relr_reloc</span>(offset, load_bias, has_memtag_globals);<br>      <span class="hljs-comment">// Set base offset for subsequent bitmap entries.</span><br>      base = offset + wordsize;<br>      <span class="hljs-keyword">continue</span>;<br>    &#125;<br><br>    <span class="hljs-comment">// Odd entry: encodes bitmap for relocations starting at base.</span><br>    offset = base;<br>    <span class="hljs-keyword">while</span> (entry != <span class="hljs-number">0</span>) &#123;<br>      entry &gt;&gt;= <span class="hljs-number">1</span>;<br>      <span class="hljs-keyword">if</span> ((entry&amp;<span class="hljs-number">1</span>) != <span class="hljs-number">0</span>) &#123;<br>        <span class="hljs-built_in">apply_relr_reloc</span>(offset, load_bias, has_memtag_globals);<br>      &#125;<br>      offset += wordsize;<br>    &#125;<br><br>    <span class="hljs-comment">// Advance base offset by 63 words for 64-bit platforms,</span><br>    <span class="hljs-comment">// or 31 words for 32-bit platforms.</span><br>    base += (<span class="hljs-number">8</span>*wordsize - <span class="hljs-number">1</span>) * wordsize;<br>  &#125;<br>  <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;<br>&#125;<br><br></code></pre></td></tr></table></figure>
+
+<p>执行重定位操作，这是最关键一步。</p>
+<p>目的是为当前加载的ELF的每个<code>导入符号</code>找到对应的外部符号的绝对地址并写入到对应的位置里。</p>
+<p>查询绝对地址</p>
+<ul>
+<li><code>.rela.plt</code>,<code>.rel.plt</code>：用于关联<code>.got.plt</code>和<code>.dynsym</code>，就是<code>PLT表</code></li>
+<li><code>.rela.dyn</code>,<code>.rel.dyn</code>：关联<code>.data</code>,<code>.data.rel.ro</code>,<code>.dynsym</code></li>
+</ul>
+<p>写入位置</p>
+<ul>
+<li><code>.got.plt</code>：保存外部函数的绝对地址，就是<code>GOT表</code></li>
+<li><code>.data</code>,<code>.data.rel.ro</code>：保存外部数据（函数指针）的绝对地址</li>
+</ul>
+<blockquote>
+<p><code>.rela.*</code>只在64位架构做了实现，相比<code>.rel</code>多了<code>r_addend</code>字段。</p>
+</blockquote>
+<p><code>PLT</code>：Procedure Linkage Table - 过程链接表</p>
+<p><code>GOT</code>：Global Offset Table - 全局偏移表</p>
+<h2 id="Hook原理"><a href="#Hook原理" class="headerlink" title="Hook原理"></a>Hook原理</h2><p>通过符号名，先在hash table中找到对应的符号信息(<code>.dynsym</code>)中，再从<code>PLT表</code>找到符号对应的信息，再从<code>GOT表</code>中找到绝对地址信息。<strong>通过修改GOT表中的绝对地址值，替换为Hook函数的地址。</strong></p>
+<h3 id="作用边界（很重要）"><a href="#作用边界（很重要）" class="headerlink" title="作用边界（很重要）"></a>作用边界（很重要）</h3><p>PLT Hook 本质上是修改导入方模块中的 GOT 表项，因此它的生效范围有明确边界：</p>
+<ul>
+<li>能拦截：<strong>跨 so 的外部符号调用</strong>（调用路径经过 PLT&#x2F;GOT）。</li>
+<li>通常不能拦截：同一 so 内部直接调用（不经过 PLT）、<code>static</code> 函数、被编译器内联&#x2F;优化掉的调用。</li>
+<li>需要注意：如果目标符号在链接期或运行期被特殊处理（如符号裁剪、<code>-Bsymbolic</code>、符号版本不匹配），可能无法命中 Hook。</li>
+</ul>
+<p>一句话：<strong>PLT Hook 拦截的是“导入调用点”，不是“函数本体的所有执行路径”。</strong></p>
+<h3 id="重定位类型：不只看-rela-plt"><a href="#重定位类型：不只看-rela-plt" class="headerlink" title="重定位类型：不只看 .rela.plt"></a>重定位类型：不只看 .rela.plt</h3><p>很多资料只强调 <code>.rela.plt</code>，但工程里通常要同时关注多种重定位项：</p>
+<ul>
+<li><code>JUMP_SLOT</code>：典型的函数导入调用，对应 PLT&#x2F;GOT 路径（最常见的 PLT Hook 目标）。</li>
+<li><code>GLOB_DAT</code>：全局数据或函数地址类导入，常落在 <code>.got/.data.rel.ro</code>，有些 Hook 框架也会处理它。</li>
+<li><code>RELATIVE</code>：用于基址修正，通常不是符号级 Hook 目标。</li>
+</ul>
+<p>不同架构的重定位记录格式不同：</p>
+<ul>
+<li><code>arm64</code> 常见 <code>RELA</code>（带 <code>addend</code> 字段）。</li>
+<li><code>arm32</code> 常见 <code>REL</code>（不带 <code>addend</code> 字段，附加值来自内存）。</li>
+</ul>
+<p>因此在实现里建议按 <code>DT_PLTREL</code> &#x2F; <code>DT_RELA</code> &#x2F; <code>DT_REL</code> 分支解析，而不是写死只处理一种格式。</p>
+<h3 id="Hook时机与内存保护（NOW-LAZY-RELRO）"><a href="#Hook时机与内存保护（NOW-LAZY-RELRO）" class="headerlink" title="Hook时机与内存保护（NOW&#x2F;LAZY + RELRO）"></a>Hook时机与内存保护（NOW&#x2F;LAZY + RELRO）</h3><p>PLT Hook 是否“马上生效”，与装载策略和内存保护强相关：</p>
+<ul>
+<li><code>RTLD_NOW</code> &#x2F; <code>BIND_NOW</code>：加载期完成大部分符号解析，GOT 很早就被填好。</li>
+<li><code>RTLD_LAZY</code>：首次调用时才解析 <code>JUMP_SLOT</code>，如果 Hook 安装太晚，可能错过第一次调用。</li>
+<li><code>RELRO</code>（尤其 <code>GNU_RELRO</code>）：重定位完成后，<code>.got/.got.plt/.data.rel.ro</code> 常被改为只读；写 GOT 前通常需要 <code>mprotect</code> 临时改写权限。</li>
+</ul>
+<p>实践建议：</p>
+<ol>
+<li><p>尽量在目标 so 完成加载且首次关键调用前安装 Hook。  </p>
+</li>
+<li><p>写入前做页对齐并 <code>mprotect(PROT_READ | PROT_WRITE)</code>，写入后恢复原权限。  </p>
+</li>
+<li><p>记录 old&#x2F;new 地址与返回码，失败时输出 <code>errno</code> 便于定位是时机问题还是权限问题。</p>
+</li>
+</ol>
+<h3 id="常见失败场景（排查清单）"><a href="#常见失败场景（排查清单）" class="headerlink" title="常见失败场景（排查清单）"></a>常见失败场景（排查清单）</h3><p>PLT Hook 失败通常不是“代码没执行”，而是“调用路径不经过你改写的表项”：</p>
+<ul>
+<li><code>-Bsymbolic</code>：库内部对本库符号优先绑定，导致内部调用不走外部导入表。</li>
+<li>符号被优化：<code>inline/static/LTO</code> 等导致目标调用点被消除或改写。</li>
+<li>符号版本不匹配：同名符号存在版本差异，按名称匹配可能命中错误项或无法命中。</li>
+<li>linker namespace 隔离：目标库不在当前命名空间可见范围内，<code>dlopen/dlsym</code> 或遍历结果与预期不一致。</li>
+<li>安装时机过晚：首次调用已发生，或已被其他框架先改写。</li>
+<li>权限问题：<code>RELRO</code> 页未正确 <code>mprotect</code>，写入失败（通常伴随 <code>errno</code>）。</li>
+</ul>
+<p>建议把“目标 so、符号名、重定位类型、旧地址&#x2F;新地址、错误码”作为统一日志字段，优先确认“是否命中正确 GOT 表项”。</p>
+<h3 id="工程化最佳实践（稳定性）"><a href="#工程化最佳实践（稳定性）" class="headerlink" title="工程化最佳实践（稳定性）"></a>工程化最佳实践（稳定性）</h3><p>PLT Hook 建议至少补齐这些工程化能力：</p>
+<ul>
+<li>幂等安装：同一 <code>so + symbol</code> 多次安装时要检测并避免重复写入。</li>
+<li>线程安全：改写 GOT 时加锁，避免并发安装&#x2F;卸载导致地址撕裂或状态错乱。</li>
+<li>防递归调用：Hook 函数里调用链可能再次命中自身，需线程局部标记（TLS guard）防止无限递归。</li>
+<li>可恢复（unhook）：保存原始地址并支持回滚，便于灰度、故障止损和 A&#x2F;B 对比。</li>
+<li>白名单策略：只扫描和改写目标库&#x2F;目标符号，避免全量遍历带来的性能与兼容性风险。</li>
+</ul>
+<p>建议维护一张运行时状态表（目标库、符号、原地址、现地址、安装时间、状态码），用于排障与观测。</p>
+<h1 id="PLT-Hook实践"><a href="#PLT-Hook实践" class="headerlink" title="PLT Hook实践"></a>PLT Hook实践</h1><p>以下是基于 三个自己编译的so进行的处理，代码逻辑相对简单。只为了熟悉基础的hook流程。如果需要更稳定的hook,还是推荐使用 相关三方库里的。</p>
+<p><img src="/images/PLTHookDemo-Tree.png" srcset="/img/loading.gif" lazyload alt="Demo层级"></p>
+<h2 id="combined-cpp-待Hook类"><a href="#combined-cpp-待Hook类" class="headerlink" title="combined.cpp(待Hook类)"></a>combined.cpp(待Hook类)</h2><figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-comment">//</span><br><span class="hljs-comment">// Created by wxy on 2025/10/5.</span><br><span class="hljs-comment">//</span><br><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;jni.h&gt;</span></span><br><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;android/log.h&gt;</span></span><br><br><span class="hljs-meta">#<span class="hljs-keyword">define</span> LOGI(...) __android_log_print(ANDROID_LOG_INFO, <span class="hljs-string">&quot;PLT_COMBINED&quot;</span>, __VA_ARGS__)</span><br><span class="hljs-meta">#<span class="hljs-keyword">define</span> LOGE(...) __android_log_print(ANDROID_LOG_ERROR, <span class="hljs-string">&quot;PLT_COMBINED&quot;</span>, __VA_ARGS__)</span><br><br><span class="hljs-comment">// ----------------------------</span><br><span class="hljs-comment">// target_function（待 hook）</span><br><span class="hljs-comment">// ----------------------------</span><br><span class="hljs-keyword">extern</span> <span class="hljs-string">&quot;C&quot;</span> __attribute__((noinline)) <span class="hljs-function"><span class="hljs-type">int</span> <span class="hljs-title">target_function</span><span class="hljs-params">(<span class="hljs-type">int</span> x)</span> </span>&#123;<br>    <span class="hljs-built_in">LOGI</span>(<span class="hljs-string">&quot;target_function called with %d&quot;</span>, x);<br>    <span class="hljs-keyword">return</span> x + <span class="hljs-number">1</span>;<br>&#125;<br><br><span class="hljs-comment">// ----------------------------</span><br><span class="hljs-comment">// callTarget 调用 target_function</span><br><span class="hljs-comment">// ----------------------------</span><br><span class="hljs-keyword">extern</span> <span class="hljs-string">&quot;C&quot;</span> <span class="hljs-function">JNIEXPORT jint JNICALL</span><br><span class="hljs-function"><span class="hljs-title">Java_com_example_plthookdemo_MainActivity_callTarget</span><span class="hljs-params">(JNIEnv* env, jobject thiz, jint v)</span> </span>&#123;<br>    <span class="hljs-built_in">LOGI</span>(<span class="hljs-string">&quot;callTarget: before calling target_function&quot;</span>);<br>    <span class="hljs-type">int</span> r = <span class="hljs-built_in">target_function</span>((<span class="hljs-type">int</span>)v);  <span class="hljs-comment">// 通过 PLT 调用</span><br>    <span class="hljs-built_in">LOGI</span>(<span class="hljs-string">&quot;callTarget: after calling target_function, result=%d&quot;</span>, r);<br>    <span class="hljs-keyword">return</span> r;<br>&#125;<br><br></code></pre></td></tr></table></figure>
+
+<h2 id="plthook-cpp-PLTHook类"><a href="#plthook-cpp-PLTHook类" class="headerlink" title="plthook.cpp(PLTHook类)"></a>plthook.cpp(PLTHook类)</h2><figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br><span class="line">158</span><br><span class="line">159</span><br><span class="line">160</span><br><span class="line">161</span><br><span class="line">162</span><br><span class="line">163</span><br><span class="line">164</span><br><span class="line">165</span><br><span class="line">166</span><br><span class="line">167</span><br><span class="line">168</span><br><span class="line">169</span><br><span class="line">170</span><br><span class="line">171</span><br><span class="line">172</span><br><span class="line">173</span><br><span class="line">174</span><br><span class="line">175</span><br><span class="line">176</span><br><span class="line">177</span><br><span class="line">178</span><br><span class="line">179</span><br><span class="line">180</span><br><span class="line">181</span><br><span class="line">182</span><br><span class="line">183</span><br><span class="line">184</span><br><span class="line">185</span><br><span class="line">186</span><br><span class="line">187</span><br><span class="line">188</span><br><span class="line">189</span><br><span class="line">190</span><br><span class="line">191</span><br><span class="line">192</span><br><span class="line">193</span><br><span class="line">194</span><br><span class="line">195</span><br><span class="line">196</span><br><span class="line">197</span><br><span class="line">198</span><br><span class="line">199</span><br><span class="line">200</span><br><span class="line">201</span><br><span class="line">202</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-meta">#<span class="hljs-keyword">define</span> _GNU_SOURCE</span><br><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;dlfcn.h&gt;</span>         <span class="hljs-comment">// dlopen/dlsym/dl_iterate_phdr</span></span><br><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;link.h&gt;</span>          <span class="hljs-comment">// dl_phdr_info, Elf headers</span></span><br><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;elf.h&gt;</span>           <span class="hljs-comment">// ELF 结构定义</span></span><br><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;pthread.h&gt;</span>       <span class="hljs-comment">// pthread_create</span></span><br><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;unistd.h&gt;</span>        <span class="hljs-comment">// sleep, sysconf</span></span><br><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sys/mman.h&gt;</span>      <span class="hljs-comment">// mprotect</span></span><br><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;android/log.h&gt;</span>   <span class="hljs-comment">// Android 日志打印</span></span><br><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;string.h&gt;</span></span><br><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;errno.h&gt;</span></span><br><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdint.h&gt;</span></span><br><br><span class="hljs-comment">// -----------------------------</span><br><span class="hljs-comment">// 日志宏定义</span><br><span class="hljs-comment">// -----------------------------</span><br><span class="hljs-meta">#<span class="hljs-keyword">define</span> LOGI(...) __android_log_print(ANDROID_LOG_INFO, <span class="hljs-string">&quot;PLT_HOOK&quot;</span>, __VA_ARGS__)</span><br><span class="hljs-meta">#<span class="hljs-keyword">define</span> LOGE(...) __android_log_print(ANDROID_LOG_ERROR, <span class="hljs-string">&quot;PLT_HOOK&quot;</span>, __VA_ARGS__)</span><br><br><span class="hljs-comment">// -----------------------------</span><br><span class="hljs-comment">// 目标库与函数名</span><br><span class="hljs-comment">// -----------------------------</span><br><span class="hljs-comment">// 我们的目标是 hook libcombined.so 里的 target_function</span><br><span class="hljs-type">static</span> <span class="hljs-type">const</span> <span class="hljs-type">char</span> COMBINED_SO[] = <span class="hljs-string">&quot;libcombined.so&quot;</span>;<br><span class="hljs-type">static</span> <span class="hljs-type">const</span> <span class="hljs-type">char</span> TARGET_SYM[] = <span class="hljs-string">&quot;target_function&quot;</span>;<br><br><span class="hljs-comment">// -----------------------------</span><br><span class="hljs-comment">// 原始函数指针</span><br><span class="hljs-comment">// -----------------------------</span><br><span class="hljs-function"><span class="hljs-keyword">typedef</span> <span class="hljs-title">int</span> <span class="hljs-params">(*<span class="hljs-type">target_fn_t</span>)</span><span class="hljs-params">(<span class="hljs-type">int</span>)</span></span>;<br><span class="hljs-type">static</span> <span class="hljs-type">target_fn_t</span> original_target_fn = <span class="hljs-literal">nullptr</span>;<br><br><span class="hljs-comment">// -----------------------------</span><br><span class="hljs-comment">// Hook 替换后的函数实现</span><br><span class="hljs-comment">// -----------------------------</span><br><span class="hljs-keyword">extern</span> <span class="hljs-string">&quot;C&quot;</span> <span class="hljs-function"><span class="hljs-type">int</span> <span class="hljs-title">hooked_target_function</span><span class="hljs-params">(<span class="hljs-type">int</span> x)</span> </span>&#123;<br>    <span class="hljs-built_in">LOGI</span>(<span class="hljs-string">&quot;[HOOK] hooked_target_function called, arg=%d&quot;</span>, x);<br><br>    <span class="hljs-comment">// 修改输入参数</span><br>    <span class="hljs-type">int</span> new_arg = x + <span class="hljs-number">200</span>;<br>    <span class="hljs-type">int</span> ret = <span class="hljs-number">0</span>;<br><br>    <span class="hljs-comment">// 调用原始函数</span><br>    <span class="hljs-keyword">if</span> (original_target_fn)<br>        ret = <span class="hljs-built_in">original_target_fn</span>(new_arg);<br>    <span class="hljs-keyword">else</span><br>        <span class="hljs-built_in">LOGE</span>(<span class="hljs-string">&quot;[HOOK] original_target_fn null!&quot;</span>);<br><br>    <span class="hljs-built_in">LOGI</span>(<span class="hljs-string">&quot;[HOOK] return %d&quot;</span>, ret);<br>    <span class="hljs-keyword">return</span> ret;<br>&#125;<br><br><span class="hljs-comment">// ============================================================================</span><br><span class="hljs-comment">// 下面部分是 Hook 实现逻辑：遍历 ELF 段，定位 GOT 表，修改函数指针</span><br><span class="hljs-comment">// ============================================================================</span><br><br><span class="hljs-comment">// -----------------------------</span><br><span class="hljs-comment">// 将 GOT 所在内存页设置为可写</span><br><span class="hljs-comment">// -----------------------------</span><br><span class="hljs-function"><span class="hljs-type">static</span> <span class="hljs-type">bool</span> <span class="hljs-title">make_writable</span><span class="hljs-params">(<span class="hljs-type">void</span>* addr, <span class="hljs-type">size_t</span> len)</span> </span>&#123;<br>    <span class="hljs-type">long</span> page_size = <span class="hljs-built_in">sysconf</span>(_SC_PAGESIZE);  <span class="hljs-comment">// 通常是 4096 bytes</span><br><br>    <span class="hljs-comment">// 页对齐：mprotect 只能按页修改权限</span><br>    <span class="hljs-type">uintptr_t</span> start = (<span class="hljs-type">uintptr_t</span>)addr &amp; ~(page_size - <span class="hljs-number">1</span>);<br>    <span class="hljs-type">uintptr_t</span> end   = ((<span class="hljs-type">uintptr_t</span>)addr + len + page_size - <span class="hljs-number">1</span>) &amp; ~(page_size - <span class="hljs-number">1</span>);<br>    <span class="hljs-type">size_t</span> size     = end - start;<br><br>    <span class="hljs-comment">// 将 GOT 页改为读写</span><br>    <span class="hljs-keyword">if</span> (<span class="hljs-built_in">mprotect</span>((<span class="hljs-type">void</span>*)start, size, PROT_READ | PROT_WRITE) != <span class="hljs-number">0</span>) &#123;<br>        <span class="hljs-built_in">LOGE</span>(<span class="hljs-string">&quot;mprotect failed: %s addr=%p size=%zu&quot;</span>, <span class="hljs-built_in">strerror</span>(errno), addr, size);<br>        <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;<br>    &#125;<br><br>    <span class="hljs-built_in">LOGI</span>(<span class="hljs-string">&quot;mprotect success: addr=%p size=%zu&quot;</span>, addr, size);<br>    <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;<br>&#125;<br><br><span class="hljs-comment">// -----------------------------</span><br><span class="hljs-comment">// 解析 64 位 ELF 动态段信息并修改 GOT</span><br><span class="hljs-comment">// -----------------------------</span><br><span class="hljs-function"><span class="hljs-type">static</span> <span class="hljs-type">bool</span> <span class="hljs-title">process_relocations_64</span><span class="hljs-params">(<span class="hljs-type">uintptr_t</span> base, <span class="hljs-type">const</span> Elf64_Phdr* phdr, <span class="hljs-type">int</span> phnum)</span> </span>&#123;<br>    <span class="hljs-comment">// 找到 PT_DYNAMIC 段（保存重定位表、符号表等）</span><br>    <span class="hljs-type">const</span> Elf64_Dyn* dyn = <span class="hljs-literal">nullptr</span>;<br>    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; phnum; i++) &#123;<br>        <span class="hljs-keyword">if</span> (phdr[i].p_type == PT_DYNAMIC)<br>            dyn = (<span class="hljs-type">const</span> Elf64_Dyn*)(base + phdr[i].p_vaddr);<br>    &#125;<br>    <span class="hljs-keyword">if</span> (!dyn) <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;<br><br>    <span class="hljs-comment">// 动态段中保存的关键表指针</span><br>    <span class="hljs-type">const</span> <span class="hljs-type">char</span>* strtab = <span class="hljs-literal">nullptr</span>;     <span class="hljs-comment">// 字符串表</span><br>    <span class="hljs-type">const</span> Elf64_Sym* symtab = <span class="hljs-literal">nullptr</span>; <span class="hljs-comment">// 符号表</span><br>    Elf64_Rela* rela = <span class="hljs-literal">nullptr</span>;        <span class="hljs-comment">// PLT 重定位表</span><br>    <span class="hljs-type">size_t</span> rela_size = <span class="hljs-number">0</span>;              <span class="hljs-comment">// 重定位表大小</span><br><br>    <span class="hljs-comment">// 从动态段中提取各个表的地址</span><br>    <span class="hljs-keyword">for</span> (<span class="hljs-type">const</span> Elf64_Dyn* d = dyn; d-&gt;d_tag != DT_NULL; d++) &#123;<br>        <span class="hljs-keyword">switch</span> (d-&gt;d_tag) &#123;<br>            <span class="hljs-keyword">case</span> DT_STRTAB:   strtab = (<span class="hljs-type">const</span> <span class="hljs-type">char</span>*)(base + d-&gt;d_un.d_ptr); <span class="hljs-keyword">break</span>;<br>            <span class="hljs-keyword">case</span> DT_SYMTAB:   symtab = (<span class="hljs-type">const</span> Elf64_Sym*)(base + d-&gt;d_un.d_ptr); <span class="hljs-keyword">break</span>;<br>            <span class="hljs-keyword">case</span> DT_JMPREL:   rela = (Elf64_Rela*)(base + d-&gt;d_un.d_ptr); <span class="hljs-keyword">break</span>;<br>            <span class="hljs-keyword">case</span> DT_PLTRELSZ: rela_size = d-&gt;d_un.d_val; <span class="hljs-keyword">break</span>;<br>            <span class="hljs-keyword">default</span>: <span class="hljs-keyword">break</span>;<br>        &#125;<br>    &#125;<br><br>    <span class="hljs-comment">// 确保表都存在</span><br>    <span class="hljs-keyword">if</span> (!strtab || !symtab || !rela || !rela_size) &#123;<br>        <span class="hljs-built_in">LOGE</span>(<span class="hljs-string">&quot;dyn info missing&quot;</span>);<br>        <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;<br>    &#125;<br><br>    <span class="hljs-comment">// 计算重定位项数量</span><br>    <span class="hljs-type">size_t</span> n = rela_size / <span class="hljs-built_in">sizeof</span>(Elf64_Rela);<br>    <span class="hljs-built_in">LOGI</span>(<span class="hljs-string">&quot;Scanning %zu PLT relocations&quot;</span>, n);<br><br>    <span class="hljs-comment">// 遍历所有 .rela.plt 表项</span><br>    <span class="hljs-keyword">for</span> (<span class="hljs-type">size_t</span> i = <span class="hljs-number">0</span>; i &lt; n; i++) &#123;<br>        Elf64_Rela* r = &amp;rela[i];<br>        <span class="hljs-type">size_t</span> symidx = <span class="hljs-built_in">ELF64_R_SYM</span>(r-&gt;r_info);       <span class="hljs-comment">// 符号索引</span><br>        <span class="hljs-type">const</span> <span class="hljs-type">char</span>* name = strtab + symtab[symidx].st_name;  <span class="hljs-comment">// 符号名</span><br><br>        <span class="hljs-comment">// 找到我们想 hook 的目标函数</span><br>        <span class="hljs-keyword">if</span> (name &amp;&amp; <span class="hljs-built_in">strcmp</span>(name, TARGET_SYM) == <span class="hljs-number">0</span>) &#123;<br>            <span class="hljs-type">uintptr_t</span> got_addr = base + r-&gt;r_offset;   <span class="hljs-comment">// GOT 条目地址</span><br>            <span class="hljs-built_in">LOGI</span>(<span class="hljs-string">&quot;Found symbol %s -&gt; GOT %p&quot;</span>, name, (<span class="hljs-type">void</span>*)got_addr);<br><br>            <span class="hljs-comment">// GOT 表项里保存的是原始函数地址</span><br>            <span class="hljs-type">target_fn_t</span>* got_entry = (<span class="hljs-type">target_fn_t</span>*)got_addr;<br>            original_target_fn = *got_entry;<br>            <span class="hljs-built_in">LOGI</span>(<span class="hljs-string">&quot;Original fn=%p&quot;</span>, (<span class="hljs-type">void</span>*)original_target_fn);<br><br>            <span class="hljs-comment">// 修改 GOT 表项前需将该页改为可写</span><br>            <span class="hljs-keyword">if</span> (!<span class="hljs-built_in">make_writable</span>(got_entry, <span class="hljs-built_in">sizeof</span>(<span class="hljs-type">void</span>*))) <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;<br><br>            <span class="hljs-comment">// 写入我们自己的函数地址</span><br>            *got_entry = (<span class="hljs-type">target_fn_t</span>)&amp;hooked_target_function;<br>            <span class="hljs-built_in">LOGI</span>(<span class="hljs-string">&quot;Patched GOT to %p&quot;</span>, (<span class="hljs-type">void</span>*)hooked_target_function);<br>            <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;<br>        &#125;<br>    &#125;<br>    <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;<br>&#125;<br><br><span class="hljs-comment">// -----------------------------</span><br><span class="hljs-comment">// dl_iterate_phdr 的回调函数</span><br><span class="hljs-comment">// 每个已加载的 so 都会调用一次</span><br><span class="hljs-comment">// -----------------------------</span><br><span class="hljs-function"><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title">phdr_cb</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> dl_phdr_info* info, <span class="hljs-type">size_t</span> sz, <span class="hljs-type">void</span>*)</span> </span>&#123;<br>    (<span class="hljs-type">void</span>)sz;<br>    <span class="hljs-keyword">if</span> (!info-&gt;dlpi_name || !info-&gt;dlpi_name[<span class="hljs-number">0</span>]) <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;<br><br>    <span class="hljs-comment">// 提取 so 名称（去掉路径）</span><br>    <span class="hljs-type">const</span> <span class="hljs-type">char</span>* name = <span class="hljs-built_in">strrchr</span>(info-&gt;dlpi_name, <span class="hljs-string">&#x27;/&#x27;</span>);<br>    <span class="hljs-keyword">if</span> (name) name++; <span class="hljs-keyword">else</span> name = info-&gt;dlpi_name;<br><br>    <span class="hljs-built_in">LOGI</span>(<span class="hljs-string">&quot;Inspected: %s&quot;</span>, name);<br><br>    <span class="hljs-comment">// 匹配我们目标 so（libcombined.so）</span><br>    <span class="hljs-keyword">if</span> (<span class="hljs-built_in">strcmp</span>(name, COMBINED_SO) == <span class="hljs-number">0</span>) &#123;<br>        <span class="hljs-built_in">LOGI</span>(<span class="hljs-string">&quot;Matched combined: %s&quot;</span>, info-&gt;dlpi_name);<br><br>        <span class="hljs-comment">// 找到目标 so 的 ELF 头信息并处理其 PLT 重定位</span><br>        <span class="hljs-built_in">process_relocations_64</span>(<br>                (<span class="hljs-type">uintptr_t</span>)info-&gt;dlpi_addr,<br>                <span class="hljs-built_in">reinterpret_cast</span>&lt;<span class="hljs-type">const</span> Elf64_Phdr*&gt;(info-&gt;dlpi_phdr),<br>                info-&gt;dlpi_phnum<br>        );<br>    &#125;<br>    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>; <span class="hljs-comment">// 继续遍历</span><br>&#125;<br><br><span class="hljs-comment">// -----------------------------</span><br><span class="hljs-comment">// 安装 hook（核心流程）</span><br><span class="hljs-comment">// -----------------------------</span><br><span class="hljs-function"><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title">install_hook</span><span class="hljs-params">()</span> </span>&#123;<br>    <span class="hljs-built_in">LOGI</span>(<span class="hljs-string">&quot;Installing PLT hook...&quot;</span>);<br>    <span class="hljs-comment">// 遍历进程中已加载的 ELF（so），执行 phdr_cb</span><br>    <span class="hljs-built_in">dl_iterate_phdr</span>(phdr_cb, <span class="hljs-literal">nullptr</span>);<br>    <span class="hljs-built_in">LOGI</span>(<span class="hljs-string">&quot;PLT hook installed&quot;</span>);<br>&#125;<br><br><span class="hljs-comment">// -----------------------------</span><br><span class="hljs-comment">// 异步延迟安装 hook（避免目标 so 尚未加载）</span><br><span class="hljs-comment">// -----------------------------</span><br><span class="hljs-function"><span class="hljs-type">static</span> <span class="hljs-type">void</span>* <span class="hljs-title">delayed</span><span class="hljs-params">(<span class="hljs-type">void</span>*)</span> </span>&#123;<br>    <span class="hljs-built_in">sleep</span>(<span class="hljs-number">1</span>); <span class="hljs-comment">// 等待 1 秒，确保 libcombined.so 已加载</span><br>    <span class="hljs-built_in">install_hook</span>();<br>    <span class="hljs-keyword">return</span> <span class="hljs-literal">nullptr</span>;<br>&#125;<br><br><span class="hljs-comment">// -----------------------------</span><br><span class="hljs-comment">// 构造函数：so 加载时自动执行</span><br><span class="hljs-comment">// -----------------------------</span><br>__attribute__((constructor))<br><span class="hljs-function"><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title">onload</span><span class="hljs-params">()</span> </span>&#123;<br>    <span class="hljs-comment">// 创建一个后台线程延迟执行 hook</span><br>    <span class="hljs-type">pthread_t</span> t;<br>    <span class="hljs-built_in">pthread_create</span>(&amp;t, <span class="hljs-literal">nullptr</span>, delayed, <span class="hljs-literal">nullptr</span>);<br>    <span class="hljs-built_in">pthread_detach</span>(t);<br>    <span class="hljs-built_in">LOGI</span>(<span class="hljs-string">&quot;plthook constructor executed&quot;</span>);<br>&#125;<br><br></code></pre></td></tr></table></figure>
+
+<h3 id="dl-iterate-phdr-遍历加载的so"><a href="#dl-iterate-phdr-遍历加载的so" class="headerlink" title="dl_iterate_phdr(遍历加载的so)"></a>dl_iterate_phdr(遍历加载的so)</h3><blockquote>
+<p>遍历当前进程中加载的所有ELF模块(.so &#x2F; 主程序)</p>
+</blockquote>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-comment">// external/cronet/tot/third_party/llvm-libc/src/include/llvm-libc-types/struct_dl_phdr_info.h</span><br><span class="hljs-keyword">struct</span> <span class="hljs-title class_">dl_phdr_info</span> &#123;<br>  <span class="hljs-built_in">ElfW</span>(Addr) dlpi_addr; <span class="hljs-comment">// so加载基地址</span><br>  <span class="hljs-type">const</span> <span class="hljs-type">char</span> *dlpi_name; <span class="hljs-comment">// so名称</span><br>  <span class="hljs-function"><span class="hljs-type">const</span> <span class="hljs-title">ElfW</span><span class="hljs-params">(Phdr)</span> * dlpi_phdr</span>; <span class="hljs-comment">// 对应ELF的 PHT</span><br>  <span class="hljs-built_in">ElfW</span>(Half) dlpi_phnum;  <span class="hljs-comment">// PH的数量</span><br><br>&#125;;<br><br><br><span class="hljs-comment">// bionic/libc/bionic/dl_iterate_phdr_static.cpp</span><br><span class="hljs-function"><span class="hljs-type">int</span> <span class="hljs-title">dl_iterate_phdr</span><span class="hljs-params">(<span class="hljs-type">int</span> (*cb)(<span class="hljs-keyword">struct</span> dl_phdr_info* info, <span class="hljs-type">size_t</span> size, <span class="hljs-type">void</span>* data), <span class="hljs-type">void</span>* data)</span> </span>&#123;<br>  <span class="hljs-built_in">ElfW</span>(Ehdr)* ehdr = <span class="hljs-built_in">reinterpret_cast</span>&lt;<span class="hljs-built_in">ElfW</span>(Ehdr)*&gt;(&amp;__executable_start);<br><br>  <span class="hljs-keyword">if</span> (<span class="hljs-built_in">memcmp</span>(ehdr-&gt;e_ident, ELFMAG, SELFMAG) != <span class="hljs-number">0</span>) &#123;<br>    <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;<br>  &#125;<br><br>  <span class="hljs-comment">// Dynamic binaries get their dl_iterate_phdr from the dynamic linker, but</span><br>  <span class="hljs-comment">// static binaries get this. We don&#x27;t have a list of shared objects to</span><br>  <span class="hljs-comment">// iterate over, since there&#x27;s really only a single monolithic blob of</span><br>  <span class="hljs-comment">// code/data, plus optionally a VDSO.</span><br><br>  <span class="hljs-keyword">struct</span> <span class="hljs-title class_">dl_phdr_info</span> exe_info;<br>  exe_info.dlpi_addr = <span class="hljs-number">0</span>;<br>  exe_info.dlpi_name = <span class="hljs-literal">NULL</span>;<br>  exe_info.dlpi_phdr = <span class="hljs-built_in">reinterpret_cast</span>&lt;<span class="hljs-built_in">ElfW</span>(Phdr)*&gt;(<span class="hljs-built_in">reinterpret_cast</span>&lt;<span class="hljs-type">uintptr_t</span>&gt;(ehdr) + ehdr-&gt;e_phoff);<br>  exe_info.dlpi_phnum = ehdr-&gt;e_phnum;<br>  exe_info.dlpi_adds = <span class="hljs-number">0</span>;<br>  exe_info.dlpi_subs = <span class="hljs-number">0</span>;<br><br>  <span class="hljs-type">const</span> TlsModules&amp; tls_modules = __libc_shared_globals()-&gt;tls_modules;<br>  <span class="hljs-keyword">if</span> (tls_modules.module_count == <span class="hljs-number">0</span>) &#123;<br>    exe_info.dlpi_tls_modid = <span class="hljs-number">0</span>;<br>    exe_info.dlpi_tls_data = <span class="hljs-literal">nullptr</span>;<br>  &#125; <span class="hljs-keyword">else</span> &#123;<br>    <span class="hljs-type">const</span> <span class="hljs-type">size_t</span> kExeModuleId = <span class="hljs-number">1</span>;<br>    <span class="hljs-type">const</span> StaticTlsLayout&amp; layout = __libc_shared_globals()-&gt;static_tls_layout;<br>    <span class="hljs-type">const</span> TlsModule&amp; tls_module = tls_modules.module_table[__tls_module_id_to_idx(kExeModuleId)];<br>    <span class="hljs-type">char</span>* static_tls = <span class="hljs-built_in">reinterpret_cast</span>&lt;<span class="hljs-type">char</span>*&gt;(__get_bionic_tcb()) - layout.<span class="hljs-built_in">offset_bionic_tcb</span>();<br>    exe_info.dlpi_tls_modid = kExeModuleId;<br>    exe_info.dlpi_tls_data = static_tls + tls_module.static_offset;<br>  &#125;<br><br>  <span class="hljs-comment">// Try the executable first.</span><br>  <span class="hljs-type">int</span> rc = <span class="hljs-built_in">cb</span>(&amp;exe_info, <span class="hljs-built_in">sizeof</span>(exe_info), data);<br>  <span class="hljs-keyword">if</span> (rc != <span class="hljs-number">0</span>) &#123;<br>    <span class="hljs-keyword">return</span> rc;<br>  &#125;<br><br>  <span class="hljs-comment">// Try the VDSO if that didn&#x27;t work.</span><br>  <span class="hljs-built_in">ElfW</span>(Ehdr)* ehdr_vdso = <span class="hljs-built_in">reinterpret_cast</span>&lt;<span class="hljs-built_in">ElfW</span>(Ehdr)*&gt;(<span class="hljs-built_in">getauxval</span>(AT_SYSINFO_EHDR));<br>  <span class="hljs-keyword">if</span> (ehdr_vdso == <span class="hljs-literal">nullptr</span>) &#123;<br>    <span class="hljs-comment">// There is no VDSO, so there&#x27;s nowhere left to look.</span><br>    <span class="hljs-keyword">return</span> rc;<br>  &#125;<br><br>  <span class="hljs-keyword">struct</span> <span class="hljs-title class_">dl_phdr_info</span> vdso_info;<br>  vdso_info.dlpi_addr = <span class="hljs-number">0</span>;<br>  vdso_info.dlpi_name = <span class="hljs-literal">NULL</span>;<br>  vdso_info.dlpi_phdr = <span class="hljs-built_in">reinterpret_cast</span>&lt;<span class="hljs-built_in">ElfW</span>(Phdr)*&gt;(<span class="hljs-built_in">reinterpret_cast</span>&lt;<span class="hljs-type">char</span>*&gt;(ehdr_vdso) + ehdr_vdso-&gt;e_phoff);<br>  vdso_info.dlpi_phnum = ehdr_vdso-&gt;e_phnum;<br>  vdso_info.dlpi_adds = <span class="hljs-number">0</span>;<br>  vdso_info.dlpi_subs = <span class="hljs-number">0</span>;<br>  vdso_info.dlpi_tls_modid = <span class="hljs-number">0</span>;<br>  vdso_info.dlpi_tls_data = <span class="hljs-literal">nullptr</span>;<br>  <span class="hljs-keyword">for</span> (<span class="hljs-type">size_t</span> i = <span class="hljs-number">0</span>; i &lt; vdso_info.dlpi_phnum; ++i) &#123;<br>    <span class="hljs-keyword">if</span> (vdso_info.dlpi_phdr[i].p_type == PT_LOAD) &#123;<br>      vdso_info.dlpi_addr = (<span class="hljs-built_in">ElfW</span>(Addr)) ehdr_vdso - vdso_info.dlpi_phdr[i].p_vaddr;<br>      <span class="hljs-keyword">break</span>;<br>    &#125;<br>  &#125;<br>  <span class="hljs-keyword">return</span> <span class="hljs-built_in">cb</span>(&amp;vdso_info, <span class="hljs-built_in">sizeof</span>(vdso_info), data);<br>&#125;<br></code></pre></td></tr></table></figure>
+
+
+
+
+
+<h2 id="CMakeLists-txt-SO编译配置"><a href="#CMakeLists-txt-SO编译配置" class="headerlink" title="CMakeLists.txt(SO编译配置)"></a>CMakeLists.txt(SO编译配置)</h2><figure class="highlight cmake"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><code class="hljs cmake"><span class="hljs-keyword">cmake_minimum_required</span>(VERSION <span class="hljs-number">3.10</span>)<br><span class="hljs-keyword">project</span>(<span class="hljs-string">&quot;plthook_combined&quot;</span>)<br><br><span class="hljs-keyword">set</span>(CMAKE_CXX_STANDARD <span class="hljs-number">17</span>)<br><span class="hljs-keyword">set</span>(CMAKE_CXX_STANDARD_REQUIRED <span class="hljs-keyword">ON</span>)<br><br><span class="hljs-comment"># 生成 libcombined.so</span><br><span class="hljs-keyword">add_library</span>(combined SHARED combined.cpp)<br><br><span class="hljs-comment"># hook 库</span><br><span class="hljs-keyword">add_library</span>(plthook SHARED plthook.cpp)<br><br><span class="hljs-comment"># 链接库</span><br><span class="hljs-keyword">target_link_libraries</span>(combined<br>        android<br>        log)<br><br><span class="hljs-keyword">target_link_libraries</span>(plthook<br>        android<br>        log<br>        dl)<br><br></code></pre></td></tr></table></figure>
+
+
+
+<h2 id="MainActivity-调用SO"><a href="#MainActivity-调用SO" class="headerlink" title="MainActivity(调用SO)"></a>MainActivity(调用SO)</h2><figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-keyword">package</span> com.example.plthookdemo<br><br><span class="hljs-keyword">import</span> android.app.Activity<br><span class="hljs-keyword">import</span> android.os.Bundle<br><span class="hljs-keyword">import</span> android.util.Log<br><span class="hljs-keyword">import</span> androidx.appcompat.app.AppCompatActivity<br><span class="hljs-keyword">import</span> com.example.plthookdemo.databinding.ActivityMainBinding<br><br><span class="hljs-keyword">class</span> <span class="hljs-title class_">MainActivity</span> : <span class="hljs-type">AppCompatActivity</span>() &#123;<br>    <span class="hljs-comment">// native wrapper that calls into libcaller -&gt; target_function</span><br>    <span class="hljs-keyword">external</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">callTarget</span><span class="hljs-params">(v: <span class="hljs-type">Int</span>)</span></span>: <span class="hljs-built_in">Int</span><br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">lateinit</span> <span class="hljs-keyword">var</span> binding: ActivityMainBinding<br><br>    <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">onCreate</span><span class="hljs-params">(savedInstanceState: <span class="hljs-type">Bundle</span>?)</span></span> &#123;<br>        <span class="hljs-keyword">super</span>.onCreate(savedInstanceState)<br><br>        Log.i(<span class="hljs-string">&quot;PLT_TEST&quot;</span>, <span class="hljs-string">&quot;Calling callTarget(5) ...&quot;</span>)<br>        <span class="hljs-keyword">val</span> r = callTarget(<span class="hljs-number">5</span>)<br>        Log.i(<span class="hljs-string">&quot;PLT_TEST&quot;</span>, <span class="hljs-string">&quot;callTarget returned: &quot;</span> + r)<br><br>        binding = ActivityMainBinding.inflate(layoutInflater)<br>        setContentView(binding.root)<br><br>        binding.sampleText.text = <span class="hljs-string">&quot;123&quot;</span><br>        binding.sampleText.setOnClickListener &#123;<br><span class="hljs-comment">//            testHook()</span><br>            <span class="hljs-keyword">val</span> r = callTarget(<span class="hljs-number">5</span>)<br>            Log.i(<span class="hljs-string">&quot;PLT_TEST11&quot;</span>, <span class="hljs-string">&quot;callTarget returned: &quot;</span> + r)<br>        &#125;<br>    &#125;<br><br>    <span class="hljs-keyword">companion</span> <span class="hljs-keyword">object</span> &#123;<br>        <span class="hljs-keyword">init</span> &#123;<br>            <span class="hljs-comment">// 加载顺序很重要：先加载 target + caller，然后加载 plthook</span><br>                System.loadLibrary(<span class="hljs-string">&quot;combined&quot;</span>);<br>                System.loadLibrary(<span class="hljs-string">&quot;plthook&quot;</span>);<br>        &#125;<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+
+
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>PLT Hook 的核心是：<strong>通过改写导入方的 GOT 表项，将外部符号调用重定向到自定义函数</strong>。<br>它并不是“全能拦截”，而是基于 ELF 动态链接路径（PLT&#x2F;GOT）生效，因此更适合做跨 so 的函数调用拦截与行为观测。</p>
+<p>在 Android 场景下，要把 PLT Hook 从“能跑”做到“可用”，关键在于三点：</p>
+<ul>
+<li><strong>理解边界</strong>：只能稳定拦截经过导入表的调用；库内直调、inline&#x2F;LTO、<code>-Bsymbolic</code> 等路径可能拦不到。  </li>
+<li><strong>处理细节</strong>：区分 <code>REL/RELA</code> 与重定位类型（如 <code>JUMP_SLOT/GLOB_DAT</code>），并正确解析 <code>.dynamic</code> 信息。  </li>
+<li><strong>保证稳定性</strong>：关注 <code>RELRO</code>&#x2F;<code>mprotect</code>、安装时机（<code>NOW/LAZY</code>）、线程安全、幂等与可回滚能力。</li>
+</ul>
+<h4 id="相关要点"><a href="#相关要点" class="headerlink" title="相关要点"></a>相关要点</h4><ul>
+<li><strong>标准流程</strong>：找目标 so -&gt; 解析动态段 -&gt; 匹配符号重定位项 -&gt; 改 GOT -&gt; 保存原函数并验证调用链。  </li>
+<li><strong>高频追问</strong>：为什么有些函数 hook 不到？（因为调用不经过导入表，或被优化&#x2F;符号绑定策略改变）  </li>
+<li><strong>架构差异</strong>：<code>arm64</code> 常见 <code>RELA</code>，<code>arm32</code> 常见 <code>REL</code>。  </li>
+<li><strong>与 Inline Hook 对比</strong>：PLT Hook 侵入低、兼容性好但覆盖有限；Inline 覆盖广但复杂度和风险更高。  </li>
+<li><strong>排障思路</strong>：先确认是否命中目标 so&#x2F;symbol，再看重定位类型、写入权限、old&#x2F;new 地址与 <code>errno</code>。</li>
+</ul>
+<p>一句话概括：<strong>PLT Hook 是“调用路径重定向”技术，价值在于低侵入拦截，难点在于边界识别与工程化稳定性。</strong></p>
+<h1 id="相关三方库"><a href="#相关三方库" class="headerlink" title="相关三方库"></a>相关三方库</h1><p><a target="_blank" rel="noopener" href="https://github.com/bytedance/bhook/tree/ecb90454a64137c1cde5d9d3866af6999e13e0fd">bytedance&#x2F;bhook</a></p>
+<p><a target="_blank" rel="noopener" href="https://github.com/iqiyi/xhook">iqiyi&#x2F;xhook</a></p>
+<h1 id="参考地址"><a href="#参考地址" class="headerlink" title="参考地址"></a>参考地址</h1><p><a target="_blank" rel="noopener" href="https://juejin.cn/post/6998403957697544205?from=search-suggest">字节跳动开源 Android PLT hook 方案 bhook</a></p>
+
+                
+              </div>
+            
+            <hr/>
+            <div>
+              <div class="post-metas my-3">
+  
+  
+    <div class="post-meta">
+      <i class="iconfont icon-tags"></i>
+      
+        <a href="/tags/Hook/" class="print-no-link">#Hook</a>
+      
+    </div>
+  
+</div>
+
+
+              
+  
+
+  <div class="license-box my-3">
+    <div class="license-title">
+      <div>Android中的Hook-PLTHook</div>
+      <div>http://example.com/2025/10/02/Android中的Hook-PLTHook/</div>
+    </div>
+    <div class="license-meta">
+      
+        <div class="license-meta-item">
+          <div>作者</div>
+          <div>Leo-Wxy</div>
+        </div>
+      
+      
+        <div class="license-meta-item license-meta-date">
+          <div>发布于</div>
+          <div>2025年10月2日</div>
+        </div>
+      
+      
+      
+        <div class="license-meta-item">
+          <div>许可协议</div>
+          <div>
+            
+              
+              
+                <a class="print-no-link" target="_blank" href="https://creativecommons.org/licenses/by/4.0/">
+                  <span class="hint--top hint--rounded" aria-label="BY - 署名">
+                    <i class="iconfont icon-cc-by"></i>
+                  </span>
+                </a>
+              
+            
+          </div>
+        </div>
+      
+    </div>
+    <div class="license-icon iconfont"></div>
+  </div>
+
+
+
+              
+                <div class="post-prevnext my-3">
+                  <article class="post-prev col-6">
+                    
+                    
+                      <a href="/2025/10/02/Android%E4%B8%AD%E7%9A%84Hook-InlineHook/" title="Android中的Hook-InlineHook">
+                        <i class="iconfont icon-arrowleft"></i>
+                        <span class="hidden-mobile">Android中的Hook-InlineHook</span>
+                        <span class="visible-mobile">上一篇</span>
+                      </a>
+                    
+                  </article>
+                  <article class="post-next col-6">
+                    
+                    
+                      <a href="/2025/10/02/Android%E4%B8%AD%E7%9A%84Hook/" title="Android中的Hook">
+                        <span class="hidden-mobile">Android中的Hook</span>
+                        <span class="visible-mobile">下一篇</span>
+                        <i class="iconfont icon-arrowright"></i>
+                      </a>
+                    
+                  </article>
+                </div>
+              
+            </div>
+
+            
+          </article>
+        </div>
+      </div>
+    </div>
+
+    <div class="side-col d-none d-lg-block col-lg-2">
+      
+  <aside class="sidebar" style="margin-left: -1rem">
+    <div id="toc">
+  <p class="toc-header">
+    <i class="iconfont icon-list"></i>
+    <span>目录</span>
+  </p>
+  <div class="toc-body" id="toc-body"></div>
+</div>
+
+
+
+  </aside>
+
+
+    </div>
+  </div>
+</div>
+
+
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  <script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/mermaid@8.8.3/dist/mermaid.min.js', function() {
+    mermaid.initialize({"theme":"default"});
+
+    Fluid.utils.listenDOMLoaded(function() {
+      Fluid.events.registerRefreshCallback(function() {
+        if ('mermaid' in window) {
+          mermaid.init();
+        }
+      });
+    });
+  });
+</script>
+
+
+
+
+
+
+    
+
+    
+      <a id="scroll-top-button" aria-label="TOP" href="#" role="button">
+        <i class="iconfont icon-arrowup" aria-hidden="true"></i>
+      </a>
+    
+
+    
+      <div class="modal fade" id="modalSearch" tabindex="-1" role="dialog" aria-labelledby="ModalLabel"
+     aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header text-center">
+        <h4 class="modal-title w-100 font-weight-bold">搜索</h4>
+        <button type="button" id="local-search-close" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body mx-3">
+        <div class="md-form mb-5">
+          <input type="text" id="local-search-input" class="form-control validate">
+          <label data-error="x" data-success="v" for="local-search-input">关键词</label>
+        </div>
+        <div class="list-group" id="local-search-result"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+    
+
+    
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+  
+    <div class="footer-content">
+       <a href="https://hexo.io" target="_blank" rel="nofollow noopener"><span>Hexo</span></a> <i class="iconfont icon-love"></i> <a href="https://github.com/fluid-dev/hexo-theme-fluid" target="_blank" rel="nofollow noopener"><span>Fluid</span></a> 
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+
+  <!-- Scripts -->
+  
+  <script  src="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.js" ></script>
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.css" />
+
+  <script>
+    NProgress.configure({"showSpinner":false,"trickleSpeed":100})
+    NProgress.start()
+    window.addEventListener('load', function() {
+      NProgress.done();
+    })
+  </script>
+
+
+<script  src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" ></script>
+<script  src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.min.js" ></script>
+<script  src="/js/events.js" ></script>
+<script  src="/js/plugins.js" ></script>
+
+
+
+
+
+  
+    <script  src="/js/img-lazyload.js" ></script>
+  
+
+
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/tocbot@4.12.0/dist/tocbot.min.js', function() {
+    var toc = jQuery('#toc');
+    if (toc.length === 0 || !window.tocbot) { return; }
+    var boardCtn = jQuery('#board-ctn');
+    var boardTop = boardCtn.offset().top;
+
+    window.tocbot.init(Object.assign({
+      tocSelector     : '#toc-body',
+      contentSelector : '.markdown-body',
+      linkClass       : 'tocbot-link',
+      activeLinkClass : 'tocbot-active-link',
+      listClass       : 'tocbot-list',
+      isCollapsedClass: 'tocbot-is-collapsed',
+      collapsibleClass: 'tocbot-is-collapsible',
+      scrollSmooth    : true,
+      includeTitleTags: true,
+      headingsOffset  : -boardTop,
+    }, CONFIG.toc));
+    if (toc.find('.toc-list-item').length > 0) {
+      toc.css('visibility', 'visible');
+    }
+
+    Fluid.events.registerRefreshCallback(function() {
+      if ('tocbot' in window) {
+        tocbot.refresh();
+        var toc = jQuery('#toc');
+        if (toc.length === 0 || !tocbot) {
+          return;
+        }
+        if (toc.find('.toc-list-item').length > 0) {
+          toc.css('visibility', 'visible');
+        }
+      }
+    });
+  });
+</script>
+
+
+  <script src=https://cdn.jsdelivr.net/npm/clipboard@2.0.6/dist/clipboard.min.js></script>
+
+  <script>Fluid.plugins.codeWidget();</script>
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/anchor-js@4.3.0/anchor.min.js', function() {
+    window.anchors.options = {
+      placement: CONFIG.anchorjs.placement,
+      visible  : CONFIG.anchorjs.visible
+    };
+    if (CONFIG.anchorjs.icon) {
+      window.anchors.options.icon = CONFIG.anchorjs.icon;
+    }
+    var el = (CONFIG.anchorjs.element || 'h1,h2,h3,h4,h5,h6').split(',');
+    var res = [];
+    for (var item of el) {
+      res.push('.markdown-body > ' + item.trim());
+    }
+    if (CONFIG.anchorjs.placement === 'left') {
+      window.anchors.options.class = 'anchorjs-link-left';
+    }
+    window.anchors.add(res.join(', '));
+
+    Fluid.events.registerRefreshCallback(function() {
+      if ('anchors' in window) {
+        anchors.removeAll();
+        var el = (CONFIG.anchorjs.element || 'h1,h2,h3,h4,h5,h6').split(',');
+        var res = [];
+        for (var item of el) {
+          res.push('.markdown-body > ' + item.trim());
+        }
+        if (CONFIG.anchorjs.placement === 'left') {
+          anchors.options.class = 'anchorjs-link-left';
+        }
+        anchors.add(res.join(', '));
+      }
+    });
+  });
+</script>
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.js', function() {
+    Fluid.plugins.fancyBox();
+  });
+</script>
+
+
+  <script>Fluid.plugins.imageCaption();</script>
+
+  <script  src="/js/local-search.js" ></script>
+
+
+
+
+
+<!-- 主题的启动项，将它保持在最底部 -->
+<!-- the boot of the theme, keep it at the bottom -->
+<script  src="/js/boot.js" ></script>
+
+
+  
+
+  <noscript>
+    <div class="noscript-warning">博客在允许 JavaScript 运行的环境下浏览效果更佳</div>
+  </noscript>
+</body>
+</html>

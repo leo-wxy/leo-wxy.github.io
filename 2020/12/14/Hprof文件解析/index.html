@@ -1,0 +1,852 @@
+
+
+<!DOCTYPE html>
+<html lang="zh-CN" data-default-color-scheme=auto>
+
+
+
+<head>
+  <meta charset="UTF-8">
+
+  <link rel="apple-touch-icon" sizes="76x76" href="/img/favicon.png">
+  <link rel="icon" href="/img/favicon.png">
+  
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, shrink-to-fit=no">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  
+  <meta name="theme-color" content="#11527b">
+  <meta name="author" content="Leo-Wxy">
+  <meta name="keywords" content="">
+  
+    <meta name="description" content="Hprof对应的就是内存快照。可以方便的凭借Hprof进行OOM分析以及异常治理。   OOM治理 内存快照保存的对象信息和依赖关系也是静态分析内存泄漏的关键。  Crash治理 保存的数据，也可用于分析异常问题。    Hprof文件格式Hprof文件格式有明确组织方式，Android在Java的基础上新增了部分Tag。 Java Hprof格式![Java Hprof格式](&#x2F;im">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Hprof文件解析">
+<meta property="og:url" content="http://example.com/2020/12/14/Hprof%E6%96%87%E4%BB%B6%E8%A7%A3%E6%9E%90/index.html">
+<meta property="og:site_name" content="Wxy的个人博客">
+<meta property="og:description" content="Hprof对应的就是内存快照。可以方便的凭借Hprof进行OOM分析以及异常治理。   OOM治理 内存快照保存的对象信息和依赖关系也是静态分析内存泄漏的关键。  Crash治理 保存的数据，也可用于分析异常问题。    Hprof文件格式Hprof文件格式有明确组织方式，Android在Java的基础上新增了部分Tag。 Java Hprof格式![Java Hprof格式](&#x2F;im">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="http://example.com/images/Hprof%E6%96%87%E4%BB%B6%E8%A7%A3%E6%9E%90.png">
+<meta property="og:image" content="http://example.com/images/Hprof-Header">
+<meta property="og:image" content="http://example.com/images/Hprof-Record">
+<meta property="og:image" content="http://example.com/images/Hprof%E6%96%87%E4%BB%B6%E7%94%9F%E6%88%90%E5%8E%9F%E7%90%86.png">
+<meta property="og:image" content="http://example.com/images/Hprof-ScopedSuspendAll.png">
+<meta property="og:image" content="http://example.com/images/Hprof-ProcessHeap.png">
+<meta property="og:image" content="http://example.com/images/Hprof%E6%96%87%E4%BB%B6%E8%A3%81%E5%89%AA.png">
+<meta property="og:image" content="http://example.com/images/Dump%E6%96%87%E4%BB%B6%E5%90%8E%E8%A3%81%E5%89%AA.png">
+<meta property="og:image" content="http://example.com/images/Dump%E5%AE%9E%E6%97%B6%E8%A3%81%E5%89%AA.png">
+<meta property="og:image" content="http://example.com/images/Hprof%E5%AE%9E%E6%97%B6%E8%A3%81%E5%89%AA%E6%B5%81%E7%A8%8B.png">
+<meta property="og:image" content="http://example.com/images/Hprof-%E8%A3%81%E5%89%AA%E7%9A%84%E5%86%85%E5%AE%B9.png">
+<meta property="og:image" content="http://example.com/images/fork%E5%AD%90%E8%BF%9B%E7%A8%8B">
+<meta property="og:image" content="http://example.com/images/%E5%AD%90%E8%BF%9B%E7%A8%8BDump%E5%86%85%E5%AD%98%E6%B5%81%E7%A8%8B%E5%9B%BE">
+<meta property="article:published_time" content="2020-12-14T06:45:43.000Z">
+<meta property="article:modified_time" content="2020-12-22T02:09:35.000Z">
+<meta property="article:author" content="Leo-Wxy">
+<meta property="article:tag" content="Java">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="http://example.com/images/Hprof%E6%96%87%E4%BB%B6%E8%A7%A3%E6%9E%90.png">
+  
+  
+  
+  <title>Hprof文件解析 - Wxy的个人博客</title>
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css" />
+
+
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@4.0.0/github-markdown.min.css" />
+
+  <link  rel="stylesheet" href="/lib/hint/hint.min.css" />
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.css" />
+
+
+
+<!-- 主题依赖的图标库，不要自行修改 -->
+<!-- Do not modify the link that theme dependent icons -->
+
+<link rel="stylesheet" href="//at.alicdn.com/t/c/font_1749284_5i9bdhy70f8.css">
+
+
+
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1736178_kmeydafke9r.css">
+
+
+<link  rel="stylesheet" href="/css/main.css" />
+
+
+  <link id="highlight-css" rel="stylesheet" href="/css/highlight.css" />
+  
+    <link id="highlight-css-dark" rel="stylesheet" href="/css/highlight-dark.css" />
+  
+
+
+
+
+  <script id="fluid-configs">
+    var Fluid = window.Fluid || {};
+    Fluid.ctx = Object.assign({}, Fluid.ctx)
+    var CONFIG = {"hostname":"example.com","root":"/","version":"1.9.8","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false,"scope":[]},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"code_language":{"enable":true,"default":"TEXT"},"copy_btn":true,"image_caption":{"enable":true},"image_zoom":{"enable":true,"img_url_replace":["",""]},"toc":{"enable":true,"placement":"right","headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"loading_img":"/img/loading.gif","onlypost":false,"offset_factor":2},"web_analytics":{"enable":false,"follow_dnt":true,"baidu":null,"google":null,"tencent":{"sid":null,"cid":null},"leancloud":{"app_id":null,"app_key":null,"server_url":null,"path":"window.location.pathname","ignore_local":false},"umami":{"src":null,"website_id":null,"domains":null,"start_time":"2024-01-01T00:00:00.000Z","token":null,"api_server":null},"gtag":null,"woyaola":null,"cnzz":null},"search_path":"/local-search.xml","include_content_in_search":false};
+
+    if (CONFIG.web_analytics.follow_dnt) {
+      var dntVal = navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack;
+      Fluid.ctx.dnt = dntVal && (dntVal.startsWith('1') || dntVal.startsWith('yes') || dntVal.startsWith('on'));
+    }
+  </script>
+  <script  src="/js/utils.js" ></script>
+  <script  src="/js/color-schema.js" ></script>
+  
+
+
+  
+<meta name="generator" content="Hexo 8.1.1"></head>
+
+
+<body>
+  
+
+  <header>
+    
+
+<div class="header-inner" style="height: 30vh;">
+  <nav id="navbar" class="navbar fixed-top  navbar-expand-lg navbar-dark scrolling-navbar">
+  <div class="container">
+    <a class="navbar-brand" href="/">
+      <strong>Wxy&#39;s Blog</strong>
+    </a>
+
+    <button id="navbar-toggler-btn" class="navbar-toggler" type="button" data-toggle="collapse"
+            data-target="#navbarSupportedContent"
+            aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+      <div class="animated-icon"><span></span><span></span><span></span></div>
+    </button>
+
+    <!-- Collapsible content -->
+    <div class="collapse navbar-collapse" id="navbarSupportedContent">
+      <ul class="navbar-nav ml-auto text-center">
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/" target="_self">
+                <i class="iconfont icon-home-fill"></i>
+                <span>首页</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/archives/" target="_self">
+                <i class="iconfont icon-archive-fill"></i>
+                <span>归档</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/tags/" target="_self">
+                <i class="iconfont icon-tags-fill"></i>
+                <span>标签</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/about/" target="_self">
+                <i class="iconfont icon-user-fill"></i>
+                <span>关于</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/links/" target="_self">
+                <i class="iconfont icon-link-fill"></i>
+                <span>友链</span>
+              </a>
+            </li>
+          
+        
+        
+          <li class="nav-item" id="search-btn">
+            <a class="nav-link" target="_self" href="javascript:;" data-toggle="modal" data-target="#modalSearch" aria-label="Search">
+              <i class="iconfont icon-search"></i>
+            </a>
+          </li>
+          
+        
+        
+          <li class="nav-item" id="color-toggle-btn">
+            <a class="nav-link" target="_self" href="javascript:;" aria-label="Color Toggle">
+              <i class="iconfont icon-dark" id="color-toggle-icon"></i>
+            </a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+  
+
+<div id="banner" class="banner" parallax=true
+     style="background: url('/img/default.png') no-repeat center center; background-size: cover;">
+  <div class="full-bg-img">
+    <div class="mask flex-center" style="background-color: rgba(0, 0, 0, 0.3)">
+      <div class="banner-text text-center fade-in-up">
+        <div class="h2">
+          
+            <span id="subtitle">Hprof文件解析</span>
+          
+        </div>
+
+        
+          
+  <div class="mt-3">
+    
+    
+      <span class="post-meta">
+        <i class="iconfont icon-date-fill" aria-hidden="true"></i>
+        <time datetime="2020-12-14 14:45" pubdate>
+          2020年12月14日 下午
+        </time>
+      </span>
+    
+  </div>
+
+  <div class="mt-1">
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-chart"></i>
+        
+          <!-- compatible with older versions-->
+          2.2k 字
+        
+      </span>
+    
+
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-clock-fill"></i>
+        
+        
+        
+          <!-- compatible with older versions-->
+          8 分钟
+        
+      </span>
+    
+
+    
+    
+  </div>
+
+
+        
+      </div>
+
+      
+    </div>
+  </div>
+</div>
+
+</div>
+
+  </header>
+
+  <main>
+    
+      
+
+<div class="container-fluid nopadding-x">
+  <div class="row nomargin-x">
+    <div class="side-col d-none d-lg-block col-lg-2">
+      
+
+    </div>
+
+    <div class="col-lg-8 nopadding-x-md">
+      <div class="container nopadding-x-md" id="board-ctn">
+        <div id="board">
+          <article class="post-content mx-auto">
+            <h1 id="seo-header">Hprof文件解析</h1>
+            
+            
+              <div class="markdown-body">
+                
+                <blockquote>
+<p>Hprof对应的就是<strong>内存快照</strong>。可以方便的凭借<code>Hprof</code>进行<code>OOM分析</code>以及<code>异常治理</code>。</p>
+</blockquote>
+<ul>
+<li><p><code>OOM治理</code></p>
+<p><code>内存快照</code>保存的<code>对象信息</code>和<code>依赖关系</code>也是静态分析内存泄漏的关键。</p>
+</li>
+<li><p><code>Crash治理</code></p>
+<p>保存的数据，也可用于分析异常问题。</p>
+</li>
+</ul>
+<p><img src="/images/Hprof%E6%96%87%E4%BB%B6%E8%A7%A3%E6%9E%90.png" srcset="/img/loading.gif" lazyload alt="Hprof文件解析"></p>
+<h2 id="Hprof文件格式"><a href="#Hprof文件格式" class="headerlink" title="Hprof文件格式"></a>Hprof文件格式</h2><p>Hprof文件格式有明确组织方式，Android在Java的基础上新增了部分Tag。</p>
+<h3 id="Java-Hprof格式"><a href="#Java-Hprof格式" class="headerlink" title="Java Hprof格式"></a>Java Hprof格式</h3><p>![Java Hprof格式](&#x2F;images&#x2F;Java Hprof格式.png)</p>
+<p>整体分为<code>Header</code>和<code>Record数组</code>两部分。</p>
+<h4 id="Header"><a href="#Header" class="headerlink" title="Header"></a>Header</h4><blockquote>
+<p>记录hprof的元信息</p>
+</blockquote>
+<p><img src="/images/Hprof-Header" srcset="/img/loading.gif" lazyload alt="Hprof-Header"></p>
+<ul>
+<li>格式名和版本号：JAVA PROFILE 1.0.2 (<code>18byte</code>)</li>
+<li>标识符大小：<code>4byte</code></li>
+<li>高位时间戳：<code>4byte</code></li>
+<li>地位时间戳：<code>4byte</code></li>
+</ul>
+<p><code>Header</code>总共占了<code>18 + 4 + 4 + 4 = 32byte </code></p>
+<h4 id="Record数组"><a href="#Record数组" class="headerlink" title="Record数组"></a>Record数组</h4><blockquote>
+<p>记录各个类型对应的数据</p>
+</blockquote>
+<p><img src="/images/Hprof-Record" srcset="/img/loading.gif" lazyload alt="Hprof-Record"></p>
+<ul>
+<li><strong>类型(<code>TAG</code>)</strong>：表示Record对应的类型(<code>1Byte</code>)</li>
+<li>时间戳(<code>TIME</code>)：发生时间(<code>4byte</code>)</li>
+<li>长度(<code>LENGTH</code>)：记录数据的长度(<code>4byte</code>)</li>
+<li>记录数据(<code>BODY</code>)：记录的数据(<code>${LENGTH}Byte</code>)</li>
+</ul>
+<p>单条<code>Record</code>总共占了<code>1 + 4 + 4 + LENGTH byte</code></p>
+<h4 id="支持的TAG类型"><a href="#支持的TAG类型" class="headerlink" title="支持的TAG类型"></a>支持的TAG类型</h4><h5 id="一级Tag"><a href="#一级Tag" class="headerlink" title="一级Tag"></a>一级Tag</h5><ul>
+<li>STRING_IN_UTF8 &#x3D; 0x01</li>
+<li>LOAD_CLASS &#x3D; 0x02</li>
+<li>UNLOAD_CLASS &#x3D; 0x03</li>
+<li>STACK_FRAME &#x3D; 0x04</li>
+<li>STACK_TRACE &#x3D; 0x05</li>
+<li>ALLOC_SITES &#x3D; 0x06</li>
+<li>HEAP_SUMMARY &#x3D; 0x07</li>
+<li>START_THREAD &#x3D; 0x0a</li>
+<li>END_THREAD &#x3D; 0x0b</li>
+<li><strong>HEAP_DUMP &#x3D; 0x0c</strong></li>
+<li>CPU_SAMPLES &#x3D; 0x0d</li>
+<li>CONTROL_SETTINGS &#x3D; 0x0e</li>
+<li><strong>HEAP_DUMP_SEGMENT &#x3D; 0x1c</strong></li>
+<li>HEAP_DUMP_END &#x3D; 0x2c</li>
+</ul>
+<h5 id="二级Tag"><a href="#二级Tag" class="headerlink" title="二级Tag"></a>二级Tag</h5><p>主要位于<code>HEAP_DUMP</code>或<code>HEAP_DUMP_SEGMENT</code>中</p>
+<ul>
+<li>ROOT_UNKNOWN &#x3D; 0xff</li>
+<li>ROOT_JNI_GLOBAL &#x3D; 0x01</li>
+<li>ROOT_JNI_LOCAL &#x3D; 0x02</li>
+<li>ROOT_JAVA_FRAME &#x3D; 0x03</li>
+<li>ROOT_NATIVE_STACK &#x3D; 0x04</li>
+<li>ROOT_STICKY_CLASS &#x3D; 0x05</li>
+<li>ROOT_THREAD_BLOCK &#x3D; 0x06</li>
+<li>ROOT_MONITOR_USED &#x3D; 0x07</li>
+<li>ROOT_THREAD_OBJECT &#x3D; 0x08</li>
+<li><strong>CLASS_DUMP &#x3D; 0x20</strong></li>
+<li><strong>INSTANCE_DUMP &#x3D; 0x21</strong></li>
+<li><strong>OBJECT_ARRAY_DUMP &#x3D; 0x22</strong></li>
+<li><strong>PRIMITIVE_ARRAY_DUMP &#x3D; 0x23</strong>：占据到80%以上</li>
+</ul>
+<h3 id="Android-Hprof格式"><a href="#Android-Hprof格式" class="headerlink" title="Android Hprof格式"></a>Android Hprof格式</h3><p>![Android Hprof格式](&#x2F;images&#x2F;Android Hprof格式.png)</p>
+<h4 id="Header-1"><a href="#Header-1" class="headerlink" title="Header"></a>Header</h4><p>格式与Java的Header一致</p>
+<h4 id="Record数组-1"><a href="#Record数组-1" class="headerlink" title="Record数组"></a>Record数组</h4><p>格式与Java的Record一致</p>
+<h4 id="支持的TAG类型-1"><a href="#支持的TAG类型-1" class="headerlink" title="支持的TAG类型"></a>支持的TAG类型</h4><h5 id="一级Tag-1"><a href="#一级Tag-1" class="headerlink" title="一级Tag"></a>一级Tag</h5><ul>
+<li>STRING_IN_UTF8 &#x3D; 0x01</li>
+<li>LOAD_CLASS &#x3D; 0x02</li>
+<li>STACK_FRAME &#x3D; 0x04</li>
+<li>STACK_TRACE &#x3D; 0x05</li>
+<li>HEAP_DUMP_SEGMENT &#x3D; 0x1c</li>
+<li>HEAP_DUMP_END &#x3D; 0x2c</li>
+</ul>
+<h5 id="二级Tag-1"><a href="#二级Tag-1" class="headerlink" title="二级Tag"></a>二级Tag</h5><p>主要位于<code>HEAP_DUMP_SEGMENT</code>中</p>
+<ul>
+<li>Java所有的二级Tag</li>
+<li>HEAP_DUMP_INFO &#x3D; 0xfe：存储的是<code>堆空间的类型</code>，主要有以下三种<ul>
+<li>HEAP_ZYGOTE &#x3D; 0x5A <code>Z</code> 系统堆空间</li>
+<li><strong>HEAP_APP</strong> &#x3D; 0x41 <code>A</code> 应用堆空间</li>
+<li>HEAP_IMAGE &#x3D; 0x49 <code>I</code> 图片堆空间</li>
+</ul>
+</li>
+<li>ROOT_INTERNED_STRING &#x3D; 0x89</li>
+<li>ROOT_FINALIZING &#x3D; 0x8a</li>
+<li>ROOT_DEBUGGER &#x3D; 0x8b</li>
+<li>ROOT_REFERENCE_CLEANUP &#x3D; 0x8c</li>
+<li>ROOT_VM_INTERNAL &#x3D; 0x8d</li>
+<li>ROOT_JNI_MONITOR &#x3D; 0x8e</li>
+<li>ROOT_UNREACHABLE &#x3D; 0x90</li>
+<li>PRIMITIVE_ARRAY_NODATA &#x3D; 0xc3</li>
+</ul>
+<h2 id="Hprof文件生成原理"><a href="#Hprof文件生成原理" class="headerlink" title="Hprof文件生成原理"></a>Hprof文件生成原理</h2><p><img src="/images/Hprof%E6%96%87%E4%BB%B6%E7%94%9F%E6%88%90%E5%8E%9F%E7%90%86.png" srcset="/img/loading.gif" lazyload alt="Hprof文件生成原理"></p>
+<h3 id="Debug-dumpHprofData"><a href="#Debug-dumpHprofData" class="headerlink" title="Debug.dumpHprofData()"></a>Debug.dumpHprofData()</h3><p>通过调用<code>Debug.dumpHprofData()</code>去生成Hprof文件</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">//frameworks/base/core/java/android/os/Debug.java</span><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">dumpHprofData</span><span class="hljs-params">(String fileName)</span> <span class="hljs-keyword">throws</span> IOException &#123;<br>        VMDebug.dumpHprofData(fileName);<br>    &#125;<br><br><span class="hljs-comment">//libcore/dalvik/src/main/java/dalvik/system/VMDebug.java</span><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">dumpHprofData</span><span class="hljs-params">(String filename)</span> <span class="hljs-keyword">throws</span> IOException &#123;<br>        <span class="hljs-keyword">if</span> (filename == <span class="hljs-literal">null</span>) &#123;<br>            <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">NullPointerException</span>(<span class="hljs-string">&quot;filename == null&quot;</span>);<br>        &#125;<br>        dumpHprofData(filename, <span class="hljs-literal">null</span>);<br>    &#125;<br><br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">native</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">dumpHprofData</span><span class="hljs-params">(String fileName, <span class="hljs-type">int</span> fd)</span><br>            <span class="hljs-keyword">throws</span> IOException;<br></code></pre></td></tr></table></figure>
+
+<p>执行到Native层的<code>vmDebug</code>中</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><code class="hljs c"><span class="hljs-comment">//art/runtime/native/dalvik_system_VMDebug.cc</span><br><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">VMDebug_dumpHprofData</span><span class="hljs-params">(JNIEnv* env, jclass, jstring javaFilename, jint javaFd)</span> &#123;<br>  <span class="hljs-comment">// Only one of these may be null.</span><br>  <span class="hljs-keyword">if</span> (javaFilename == nullptr &amp;&amp; javaFd &lt; <span class="hljs-number">0</span>) &#123;<br>    ScopedObjectAccess <span class="hljs-title function_">soa</span><span class="hljs-params">(env)</span>;<br>    ThrowNullPointerException(<span class="hljs-string">&quot;fileName == null &amp;&amp; fd == null&quot;</span>);<br>    <span class="hljs-keyword">return</span>;<br>  &#125;<br><br>  <span class="hljs-built_in">std</span>::<span class="hljs-built_in">string</span> filename;<br>  <span class="hljs-keyword">if</span> (javaFilename != nullptr) &#123;<br>    ScopedUtfChars <span class="hljs-title function_">chars</span><span class="hljs-params">(env, javaFilename)</span>;<br>    <span class="hljs-keyword">if</span> (env-&gt;ExceptionCheck()) &#123;<br>      <span class="hljs-keyword">return</span>;<br>    &#125;<br>    filename = chars.c_str();<br>  &#125; <span class="hljs-keyword">else</span> &#123;<br>    filename = <span class="hljs-string">&quot;[fd]&quot;</span>;<br>  &#125;<br><br>  <span class="hljs-type">int</span> fd = javaFd;<br><br>  hprof::DumpHeap(filename.c_str(), fd, <span class="hljs-literal">false</span>);<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p><code>hprof</code>指的就是<code>hprof.cc</code></p>
+<h3 id="Hprof-DumpHeap"><a href="#Hprof-DumpHeap" class="headerlink" title="Hprof::DumpHeap()"></a>Hprof::DumpHeap()</h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br></pre></td><td class="code"><pre><code class="hljs c"><span class="hljs-comment">//art/runtime/hprof/hprof.cc</span><br><span class="hljs-type">void</span> <span class="hljs-title function_">DumpHeap</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">char</span>* filename, <span class="hljs-type">int</span> fd, <span class="hljs-type">bool</span> direct_to_ddms)</span> &#123;<br>  CHECK(filename != nullptr);<br>  Thread* self = Thread::Current();<br>  <span class="hljs-comment">// Need to take a heap dump while GC isn&#x27;t running. See the comment in Heap::VisitObjects().</span><br>  <span class="hljs-comment">// Also we need the critical section to avoid visiting the same object twice. See b/34967844</span><br>  <span class="hljs-comment">// 此时需要停止所有进程等待dump文件完成</span><br>  gc::ScopedGCCriticalSection <span class="hljs-title function_">gcs</span><span class="hljs-params">(self,</span><br><span class="hljs-params">                                  gc::kGcCauseHprof,</span><br><span class="hljs-params">                                  gc::kCollectorTypeHprof)</span>;<br>  ScopedSuspendAll <span class="hljs-title function_">ssa</span><span class="hljs-params">(__FUNCTION__, <span class="hljs-literal">true</span> <span class="hljs-comment">/* long suspend */</span>)</span>;<br>  Hprof <span class="hljs-title function_">hprof</span><span class="hljs-params">(filename, fd, direct_to_ddms)</span>;<br>  hprof.Dump();<br>&#125;<br><br>  <span class="hljs-type">void</span> <span class="hljs-title function_">Dump</span><span class="hljs-params">()</span><br>    <span class="hljs-title function_">REQUIRES</span><span class="hljs-params">(Locks::mutator_lock_)</span><br>    <span class="hljs-title function_">REQUIRES</span><span class="hljs-params">(!Locks::heap_bitmap_lock_, !Locks::alloc_tracker_lock_)</span> &#123;<br>    ...<br>    <span class="hljs-comment">// First pass to measure the size of the dump.</span><br>    <span class="hljs-type">size_t</span> overall_size;<br>    <span class="hljs-type">size_t</span> max_length;<br>    &#123;<br>      EndianOutput count_output;<br>      output_ = &amp;count_output;<br>      ProcessHeap(<span class="hljs-literal">false</span>);<span class="hljs-comment">//执行heap读取</span><br>      overall_size = count_output.SumLength();<br>      max_length = count_output.MaxLength();<br>      output_ = nullptr;<br>    &#125;<br><br>    <span class="hljs-type">bool</span> okay;<br>    visited_objects_.clear();<br>    ...<br>      <span class="hljs-comment">//写入文件</span><br>      okay = DumpToFile(overall_size, max_length);<br>    <br>    ...<br>  &#125;<br></code></pre></td></tr></table></figure>
+
+<h4 id="ScopedSuspendAll"><a href="#ScopedSuspendAll" class="headerlink" title="ScopedSuspendAll"></a>ScopedSuspendAll</h4><p><img src="/images/Hprof-ScopedSuspendAll.png" srcset="/img/loading.gif" lazyload alt="Hprof-ScopedSuspendAll"></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><code class="hljs c"><span class="hljs-comment">//art/runtime/thread_list.cc</span><br>ScopedSuspendAll::ScopedSuspendAll(<span class="hljs-type">const</span> <span class="hljs-type">char</span>* cause, <span class="hljs-type">bool</span> long_suspend) &#123;<br>  Runtime::Current()-&gt;GetThreadList()-&gt;SuspendAll(cause, long_suspend);<br>&#125;<br><br>ScopedSuspendAll::~ScopedSuspendAll() &#123;<br>  Runtime::Current()-&gt;GetThreadList()-&gt;ResumeAll();<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<h5 id="SuspendAll"><a href="#SuspendAll" class="headerlink" title="SuspendAll"></a>SuspendAll</h5><blockquote>
+<p><strong>主要负责暂停所有Java线程的操作</strong></p>
+</blockquote>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br></pre></td><td class="code"><pre><code class="hljs c"><span class="hljs-type">void</span> <span class="hljs-title function_">ThreadList::SuspendAll</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">char</span>* cause, <span class="hljs-type">bool</span> long_suspend)</span> &#123;<br>  Thread* self = Thread::Current();<br><br>  &#123;<br>    ScopedTrace <span class="hljs-title function_">trace</span><span class="hljs-params">(<span class="hljs-string">&quot;Suspending mutator threads&quot;</span>)</span>;<br>    <span class="hljs-type">const</span> <span class="hljs-type">uint64_t</span> start_time = NanoTime();<br><br>    SuspendAllInternal(self, self);<br>    <span class="hljs-comment">// All threads are known to have suspended (but a thread may still own the mutator lock)</span><br>    <span class="hljs-comment">// Make sure this thread grabs exclusive access to the mutator lock and its protected data.</span><br>&#125;<br><br><span class="hljs-type">void</span> <span class="hljs-title function_">ThreadList::SuspendAllInternal</span><span class="hljs-params">(Thread* self,</span><br><span class="hljs-params">                                    Thread* ignore1,</span><br><span class="hljs-params">                                    Thread* ignore2,</span><br><span class="hljs-params">                                    SuspendReason reason)</span> &#123;<br>  ...<br>    <span class="hljs-keyword">for</span> (<span class="hljs-type">const</span> <span class="hljs-keyword">auto</span>&amp; thread : list_) &#123;<br>      <span class="hljs-keyword">if</span> (thread == ignore1 || thread == ignore2) &#123;<br>        <span class="hljs-keyword">continue</span>;<br>      &#125;<br>      VLOG(threads) &lt;&lt; <span class="hljs-string">&quot;requesting thread suspend: &quot;</span> &lt;&lt; *thread;<br>      <span class="hljs-comment">//使thread进入 suspend状态</span><br>      <span class="hljs-type">bool</span> updated = thread-&gt;ModifySuspendCount(self, +<span class="hljs-number">1</span>, &amp;pending_threads, reason);<br>      DCHECK(updated);<br><br>      <span class="hljs-comment">// Must install the pending_threads counter first, then check thread-&gt;IsSuspend() and clear</span><br>      <span class="hljs-comment">// the counter. Otherwise there&#x27;s a race with Thread::TransitionFromRunnableToSuspended()</span><br>      <span class="hljs-comment">// that can lead a thread to miss a call to PassActiveSuspendBarriers().</span><br>      <span class="hljs-keyword">if</span> (thread-&gt;IsSuspended()) &#123;<br>        <span class="hljs-comment">// Only clear the counter for the current thread.</span><br>        thread-&gt;ClearSuspendBarrier(&amp;pending_threads);<br>        pending_threads.FetchAndSubSequentiallyConsistent(<span class="hljs-number">1</span>);<br>      &#125;<br>    &#125;<br>  <br>&#125;<br></code></pre></td></tr></table></figure>
+
+
+
+<h5 id="ResumeAll"><a href="#ResumeAll" class="headerlink" title="ResumeAll"></a>ResumeAll</h5><blockquote>
+<p><strong>主要负责唤醒暂停的Java线程</strong></p>
+</blockquote>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><code class="hljs c"><span class="hljs-type">void</span> <span class="hljs-title function_">ThreadList::ResumeAll</span><span class="hljs-params">()</span> &#123;<br>  Thread* self = Thread::Current();<br>  ...<br><br>  Locks::mutator_lock_-&gt;ExclusiveUnlock(self);<br>  &#123;<br>    MutexLock <span class="hljs-title function_">mu</span><span class="hljs-params">(self, *Locks::thread_list_lock_)</span>;<br>    MutexLock <span class="hljs-title function_">mu2</span><span class="hljs-params">(self, *Locks::thread_suspend_count_lock_)</span>;<br>    <span class="hljs-comment">// Update global suspend all state for attaching threads.</span><br>    --suspend_all_count_;<br>    <span class="hljs-comment">// Decrement the suspend counts for all threads.</span><br>    <span class="hljs-keyword">for</span> (<span class="hljs-type">const</span> <span class="hljs-keyword">auto</span>&amp; thread : list_) &#123;<br>      <span class="hljs-keyword">if</span> (thread == self) &#123;<br>        <span class="hljs-keyword">continue</span>;<br>      &#125;<br>      <span class="hljs-comment">//解除suspend状态</span><br>      <span class="hljs-type">bool</span> updated = thread-&gt;ModifySuspendCount(self, <span class="hljs-number">-1</span>, nullptr, SuspendReason::kInternal);<br>      DCHECK(updated);<br>    &#125;<br><br>    <span class="hljs-comment">// Broadcast a notification to all suspended threads, some or all of</span><br>    <span class="hljs-comment">// which may choose to wake up.  No need to wait for them.</span><br>    <span class="hljs-keyword">if</span> (self != nullptr) &#123;<br>      VLOG(threads) &lt;&lt; *self &lt;&lt; <span class="hljs-string">&quot; ResumeAll waking others&quot;</span>;<br>    &#125; <span class="hljs-keyword">else</span> &#123;<br>      VLOG(threads) &lt;&lt; <span class="hljs-string">&quot;Thread[null] ResumeAll waking others&quot;</span>;<br>    &#125;<br>    Thread::resume_cond_-&gt;Broadcast(self);<br>  &#125;<br><br>&#125;<br></code></pre></td></tr></table></figure>
+
+
+
+<h3 id="Hprof-ProcessHeap"><a href="#Hprof-ProcessHeap" class="headerlink" title="Hprof::ProcessHeap()"></a>Hprof::ProcessHeap()</h3><p><img src="/images/Hprof-ProcessHeap.png" srcset="/img/loading.gif" lazyload alt="Hprof-ProcessHeap"></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><code class="hljs c"><span class="hljs-comment">//art/runtime/hprof/hprof.cc</span><br>  <span class="hljs-type">void</span> <span class="hljs-title function_">ProcessHeap</span><span class="hljs-params">(<span class="hljs-type">bool</span> header_first)</span><br>      <span class="hljs-title function_">REQUIRES</span><span class="hljs-params">(Locks::mutator_lock_)</span> &#123;<br>    current_heap_ = HPROF_HEAP_DEFAULT;<br>    objects_in_segment_ = <span class="hljs-number">0</span>;<br><br>    <span class="hljs-keyword">if</span> (header_first) &#123;<br>      ProcessHeader(<span class="hljs-literal">true</span>);<br>      ProcessBody();<br>    &#125; <span class="hljs-keyword">else</span> &#123;<br>      ProcessBody();<br>      ProcessHeader(<span class="hljs-literal">false</span>);<br>    &#125;<br>  &#125;<br><br></code></pre></td></tr></table></figure>
+
+<h4 id="ProcessHeader"><a href="#ProcessHeader" class="headerlink" title="ProcessHeader()"></a>ProcessHeader()</h4><blockquote>
+<p>主要就是生成了Hprof对应的几个Tag的<code>Record</code>以及<code>Hprof Header</code></p>
+</blockquote>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><code class="hljs c"><span class="hljs-type">void</span> <span class="hljs-title function_">ProcessHeader</span><span class="hljs-params">(<span class="hljs-type">bool</span> string_first)</span> <span class="hljs-title function_">REQUIRES</span><span class="hljs-params">(Locks::mutator_lock_)</span> &#123;<br>  <span class="hljs-comment">// Write the header.</span><br>  WriteFixedHeader();<br>  <span class="hljs-comment">// Write the string and class tables, and any stack traces, to the header.</span><br>  <span class="hljs-comment">// (jhat requires that these appear before any of the data in the body that refers to them.)</span><br>  <span class="hljs-comment">// jhat also requires the string table appear before class table and stack traces.</span><br>  <span class="hljs-comment">// However, WriteStackTraces() can modify the string table, so it&#x27;s necessary to call</span><br>  <span class="hljs-comment">// WriteStringTable() last in the first pass, to compute the correct length of the output.</span><br>  <span class="hljs-keyword">if</span> (string_first) &#123;<br>    WriteStringTable();<br>  &#125;<br>  WriteClassTable();<br>  WriteStackTraces();<br>  <span class="hljs-keyword">if</span> (!string_first) &#123;<br>    WriteStringTable();<br>  &#125;<br>  output_-&gt;EndRecord();<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<h5 id="WriteFixedHeader"><a href="#WriteFixedHeader" class="headerlink" title="WriteFixedHeader"></a>WriteFixedHeader</h5><blockquote>
+<p>生成<code>Hprof Header</code></p>
+</blockquote>
+<h5 id="WriteClassTable"><a href="#WriteClassTable" class="headerlink" title="WriteClassTable"></a>WriteClassTable</h5><blockquote>
+<p>生成Tag为<code>LOAD_CLASS</code>的<code>Record</code></p>
+</blockquote>
+<h5 id="WriteStackTraces"><a href="#WriteStackTraces" class="headerlink" title="WriteStackTraces"></a>WriteStackTraces</h5><blockquote>
+<p>生成Tag为<code>STACK_FRAME</code>和<code>STACK_TRACE</code>的<code>Record</code></p>
+</blockquote>
+<h5 id="WriteStringTable"><a href="#WriteStringTable" class="headerlink" title="WriteStringTable"></a>WriteStringTable</h5><blockquote>
+<p>生成Tag为<code>String</code>的<code>Record</code></p>
+</blockquote>
+<h4 id="ProcessBody"><a href="#ProcessBody" class="headerlink" title="ProcessBody()"></a>ProcessBody()</h4><blockquote>
+<p>主要为了生成Tag为<code>HEAP_DUMP_SEGMENT</code>和<code>HEAP_DUMP_END</code>的Record。</p>
+<p>还有生成<code>HEAP_DUMP_SEGMENT</code>下的<code>子Record</code>。</p>
+</blockquote>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><code class="hljs c"><span class="hljs-type">void</span> <span class="hljs-title function_">ProcessBody</span><span class="hljs-params">()</span> <span class="hljs-title function_">REQUIRES</span><span class="hljs-params">(Locks::mutator_lock_)</span> &#123;<br>  Runtime* <span class="hljs-type">const</span> runtime = Runtime::Current();<br>  <span class="hljs-comment">// Walk the roots and the heap.</span><br>  output_-&gt;StartNewRecord(HPROF_TAG_HEAP_DUMP_SEGMENT, kHprofTime);<br><br>  simple_roots_.clear();<br>  runtime-&gt;VisitRoots(this);<br>  runtime-&gt;VisitImageRoots(this);<br>  <span class="hljs-keyword">auto</span> dump_object = [this](mirror::Object* obj) REQUIRES_SHARED(Locks::mutator_lock_) &#123;<br>    DCHECK(obj != nullptr);<br>    <span class="hljs-comment">//Dump内存对象</span><br>    DumpHeapObject(obj);<br>  &#125;;<br>  runtime-&gt;GetHeap()-&gt;VisitObjectsPaused(dump_object);<br>  output_-&gt;StartNewRecord(HPROF_TAG_HEAP_DUMP_END, kHprofTime);<br>  output_-&gt;EndRecord();<br>&#125;<br><br></code></pre></td></tr></table></figure>
+
+<h5 id="DumpHeapObject"><a href="#DumpHeapObject" class="headerlink" title="DumpHeapObject"></a>DumpHeapObject</h5><p>主要采用了<code>访问者模式</code>进行内存对象的转储</p>
+<blockquote>
+<p>访问者模式：封装一些用于某种数据结构中的各元素的操作，可以在不改变这个数据结构的前提下定义作用于这些元素的新的操作。</p>
+<p>适用于复杂的集合对象、XML文档解析等不易变的结构上。</p>
+</blockquote>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br></pre></td><td class="code"><pre><code class="hljs c"><span class="hljs-type">void</span> <span class="hljs-title function_">Hprof::DumpHeapObject</span><span class="hljs-params">(mirror::Object* obj)</span> &#123;<br>  ...<br>    <span class="hljs-comment">//记录堆空间位置</span><br>  <span class="hljs-keyword">if</span> (heap_type != current_heap_) &#123;<br>    HprofStringId nameId;<br><br>    <span class="hljs-comment">// This object is in a different heap than the current one.</span><br>    <span class="hljs-comment">// Emit a HEAP_DUMP_INFO tag to change heaps.</span><br>    __ <span class="hljs-title function_">AddU1</span><span class="hljs-params">(HPROF_HEAP_DUMP_INFO)</span>;<br>    __ <span class="hljs-title function_">AddU4</span><span class="hljs-params">(static_cast&lt;<span class="hljs-type">uint32_t</span>&gt;(heap_type))</span>;   <span class="hljs-comment">// uint32_t: heap type</span><br>    <span class="hljs-keyword">switch</span> (heap_type) &#123;<br>    <span class="hljs-keyword">case</span> HPROF_HEAP_APP:<br>      nameId = LookupStringId(<span class="hljs-string">&quot;app&quot;</span>);<br>      <span class="hljs-keyword">break</span>;<br>    <span class="hljs-keyword">case</span> HPROF_HEAP_ZYGOTE:<br>      nameId = LookupStringId(<span class="hljs-string">&quot;zygote&quot;</span>);<br>      <span class="hljs-keyword">break</span>;<br>    <span class="hljs-keyword">case</span> HPROF_HEAP_IMAGE:<br>      nameId = LookupStringId(<span class="hljs-string">&quot;image&quot;</span>);<br>      <span class="hljs-keyword">break</span>;<br>    <span class="hljs-keyword">default</span>:<br>      <span class="hljs-comment">// Internal error</span><br>      LOG(ERROR) &lt;&lt; <span class="hljs-string">&quot;Unexpected desiredHeap&quot;</span>;<br>      nameId = LookupStringId(<span class="hljs-string">&quot;&lt;ILLEGAL&gt;&quot;</span>);<br>      <span class="hljs-keyword">break</span>;<br>    &#125;<br>    __ <span class="hljs-title function_">AddStringId</span><span class="hljs-params">(nameId)</span>;<br>    current_heap_ = heap_type;<br>  &#125;<br><br>  mirror::Class* c = obj-&gt;GetClass();<br>  <span class="hljs-keyword">if</span> (c == nullptr) &#123;<br>    <span class="hljs-comment">// This object will bother HprofReader, because it has a null</span><br>    <span class="hljs-comment">// class, so just don&#x27;t dump it. It could be</span><br>    <span class="hljs-comment">// gDvm.unlinkedJavaLangClass or it could be an object just</span><br>    <span class="hljs-comment">// allocated which hasn&#x27;t been initialized yet.</span><br>  &#125; <span class="hljs-keyword">else</span> &#123;<br>    <span class="hljs-keyword">if</span> (obj-&gt;IsClass()) &#123;<br>      DumpHeapClass(obj-&gt;AsClass());<br>    &#125; <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (c-&gt;IsArrayClass()) &#123;<br>      DumpHeapArray(obj-&gt;AsArray(), c);<br>    &#125; <span class="hljs-keyword">else</span> &#123;<br>      DumpHeapInstanceObject(obj, c, visitor.GetRoots());<br>    &#125;<br>  &#125;    <br>  <br>&#125;<br><br><span class="hljs-type">void</span> <span class="hljs-title function_">Hprof::DumpHeapClass</span><span class="hljs-params">(mirror::Class* klass)</span> &#123;<br>  ...<br>    AddU1(HPROF_PRIMITIVE_ARRAY_DUMP);<br>  ...<br>&#125;<br><br><span class="hljs-type">void</span> <span class="hljs-title function_">Hprof::DumpHeapArray</span><span class="hljs-params">(mirror::Array* obj, mirror::Class* klass)</span> &#123;<br>  ...<br>    AddU1(HPROF_PRIMITIVE_ARRAY_DUMP);<br>  ...<br>&#125;<br><br><span class="hljs-type">void</span> <span class="hljs-title function_">Hprof::DumpHeapInstanceObject</span><span class="hljs-params">(mirror::Object* obj,</span><br><span class="hljs-params">                                   mirror::Class* klass,</span><br><span class="hljs-params">                                   <span class="hljs-type">const</span> <span class="hljs-built_in">std</span>::<span class="hljs-built_in">set</span>&lt;mirror::Object*&gt;&amp; fake_roots)</span> &#123;<br>  ...<br>    AddU1(HPROF_PRIMITIVE_ARRAY_DUMP);<br>  ...<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<h6 id="DumpHeapClass"><a href="#DumpHeapClass" class="headerlink" title="DumpHeapClass"></a>DumpHeapClass</h6><blockquote>
+<p>Dump内存的类信息</p>
+<p>存放Tag为<code>CLASS_DUMP</code>的<code>Record</code>中</p>
+</blockquote>
+<h6 id="DumpHeapArray"><a href="#DumpHeapArray" class="headerlink" title="DumpHeapArray"></a>DumpHeapArray</h6><blockquote>
+<p>Dump内存的数组信息</p>
+<p>存放Tag为<code>OBJECT_ARRAY_DUMP</code>的<code>Record</code>中</p>
+</blockquote>
+<h6 id="DumpHeapInstanceObject"><a href="#DumpHeapInstanceObject" class="headerlink" title="DumpHeapInstanceObject"></a>DumpHeapInstanceObject</h6><blockquote>
+<p>Dump内存的实例信息</p>
+<p>存放Tag为<code>INSTANCE_DUMP</code>的<code>Record</code>中。<em>需要分析内存泄漏时一般都是分析其引用关系即实例间的联系。</em></p>
+<p><strong>基本只要保留INSTANCE_DUMP这个Tag的Record信息，足以分析内存泄漏。</strong></p>
+</blockquote>
+<h6 id="Other"><a href="#Other" class="headerlink" title="Other"></a>Other</h6><blockquote>
+<p>在Tag为<code>PRIMITIVE_ARRAY_DUMP</code>中基本存放的就是非·上述三种类型的数据.</p>
+<p><em>所以这部分空间占用也是最大的！！！也是需要裁剪的</em></p>
+</blockquote>
+<h2 id="Hprof文件裁剪"><a href="#Hprof文件裁剪" class="headerlink" title="Hprof文件裁剪"></a>Hprof文件裁剪</h2><p><img src="/images/Hprof%E6%96%87%E4%BB%B6%E8%A3%81%E5%89%AA.png" srcset="/img/loading.gif" lazyload alt="Hprof文件裁剪"></p>
+<h3 id="Why-裁剪？"><a href="#Why-裁剪？" class="headerlink" title="Why 裁剪？"></a>Why 裁剪？</h3><p>Hprof文件通常比较大，大文件在传输、解析、空间占用上都会产生很大的影响，因此需要进行裁剪。</p>
+<ul>
+<li><code>存储</code>：通常Hprof文件较大，会占用很大的应用空间，如果空间不足够，将会导致无法<code>dump</code>进行解析。</li>
+<li><code>传输</code>：假如需要dump用户的Hprof文件，就需要传回到服务端，耗费的流量也会比较大。</li>
+<li><code>隐私</code>：Hprof文件存的是完整的内存数据，可能就包含很多隐私信息，这些都需要进行裁剪隐藏。</li>
+</ul>
+<h3 id="How-裁剪？"><a href="#How-裁剪？" class="headerlink" title="How 裁剪？"></a>How 裁剪？</h3><p>主要有两套方案：</p>
+<h4 id="先Dump后裁剪"><a href="#先Dump后裁剪" class="headerlink" title="先Dump后裁剪"></a>先Dump后裁剪</h4><p><img src="/images/Dump%E6%96%87%E4%BB%B6%E5%90%8E%E8%A3%81%E5%89%AA.png" srcset="/img/loading.gif" lazyload alt="Dump文件后裁剪"></p>
+<ol>
+<li>通过<code>Debug.dumpHprofData()</code>得到一个完整的Hprof文件</li>
+<li>再分析Hprof文件，进行裁剪，去掉一些无用的数据</li>
+<li>裁剪完成后，得到一份精简的Hprof文件</li>
+</ol>
+<p>缺陷：</p>
+<ul>
+<li>直接dump出的Hprof文件过大，存储问题不好解决</li>
+<li>裁剪过程涉及到文件IO和hprof文件解析，可能影响APP性能</li>
+<li>裁剪过程不彻底，导致隐私数据的泄漏。</li>
+</ul>
+<h4 id="Dump过程实时裁剪-推荐"><a href="#Dump过程实时裁剪-推荐" class="headerlink" title="Dump过程实时裁剪(推荐)"></a>Dump过程实时裁剪(推荐)</h4><p><img src="/images/Dump%E5%AE%9E%E6%97%B6%E8%A3%81%E5%89%AA.png" srcset="/img/loading.gif" lazyload alt="Dump实时裁剪"></p>
+<p><img src="/images/Hprof%E5%AE%9E%E6%97%B6%E8%A3%81%E5%89%AA%E6%B5%81%E7%A8%8B.png" srcset="/img/loading.gif" lazyload alt="Hprof实时裁剪流程"></p>
+<ol>
+<li>通过<code>xHook</code>对<code>open()</code>进行hook处理，替换成自身实现</li>
+<li>通过<code>xHook</code>对<code>write()</code>进行hook处理，替换成自身实现</li>
+<li>调用<code>Debug.dumpHprofData()</code>时，优先执行自身实现的<code>open()</code>，为了过滤出写入目标文件的fd；再然后调用到自身实现的<code>write</code>，对向目标文件写入的数据进行裁剪压缩。</li>
+<li>生成Hprof文件完毕后，清除之前的Hook内容。</li>
+</ol>
+<h4 id="需要裁剪的内容"><a href="#需要裁剪的内容" class="headerlink" title="需要裁剪的内容"></a>需要裁剪的内容</h4><p><img src="/images/Hprof-%E8%A3%81%E5%89%AA%E7%9A%84%E5%86%85%E5%AE%B9.png" srcset="/img/loading.gif" lazyload alt="Hprof-裁剪的内容"></p>
+<p>需要裁剪掉全部基本类型数组的值，例如<code>char[](字符串)、byte[](图片)</code>，在处理<code>内存泄漏</code>相关问题时，一般也只关心<code>对象间的引用以及对象大小</code>，裁剪掉一些消息不会影响分析。</p>
+<p>保证基本Hprof文件功能：</p>
+<ul>
+<li><p>只对<code>HEAP_DUMP_SEGMENT</code>的<code>Record</code>下进行裁剪，其他保持不变。例如<code>STRING、LOAD_CLASS</code>等</p>
+</li>
+<li><p>在<code>HEAP_DUMP_SEGMENT</code>的<code>Record</code>下，主要删除<code>PRIMITIVE_ARRAY_DUMP</code>，这一块主要占用80%的内容</p>
+</li>
+<li><p>在裁剪<code>INSTANCE_DUMP(实例)</code>、<code>OBJECT_ARRAY_DUMP(对象数组)</code>，<code>CLASS_DUMP(类或接口)</code>和<code>HEAP_DUMP_INFO(记录当前堆位置)</code>时需要再去掉<code>Zygote Heap(系统堆)</code>和<code>Image Heap(图像堆)</code></p>
+<p>主要通过判断<code>HEAP_DUMP_INFO</code>的<code>heapType</code>是否为<code>HEAP_ZYGOTE(Z)</code>和<code>HEAP_IMAGE(I)</code></p>
+</li>
+</ul>
+<h2 id="拓展知识"><a href="#拓展知识" class="headerlink" title="拓展知识"></a>拓展知识</h2><h3 id="如何解决Dump-hprof时暂停所有线程问题？"><a href="#如何解决Dump-hprof时暂停所有线程问题？" class="headerlink" title="如何解决Dump hprof时暂停所有线程问题？"></a>如何解决Dump hprof时暂停所有线程问题？</h3><p>此时如果在主进程进行Dump操作，也就意味着**主进程上所有线程都会停止，也就无法进行任何操作。**此时就需要启动一个子进程，并且需要从主进程<code>fork</code>出一个子进程，需要遵循<code>COW机制(为了节省fork子进程的内存消耗和耗时，fork出的子进程并不会copy父进程的内存空间，而是共享。)</code>。</p>
+<p>后续fork出的子进程在父进程修改时不受影响。</p>
+<p><img src="/images/fork%E5%AD%90%E8%BF%9B%E7%A8%8B" srcset="/img/loading.gif" lazyload alt="fork子进程"></p>
+<p>头条解决方案</p>
+<p><img src="/images/%E5%AD%90%E8%BF%9B%E7%A8%8BDump%E5%86%85%E5%AD%98%E6%B5%81%E7%A8%8B%E5%9B%BE" srcset="/img/loading.gif" lazyload alt="子进程Dump内存流程图"></p>
+<h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a target="_blank" rel="noopener" href="http://hg.openjdk.java.net/jdk6/jdk6/jdk/raw-file/tip/src/share/demo/jvmti/hprof/manual.html#mozTocId848088">hprof文件格式</a></p>
+<p><a target="_blank" rel="noopener" href="https://android.googlesource.com/platform/tools/base/+/studio-master-dev/perflib/src/main/java/com/android/tools/perflib/heap/HprofParser.java">AS中的hprof文件解析</a></p>
+<p><a target="_blank" rel="noopener" href="https://mp.weixin.qq.com/s?__biz=MzI1MzYzMjE0MQ==&mid=2247487203&idx=1&sn=182584b69910c843ae95f60e74127249&chksm=e9d0c501dea74c178e16f95a2ffc5007c5dbca89a02d56895ed9b05883cf0562da689ac6146b&mpshare=1&scene=23&srcid=1214vdTTpPyczmY38wlcDo94&sharer_sharetime=1607926324661&sharer_shareid=65073698ab9ac2983b955fa53b4ff585%23rd">Hprof裁剪</a></p>
+<p><a target="_blank" rel="noopener" href="https://tech.meituan.com/2019/11/14/crash-oom-probe-practice.html">Android线上OOM问题定位组件</a></p>
+<p><a target="_blank" rel="noopener" href="https://github.com/KwaiAppTeam/KOOM/blob/master/java-oom/src/main/cpp/hprof_dump.cpp">KOOM</a></p>
+
+                
+              </div>
+            
+            <hr/>
+            <div>
+              <div class="post-metas my-3">
+  
+  
+    <div class="post-meta">
+      <i class="iconfont icon-tags"></i>
+      
+        <a href="/tags/Java/" class="print-no-link">#Java</a>
+      
+    </div>
+  
+</div>
+
+
+              
+  
+
+  <div class="license-box my-3">
+    <div class="license-title">
+      <div>Hprof文件解析</div>
+      <div>http://example.com/2020/12/14/Hprof文件解析/</div>
+    </div>
+    <div class="license-meta">
+      
+        <div class="license-meta-item">
+          <div>作者</div>
+          <div>Leo-Wxy</div>
+        </div>
+      
+      
+        <div class="license-meta-item license-meta-date">
+          <div>发布于</div>
+          <div>2020年12月14日</div>
+        </div>
+      
+      
+      
+        <div class="license-meta-item">
+          <div>许可协议</div>
+          <div>
+            
+              
+              
+                <a class="print-no-link" target="_blank" href="https://creativecommons.org/licenses/by/4.0/">
+                  <span class="hint--top hint--rounded" aria-label="BY - 署名">
+                    <i class="iconfont icon-cc-by"></i>
+                  </span>
+                </a>
+              
+            
+          </div>
+        </div>
+      
+    </div>
+    <div class="license-icon iconfont"></div>
+  </div>
+
+
+
+              
+                <div class="post-prevnext my-3">
+                  <article class="post-prev col-6">
+                    
+                    
+                      <a href="/2020/12/14/Android%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96-%E8%87%AA%E5%8A%A8%E5%86%85%E5%AD%98%E5%88%86%E6%9E%90/" title="Android性能优化-自动内存分析">
+                        <i class="iconfont icon-arrowleft"></i>
+                        <span class="hidden-mobile">Android性能优化-自动内存分析</span>
+                        <span class="visible-mobile">上一篇</span>
+                      </a>
+                    
+                  </article>
+                  <article class="post-next col-6">
+                    
+                    
+                      <a href="/2020/12/12/Android%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96-%E5%B8%83%E5%B1%80%E4%BC%98%E5%8C%96/" title="Android性能优化-布局优化">
+                        <span class="hidden-mobile">Android性能优化-布局优化</span>
+                        <span class="visible-mobile">下一篇</span>
+                        <i class="iconfont icon-arrowright"></i>
+                      </a>
+                    
+                  </article>
+                </div>
+              
+            </div>
+
+            
+          </article>
+        </div>
+      </div>
+    </div>
+
+    <div class="side-col d-none d-lg-block col-lg-2">
+      
+  <aside class="sidebar" style="margin-left: -1rem">
+    <div id="toc">
+  <p class="toc-header">
+    <i class="iconfont icon-list"></i>
+    <span>目录</span>
+  </p>
+  <div class="toc-body" id="toc-body"></div>
+</div>
+
+
+
+  </aside>
+
+
+    </div>
+  </div>
+</div>
+
+
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+
+
+
+
+    
+
+    
+      <a id="scroll-top-button" aria-label="TOP" href="#" role="button">
+        <i class="iconfont icon-arrowup" aria-hidden="true"></i>
+      </a>
+    
+
+    
+      <div class="modal fade" id="modalSearch" tabindex="-1" role="dialog" aria-labelledby="ModalLabel"
+     aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header text-center">
+        <h4 class="modal-title w-100 font-weight-bold">搜索</h4>
+        <button type="button" id="local-search-close" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body mx-3">
+        <div class="md-form mb-5">
+          <input type="text" id="local-search-input" class="form-control validate">
+          <label data-error="x" data-success="v" for="local-search-input">关键词</label>
+        </div>
+        <div class="list-group" id="local-search-result"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+    
+
+    
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+  
+    <div class="footer-content">
+       <a href="https://hexo.io" target="_blank" rel="nofollow noopener"><span>Hexo</span></a> <i class="iconfont icon-love"></i> <a href="https://github.com/fluid-dev/hexo-theme-fluid" target="_blank" rel="nofollow noopener"><span>Fluid</span></a> 
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+
+  <!-- Scripts -->
+  
+  <script  src="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.js" ></script>
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.css" />
+
+  <script>
+    NProgress.configure({"showSpinner":false,"trickleSpeed":100})
+    NProgress.start()
+    window.addEventListener('load', function() {
+      NProgress.done();
+    })
+  </script>
+
+
+<script  src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" ></script>
+<script  src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.min.js" ></script>
+<script  src="/js/events.js" ></script>
+<script  src="/js/plugins.js" ></script>
+
+
+
+
+
+  
+    <script  src="/js/img-lazyload.js" ></script>
+  
+
+
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/tocbot@4.12.0/dist/tocbot.min.js', function() {
+    var toc = jQuery('#toc');
+    if (toc.length === 0 || !window.tocbot) { return; }
+    var boardCtn = jQuery('#board-ctn');
+    var boardTop = boardCtn.offset().top;
+
+    window.tocbot.init(Object.assign({
+      tocSelector     : '#toc-body',
+      contentSelector : '.markdown-body',
+      linkClass       : 'tocbot-link',
+      activeLinkClass : 'tocbot-active-link',
+      listClass       : 'tocbot-list',
+      isCollapsedClass: 'tocbot-is-collapsed',
+      collapsibleClass: 'tocbot-is-collapsible',
+      scrollSmooth    : true,
+      includeTitleTags: true,
+      headingsOffset  : -boardTop,
+    }, CONFIG.toc));
+    if (toc.find('.toc-list-item').length > 0) {
+      toc.css('visibility', 'visible');
+    }
+
+    Fluid.events.registerRefreshCallback(function() {
+      if ('tocbot' in window) {
+        tocbot.refresh();
+        var toc = jQuery('#toc');
+        if (toc.length === 0 || !tocbot) {
+          return;
+        }
+        if (toc.find('.toc-list-item').length > 0) {
+          toc.css('visibility', 'visible');
+        }
+      }
+    });
+  });
+</script>
+
+
+  <script src=https://cdn.jsdelivr.net/npm/clipboard@2.0.6/dist/clipboard.min.js></script>
+
+  <script>Fluid.plugins.codeWidget();</script>
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/anchor-js@4.3.0/anchor.min.js', function() {
+    window.anchors.options = {
+      placement: CONFIG.anchorjs.placement,
+      visible  : CONFIG.anchorjs.visible
+    };
+    if (CONFIG.anchorjs.icon) {
+      window.anchors.options.icon = CONFIG.anchorjs.icon;
+    }
+    var el = (CONFIG.anchorjs.element || 'h1,h2,h3,h4,h5,h6').split(',');
+    var res = [];
+    for (var item of el) {
+      res.push('.markdown-body > ' + item.trim());
+    }
+    if (CONFIG.anchorjs.placement === 'left') {
+      window.anchors.options.class = 'anchorjs-link-left';
+    }
+    window.anchors.add(res.join(', '));
+
+    Fluid.events.registerRefreshCallback(function() {
+      if ('anchors' in window) {
+        anchors.removeAll();
+        var el = (CONFIG.anchorjs.element || 'h1,h2,h3,h4,h5,h6').split(',');
+        var res = [];
+        for (var item of el) {
+          res.push('.markdown-body > ' + item.trim());
+        }
+        if (CONFIG.anchorjs.placement === 'left') {
+          anchors.options.class = 'anchorjs-link-left';
+        }
+        anchors.add(res.join(', '));
+      }
+    });
+  });
+</script>
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.js', function() {
+    Fluid.plugins.fancyBox();
+  });
+</script>
+
+
+  <script>Fluid.plugins.imageCaption();</script>
+
+  <script  src="/js/local-search.js" ></script>
+
+
+
+
+
+<!-- 主题的启动项，将它保持在最底部 -->
+<!-- the boot of the theme, keep it at the bottom -->
+<script  src="/js/boot.js" ></script>
+
+
+  
+
+  <noscript>
+    <div class="noscript-warning">博客在允许 JavaScript 运行的环境下浏览效果更佳</div>
+  </noscript>
+</body>
+</html>

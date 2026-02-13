@@ -1,0 +1,920 @@
+
+
+<!DOCTYPE html>
+<html lang="zh-CN" data-default-color-scheme=auto>
+
+
+
+<head>
+  <meta charset="UTF-8">
+
+  <link rel="apple-touch-icon" sizes="76x76" href="/img/favicon.png">
+  <link rel="icon" href="/img/favicon.png">
+  
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, shrink-to-fit=no">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  
+  <meta name="theme-color" content="#11527b">
+  <meta name="author" content="Leo-Wxy">
+  <meta name="keywords" content="">
+  
+    <meta name="description" content="Android Binder机制相关以及AIDL介绍   在Linux中，为了避免一个进程对其他进程的干扰，进程之间是相互独立的。 Android的进程间通信采用了Binder基于性能,稳定和安全方面的考虑：。 性能：在移动设备上对性能的要求是比较严苛的，在Linux上通信方式例如管道，Socket都需要复制两次数据，Binder只需一次。 对于消息队列、Socket和管道而言，数据先从发送方的缓">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Binder系列-Binder">
+<meta property="og:url" content="http://example.com/2019/01/06/Binder%E7%B3%BB%E5%88%97-Binder/index.html">
+<meta property="og:site_name" content="Wxy的个人博客">
+<meta property="og:description" content="Android Binder机制相关以及AIDL介绍   在Linux中，为了避免一个进程对其他进程的干扰，进程之间是相互独立的。 Android的进程间通信采用了Binder基于性能,稳定和安全方面的考虑：。 性能：在移动设备上对性能的要求是比较严苛的，在Linux上通信方式例如管道，Socket都需要复制两次数据，Binder只需一次。 对于消息队列、Socket和管道而言，数据先从发送方的缓">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="http://example.com/images/Android-Binder%E6%9C%BA%E5%88%B6.png">
+<meta property="og:image" content="http://example.com/images/Linux-IPC-Basics.png">
+<meta property="og:image" content="http://example.com/images/Linux-IPC.png">
+<meta property="og:image" content="http://example.com/images/Binder-IPC.png">
+<meta property="og:image" content="http://example.com/images/IPC-Binder.jpg">
+<meta property="og:image" content="http://example.com/images/IPC-Binder.jpg">
+<meta property="og:image" content="http://example.com/images/Binder%E9%80%9A%E4%BF%A1%E8%BF%87%E7%A8%8B.png">
+<meta property="og:image" content="http://example.com/images/Binder%E9%80%9A%E4%BF%A1%E8%BF%87%E7%A8%8B.png">
+<meta property="og:image" content="http://example.com/images/Binder%E4%BB%A3%E7%90%86%E6%9C%BA%E5%88%B6.png">
+<meta property="og:image" content="http://example.com/images/Binder-workflow.png">
+<meta property="og:image" content="http://example.com/images/BinderPool.png">
+<meta property="article:published_time" content="2019-01-06T07:13:51.000Z">
+<meta property="article:modified_time" content="2022-02-07T07:27:34.988Z">
+<meta property="article:author" content="Leo-Wxy">
+<meta property="article:tag" content="Android">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="http://example.com/images/Android-Binder%E6%9C%BA%E5%88%B6.png">
+  
+  
+  
+  <title>Binder系列-Binder - Wxy的个人博客</title>
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css" />
+
+
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@4.0.0/github-markdown.min.css" />
+
+  <link  rel="stylesheet" href="/lib/hint/hint.min.css" />
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.css" />
+
+
+
+<!-- 主题依赖的图标库，不要自行修改 -->
+<!-- Do not modify the link that theme dependent icons -->
+
+<link rel="stylesheet" href="//at.alicdn.com/t/c/font_1749284_5i9bdhy70f8.css">
+
+
+
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1736178_kmeydafke9r.css">
+
+
+<link  rel="stylesheet" href="/css/main.css" />
+
+
+  <link id="highlight-css" rel="stylesheet" href="/css/highlight.css" />
+  
+    <link id="highlight-css-dark" rel="stylesheet" href="/css/highlight-dark.css" />
+  
+
+
+
+
+  <script id="fluid-configs">
+    var Fluid = window.Fluid || {};
+    Fluid.ctx = Object.assign({}, Fluid.ctx)
+    var CONFIG = {"hostname":"example.com","root":"/","version":"1.9.8","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false,"scope":[]},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"code_language":{"enable":true,"default":"TEXT"},"copy_btn":true,"image_caption":{"enable":true},"image_zoom":{"enable":true,"img_url_replace":["",""]},"toc":{"enable":true,"placement":"right","headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"loading_img":"/img/loading.gif","onlypost":false,"offset_factor":2},"web_analytics":{"enable":false,"follow_dnt":true,"baidu":null,"google":null,"tencent":{"sid":null,"cid":null},"leancloud":{"app_id":null,"app_key":null,"server_url":null,"path":"window.location.pathname","ignore_local":false},"umami":{"src":null,"website_id":null,"domains":null,"start_time":"2024-01-01T00:00:00.000Z","token":null,"api_server":null},"gtag":null,"woyaola":null,"cnzz":null},"search_path":"/local-search.xml","include_content_in_search":false};
+
+    if (CONFIG.web_analytics.follow_dnt) {
+      var dntVal = navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack;
+      Fluid.ctx.dnt = dntVal && (dntVal.startsWith('1') || dntVal.startsWith('yes') || dntVal.startsWith('on'));
+    }
+  </script>
+  <script  src="/js/utils.js" ></script>
+  <script  src="/js/color-schema.js" ></script>
+  
+
+
+  
+<meta name="generator" content="Hexo 8.1.1"></head>
+
+
+<body>
+  
+
+  <header>
+    
+
+<div class="header-inner" style="height: 30vh;">
+  <nav id="navbar" class="navbar fixed-top  navbar-expand-lg navbar-dark scrolling-navbar">
+  <div class="container">
+    <a class="navbar-brand" href="/">
+      <strong>Wxy&#39;s Blog</strong>
+    </a>
+
+    <button id="navbar-toggler-btn" class="navbar-toggler" type="button" data-toggle="collapse"
+            data-target="#navbarSupportedContent"
+            aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+      <div class="animated-icon"><span></span><span></span><span></span></div>
+    </button>
+
+    <!-- Collapsible content -->
+    <div class="collapse navbar-collapse" id="navbarSupportedContent">
+      <ul class="navbar-nav ml-auto text-center">
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/" target="_self">
+                <i class="iconfont icon-home-fill"></i>
+                <span>首页</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/archives/" target="_self">
+                <i class="iconfont icon-archive-fill"></i>
+                <span>归档</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/tags/" target="_self">
+                <i class="iconfont icon-tags-fill"></i>
+                <span>标签</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/about/" target="_self">
+                <i class="iconfont icon-user-fill"></i>
+                <span>关于</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/links/" target="_self">
+                <i class="iconfont icon-link-fill"></i>
+                <span>友链</span>
+              </a>
+            </li>
+          
+        
+        
+          <li class="nav-item" id="search-btn">
+            <a class="nav-link" target="_self" href="javascript:;" data-toggle="modal" data-target="#modalSearch" aria-label="Search">
+              <i class="iconfont icon-search"></i>
+            </a>
+          </li>
+          
+        
+        
+          <li class="nav-item" id="color-toggle-btn">
+            <a class="nav-link" target="_self" href="javascript:;" aria-label="Color Toggle">
+              <i class="iconfont icon-dark" id="color-toggle-icon"></i>
+            </a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+  
+
+<div id="banner" class="banner" parallax=true
+     style="background: url('/img/default.png') no-repeat center center; background-size: cover;">
+  <div class="full-bg-img">
+    <div class="mask flex-center" style="background-color: rgba(0, 0, 0, 0.3)">
+      <div class="banner-text text-center fade-in-up">
+        <div class="h2">
+          
+            <span id="subtitle">Binder系列-Binder</span>
+          
+        </div>
+
+        
+          
+  <div class="mt-3">
+    
+    
+      <span class="post-meta">
+        <i class="iconfont icon-date-fill" aria-hidden="true"></i>
+        <time datetime="2019-01-06 15:13" pubdate>
+          2019年1月6日 下午
+        </time>
+      </span>
+    
+  </div>
+
+  <div class="mt-1">
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-chart"></i>
+        
+          <!-- compatible with older versions-->
+          6.3k 字
+        
+      </span>
+    
+
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-clock-fill"></i>
+        
+        
+        
+          <!-- compatible with older versions-->
+          20 分钟
+        
+      </span>
+    
+
+    
+    
+  </div>
+
+
+        
+      </div>
+
+      
+    </div>
+  </div>
+</div>
+
+</div>
+
+  </header>
+
+  <main>
+    
+      
+
+<div class="container-fluid nopadding-x">
+  <div class="row nomargin-x">
+    <div class="side-col d-none d-lg-block col-lg-2">
+      
+
+    </div>
+
+    <div class="col-lg-8 nopadding-x-md">
+      <div class="container nopadding-x-md" id="board-ctn">
+        <div id="board">
+          <article class="post-content mx-auto">
+            <h1 id="seo-header">Binder系列-Binder</h1>
+            
+            
+              <div class="markdown-body">
+                
+                <h1 id="Android-Binder机制相关以及AIDL介绍"><a href="#Android-Binder机制相关以及AIDL介绍" class="headerlink" title="Android Binder机制相关以及AIDL介绍"></a>Android Binder机制相关以及AIDL介绍</h1><span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/Android-Binder机制.png" srcset="/img/loading.gif" lazyload class="full-image" alt="Android-Binder机制" title="Android-Binder机制" /><meta itemprop="width" content="auto"/><meta itemprop="height" content="auto"/></span>
+
+<blockquote>
+<p>在Linux中，为了避免一个进程对其他进程的干扰，进程之间是相互独立的。</p>
+<p>Android的进程间通信采用了Binder基于<strong>性能,稳定和安全</strong>方面的考虑：。</p>
+<p>性能：在移动设备上对性能的要求是比较严苛的，在Linux上通信方式例如管道，Socket都需要复制两次数据，Binder只需一次。</p>
+<p><code>对于消息队列、Socket和管道而言，数据先从发送方的缓存区拷贝到内核开辟的缓存区中，再从内核缓存区拷贝至接收方缓存区，需要两次拷贝过程；Binder是从发送方缓存区到内核的缓存区，而接受方的缓存区与内核缓存区映射在同一块物理地址上，节省了一次数据拷贝的过程。</code></p>
+<p>安全：传统的Linux通信是不包含通信双方的身份验证的，Binder自带身份验证，提高了安全性。</p>
+<p><code>Android提供了UID机制，可以有效的鉴别用户身份。</code></p>
+<p>稳定：Binder基于C&#x2F;S架构，Client有什么需求就丢给Server去完成，职责明确又独立，稳定性更好。</p>
+</blockquote>
+<p>概念：</p>
+<ul>
+<li>直观来说，Binder是Android中的一个类，实现了IBinder接口。</li>
+<li>IPC角度来说，Binder是Android中的一种跨进程通信方式。</li>
+<li>Android Framework角度来说，Binder是ServiceManager连接各种Manager和相应ManagerService的桥梁。</li>
+<li>应用层来说，Binder是客户端和服务端进行通信的媒介。</li>
+</ul>
+<h2 id="1-Linux下传统的进程间通信原理"><a href="#1-Linux下传统的进程间通信原理" class="headerlink" title="1.Linux下传统的进程间通信原理"></a>1.Linux下传统的进程间通信原理</h2><blockquote>
+<p>Binder通信原理也是基于Linux 下的IPC机制实现的。</p>
+</blockquote>
+<h3 id="基本概念"><a href="#基本概念" class="headerlink" title="基本概念"></a>基本概念</h3><span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/Linux-IPC-Basics.png" srcset="/img/loading.gif" lazyload class="full-image" alt="Linux进程结构" title="Linux进程结构" /><meta itemprop="width" content="auto"/><meta itemprop="height" content="auto"/></span>
+
+<p>上图展示的结构中涉及了一些基础概念：</p>
+<h4 id="进程隔离"><a href="#进程隔离" class="headerlink" title="进程隔离"></a>进程隔离</h4><blockquote>
+<p>保护系统中进程互不干扰而设计的。在操作系统中，进程与进程间的内存是不共享的，进程1是无法直接访问进程2的数据，来保证数据的安全性。</p>
+<p>进程隔离的条件下，进程之间传递数据就要依靠<code>IPC机制</code>进行进程间通信。</p>
+</blockquote>
+<p>进程隔离的实现是利用了<code>虚拟地址空间</code>。</p>
+<h4 id="进程空间划分"><a href="#进程空间划分" class="headerlink" title="进程空间划分"></a>进程空间划分</h4><p>为了保护用户进程不能直接操作内核，保证内核的安全性，所以操作系统从逻辑上将虚拟空间划分为 <em>内核空间</em>，<em>用户空间</em>。</p>
+<ul>
+<li><p><strong>内核空间</strong> 一般占1GB</p>
+<p>系统内核运行的空间，</p>
+</li>
+<li><p><strong>用户空间</strong> 一般占3GB</p>
+<p>用于用户程序执行的空间</p>
+</li>
+</ul>
+<p><em>用户空间在不同进程之间是不能共享的，内核空间是各个进程之间共享的</em>。</p>
+<h4 id="系统调用"><a href="#系统调用" class="headerlink" title="系统调用"></a>系统调用</h4><p>由于用户空间的权限低于内核空间，但当用户空间需要访问内核资源时(文件操作，访问网络等)，就需要其他方式实现。</p>
+<p><strong>唯一的方式就是通过操作系统提供的<code>系统调用</code>接口</strong>。可以做到所有的资源访问都是在内核的控制下进行的，避免用户程序对系统资源的越权访问，提升系统安全和稳定性。</p>
+<p>当一个进程执行<code>系统调用</code>使用内核代码时，该进程就进入了<strong>内核态</strong>，此时处理器处于特权最高的<strong>0级</strong>内核代码中执行。</p>
+<p>当进程执行用户自己的代码时，进程就处于<strong>用户态</strong>。此时处理器处于<strong>3级</strong>用户代码中执行。</p>
+<h4 id="传统IPC通信实现"><a href="#传统IPC通信实现" class="headerlink" title="传统IPC通信实现"></a>传统IPC通信实现</h4><span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/Linux-IPC.png" srcset="/img/loading.gif" lazyload class="full-image" alt="Linux IPC" title="Linux IPC" /><meta itemprop="width" content="auto"/><meta itemprop="height" content="auto"/></span>
+
+<p>根据上述流程，传统IPC机制基本是以下两步：</p>
+<ul>
+<li>发送方通过<code>系统调用 copy_from_user</code>把要发送的数据拷贝到<code>内核缓存区</code>中</li>
+<li>接收方需要开辟一块内存空间，内核通过<code>系统调用 copy_to_user</code>将内核缓存区的数据拷贝至接收方开辟的空间中。</li>
+</ul>
+<p>以上流程有两个明显的缺点：</p>
+<ol>
+<li>性能低下，因为数据需要经历<code>发送方内存缓存区 -&gt; 内核缓存区 -&gt; 接收方内存缓存区</code>，就需要两次拷贝过程。</li>
+<li>接收方需要开辟一块空间用于存储数据，但并不知道要开辟多大的空间存储数据。因此只能开辟尽量大的空间或者先行获取数据的大小，可能存在时间和空间上的浪费。</li>
+</ol>
+<h4 id="Linux中的进程通信手段"><a href="#Linux中的进程通信手段" class="headerlink" title="Linux中的进程通信手段"></a>Linux中的进程通信手段</h4><h5 id="管道"><a href="#管道" class="headerlink" title="管道"></a>管道</h5><blockquote>
+<p>在创建时分配一个page大小的内存，缓存区大小比较有限</p>
+</blockquote>
+<h5 id="消息队列"><a href="#消息队列" class="headerlink" title="消息队列"></a>消息队列</h5><blockquote>
+<p>信息需要复制两次，带来额外的CPU消耗；不适合频繁或信息量大的通信</p>
+</blockquote>
+<h5 id="共享内存"><a href="#共享内存" class="headerlink" title="共享内存"></a>共享内存</h5><blockquote>
+<p>无需复制，共享缓冲区直接附加到进程的虚拟地址空间，速度快；<strong>但是无法解决进程间同步问题</strong>。</p>
+</blockquote>
+<h5 id="套接字-Socket"><a href="#套接字-Socket" class="headerlink" title="套接字(Socket)"></a>套接字(Socket)</h5><blockquote>
+<p>接口通用但是传输效率低，主要用于不同机器之间的通信。</p>
+</blockquote>
+<h5 id="信号量"><a href="#信号量" class="headerlink" title="信号量"></a>信号量</h5><blockquote>
+<p>常作为一种锁机制，防止某进程正在访问共享资源时，其他进程也访问该资源。<strong>主要作为进程间以及不同线程线程间的数据同步手段。</strong></p>
+</blockquote>
+<h5 id="信号"><a href="#信号" class="headerlink" title="信号"></a>信号</h5><blockquote>
+<p>不适用于信息交换，更适用于进程中断控制，比如非法内存访问。</p>
+</blockquote>
+<h2 id="2-Binder基本原理"><a href="#2-Binder基本原理" class="headerlink" title="2.Binder基本原理"></a>2.Binder基本原理</h2><h3 id="Binder底层原理"><a href="#Binder底层原理" class="headerlink" title="Binder底层原理"></a>Binder底层原理</h3><h4 id="动态内核可加载模块和内存映射-mmap"><a href="#动态内核可加载模块和内存映射-mmap" class="headerlink" title="动态内核可加载模块和内存映射(mmap())"></a>动态内核可加载模块和内存映射(<code>mmap()</code>)</h4><p>传统的IPC机制例如<code>管道、Socket</code>都是内核的一部分，天生就是支持通过内核来实现进程间通信。Binder机制并不是内核中的一部分，这就依赖于<code>动态内核可加载模块</code>机制。</p>
+<p><em>由于模块是具有独立功能的程序，他可以被单独编译但无法独立运行。所以可以利用该机制，动态的将一个内核模块添加至内核空间内，用户进程之间就可以通过这个内核模块实现通信。</em></p>
+<blockquote>
+<p>在Android系统中，加载进内核空间的模块就是 <strong>Binder驱动</strong>。</p>
+</blockquote>
+<p>Binder机制是如何利用这个模块<code>Binder驱动</code>进行进程间通信的呢？</p>
+<p>这个时候就涉及到了另一个概念：<strong>内存映射</strong>。</p>
+<p><code>内存映射</code>是通过<code>mmap()</code>来实现的，<code>mmap()</code>是操作系统中的一种内存映射的方法。<code>内存映射</code>就是将用户空间内的一块内存区域映射进内核空间。当映射关系建立完成后，用户对这块区域的修改可以直接反映到内核空间，而内核空间对映射区域的修改也可以直接反馈至用户空间。</p>
+<h4 id="实现原理"><a href="#实现原理" class="headerlink" title="实现原理"></a>实现原理</h4><p><code>Binder借助了内存映射的方法，建立内存映射后，发送方发过来的数据拷贝到内核缓存区数据后，对应用户空间的映射区域也能接收到传递的数据，相当于少了一次拷贝过程。</code></p>
+<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/Binder-IPC.png" srcset="/img/loading.gif" lazyload class="full-image" alt="Binder IPC" title="Binder IPC" /><meta itemprop="width" content="auto"/><meta itemprop="height" content="auto"/></span>
+
+<p>根据流程图分析：</p>
+<ol>
+<li><code>Binder驱动</code>首先会在内核空间创建一个<code>数据接收缓存区</code></li>
+<li>内核空间中有一块<code>内核缓存区</code>，利用<code>内存映射</code>将<code>内核缓存区</code>与<code>数据接收缓存区</code>建立映射关系，以及建立与<code>接收方用户空间</code>的映射关系。</li>
+<li>发送进程将调用<code>系统调用 copy_from_user</code>将数据<code>copy</code>到<code>内核缓存区</code>，由于已经建立了映射关系，相当于数据直接<code>copy</code>进接收进程的用户空间。</li>
+</ol>
+<h2 id="3-Binder通信模型"><a href="#3-Binder通信模型" class="headerlink" title="3.Binder通信模型"></a>3.Binder通信模型</h2><p>Binder通信采用了<strong>C&#x2F;S架构</strong>。在Android系统的Binder机制中，由一系列系统组件组成，分别是</p>
+<ul>
+<li><code>Client</code> 需要自己实现，客户端进程</li>
+<li><code>Server</code> 需要自己实现，服务端进程</li>
+<li><code>Service Manager</code> 由系统提供，将字符形式的Binder名字转化为Client中对该Binder的引用，使得Client可以通过Binder名字获得Server中Binder实体的引用。</li>
+<li><code>Binder 驱动</code> 由系统提供，负责建立进程间的Binder连接，将Client请求转发到具体的Server中执行，并将Server返回值传回给Client。还有进程间的数据交互等底层操作</li>
+</ul>
+<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/IPC-Binder.jpg" srcset="/img/loading.gif" lazyload class="full-image" alt="Binder架构图" title="Binder架构图" /><meta itemprop="width" content="auto"/><meta itemprop="height" content="auto"/></span>
+
+<p><img src="/images/IPC-Binder.jpg" srcset="/img/loading.gif" lazyload alt="Binder架构图"></p>
+<p>Client,Server,Service Manager处于用户空间，Binder驱动位于内核空间。</p>
+<p>下面介绍四个组成部分的作用：</p>
+<ul>
+<li><p>**Service Manager：**服务的管理者，指代的是Native层的ServiceManager(C++)，是整个Binder通信机制的大管家，是Android进程间通信机制的守护进程。将Binder的名字转换为Client中对该Binder的引用，使得Client可以通过Binder名字来获取Service中的引用。</p>
+<p><code>ServiceManager</code>其实就是一个进程，里面维护了一张表，表里存储的是向它注册过的进程信息。</p>
+</li>
+<li><p><strong>Binder驱动：<strong>主要是驱动设备的</strong>初始化(binder_init)，打开 (binder_open)，映射(binder_mmap)，数据操作(binder_ioctl)</strong>。</p>
+<p>和硬件设备没有任何关系。它工作于内核态，以misc设备注册在设备目录&#x2F;dev下，用户可以通过&#x2F;dev&#x2F;binder访问它。负责进程之间binder通信的建立、传递、计数管理和数据的传递交互等底层支持。主要功能由<code>ioctl()/*主要负责在两个进程间收发IPC和IPC reply数据，常用命令为BINDER_WRITE_READ*/</code>实现。</p>
+</li>
+<li><p>**Client&amp;Service：**在Binder驱动和Service Manager提供的基础设施上进行C-S之间的通信。<code>Server进程启动时，将在本进程内运行的Service注册到Service Manager中，并且启动一个Binder线程池，用来接收Client请求。然后Client进程向Service Manager查询所需要的Service，并获得一个Binder代理对象，通过该代理对象向Service发出请求。</code></p>
+</li>
+</ul>
+<p>四大组件彼此之间不是直接交互的，都是通过Binder驱动进行交互，从而实现IPC通信方式。<strong>系统需要启动了Service Manager之后，Client端和Server端需要现获取了Service Manager接口后，才可以开始通信服务。</strong></p>
+<h2 id="4-Binder通信过程"><a href="#4-Binder通信过程" class="headerlink" title="4.Binder通信过程"></a>4.Binder通信过程</h2><ol>
+<li>一个进程通过<code>BINDER_SET_CONTEXT_MGR</code>命令将自己注册成<code>ServiceManager</code>，<code>Binder驱动</code>就会给他创建一个Binder实体</li>
+<li><code>Server</code>通过<code>Binder驱动</code>向<code>ServiceManager</code>中注册Binder实体及其名字，声明可以对外提供服务。<code>Binder驱动</code>会为这个Binder创建位于内核中的实体节点以及<code>ServiceManager</code>中对实体的引用，将名字以及新建的引用打包给<code>ServiceManager</code>,<code>ServiceManager</code>将其填入查找表。</li>
+<li><code>Server</code>向<code>ServiceManager</code>中注册了Binder实体以及名字后，<code>Client</code>就可以通过<code>Binder驱动</code>请求<code>ServiceManager</code>根据名字获得<code>Server</code>的Binder引用。</li>
+<li>获得<code>Server</code>的Binder引用后，<code>Client</code>就可以通过<code>Binder驱动</code>直接和对应的Server通信。</li>
+<li><code>Server</code>接收请求后，需要通过<code>Binder驱动</code>将请求结果返回到<code>Client</code>中。</li>
+</ol>
+<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/Binder通信过程.png" srcset="/img/loading.gif" lazyload class="full-image" alt="Binder通信过程" title="Binder通信过程" /><meta itemprop="width" content="auto"/><meta itemprop="height" content="auto"/></span>
+
+<p><img src="/images/Binder%E9%80%9A%E4%BF%A1%E8%BF%87%E7%A8%8B.png" srcset="/img/loading.gif" lazyload></p>
+<h2 id="5-Binder代理机制"><a href="#5-Binder代理机制" class="headerlink" title="5.Binder代理机制"></a>5.Binder代理机制</h2><p><code>Client</code>通过<code>ServiceManager</code>拿到<code>Server</code>的Binder引用后，<code>Client</code>就可以向<code>Server</code>发起请求。</p>
+<p>在这一步骤中，<code>Client</code>得到的<code>Server</code>的Binder引用，其实是一个<code>Object</code>，在这个<code>Object</code>实现了一些方法；<code>Client</code>拿到这个<code>Object</code>后就可以直接调用内部的方法了。</p>
+<p>实际上，<code>Client</code>拿到的并不是<code>Server</code>在<code>ServiceManager</code>注册的Binder实体，由于经过了<code>Binder驱动</code>，在其中做了一次<strong>对象转换</strong>，将Binde实体包装成了一个代理对象(<code>ProxyObject</code>)，<code>ProxyObject</code>有着和<code>Object</code>一样的方法，但是这些方法的内部实现都是<strong>空方法，唯一能做的就是把<code>Client</code>的请求参数交给<code>Binder驱动</code>。</strong></p>
+<p><code>Binder驱动</code>收到<code>ProxyObject</code>传递的方法以及参数后，会在<code>ServiceManager</code>中查询是否存在该方法，如果存在*<code>Binder驱动</code>就会把代理对象(<code>ProxyObject</code>)转换成实际<code>Server</code>对象(<code>Object</code>)*。然后调用对应的方法，经由<code>Binder驱动</code>把返回结果发回给<code>Client</code>。</p>
+<p>上述流程就是<code>Binder的代理机制</code>。</p>
+<p><img src="/images/Binder%E4%BB%A3%E7%90%86%E6%9C%BA%E5%88%B6.png" srcset="/img/loading.gif" lazyload alt="Binder代理机制"></p>
+<h2 id="6-Binder完整定义"><a href="#6-Binder完整定义" class="headerlink" title="6.Binder完整定义"></a>6.Binder完整定义</h2><p>根据上述流程，可以对<code>Binder</code>进行一个简单的总结：<em>Binder是基于C&#x2F;S结构的一种面向对象的IPC机制。包含<code>Client、Server、Binder驱动和ServiceManager</code>四大组成部分。</em></p>
+<p>在不同场景下，Binder有着不同的含义：</p>
+<ul>
+<li>通常意义上来说，<code>Binder</code>指的就是Android的进程间通信机制</li>
+<li>对于<code>Server</code>来说，Binder是提供具体实现的本地对象，在<code>ServiceManager</code>注册得到</li>
+<li>对于<code>Client</code>来说，Binder是<code>Server</code>本地对象的一个引用，这个引用实际是是有<code>Binder驱动</code>进行<code>对象转换</code>得到的一个代理对象<code>ProxyObject</code>，<code>Client</code>通过<code>ProxyObject</code>访问<code>Server</code>的本地对象。</li>
+<li>对于传输过程来说，Binder就是一个可以跨进程传输的对象。</li>
+</ul>
+<h2 id="7-Binder工作机制"><a href="#7-Binder工作机制" class="headerlink" title="7.Binder工作机制"></a>7.Binder工作机制</h2><blockquote>
+<p>需要配合客户端的实现分析，主要实现方式就是利用AIDL</p>
+</blockquote>
+<h3 id="AIDL"><a href="#AIDL" class="headerlink" title="AIDL"></a>AIDL</h3><blockquote>
+<p><strong>Android接口定义语言 – Android Interface Definition Language</strong></p>
+<p>在Messenger中讲到它是基于AIDL的，但是只能处理串行的消息，如果有大量的消息同时发送进来，也只能一个个处理，而且不支持跨进程调用服务端的方法，就需要用到AIDL来处理上述情况。</p>
+<p><strong>AIDL默认是同步调用的，若需要异步调用–可以添加一个异步回调接口执行结果异步回调给调用方，需要使用RemoteCallbackList</strong></p>
+<p><strong>AIDL本质上就是系统为我们提供了一种快速实现Binder的工具，我们可以不依赖于AIDL，自己去完全实现一个Binder。</strong></p>
+</blockquote>
+<h4 id="1-AIDL支持的数据类型"><a href="#1-AIDL支持的数据类型" class="headerlink" title="1.AIDL支持的数据类型"></a>1.AIDL支持的数据类型</h4><ul>
+<li>基本数据类型：<code>byte、int、long、float、double、boolean，char</code></li>
+<li>String 和 CharSequence</li>
+<li>ArrayList，HashMap(<strong>包括key，每个元素必须可以被AIDL支持</strong>)</li>
+<li>实现了Parcelabe接口的对象 <strong>必须要显示Import进来</strong></li>
+<li>所有AIDL接口本身也会被调用<strong>必须要显示Import进来</strong></li>
+</ul>
+<h4 id="2-定向tag"><a href="#2-定向tag" class="headerlink" title="2.定向tag"></a>2.定向tag</h4><blockquote>
+<p>除了基本数据类型，其他类型的参数必须加上方向 <strong>in,out,inout</strong>，用于表示在跨进程通信中的数据流向。</p>
+</blockquote>
+<ul>
+<li><code>in</code>：表示数据只能由客户端流向服务端。服务端会收到这个对象的完整数据，<strong>但在服务端对对象进行修改不会对客户端传递进来的对象造成影响。</strong></li>
+<li><code>out</code>：表示数据只能由服务端传递到客户端。服务端会接受到这个对象的空对象，<strong>但在服务端接收到的空对象有任何修改之后客户端会同步发生变化。</strong></li>
+<li><code>inout</code>：表示数据可以在服务端和客户端之间双向流通。服务端会收到这个对象的完整数据，<strong>且客户端会同步服务端对该对象的任何改动。</strong></li>
+</ul>
+<h4 id="3-关键类和方法"><a href="#3-关键类和方法" class="headerlink" title="3.关键类和方法"></a>3.关键类和方法</h4><blockquote>
+<p>添加完AIDL文件后，会自动帮我们生成对应的Java文件。本质上是为我们提供了一种快速实现Binder的工具而已。</p>
+</blockquote>
+<ol>
+<li><p>定义一个AIDL文件</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">//Book.aidl</span><br><span class="hljs-comment">//书的实体类</span><br>parcelable Book;<br><br><span class="hljs-comment">//IOnNewBookArrivedListener.aidl</span><br><span class="hljs-comment">//监听新增书本事件</span><br><span class="hljs-keyword">import</span> com.example.wxy.ipc.Book;<br><span class="hljs-keyword">interface</span> <span class="hljs-title class_">IOnNewBookArrivedListener</span> &#123;<br>    <span class="hljs-keyword">void</span> <span class="hljs-title function_">onNewBookArrived</span><span class="hljs-params">(in Book newBook)</span>;<br>&#125;<br><br><span class="hljs-comment">//IBookManager.aidl</span><br><span class="hljs-comment">//书籍管理类</span><br><span class="hljs-keyword">import</span> com.example.wxy.ipc.Book;<br><span class="hljs-keyword">import</span> com.example.wxy.ipc.IOnNewBookArrivedListener;<br><span class="hljs-keyword">interface</span> <span class="hljs-title class_">IBookManager</span> &#123;<br>    <span class="hljs-comment">//获取书本总数</span><br>    List&lt;Book&gt; <span class="hljs-title function_">getBookList</span><span class="hljs-params">()</span>;<br>    <span class="hljs-comment">//插入新书</span><br>    Book <span class="hljs-title function_">addBook</span><span class="hljs-params">(in Book book)</span>;<br>    <span class="hljs-comment">//注册监听</span><br>    <span class="hljs-keyword">void</span> <span class="hljs-title function_">registerListener</span><span class="hljs-params">(IOnNewBookArrivedListener listener)</span>;<br>    <span class="hljs-comment">//解注册监听</span><br>    <span class="hljs-keyword">void</span> <span class="hljs-title function_">unregisterListener</span><span class="hljs-params">(IOnNewBookArrivedListener listener)</span>;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>根据上述代码发现，aidl文件中引用到的AIDL接口或者Model对象，无论是否在同一个Package目录下，都必须<strong>显示引用</strong>。</p>
+</li>
+<li><p>AIDL文件定义完成后，会自动生成对应的Java文件，里面自动完成了Binder的逻辑。接下来进行结构分析</p>
+<p><code>IBookManage</code> 主要声明了Client可以调用的Server方法</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title class_">IBookManager</span> <span class="hljs-keyword">extends</span> <span class="hljs-title class_">IInterafce</span>&#123;<br>  <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> java.lang.<span class="hljs-type">String</span> <span class="hljs-variable">DESCRIPTOR</span> <span class="hljs-operator">=</span> <span class="hljs-string">&quot;com.example.wxy.ipc.IBookManager&quot;</span>;<br>  <br>  <span class="hljs-keyword">public</span> java.util.List&lt;com.example.wxy.ipc.Book&gt; getBookList() <span class="hljs-keyword">throws</span> android.os.RemoteException;<br>  <span class="hljs-keyword">public</span> com.example.wxy.ipc.Book <span class="hljs-title function_">addBook</span><span class="hljs-params">(com.example.wxy.ipc.Book book)</span> <span class="hljs-keyword">throws</span> android.os.RemoteException;<br>  <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">registerListener</span><span class="hljs-params">(com.example.wxy.ipc.IOnNewBookArrivedListener listener)</span> <span class="hljs-keyword">throws</span> android.os.RemoteException;<br>  <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">unregisterListener</span><span class="hljs-params">(com.example.wxy.ipc.IOnNewBookArrivedListener listener)</span> <span class="hljs-keyword">throws</span> android.os.RemoteException;<br>  <br>  <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> <span class="hljs-type">int</span> <span class="hljs-variable">TRANSACTION_getBookList</span> <span class="hljs-operator">=</span> (android.os.IBinder.FIRST_CALL_TRANSACTION + <span class="hljs-number">0</span>);<br>  <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> <span class="hljs-type">int</span> <span class="hljs-variable">TRANSACTION_addBook</span> <span class="hljs-operator">=</span> (android.os.IBinder.FIRST_CALL_TRANSACTION + <span class="hljs-number">1</span>);<br>  <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> <span class="hljs-type">int</span> <span class="hljs-variable">TRANSACTION_registerListener</span> <span class="hljs-operator">=</span> (android.os.IBinder.FIRST_CALL_TRANSACTION + <span class="hljs-number">2</span>);<br>  <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> <span class="hljs-type">int</span> <span class="hljs-variable">TRANSACTION_unregisterListener</span> <span class="hljs-operator">=</span> (android.os.IBinder.FIRST_CALL_TRANSACTION + <span class="hljs-number">3</span>);<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p><code>Iinterface</code>代表的是Server进程需要具备什么功能，对应的就是 <code>Client</code>进程可以调用的方法</p>
+<p><code>IBookManager.Stub</code> 实现一个跨进程调用对象<code>Stub</code>。<code>Stub</code>继承自<code>Binder</code>，说明它是一个<code>Server进程</code>的Binder本地对象。需要实现<code>Server进程</code>提供的能力。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">abstract</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">Stub</span> <span class="hljs-keyword">extends</span> <span class="hljs-title class_">android</span>.os.Binder <span class="hljs-keyword">implements</span> <span class="hljs-title class_">com</span>.example.wxy.ipc.IBookManager &#123;<br>  <span class="hljs-keyword">public</span> <span class="hljs-title function_">Stub</span><span class="hljs-params">()</span> &#123;<br>     <span class="hljs-built_in">this</span>.attachInterface(<span class="hljs-built_in">this</span>, DESCRIPTOR);<br>  &#125;<br>  <br>   <span class="hljs-comment">//返回当前Binder对象</span><br>   <span class="hljs-comment">// IBinder 这个代表了一种跨进程通信的能力。只要实现了这个接口，这个对象就可以跨进程传输。Client和Server进程都要实现该接口。</span><br>   <span class="hljs-meta">@Override</span><br>   <span class="hljs-keyword">public</span> android.os.IBinder <span class="hljs-title function_">asBinder</span><span class="hljs-params">()</span> &#123;<br>            <span class="hljs-keyword">return</span> <span class="hljs-built_in">this</span>;<br>   &#125;  <br> <br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>关键方法: </p>
+<ol>
+<li><p><code>asInterface()</code> 通常用在Client <code>bindService()</code>成功后即在<code>onServiceConnected()</code>中调用该方法，可以把返回的IBinder对象转换为具体的<code>IIntergace</code>接口，就可以直接调用<code>Server</code>提供的对用方法。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> com.example.wxy.ipc.IBookManager <span class="hljs-title function_">asInterface</span><span class="hljs-params">(android.os.IBinder obj)</span> &#123;<br>            <span class="hljs-keyword">if</span> ((obj == <span class="hljs-literal">null</span>)) &#123;<br>                <span class="hljs-keyword">return</span> <span class="hljs-literal">null</span>;<br>            &#125;<br>            android.os.<span class="hljs-type">IInterface</span> <span class="hljs-variable">iin</span> <span class="hljs-operator">=</span> obj.queryLocalInterface(DESCRIPTOR);<br>            <span class="hljs-keyword">if</span> (((iin != <span class="hljs-literal">null</span>) &amp;&amp; (iin <span class="hljs-keyword">instanceof</span> com.example.wxy.ipc.IBookManager))) &#123;<br>                <span class="hljs-keyword">return</span> ((com.example.wxy.ipc.IBookManager) iin);<br>            &#125;<br>            <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">com</span>.example.wxy.ipc.IBookManager.Stub.Proxy(obj);<br>   &#125;<br><br></code></pre></td></tr></table></figure>
+
+<p>生成的代码中调用到了<code>queryLocalInterface()</code>去查找本地的Binder对象，</p>
+<ul>
+<li>如果找到了就证明<code>Client和Server</code>当前在统一进程内，直接就返回Binder对象。</li>
+<li>如果没找到意味<code>Client和Server</code>不在统一进程内，就会返回一个Binder代理对象，即<code>ProxyObject</code>。</li>
+</ul>
+<p>当<code>Client</code>端在创建与服务端之间的连接时，调用<code>bindService()</code>需要创建一个<code>ServiceConnection</code>对象作为入参。在对应方法的回调<code>onServiceConnected()</code>需要调用<code>asInterface()</code>获取到对应对象。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">// Client端实现 对应Android中的Activity</span><br>    <span class="hljs-keyword">private</span> <span class="hljs-type">ServiceConnection</span> <span class="hljs-variable">mConnection</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">ServiceConnection</span>() &#123;<br>        <span class="hljs-meta">@Override</span><br>        <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">onServiceConnected</span><span class="hljs-params">(ComponentName name, IBinder service)</span> &#123;<br>            <span class="hljs-comment">//获取到对应的BookManager对象</span><br>            mBookManager = IBookManager.Stub.asInterface(service);<br>            <span class="hljs-keyword">try</span> &#123;<br>                List&lt;Book&gt; list = mBookManager.getBookList();<br>                mBookManager.registerListener(onNewBookArrivedListener);<br>            &#125; <span class="hljs-keyword">catch</span> (RemoteException e) &#123;<br>                e.printStackTrace();<br>            &#125;<br>        &#125;<br><br>        <span class="hljs-meta">@Override</span><br>        <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">onServiceDisconnected</span><span class="hljs-params">(ComponentName name)</span> &#123;<br>            Log.e(<span class="hljs-string">&quot;Client&quot;</span>, <span class="hljs-string">&quot;绑定失败&quot;</span>);<br>        &#125;<br>    &#125;;<br></code></pre></td></tr></table></figure>
+</li>
+<li><p><code>onTransact()</code> 运行在服务器端的Binder线程池中，客户端发起跨进程请求时，远程请求会通过系统底层封装后交由此方法处理。参数介绍：</p>
+<ul>
+<li><code>code</code>：可以确定客户端所请求的方法是哪个</li>
+<li><code>data</code>：取出目标方法所需参数</li>
+<li><code>reply</code>：里面填写请求的返回值</li>
+<li><code>flags</code>：设置进行IPC的模式，0双向流通 1单向流通 **AIDL生成的.java文件均设置0</li>
+</ul>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-meta">@Override</span><br>   <span class="hljs-keyword">public</span> <span class="hljs-type">boolean</span> <span class="hljs-title function_">onTransact</span><span class="hljs-params">(<span class="hljs-type">int</span> code, android.os.Parcel data, android.os.Parcel reply, <span class="hljs-type">int</span> flags)</span> <span class="hljs-keyword">throws</span> android.os.RemoteException &#123;  <br>      <span class="hljs-keyword">switch</span> (code) &#123;<br>                <span class="hljs-keyword">case</span> INTERFACE_TRANSACTION: &#123;<br>                    reply.writeString(descriptor);<br>                    <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;<br>                &#125;<br>                <span class="hljs-keyword">case</span> TRANSACTION_getBookList: &#123;<br>                    data.enforceInterface(descriptor);<br>                    java.util.List&lt;com.example.wxy.ipc.Book&gt; _result = <span class="hljs-built_in">this</span>.getBookList();<br>                    reply.writeNoException();<br>                    reply.writeTypedList(_result);<br>                    <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;<br>                &#125;<br>                <span class="hljs-keyword">case</span> TRANSACTION_addBook: &#123;<br>                    data.enforceInterface(descriptor);<br>                    com.example.wxy.ipc.Book _arg0;<br>                    <span class="hljs-keyword">if</span> ((<span class="hljs-number">0</span> != data.readInt())) &#123;<br>                        _arg0 = com.example.wxy.ipc.Book.CREATOR.createFromParcel(data);<br>                    &#125; <span class="hljs-keyword">else</span> &#123;<br>                        _arg0 = <span class="hljs-literal">null</span>;<br>                    &#125;<br>                    <span class="hljs-comment">//实际内部实现 就交由 Stub类的 子类实现</span><br>                    com.example.wxy.ipc.<span class="hljs-type">Book</span> <span class="hljs-variable">_result</span> <span class="hljs-operator">=</span> <span class="hljs-built_in">this</span>.addBook(_arg0);<br>                    reply.writeNoException();<br>                    <span class="hljs-keyword">if</span> ((_result != <span class="hljs-literal">null</span>)) &#123;<br>                        reply.writeInt(<span class="hljs-number">1</span>);<br>                        _result.writeToParcel(reply, android.os.Parcelable.PARCELABLE_WRITE_RETURN_VALUE);<br>                    &#125; <span class="hljs-keyword">else</span> &#123;<br>                        reply.writeInt(<span class="hljs-number">0</span>);<br>                    &#125;<br>                    <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;<br>                &#125;<br>          ...<br>   &#125;<br></code></pre></td></tr></table></figure>
+
+<p>处理完由客户端调用的<code>transcat()</code>传递进来的<code>_data</code>，再将处理完的数据写入到<code>_reply</code>中。</p>
+<p>工作流程为：</p>
+<ol>
+<li>获取由<code>transcat()</code>传入的数据，根据对应的<code>code</code>执行相应方法</li>
+<li>执行方法后，解析对应传递过来的数据<code>_data</code></li>
+<li>将需要回传的数据写入<code>_reply</code>中，传回给客户端</li>
+</ol>
+</li>
+</ol>
+<p>  生成代码中 有调用到对应生成的<code>addBook()</code>等定义方法。这些方法的实际实现都要在<code>Server</code>端中实现。</p>
+   <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">// Server端  对应Android中的Service</span><br><span class="hljs-comment">//需要注意并发处理</span><br> <span class="hljs-keyword">private</span> CopyOnWriteArrayList&lt;Book&gt; mBookList = <span class="hljs-keyword">new</span> <span class="hljs-title class_">CopyOnWriteArrayList</span>&lt;&gt;();<br> <span class="hljs-keyword">private</span> <span class="hljs-type">Binder</span> <span class="hljs-variable">mBinder</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">IBookManager</span>.Stub() &#123;<br>        <span class="hljs-meta">@Override</span><br>        <span class="hljs-keyword">public</span> List&lt;Book&gt; <span class="hljs-title function_">getBookList</span><span class="hljs-params">()</span> <span class="hljs-keyword">throws</span> RemoteException &#123;<br>            <span class="hljs-keyword">return</span> mBookList;<br>        &#125;<br><br>        <span class="hljs-meta">@Override</span><br>        <span class="hljs-keyword">public</span> Book <span class="hljs-title function_">addBook</span><span class="hljs-params">(Book book)</span> <span class="hljs-keyword">throws</span> RemoteException &#123;<br>            book.setName(<span class="hljs-string">&quot;new Name in&quot;</span>);<br>            <span class="hljs-comment">//实现了对应的 addBook方法</span><br>            mBookList.add(book);<br>            <span class="hljs-keyword">return</span> book;<br>        &#125;<br>   <br>        <span class="hljs-meta">@Override</span><br>        <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">registerListener</span><span class="hljs-params">(IOnNewBookArrivedListener listener)</span> <span class="hljs-keyword">throws</span> RemoteException &#123;<br>            mListenList.register(listener);<br>        &#125;<br><br>        <span class="hljs-meta">@Override</span><br>        <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">unregisterListener</span><span class="hljs-params">(IOnNewBookArrivedListener listener)</span> <span class="hljs-keyword">throws</span> RemoteException &#123;<br>            mListenList.unregister(listener);<br>        &#125;<br>    &#125;;<br></code></pre></td></tr></table></figure>
+
+
+
+<p><code>IBookManager.Stub.Proxy</code> 它并没有继承自Binder，而是包含了一个IBinder对象，这个对象其实是BinderProxy，说明它是Server在Client中的本地代理对象(<code>ProxyObject</code>)。这个类运行在<code>Client</code>，<code>Client</code>调用这个类来调用服务端的代码(涉及到了<strong>代理模式</strong>)</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">Proxy</span> <span class="hljs-keyword">implements</span> <span class="hljs-title class_">com</span>.example.wxy.ipc.IBookManager &#123;<br>           <span class="hljs-keyword">private</span> android.os.IBinder mRemote;<br>   <br>           Proxy(android.os.IBinder remote) &#123;<br>               mRemote = remote;<br>           &#125;<br>   <br>           <span class="hljs-meta">@Override</span><br>           <span class="hljs-keyword">public</span> android.os.IBinder <span class="hljs-title function_">asBinder</span><span class="hljs-params">()</span> &#123;<br>               <span class="hljs-keyword">return</span> mRemote;<br>           &#125;<br>   <br>           <span class="hljs-keyword">public</span> java.lang.String <span class="hljs-title function_">getInterfaceDescriptor</span><span class="hljs-params">()</span> &#123;<br>               <span class="hljs-keyword">return</span> DESCRIPTOR;<br>           &#125;<br>   <br>           <span class="hljs-comment">/**</span><br><span class="hljs-comment">            * Demonstrates some basic types that you can use as parameters</span><br><span class="hljs-comment">            * and return values in AIDL.</span><br><span class="hljs-comment">            */</span><br>           <span class="hljs-meta">@Override</span><br>           <span class="hljs-keyword">public</span> java.util.List&lt;com.example.wxy.ipc.Book&gt; getBookList() <span class="hljs-keyword">throws</span> android.os.RemoteException &#123;<br>               android.os.<span class="hljs-type">Parcel</span> <span class="hljs-variable">_data</span> <span class="hljs-operator">=</span> android.os.Parcel.obtain();<br>               android.os.<span class="hljs-type">Parcel</span> <span class="hljs-variable">_reply</span> <span class="hljs-operator">=</span> android.os.Parcel.obtain();<br>               java.util.List&lt;com.example.wxy.ipc.Book&gt; _result;<br>               <span class="hljs-keyword">try</span> &#123;<br>                   _data.writeInterfaceToken(DESCRIPTOR);<br>                   mRemote.transact(Stub.TRANSACTION_getBookList, _data, _reply, <span class="hljs-number">0</span>);<br>                   _reply.readException();<br>                   _result = _reply.createTypedArrayList(com.example.wxy.ipc.Book.CREATOR);<br>               &#125; <span class="hljs-keyword">finally</span> &#123;<br>                   _reply.recycle();<br>                   _data.recycle();<br>               &#125;<br>               <span class="hljs-keyword">return</span> _result;<br>           &#125;<br>   <br>           <span class="hljs-meta">@Override</span><br>           <span class="hljs-keyword">public</span> com.example.wxy.ipc.Book <span class="hljs-title function_">addBookIn</span><span class="hljs-params">(com.example.wxy.ipc.Book book)</span> <span class="hljs-keyword">throws</span> android.os.RemoteException &#123;<br>               android.os.<span class="hljs-type">Parcel</span> <span class="hljs-variable">_data</span> <span class="hljs-operator">=</span> android.os.Parcel.obtain();<br>               android.os.<span class="hljs-type">Parcel</span> <span class="hljs-variable">_reply</span> <span class="hljs-operator">=</span> android.os.Parcel.obtain();<br>               com.example.wxy.ipc.Book _result;<br>               <span class="hljs-keyword">try</span> &#123;<br>                   _data.writeInterfaceToken(DESCRIPTOR);<br>                   <span class="hljs-keyword">if</span> ((book != <span class="hljs-literal">null</span>)) &#123;<br>                       _data.writeInt(<span class="hljs-number">1</span>);<br>                       book.writeToParcel(_data, <span class="hljs-number">0</span>);<br>                   &#125; <span class="hljs-keyword">else</span> &#123;<br>                       _data.writeInt(<span class="hljs-number">0</span>);<br>                   &#125;<br>                   mRemote.transact(Stub.TRANSACTION_addBookIn, _data, _reply, <span class="hljs-number">0</span>);<br>                   _reply.readException();<br>                   <span class="hljs-keyword">if</span> ((<span class="hljs-number">0</span> != _reply.readInt())) &#123;<br>                       _result = com.example.wxy.ipc.Book.CREATOR.createFromParcel(_reply);<br>                   &#125; <span class="hljs-keyword">else</span> &#123;<br>                       _result = <span class="hljs-literal">null</span>;<br>                   &#125;<br>               &#125; <span class="hljs-keyword">finally</span> &#123;<br>                   _reply.recycle();<br>                   _data.recycle();<br>               &#125;<br>               <span class="hljs-keyword">return</span> _result;<br>           &#125;<br>  ...<br>    <br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>分析上述生成的代码：</p>
+<ul>
+<li><code>_data _reply</code>：<code>_data</code>存储传参的数据，<code>_reply</code>存储方法的返回值数据</li>
+<li><code>transcat(int code, @NonNull Parcel data, @Nullable Parcel reply, int flags)</code>：客户端和服务端通信的核心方法。调用后会挂起当前线程，等候服务端执行任务完成通知并接受返回的<code>_reply</code>数据。<ul>
+<li><code>code</code>：分配的方法ID是自动生成的</li>
+</ul>
+</li>
+</ul>
+<p>工作流程为：</p>
+<ol>
+<li>生成<code>_data</code> 和<code> _reply</code>数据，在<code>_data</code>中存入客户端数据</li>
+<li>调用<code>transcat()</code>传递数据至服务端，并调用服务端中<code>onTranscat()</code>的指定方法</li>
+<li>接收<code>_reply</code>数据，取出服务端返回的数据使用</li>
+</ol>
+</li>
+</ol>
+<p>结构拆分明确后，可以大概的理解内部的工作机制。</p>
+<p><img src="/images/Binder-workflow.png" srcset="/img/loading.gif" lazyload alt="Binder工作机制"></p>
+<ul>
+<li><p><strong>Client调用远程Binder代理对象，Client线程挂起，等待Server响应数据</strong></p>
+<p>客户端要访问Binder的远程服务，就要获取远程服务的Binder对象在Binder驱动中的<code>mRemote</code>引用，获取到引用后既可以调用相关方法。</p>
+</li>
+<li><p><strong>Binder代理对象将请求发送给<code>Binder驱动</code></strong></p>
+<p>在服务端成功Binder对象后，Binder驱动会创建一个<code>mRemote</code>对象，客户端可以借助它调用<code>transcat()</code>向服务端发送消息</p>
+</li>
+<li><p><strong><code>Binder驱动</code>将请求派发给Server端</strong></p>
+<p>在Server端创建好一个Binder对象后，内部就会开启一个线程用于接收Binder驱动发送的消息，收到消息后就会执行<code>onTransact()</code>,然后按照参数执行不同的服务端代码。</p>
+</li>
+<li><p><strong>唤醒Client线程，返回结果</strong></p>
+<p><code>onTranscat()</code>处理完成后，将结果写入<code>_reply</code>中并返回至<code>Binder驱动</code>，唤醒被挂起的Client线程。</p>
+</li>
+</ul>
+<h4 id="4-可能产生的问题"><a href="#4-可能产生的问题" class="headerlink" title="4.可能产生的问题"></a>4.可能产生的问题</h4><ol>
+<li><p>可能会产生ANR</p>
+<p>由于客户端在调用远程服务方法时，客户端线程会被挂起，如果服务端的方法执行比较耗时，就会导致客户端ANR，或者在<code>onServiceConnected</code>和<code>onServiceDisconnected</code>中调用了服务端的耗时方法也会导致ANR。</p>
+<p>当服务端调用客户端的listener方法时，该方法会运行在客户端的<code>binder线程池中</code>，若调用了耗时方法，也会导致ANR。</p>
+<p><strong>客户端调用放在非UI线程</strong></p>
+</li>
+<li><p>AIDL解注册失败</p>
+<blockquote>
+<p>服务端无法找到注册时使用的listener而导致解注册失败。<strong>因为Binder客户端会把传递过来的对象重新转化并生成一个新的对象，而且对象是不能跨进程传输的，对象跨进程传输的本质就是序列化和反序列化的过程。</strong></p>
+</blockquote>
+<p>这时需要用到<code>RemoteCallBackList</code>，是系统专门提供用于删除跨进程的listener的接口，而且内部实现了线程同步的功能**(内部使用了<code>synchronized</code>)<strong>。使用注意事项:</strong><code>beginBroadcast</code>和<code>finishBroadcast</code>必须要配对使用。**</p>
+</li>
+<li><p>性能损耗较大</p>
+<blockquote>
+<p>客户端频繁调用服务端方法，就需要实现一个<strong>观察者模式</strong>，当客户端的数据发生变化时再去通知服务端操作，减少频繁查询。</p>
+</blockquote>
+</li>
+</ol>
+<h4 id="5-拓展"><a href="#5-拓展" class="headerlink" title="5.拓展"></a>5.拓展</h4><ol>
+<li><p>权限验证</p>
+<blockquote>
+<p>默认情况下，远程服务所有人都可以进行连接并调用，所以应该需要加入权限验证系统来保证安全。</p>
+</blockquote>
+<figure class="highlight xml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><code class="hljs xml">//在AndroidManifest.xml中定义该权限    <br><span class="hljs-tag">&lt;<span class="hljs-name">permission</span> <span class="hljs-attr">android:name</span>=<span class="hljs-string">&quot;com.example.wxy.permission.checkBook&quot;</span></span><br><span class="hljs-tag">                <span class="hljs-attr">android:protectionLevel</span>=<span class="hljs-string">&quot;normal&quot;</span>/&gt;</span><br>//如果注册了该权限，则可以绑定成功 否则失败<br><span class="hljs-tag">&lt;<span class="hljs-name">uses-permission</span> <span class="hljs-attr">android:name</span>=<span class="hljs-string">&quot;com.example.wxy.permission.checkBook&quot;</span>/&gt;</span><br><br><br><span class="hljs-tag">&lt;<span class="hljs-name">service</span></span><br><span class="hljs-tag">    <span class="hljs-attr">android:name</span>=<span class="hljs-string">&quot;.service.AIDLService&quot;</span></span><br><span class="hljs-tag">    <span class="hljs-attr">android:exported</span>=<span class="hljs-string">&quot;true&quot;</span>&gt;</span><br>        <span class="hljs-tag">&lt;<span class="hljs-name">intent-filter</span>&gt;</span><br>            <span class="hljs-tag">&lt;<span class="hljs-name">action</span> <span class="hljs-attr">android:name</span>=<span class="hljs-string">&quot;com.example.wxy&quot;</span>/&gt;</span><br>            <span class="hljs-tag">&lt;<span class="hljs-name">category</span> <span class="hljs-attr">android:name</span>=<span class="hljs-string">&quot;android.intent.category.DEFAULT&quot;</span>/&gt;</span><br>        <span class="hljs-tag">&lt;/<span class="hljs-name">intent-filter</span>&gt;</span><br><span class="hljs-tag">&lt;/<span class="hljs-name">service</span>&gt;</span><br></code></pre></td></tr></table></figure></li>
+</ol>
+<h2 id="8-Binder连接池"><a href="#8-Binder连接池" class="headerlink" title="8.Binder连接池"></a>8.Binder连接池</h2><blockquote>
+<p>首先回顾一下AIDL的使用方式：①创建一个Service和AIDL接口②创建一个类继承自AIDL接口中的Stub类并实现Stub中的抽象方法③在Service的onBind中返回这个类的对象④客户端绑定Service后就可以直接访问服务端的方法。</p>
+<p>当业务需求越来越多时，上述的创建方式就会产生很多Service类，导致系统资源耗费颜值、应用过度重量级的问题。所以产生了<code>Binder连接池</code>的概念。</p>
+</blockquote>
+<blockquote>
+<p>主要作用为 <strong>将每个业务模块的Binder请求统一转发到远程Service上去执行，从而避免重复创建Service</strong>。   </p>
+</blockquote>
+<p>工作原理：</p>
+<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/BinderPool.png" srcset="/img/loading.gif" lazyload class="full-image" alt="BinderPool工作原理" title="BinderPool工作原理" /><meta itemprop="width" content="auto"/><meta itemprop="height" content="auto"/></span>
+
+<p>每个业务模块创建自己的AIDL接口并实现，然后向服务端传递自己的<strong>唯一标识(BinderCode)及对应的Binder对象</strong>。服务端只要一个Service，然后实现<code>queryBinder()</code>接口，根据唯一标识返回对应的Binder对象。</p>
+<p>实现方式：</p>
+<ul>
+<li>创建对应的AIDL文件并有具体实现</li>
+<li>创建BinderPool.java以及IBinderPool.aidl文件</li>
+<li>实现远程服务BinderPoolService，并在onBind()中返回实例化的BinderPool对象</li>
+<li>实现BinderPool方法，并在<code>queryBinder()</code>中做好对应处理</li>
+<li>客户端调用BinderPoolService</li>
+</ul>
+<h2 id="9-Binder跨进程传输大文件"><a href="#9-Binder跨进程传输大文件" class="headerlink" title="9.Binder跨进程传输大文件"></a>9.Binder跨进程传输大文件</h2><p>Intent传递数据是有大小限制的，</p>
+<h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a target="_blank" rel="noopener" href="https://www.jianshu.com/p/ea4fc6aefaa8">一次Binder通信最多可以传输多大的数据</a></p>
+
+                
+              </div>
+            
+            <hr/>
+            <div>
+              <div class="post-metas my-3">
+  
+  
+    <div class="post-meta">
+      <i class="iconfont icon-tags"></i>
+      
+        <a href="/tags/Android/" class="print-no-link">#Android</a>
+      
+    </div>
+  
+</div>
+
+
+              
+  
+
+  <div class="license-box my-3">
+    <div class="license-title">
+      <div>Binder系列-Binder</div>
+      <div>http://example.com/2019/01/06/Binder系列-Binder/</div>
+    </div>
+    <div class="license-meta">
+      
+        <div class="license-meta-item">
+          <div>作者</div>
+          <div>Leo-Wxy</div>
+        </div>
+      
+      
+        <div class="license-meta-item license-meta-date">
+          <div>发布于</div>
+          <div>2019年1月6日</div>
+        </div>
+      
+      
+      
+        <div class="license-meta-item">
+          <div>许可协议</div>
+          <div>
+            
+              
+              
+                <a class="print-no-link" target="_blank" href="https://creativecommons.org/licenses/by/4.0/">
+                  <span class="hint--top hint--rounded" aria-label="BY - 署名">
+                    <i class="iconfont icon-cc-by"></i>
+                  </span>
+                </a>
+              
+            
+          </div>
+        </div>
+      
+    </div>
+    <div class="license-icon iconfont"></div>
+  </div>
+
+
+
+              
+                <div class="post-prevnext my-3">
+                  <article class="post-prev col-6">
+                    
+                    
+                      <a href="/2019/01/10/%E7%90%86%E8%A7%A3Window%E5%8F%8AWindowManager/" title="理解Window及WindowManager">
+                        <i class="iconfont icon-arrowleft"></i>
+                        <span class="hidden-mobile">理解Window及WindowManager</span>
+                        <span class="visible-mobile">上一篇</span>
+                      </a>
+                    
+                  </article>
+                  <article class="post-next col-6">
+                    
+                    
+                      <a href="/2019/01/04/Activity%E7%9A%84%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F%E5%92%8C%E5%90%AF%E5%8A%A8%E6%A8%A1%E5%BC%8F/" title="Activity的生命周期和启动模式">
+                        <span class="hidden-mobile">Activity的生命周期和启动模式</span>
+                        <span class="visible-mobile">下一篇</span>
+                        <i class="iconfont icon-arrowright"></i>
+                      </a>
+                    
+                  </article>
+                </div>
+              
+            </div>
+
+            
+          </article>
+        </div>
+      </div>
+    </div>
+
+    <div class="side-col d-none d-lg-block col-lg-2">
+      
+  <aside class="sidebar" style="margin-left: -1rem">
+    <div id="toc">
+  <p class="toc-header">
+    <i class="iconfont icon-list"></i>
+    <span>目录</span>
+  </p>
+  <div class="toc-body" id="toc-body"></div>
+</div>
+
+
+
+  </aside>
+
+
+    </div>
+  </div>
+</div>
+
+
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+
+
+
+
+    
+
+    
+      <a id="scroll-top-button" aria-label="TOP" href="#" role="button">
+        <i class="iconfont icon-arrowup" aria-hidden="true"></i>
+      </a>
+    
+
+    
+      <div class="modal fade" id="modalSearch" tabindex="-1" role="dialog" aria-labelledby="ModalLabel"
+     aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header text-center">
+        <h4 class="modal-title w-100 font-weight-bold">搜索</h4>
+        <button type="button" id="local-search-close" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body mx-3">
+        <div class="md-form mb-5">
+          <input type="text" id="local-search-input" class="form-control validate">
+          <label data-error="x" data-success="v" for="local-search-input">关键词</label>
+        </div>
+        <div class="list-group" id="local-search-result"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+    
+
+    
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+  
+    <div class="footer-content">
+       <a href="https://hexo.io" target="_blank" rel="nofollow noopener"><span>Hexo</span></a> <i class="iconfont icon-love"></i> <a href="https://github.com/fluid-dev/hexo-theme-fluid" target="_blank" rel="nofollow noopener"><span>Fluid</span></a> 
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+
+  <!-- Scripts -->
+  
+  <script  src="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.js" ></script>
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.css" />
+
+  <script>
+    NProgress.configure({"showSpinner":false,"trickleSpeed":100})
+    NProgress.start()
+    window.addEventListener('load', function() {
+      NProgress.done();
+    })
+  </script>
+
+
+<script  src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" ></script>
+<script  src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.min.js" ></script>
+<script  src="/js/events.js" ></script>
+<script  src="/js/plugins.js" ></script>
+
+
+
+
+
+  
+    <script  src="/js/img-lazyload.js" ></script>
+  
+
+
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/tocbot@4.12.0/dist/tocbot.min.js', function() {
+    var toc = jQuery('#toc');
+    if (toc.length === 0 || !window.tocbot) { return; }
+    var boardCtn = jQuery('#board-ctn');
+    var boardTop = boardCtn.offset().top;
+
+    window.tocbot.init(Object.assign({
+      tocSelector     : '#toc-body',
+      contentSelector : '.markdown-body',
+      linkClass       : 'tocbot-link',
+      activeLinkClass : 'tocbot-active-link',
+      listClass       : 'tocbot-list',
+      isCollapsedClass: 'tocbot-is-collapsed',
+      collapsibleClass: 'tocbot-is-collapsible',
+      scrollSmooth    : true,
+      includeTitleTags: true,
+      headingsOffset  : -boardTop,
+    }, CONFIG.toc));
+    if (toc.find('.toc-list-item').length > 0) {
+      toc.css('visibility', 'visible');
+    }
+
+    Fluid.events.registerRefreshCallback(function() {
+      if ('tocbot' in window) {
+        tocbot.refresh();
+        var toc = jQuery('#toc');
+        if (toc.length === 0 || !tocbot) {
+          return;
+        }
+        if (toc.find('.toc-list-item').length > 0) {
+          toc.css('visibility', 'visible');
+        }
+      }
+    });
+  });
+</script>
+
+
+  <script src=https://cdn.jsdelivr.net/npm/clipboard@2.0.6/dist/clipboard.min.js></script>
+
+  <script>Fluid.plugins.codeWidget();</script>
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/anchor-js@4.3.0/anchor.min.js', function() {
+    window.anchors.options = {
+      placement: CONFIG.anchorjs.placement,
+      visible  : CONFIG.anchorjs.visible
+    };
+    if (CONFIG.anchorjs.icon) {
+      window.anchors.options.icon = CONFIG.anchorjs.icon;
+    }
+    var el = (CONFIG.anchorjs.element || 'h1,h2,h3,h4,h5,h6').split(',');
+    var res = [];
+    for (var item of el) {
+      res.push('.markdown-body > ' + item.trim());
+    }
+    if (CONFIG.anchorjs.placement === 'left') {
+      window.anchors.options.class = 'anchorjs-link-left';
+    }
+    window.anchors.add(res.join(', '));
+
+    Fluid.events.registerRefreshCallback(function() {
+      if ('anchors' in window) {
+        anchors.removeAll();
+        var el = (CONFIG.anchorjs.element || 'h1,h2,h3,h4,h5,h6').split(',');
+        var res = [];
+        for (var item of el) {
+          res.push('.markdown-body > ' + item.trim());
+        }
+        if (CONFIG.anchorjs.placement === 'left') {
+          anchors.options.class = 'anchorjs-link-left';
+        }
+        anchors.add(res.join(', '));
+      }
+    });
+  });
+</script>
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.js', function() {
+    Fluid.plugins.fancyBox();
+  });
+</script>
+
+
+  <script>Fluid.plugins.imageCaption();</script>
+
+  <script  src="/js/local-search.js" ></script>
+
+
+
+
+
+<!-- 主题的启动项，将它保持在最底部 -->
+<!-- the boot of the theme, keep it at the bottom -->
+<script  src="/js/boot.js" ></script>
+
+
+  
+
+  <noscript>
+    <div class="noscript-warning">博客在允许 JavaScript 运行的环境下浏览效果更佳</div>
+  </noscript>
+</body>
+</html>

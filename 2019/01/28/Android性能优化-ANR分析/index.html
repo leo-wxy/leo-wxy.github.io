@@ -1,0 +1,733 @@
+
+
+<!DOCTYPE html>
+<html lang="zh-CN" data-default-color-scheme=auto>
+
+
+
+<head>
+  <meta charset="UTF-8">
+
+  <link rel="apple-touch-icon" sizes="76x76" href="/img/favicon.png">
+  <link rel="icon" href="/img/favicon.png">
+  
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, shrink-to-fit=no">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  
+  <meta name="theme-color" content="#11527b">
+  <meta name="author" content="Leo-Wxy">
+  <meta name="keywords" content="">
+  
+    <meta name="description" content="ANR概述 ANR：Application Not Responding应用程序未响应，Android会要求一些事件需要在规定时间内处理完成，如果超过预定事件内未能得到有效响应或者响应时间过长，就会造成ANR。  ANR由消息处理机制保证，Android在系统层实现了发现ANR的机制，核心原理是消息调度和超时处理。 ANR本质是性能问题。实际上是对应用程序主线程的限制，要求主线程在限定时间内处">
+<meta property="og:type" content="article">
+<meta property="og:title" content="ANR分析">
+<meta property="og:url" content="http://example.com/2019/01/28/Android%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96-ANR%E5%88%86%E6%9E%90/index.html">
+<meta property="og:site_name" content="Wxy的个人博客">
+<meta property="og:description" content="ANR概述 ANR：Application Not Responding应用程序未响应，Android会要求一些事件需要在规定时间内处理完成，如果超过预定事件内未能得到有效响应或者响应时间过长，就会造成ANR。  ANR由消息处理机制保证，Android在系统层实现了发现ANR的机制，核心原理是消息调度和超时处理。 ANR本质是性能问题。实际上是对应用程序主线程的限制，要求主线程在限定时间内处">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="http://example.com/images/%E8%BE%93%E5%85%A5%E4%BA%8B%E4%BB%B6%E8%B6%85%E6%97%B6%E7%9B%91%E6%B5%8B.webp">
+<meta property="article:published_time" content="2019-01-28T01:56:42.000Z">
+<meta property="article:modified_time" content="2021-06-20T07:34:49.000Z">
+<meta property="article:author" content="Leo-Wxy">
+<meta property="article:tag" content="Android">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="http://example.com/images/%E8%BE%93%E5%85%A5%E4%BA%8B%E4%BB%B6%E8%B6%85%E6%97%B6%E7%9B%91%E6%B5%8B.webp">
+  
+  
+  
+  <title>ANR分析 - Wxy的个人博客</title>
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css" />
+
+
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@4.0.0/github-markdown.min.css" />
+
+  <link  rel="stylesheet" href="/lib/hint/hint.min.css" />
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.css" />
+
+
+
+<!-- 主题依赖的图标库，不要自行修改 -->
+<!-- Do not modify the link that theme dependent icons -->
+
+<link rel="stylesheet" href="//at.alicdn.com/t/c/font_1749284_5i9bdhy70f8.css">
+
+
+
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1736178_kmeydafke9r.css">
+
+
+<link  rel="stylesheet" href="/css/main.css" />
+
+
+  <link id="highlight-css" rel="stylesheet" href="/css/highlight.css" />
+  
+    <link id="highlight-css-dark" rel="stylesheet" href="/css/highlight-dark.css" />
+  
+
+
+
+
+  <script id="fluid-configs">
+    var Fluid = window.Fluid || {};
+    Fluid.ctx = Object.assign({}, Fluid.ctx)
+    var CONFIG = {"hostname":"example.com","root":"/","version":"1.9.8","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false,"scope":[]},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"code_language":{"enable":true,"default":"TEXT"},"copy_btn":true,"image_caption":{"enable":true},"image_zoom":{"enable":true,"img_url_replace":["",""]},"toc":{"enable":true,"placement":"right","headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"loading_img":"/img/loading.gif","onlypost":false,"offset_factor":2},"web_analytics":{"enable":false,"follow_dnt":true,"baidu":null,"google":null,"tencent":{"sid":null,"cid":null},"leancloud":{"app_id":null,"app_key":null,"server_url":null,"path":"window.location.pathname","ignore_local":false},"umami":{"src":null,"website_id":null,"domains":null,"start_time":"2024-01-01T00:00:00.000Z","token":null,"api_server":null},"gtag":null,"woyaola":null,"cnzz":null},"search_path":"/local-search.xml","include_content_in_search":false};
+
+    if (CONFIG.web_analytics.follow_dnt) {
+      var dntVal = navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack;
+      Fluid.ctx.dnt = dntVal && (dntVal.startsWith('1') || dntVal.startsWith('yes') || dntVal.startsWith('on'));
+    }
+  </script>
+  <script  src="/js/utils.js" ></script>
+  <script  src="/js/color-schema.js" ></script>
+  
+
+
+  
+<meta name="generator" content="Hexo 8.1.1"></head>
+
+
+<body>
+  
+
+  <header>
+    
+
+<div class="header-inner" style="height: 30vh;">
+  <nav id="navbar" class="navbar fixed-top  navbar-expand-lg navbar-dark scrolling-navbar">
+  <div class="container">
+    <a class="navbar-brand" href="/">
+      <strong>Wxy&#39;s Blog</strong>
+    </a>
+
+    <button id="navbar-toggler-btn" class="navbar-toggler" type="button" data-toggle="collapse"
+            data-target="#navbarSupportedContent"
+            aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+      <div class="animated-icon"><span></span><span></span><span></span></div>
+    </button>
+
+    <!-- Collapsible content -->
+    <div class="collapse navbar-collapse" id="navbarSupportedContent">
+      <ul class="navbar-nav ml-auto text-center">
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/" target="_self">
+                <i class="iconfont icon-home-fill"></i>
+                <span>首页</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/archives/" target="_self">
+                <i class="iconfont icon-archive-fill"></i>
+                <span>归档</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/tags/" target="_self">
+                <i class="iconfont icon-tags-fill"></i>
+                <span>标签</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/about/" target="_self">
+                <i class="iconfont icon-user-fill"></i>
+                <span>关于</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/links/" target="_self">
+                <i class="iconfont icon-link-fill"></i>
+                <span>友链</span>
+              </a>
+            </li>
+          
+        
+        
+          <li class="nav-item" id="search-btn">
+            <a class="nav-link" target="_self" href="javascript:;" data-toggle="modal" data-target="#modalSearch" aria-label="Search">
+              <i class="iconfont icon-search"></i>
+            </a>
+          </li>
+          
+        
+        
+          <li class="nav-item" id="color-toggle-btn">
+            <a class="nav-link" target="_self" href="javascript:;" aria-label="Color Toggle">
+              <i class="iconfont icon-dark" id="color-toggle-icon"></i>
+            </a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+  
+
+<div id="banner" class="banner" parallax=true
+     style="background: url('/img/default.png') no-repeat center center; background-size: cover;">
+  <div class="full-bg-img">
+    <div class="mask flex-center" style="background-color: rgba(0, 0, 0, 0.3)">
+      <div class="banner-text text-center fade-in-up">
+        <div class="h2">
+          
+            <span id="subtitle">ANR分析</span>
+          
+        </div>
+
+        
+          
+  <div class="mt-3">
+    
+    
+      <span class="post-meta">
+        <i class="iconfont icon-date-fill" aria-hidden="true"></i>
+        <time datetime="2019-01-28 09:56" pubdate>
+          2019年1月28日 上午
+        </time>
+      </span>
+    
+  </div>
+
+  <div class="mt-1">
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-chart"></i>
+        
+          <!-- compatible with older versions-->
+          2.4k 字
+        
+      </span>
+    
+
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-clock-fill"></i>
+        
+        
+        
+          <!-- compatible with older versions-->
+          8 分钟
+        
+      </span>
+    
+
+    
+    
+  </div>
+
+
+        
+      </div>
+
+      
+    </div>
+  </div>
+</div>
+
+</div>
+
+  </header>
+
+  <main>
+    
+      
+
+<div class="container-fluid nopadding-x">
+  <div class="row nomargin-x">
+    <div class="side-col d-none d-lg-block col-lg-2">
+      
+
+    </div>
+
+    <div class="col-lg-8 nopadding-x-md">
+      <div class="container nopadding-x-md" id="board-ctn">
+        <div id="board">
+          <article class="post-content mx-auto">
+            <h1 id="seo-header">ANR分析</h1>
+            
+            
+              <div class="markdown-body">
+                
+                <!--简要解释一下 ANR？为什么会发生 ANR？如何避免发生 ANR？如何定位 ANR？ANR发生条件？如何分析ANR-->
+
+<h2 id="ANR概述"><a href="#ANR概述" class="headerlink" title="ANR概述"></a>ANR概述</h2><blockquote>
+<p>ANR：<code>Application Not Responding</code>应用程序未响应，Android会要求一些事件需要在规定时间内处理完成，如果超过预定事件内未能得到有效响应或者响应时间过长，就会造成ANR。</p>
+</blockquote>
+<p>ANR由<strong>消息处理机制</strong>保证，Android在系统层实现了发现ANR的机制，核心原理是<strong>消息调度和超时处理</strong>。</p>
+<p>ANR本质是<strong>性能问题</strong>。实际上是对应用程序主线程的限制，要求主线程在限定时间内处理完一些最常见的操作(<em>启动服务，处理广播，处理输入</em>)，如果处理超时，则认为主线程已经失去了响应其他操作的能力。</p>
+<h2 id="ANR发生场景"><a href="#ANR发生场景" class="headerlink" title="ANR发生场景"></a>ANR发生场景</h2><ul>
+<li><strong>输入事件(按键和触摸事件)5s内未处理</strong>：Input event dispatching timed out</li>
+<li><strong>BroadcastReceiver的<code>onReceive()</code>在规定时间内没处理完(<em>前台广播为10s，后台广播为60s</em>)</strong>：Timeout of broadcast BoradcastRecord</li>
+<li><strong>Service在<em>前台20s后台200s</em>时间内为启动完成</strong>：Timeout executing service</li>
+<li><strong>ContentProvider的<code>publish()</code>在10s内没有执行完成</strong>：Timeout publishing content providers</li>
+</ul>
+<h2 id="ANR机制"><a href="#ANR机制" class="headerlink" title="ANR机制"></a>ANR机制</h2><blockquote>
+<p>ANR机制主要分为两部分：<strong>ANR监测机制</strong>，<strong>ANR报告机制</strong>。</p>
+<ul>
+<li>ANR监测机制：Android对于不同的ANR类型(<em>Broadcast,Service,InputEvent</em>)都有一套监测机制。</li>
+<li>ANR报告机制：在监测到ANR后，需要显示ANR对话框，输出日志等</li>
+</ul>
+</blockquote>
+<h3 id="输入事件超时监测"><a href="#输入事件超时监测" class="headerlink" title="输入事件超时监测"></a>输入事件超时监测</h3><h4 id="输入系统简介"><a href="#输入系统简介" class="headerlink" title="输入系统简介"></a>输入系统简介</h4><p>内核将原始事件写入到设备节点中，<code>InputReader</code>在期限错循环不断的从<code>EventHub</code>中抽取原始输入事件，进行加工处理后将加工所得的事件放入<code>InputDispatcher</code>的派发队列中。<code>InputDispatcher</code>在其线程循环中将派发队列中的事件取出，查找合适的窗口，将事件写入到窗口的事件接收管道中。</p>
+<h4 id="超时监测"><a href="#超时监测" class="headerlink" title="超时监测"></a>超时监测</h4><span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/输入事件超时监测.webp" srcset="/img/loading.gif" lazyload class="full-image" alt="输入事件超时监测" title="输入事件超时监测" /><meta itemprop="width" content="auto"/><meta itemprop="height" content="auto"/></span>
+
+<p><code>InputDispaycher::dispatchOnceInnerLocked()</code>：根据事件类型选择不同事件的处理方法</p>
+<p><code>InputDispaycher::findFocusedWindowTargetsLocked()</code>：内部调用<code>checkWindowReadyForMoreInputLocked()</code>检查窗口是否有新能力在接受新的输入事件。</p>
+<p><code>InputDispatcher::handleTargetsNotReadyLocked()</code>：进行判断事件5s之内是否分发完毕</p>
+<p>当应用主线程被卡住时，再点击其他组件也是无响应，因为事件派发是串行的，上一事件未处理完毕，下一事件不会向下执行。</p>
+<p>在<code>Activity.onCreate()</code>执行耗时操作，不管用户如何操作都不会发生ANR，因为输入事件相关监听机制尚未建立起来。</p>
+<p>输入事件由<code>InputDispatcher</code>调度，待处理的输入输出事件都会进入队列中等待，设计了一个等待超时的判断。</p>
+<h3 id="Service超时监测"><a href="#Service超时监测" class="headerlink" title="Service超时监测"></a>Service超时监测</h3><p>本身有分析过<code>Service的启动流程</code>，在其中了解到<code>ActiveServices.realStartServiceLocked()</code>是真正的Service启动流程。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">// ../core/java/com/android/server/am/ActiveServices.java  </span><br><span class="hljs-comment">// How long we wait for a service to finish executing.</span><br>    <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> <span class="hljs-type">int</span> <span class="hljs-variable">SERVICE_TIMEOUT</span> <span class="hljs-operator">=</span> <span class="hljs-number">20</span>*<span class="hljs-number">1000</span>;<br><br>    <span class="hljs-comment">// How long we wait for a service to finish executing.</span><br>    <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> <span class="hljs-type">int</span> <span class="hljs-variable">SERVICE_BACKGROUND_TIMEOUT</span> <span class="hljs-operator">=</span> SERVICE_TIMEOUT * <span class="hljs-number">10</span>;<br><br><span class="hljs-comment">//真正启动Service</span><br><span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">realStartServiceLocked</span><span class="hljs-params">(ServiceRecord r,</span><br><span class="hljs-params">            ProcessRecord app, <span class="hljs-type">boolean</span> execInFg)</span> <span class="hljs-keyword">throws</span> RemoteException &#123;<br>        ...<br>        <span class="hljs-comment">// 主要是为了设置ANR超时，可以看出在正式启动Service之前开始ANR监测；</span><br>        bumpServiceExecutingLocked(r, execInFg, <span class="hljs-string">&quot;create&quot;</span>);<br>       <span class="hljs-comment">// 启动过程调用scheduleCreateService方法,最终会调用Service.onCreate方法；</span><br>        app.thread.scheduleCreateService(r, r.serviceInfo,<br>        <span class="hljs-comment">// 绑定过程中，这个方法中会调用app.thread.scheduleBindService方法</span><br>        requestServiceBindingsLocked(r, execInFg);<br>        <span class="hljs-comment">// 调动Service的其他方法，如onStartCommand，也是IPC通讯</span><br>        sendServiceArgsLocked(r, execInFg, <span class="hljs-literal">true</span>);<br>    &#125;<br><br><span class="hljs-comment">//设置超时监测                                         </span><br><span class="hljs-keyword">void</span> <span class="hljs-title function_">scheduleServiceTimeoutLocked</span><span class="hljs-params">(ProcessRecord proc)</span> &#123;<br>        <span class="hljs-keyword">if</span> (proc.executingServices.size() == <span class="hljs-number">0</span> || proc.thread == <span class="hljs-literal">null</span>) &#123;<br>            <span class="hljs-keyword">return</span>;<br>        &#125;<br>        <span class="hljs-type">Message</span> <span class="hljs-variable">msg</span> <span class="hljs-operator">=</span> mAm.mHandler.obtainMessage(<br>                ActivityManagerService.SERVICE_TIMEOUT_MSG);<br>        msg.obj = proc;<br>        <span class="hljs-comment">// 在serviceDoneExecutingLocked中会remove该SERVICE_TIMEOUT_MSG消息，</span><br>        <span class="hljs-comment">// 当超时后仍没有remove SERVICE_TIMEOUT_MSG消息，则执行ActiveServices. serviceTimeout()方法；</span><br>        mAm.mHandler.sendMessageDelayed(msg,<br>                proc.execServicesFg ? SERVICE_TIMEOUT : SERVICE_BACKGROUND_TIMEOUT);<br>        <span class="hljs-comment">// 前台进程中执行Service，SERVICE_TIMEOUT=20s；后台进程中执行Service，SERVICE_BACKGROUND_TIMEOUT=200s</span><br>    &#125;<br><br><span class="hljs-comment">//在AMS中收到了  SERVICE_TIMEOUT_MSG Message就会触发该方法                                       </span><br><span class="hljs-keyword">void</span> <span class="hljs-title function_">serviceTimeout</span><span class="hljs-params">(ProcessRecord proc)</span> &#123;<br>    ...<br>    <span class="hljs-keyword">final</span> <span class="hljs-type">long</span> <span class="hljs-variable">maxTime</span> <span class="hljs-operator">=</span>  now -<br>              (proc.execServicesFg ? SERVICE_TIMEOUT : SERVICE_BACKGROUND_TIMEOUT);<br>    ...<br>    <span class="hljs-comment">// 寻找运行超时的Service</span><br>    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i=proc.executingServices.size()-<span class="hljs-number">1</span>; i&gt;=<span class="hljs-number">0</span>; i--) &#123;<br>        <span class="hljs-type">ServiceRecord</span> <span class="hljs-variable">sr</span> <span class="hljs-operator">=</span> proc.executingServices.valueAt(i);<br>        <span class="hljs-keyword">if</span> (sr.executingStart &lt; maxTime) &#123;<br>            timeout = sr;<br>            <span class="hljs-keyword">break</span>;<br>        &#125;<br>       ...<br>    &#125;<br>    ...<br>    <span class="hljs-comment">// 判断执行Service超时的进程是否在最近运行进程列表，如果不在，则忽略这个ANR</span><br>    <span class="hljs-keyword">if</span> (timeout != <span class="hljs-literal">null</span> &amp;&amp; mAm.mLruProcesses.contains(proc)) &#123;<br>        anrMessage = <span class="hljs-string">&quot;executing service &quot;</span> + timeout.shortName;<br>    &#125;<br>    ...<br>    <span class="hljs-keyword">if</span> (anrMessage != <span class="hljs-literal">null</span>) &#123;<br>        <span class="hljs-comment">// 当存在timeout的service，则执行appNotResponding，报告ANR</span><br>        mAm.appNotResponding(proc, <span class="hljs-literal">null</span>, <span class="hljs-literal">null</span>, <span class="hljs-literal">false</span>, anrMessage);<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>Service启动前会先启动超时监测，如果在指定时间内(<em>前台20s后台200s</em>)没有启动完毕，就会调用到<code>ActiveServices.serviceTimeout()</code>报告ANR；如果执行完毕，会调用到<code>ActiveServices.serviceDoneExecutingLocked()</code>在其中<code>removeMessages(SERVICE_TIMEOUT_MSG)</code>移除超时消息。</p>
+<h3 id="ANR报告机制"><a href="#ANR报告机制" class="headerlink" title="ANR报告机制"></a>ANR报告机制</h3><p>无论哪种类型的ANR发生后，最终都会调用到<code>AppErrors.appNotResponding()</code>。这个方法主要的功能就是**向用户或开发者报告ANR发生了。**最终的表现就是弹出一个对话框，告诉用户当前程序无法响应；并且会输出ANR日志，以供开发者分析。</p>
+<ul>
+<li><strong>event log</strong>：通过检索”am_anr”关键字，可以找到发生ANR的应用</li>
+<li><strong>main log</strong>：通过检索”ANR in”关键字，可以找到ANR的信息，日志的上下文会包含CPU的使用情况</li>
+<li><strong>dropbox</strong>：通过检索”anr”类型，可以找到ANR的信息</li>
+<li><strong>traces</strong>：发生ANR时，各进程的函数调用栈信息 (<em>可以通过<code>adb pull data.anr/traces.txt</code>导出trace文件</em>)</li>
+</ul>
+<p>ANR报告相关内容主要为以上四种，后续如果需要分析ANR问题，分析ANR往往是从<code>main log中的CPU使用情况和导出的traces.txt文件</code>进行分析。</p>
+<h2 id="ANR分析"><a href="#ANR分析" class="headerlink" title="ANR分析"></a>ANR分析</h2><p>ANR问题的产生是由于主线程的任务无法在规定事件内无法完成。造成这种情况的原因大致会有以下几点：</p>
+<ul>
+<li>主线程在做一些耗时的工作</li>
+<li>主线程被其他线程锁</li>
+<li>cpu被其他线程占用，导致该进程没有被分配到足够的CPU资源</li>
+</ul>
+<p>分析思路主要是:</p>
+<ol>
+<li><code>从log中找到ANR发生的信息</code>：在log中搜索<code>am_anr或ANR in</code>找到ANR发生的log，包含了ANR发生的时间，进程，ANRtype。</li>
+<li><code>继续分析CPU usage的信息</code>：表明了CPU在ANR前后的用量，从各种CPU usage信息中可以分析几点：<ul>
+<li>如果其他进程占用CPU较多，而发生ANR的进程占用较低，可以认为是 因为CPU资源未分配足够，导致的ANR</li>
+<li>如果ANR进程占用CPU较多，可以怀疑是内部一些不合理的代码导致CPU资源大量消耗，如出现了死循环或者后台有大量线程在执行任务，或者存在频繁的文件读写(<em>iowait</em>)</li>
+<li>CPU总用量都不高，该进程和其他线程的占用过高，可能是由于主线程的操作耗时过长，或者主线程被锁导致。</li>
+</ul>
+</li>
+<li><code>向下继续分析 trace文件</code>：trace文件记录了发生ANR前后该进程中各个线程的stack。对我们分析ANR问题最有价值的就是主线程的stack(<code>main</code>)。一般主线程trace中可能有如下几种情况：<ul>
+<li>主线程是<code>running或native</code>而对应的栈对应了我们应用中的函数，则很有可能是执行该函数发生了超时</li>
+<li>主线程是<code>block</code>，主线程被锁，可以考虑进行优化代码，解除掉锁的状态。如果是死锁问题，需要及时处理</li>
+</ul>
+</li>
+</ol>
+<h2 id="ANR避免和检测"><a href="#ANR避免和检测" class="headerlink" title="ANR避免和检测"></a>ANR避免和检测</h2><p>默认情况下，Android应用程序通常在单线程上运行——<strong>主线程</strong>。ANR的发生场景主要是在主线程中进行了耗时操作。</p>
+<blockquote>
+<p>哪些算作UI主线程？</p>
+<ul>
+<li>Activity的所有生命周期回调都是执行在主线程的</li>
+<li>Service默认执行在主线程</li>
+<li>BoradcastReceiver的<code>onReceive()</code>回调在主线程</li>
+<li>没有使用子线程的Looper的Handler实现的<code>handleMessage()</code></li>
+<li>AsyncTask除了<code>doInBackground()</code>执行在主线程</li>
+<li>View的<code>post(runnable)</code>执行在主线程</li>
+</ul>
+</blockquote>
+<p><strong>主要原则是不要在主线程中做耗时操作。</strong></p>
+<p>检测可以利用BlockCanary – 基本原理是利用主线程的消息队列处理机制，通过对比消息分发开始和结束的时间点来判断是否超过设定的时间，超过则判断为线程卡顿。</p>
+<h2 id="ANR日志分析"><a href="#ANR日志分析" class="headerlink" title="ANR日志分析"></a>ANR日志分析</h2><blockquote>
+<p>上面有说到，<code>发生ANR的时候，系统会产生一份anr日志（置于 /data/anr/ 目录下），一般称为trace文件</code>。</p>
+</blockquote>
+<h3 id="trace文件获取"><a href="#trace文件获取" class="headerlink" title="trace文件获取"></a><code>trace文件</code>获取</h3><figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs shell">adb pull /data/anr/traces.txt<br></code></pre></td></tr></table></figure>
+
+<p>或者</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><code class="hljs shell">adb bugreport<br><span class="hljs-meta prompt_"># </span><span class="language-bash">可以获取当前所有的错误报告</span><br></code></pre></td></tr></table></figure>
+
+
+
+<h3 id="trace文件结构"><a href="#trace文件结构" class="headerlink" title="trace文件结构"></a><code>trace文件</code>结构</h3><h4 id="CPU负载"><a href="#CPU负载" class="headerlink" title="CPU负载"></a>CPU负载</h4><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><code class="hljs java">Load: <span class="hljs-number">2.62</span> / <span class="hljs-number">2.55</span> / <span class="hljs-number">2.25</span><br>CPU usage from 0ms to 1987ms <span class="hljs-title function_">later</span> <span class="hljs-params">(<span class="hljs-number">2020</span>-<span class="hljs-number">03</span>-<span class="hljs-number">10</span> 08:<span class="hljs-number">31</span>:<span class="hljs-number">55.169</span> to <span class="hljs-number">2020</span>-<span class="hljs-number">03</span>-<span class="hljs-number">10</span> 08:<span class="hljs-number">32</span>:<span class="hljs-number">17.156</span>)</span>:<br>  <span class="hljs-number">41</span>% <span class="hljs-number">2080</span>/system_server: <span class="hljs-number">28</span>% user + <span class="hljs-number">12</span>% kernel / faults: <span class="hljs-number">76445</span> minor <span class="hljs-number">180</span> major<br>  <span class="hljs-number">26</span>% <span class="hljs-number">9378</span>/com.xiaomi.store: <span class="hljs-number">20</span>% user + <span class="hljs-number">6.8</span>% kernel / faults: <span class="hljs-number">68408</span> minor <span class="hljs-number">68</span> major<br>........省略N行.....<br><span class="hljs-number">66</span>% TOTAL: <span class="hljs-number">20</span>% user + <span class="hljs-number">15</span>% kernel + <span class="hljs-number">28</span>% iowait + <span class="hljs-number">0.7</span>% irq + <span class="hljs-number">0.7</span>% softirq<br><br></code></pre></td></tr></table></figure>
+
+
+
+<p><code>Load</code>-<strong>CPU负载</strong></p>
+<blockquote>
+<p>后面三个数据分别表示 <code>1、5、15分钟</code>时的整体CPU负载</p>
+<p>一般第一个数据参考价值最高。</p>
+</blockquote>
+<p><code>CPU usage</code>-<strong>各进程CPU使用率</strong></p>
+<blockquote>
+<p>各个进程占用的CPU情况</p>
+</blockquote>
+<p>还有<code>Xms to Yms</code>表示发生ANR的时间点，其中<code>later</code>和<code>ago</code>主要区别如下：</p>
+<ul>
+<li><code>later</code>：<code>CPU usage from 0ms to Xms later</code>表示ANR发生之后的一段时间内，各个进程的CPU使用率</li>
+<li><code>ago</code>：<code>CPU usage from Xms to 0ms ago</code>表示ANR发生之前的一段时间内，各个进程的CPU使用率</li>
+</ul>
+<p>剩余的就是各个进程的CPU使用率情况</p>
+<p>主要涉及以下几个名词的含义</p>
+<ul>
+<li><code>user</code>：用户空间 <code>kernel</code>：内核空间。<code>一般情况下 kernel CPU占用高于 user，则表示发生了大量的系统调用，一般情况都是IO操作</code></li>
+<li><code>fault</code>：内存缺页 <code>minor</code>：高速缓存中的缺页次数(<code>进程中的内存访问</code>) <code>major</code>：内存的缺页次数(<code>进程做IO操作</code>)</li>
+</ul>
+<p><code>TOTAL</code>-<strong>CPU使用汇总</strong></p>
+<p>最前是<code>总的CPU使用率</code></p>
+<p>关键的是这几部分：</p>
+<ul>
+<li><code>iowait</code>：表明CPU在等待IO的时间，占用过高就表示<code>发生大量的IO操作</code>。<strong>重点关注是否有进程的faults major占用比较多</strong></li>
+<li><code>irq</code>：硬中断</li>
+<li><code>softirq</code>：软中断</li>
+</ul>
+<h4 id="内存信息"><a href="#内存信息" class="headerlink" title="内存信息"></a>内存信息</h4><h4 id="堆栈信息"><a href="#堆栈信息" class="headerlink" title="堆栈信息"></a>堆栈信息</h4><h3 id="典型案例分析"><a href="#典型案例分析" class="headerlink" title="典型案例分析"></a>典型案例分析</h3>
+                
+              </div>
+            
+            <hr/>
+            <div>
+              <div class="post-metas my-3">
+  
+  
+    <div class="post-meta">
+      <i class="iconfont icon-tags"></i>
+      
+        <a href="/tags/Android/" class="print-no-link">#Android</a>
+      
+    </div>
+  
+</div>
+
+
+              
+  
+
+  <div class="license-box my-3">
+    <div class="license-title">
+      <div>ANR分析</div>
+      <div>http://example.com/2019/01/28/Android性能优化-ANR分析/</div>
+    </div>
+    <div class="license-meta">
+      
+        <div class="license-meta-item">
+          <div>作者</div>
+          <div>Leo-Wxy</div>
+        </div>
+      
+      
+        <div class="license-meta-item license-meta-date">
+          <div>发布于</div>
+          <div>2019年1月28日</div>
+        </div>
+      
+      
+      
+        <div class="license-meta-item">
+          <div>许可协议</div>
+          <div>
+            
+              
+              
+                <a class="print-no-link" target="_blank" href="https://creativecommons.org/licenses/by/4.0/">
+                  <span class="hint--top hint--rounded" aria-label="BY - 署名">
+                    <i class="iconfont icon-cc-by"></i>
+                  </span>
+                </a>
+              
+            
+          </div>
+        </div>
+      
+    </div>
+    <div class="license-icon iconfont"></div>
+  </div>
+
+
+
+              
+                <div class="post-prevnext my-3">
+                  <article class="post-prev col-6">
+                    
+                    
+                      <a href="/2019/01/28/Bitmap%E5%88%86%E6%9E%90/" title="Bitmap分析">
+                        <i class="iconfont icon-arrowleft"></i>
+                        <span class="hidden-mobile">Bitmap分析</span>
+                        <span class="visible-mobile">上一篇</span>
+                      </a>
+                    
+                  </article>
+                  <article class="post-next col-6">
+                    
+                    
+                      <a href="/2019/01/18/Java-CopyOnWriteArrayList%E5%AE%9E%E7%8E%B0%E5%8E%9F%E7%90%86%E5%8F%8A%E7%AE%80%E6%9E%90/" title="数据结构--CopyOnWriteArrayList实现原理及简析">
+                        <span class="hidden-mobile">数据结构--CopyOnWriteArrayList实现原理及简析</span>
+                        <span class="visible-mobile">下一篇</span>
+                        <i class="iconfont icon-arrowright"></i>
+                      </a>
+                    
+                  </article>
+                </div>
+              
+            </div>
+
+            
+          </article>
+        </div>
+      </div>
+    </div>
+
+    <div class="side-col d-none d-lg-block col-lg-2">
+      
+  <aside class="sidebar" style="margin-left: -1rem">
+    <div id="toc">
+  <p class="toc-header">
+    <i class="iconfont icon-list"></i>
+    <span>目录</span>
+  </p>
+  <div class="toc-body" id="toc-body"></div>
+</div>
+
+
+
+  </aside>
+
+
+    </div>
+  </div>
+</div>
+
+
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+
+
+
+
+    
+
+    
+      <a id="scroll-top-button" aria-label="TOP" href="#" role="button">
+        <i class="iconfont icon-arrowup" aria-hidden="true"></i>
+      </a>
+    
+
+    
+      <div class="modal fade" id="modalSearch" tabindex="-1" role="dialog" aria-labelledby="ModalLabel"
+     aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header text-center">
+        <h4 class="modal-title w-100 font-weight-bold">搜索</h4>
+        <button type="button" id="local-search-close" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body mx-3">
+        <div class="md-form mb-5">
+          <input type="text" id="local-search-input" class="form-control validate">
+          <label data-error="x" data-success="v" for="local-search-input">关键词</label>
+        </div>
+        <div class="list-group" id="local-search-result"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+    
+
+    
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+  
+    <div class="footer-content">
+       <a href="https://hexo.io" target="_blank" rel="nofollow noopener"><span>Hexo</span></a> <i class="iconfont icon-love"></i> <a href="https://github.com/fluid-dev/hexo-theme-fluid" target="_blank" rel="nofollow noopener"><span>Fluid</span></a> 
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+
+  <!-- Scripts -->
+  
+  <script  src="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.js" ></script>
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.css" />
+
+  <script>
+    NProgress.configure({"showSpinner":false,"trickleSpeed":100})
+    NProgress.start()
+    window.addEventListener('load', function() {
+      NProgress.done();
+    })
+  </script>
+
+
+<script  src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" ></script>
+<script  src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.min.js" ></script>
+<script  src="/js/events.js" ></script>
+<script  src="/js/plugins.js" ></script>
+
+
+
+
+
+  
+    <script  src="/js/img-lazyload.js" ></script>
+  
+
+
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/tocbot@4.12.0/dist/tocbot.min.js', function() {
+    var toc = jQuery('#toc');
+    if (toc.length === 0 || !window.tocbot) { return; }
+    var boardCtn = jQuery('#board-ctn');
+    var boardTop = boardCtn.offset().top;
+
+    window.tocbot.init(Object.assign({
+      tocSelector     : '#toc-body',
+      contentSelector : '.markdown-body',
+      linkClass       : 'tocbot-link',
+      activeLinkClass : 'tocbot-active-link',
+      listClass       : 'tocbot-list',
+      isCollapsedClass: 'tocbot-is-collapsed',
+      collapsibleClass: 'tocbot-is-collapsible',
+      scrollSmooth    : true,
+      includeTitleTags: true,
+      headingsOffset  : -boardTop,
+    }, CONFIG.toc));
+    if (toc.find('.toc-list-item').length > 0) {
+      toc.css('visibility', 'visible');
+    }
+
+    Fluid.events.registerRefreshCallback(function() {
+      if ('tocbot' in window) {
+        tocbot.refresh();
+        var toc = jQuery('#toc');
+        if (toc.length === 0 || !tocbot) {
+          return;
+        }
+        if (toc.find('.toc-list-item').length > 0) {
+          toc.css('visibility', 'visible');
+        }
+      }
+    });
+  });
+</script>
+
+
+  <script src=https://cdn.jsdelivr.net/npm/clipboard@2.0.6/dist/clipboard.min.js></script>
+
+  <script>Fluid.plugins.codeWidget();</script>
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/anchor-js@4.3.0/anchor.min.js', function() {
+    window.anchors.options = {
+      placement: CONFIG.anchorjs.placement,
+      visible  : CONFIG.anchorjs.visible
+    };
+    if (CONFIG.anchorjs.icon) {
+      window.anchors.options.icon = CONFIG.anchorjs.icon;
+    }
+    var el = (CONFIG.anchorjs.element || 'h1,h2,h3,h4,h5,h6').split(',');
+    var res = [];
+    for (var item of el) {
+      res.push('.markdown-body > ' + item.trim());
+    }
+    if (CONFIG.anchorjs.placement === 'left') {
+      window.anchors.options.class = 'anchorjs-link-left';
+    }
+    window.anchors.add(res.join(', '));
+
+    Fluid.events.registerRefreshCallback(function() {
+      if ('anchors' in window) {
+        anchors.removeAll();
+        var el = (CONFIG.anchorjs.element || 'h1,h2,h3,h4,h5,h6').split(',');
+        var res = [];
+        for (var item of el) {
+          res.push('.markdown-body > ' + item.trim());
+        }
+        if (CONFIG.anchorjs.placement === 'left') {
+          anchors.options.class = 'anchorjs-link-left';
+        }
+        anchors.add(res.join(', '));
+      }
+    });
+  });
+</script>
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.js', function() {
+    Fluid.plugins.fancyBox();
+  });
+</script>
+
+
+  <script>Fluid.plugins.imageCaption();</script>
+
+  <script  src="/js/local-search.js" ></script>
+
+
+
+
+
+<!-- 主题的启动项，将它保持在最底部 -->
+<!-- the boot of the theme, keep it at the bottom -->
+<script  src="/js/boot.js" ></script>
+
+
+  
+
+  <noscript>
+    <div class="noscript-warning">博客在允许 JavaScript 运行的环境下浏览效果更佳</div>
+  </noscript>
+</body>
+</html>

@@ -1,0 +1,686 @@
+
+
+<!DOCTYPE html>
+<html lang="zh-CN" data-default-color-scheme=auto>
+
+
+
+<head>
+  <meta charset="UTF-8">
+
+  <link rel="apple-touch-icon" sizes="76x76" href="/img/favicon.png">
+  <link rel="icon" href="/img/favicon.png">
+  
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, shrink-to-fit=no">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  
+  <meta name="theme-color" content="#11527b">
+  <meta name="author" content="Leo-Wxy">
+  <meta name="keywords" content="">
+  
+    <meta name="description" content="Android学习计划话题：Android中的ClassLoader1、Android中有哪几种ClassLoader？它们的作用和区别是什么？2、简述ClassLoader的双亲委托模型3、简述双亲委托模型在热修复领域的应用 答案1.Android中有哪几种ClassLoader？它们的作用和区别是什么？ 在Android程序中，.dex文件就是一群.class文件。     BootClass">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Android Study Plan IX - ClassLoaderß">
+<meta property="og:url" content="http://example.com/2018/03/18/Android-Study-Plan-IX/index.html">
+<meta property="og:site_name" content="Wxy的个人博客">
+<meta property="og:description" content="Android学习计划话题：Android中的ClassLoader1、Android中有哪几种ClassLoader？它们的作用和区别是什么？2、简述ClassLoader的双亲委托模型3、简述双亲委托模型在热修复领域的应用 答案1.Android中有哪几种ClassLoader？它们的作用和区别是什么？ 在Android程序中，.dex文件就是一群.class文件。     BootClass">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="http://example.com/images/study_plan/android_classloader.png">
+<meta property="article:published_time" content="2018-03-18T09:48:29.000Z">
+<meta property="article:modified_time" content="2018-12-11T06:22:14.000Z">
+<meta property="article:author" content="Leo-Wxy">
+<meta property="article:tag" content="Android">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="http://example.com/images/study_plan/android_classloader.png">
+  
+  
+  
+  <title>Android Study Plan IX - ClassLoaderß - Wxy的个人博客</title>
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css" />
+
+
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@4.0.0/github-markdown.min.css" />
+
+  <link  rel="stylesheet" href="/lib/hint/hint.min.css" />
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.css" />
+
+
+
+<!-- 主题依赖的图标库，不要自行修改 -->
+<!-- Do not modify the link that theme dependent icons -->
+
+<link rel="stylesheet" href="//at.alicdn.com/t/c/font_1749284_5i9bdhy70f8.css">
+
+
+
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1736178_kmeydafke9r.css">
+
+
+<link  rel="stylesheet" href="/css/main.css" />
+
+
+  <link id="highlight-css" rel="stylesheet" href="/css/highlight.css" />
+  
+    <link id="highlight-css-dark" rel="stylesheet" href="/css/highlight-dark.css" />
+  
+
+
+
+
+  <script id="fluid-configs">
+    var Fluid = window.Fluid || {};
+    Fluid.ctx = Object.assign({}, Fluid.ctx)
+    var CONFIG = {"hostname":"example.com","root":"/","version":"1.9.8","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false,"scope":[]},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"code_language":{"enable":true,"default":"TEXT"},"copy_btn":true,"image_caption":{"enable":true},"image_zoom":{"enable":true,"img_url_replace":["",""]},"toc":{"enable":true,"placement":"right","headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"loading_img":"/img/loading.gif","onlypost":false,"offset_factor":2},"web_analytics":{"enable":false,"follow_dnt":true,"baidu":null,"google":null,"tencent":{"sid":null,"cid":null},"leancloud":{"app_id":null,"app_key":null,"server_url":null,"path":"window.location.pathname","ignore_local":false},"umami":{"src":null,"website_id":null,"domains":null,"start_time":"2024-01-01T00:00:00.000Z","token":null,"api_server":null},"gtag":null,"woyaola":null,"cnzz":null},"search_path":"/local-search.xml","include_content_in_search":false};
+
+    if (CONFIG.web_analytics.follow_dnt) {
+      var dntVal = navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack;
+      Fluid.ctx.dnt = dntVal && (dntVal.startsWith('1') || dntVal.startsWith('yes') || dntVal.startsWith('on'));
+    }
+  </script>
+  <script  src="/js/utils.js" ></script>
+  <script  src="/js/color-schema.js" ></script>
+  
+
+
+  
+<meta name="generator" content="Hexo 8.1.1"></head>
+
+
+<body>
+  
+
+  <header>
+    
+
+<div class="header-inner" style="height: 30vh;">
+  <nav id="navbar" class="navbar fixed-top  navbar-expand-lg navbar-dark scrolling-navbar">
+  <div class="container">
+    <a class="navbar-brand" href="/">
+      <strong>Wxy&#39;s Blog</strong>
+    </a>
+
+    <button id="navbar-toggler-btn" class="navbar-toggler" type="button" data-toggle="collapse"
+            data-target="#navbarSupportedContent"
+            aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+      <div class="animated-icon"><span></span><span></span><span></span></div>
+    </button>
+
+    <!-- Collapsible content -->
+    <div class="collapse navbar-collapse" id="navbarSupportedContent">
+      <ul class="navbar-nav ml-auto text-center">
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/" target="_self">
+                <i class="iconfont icon-home-fill"></i>
+                <span>首页</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/archives/" target="_self">
+                <i class="iconfont icon-archive-fill"></i>
+                <span>归档</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/tags/" target="_self">
+                <i class="iconfont icon-tags-fill"></i>
+                <span>标签</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/about/" target="_self">
+                <i class="iconfont icon-user-fill"></i>
+                <span>关于</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/links/" target="_self">
+                <i class="iconfont icon-link-fill"></i>
+                <span>友链</span>
+              </a>
+            </li>
+          
+        
+        
+          <li class="nav-item" id="search-btn">
+            <a class="nav-link" target="_self" href="javascript:;" data-toggle="modal" data-target="#modalSearch" aria-label="Search">
+              <i class="iconfont icon-search"></i>
+            </a>
+          </li>
+          
+        
+        
+          <li class="nav-item" id="color-toggle-btn">
+            <a class="nav-link" target="_self" href="javascript:;" aria-label="Color Toggle">
+              <i class="iconfont icon-dark" id="color-toggle-icon"></i>
+            </a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+  
+
+<div id="banner" class="banner" parallax=true
+     style="background: url('/img/default.png') no-repeat center center; background-size: cover;">
+  <div class="full-bg-img">
+    <div class="mask flex-center" style="background-color: rgba(0, 0, 0, 0.3)">
+      <div class="banner-text text-center fade-in-up">
+        <div class="h2">
+          
+            <span id="subtitle">Android Study Plan IX - ClassLoaderß</span>
+          
+        </div>
+
+        
+          
+  <div class="mt-3">
+    
+    
+      <span class="post-meta">
+        <i class="iconfont icon-date-fill" aria-hidden="true"></i>
+        <time datetime="2018-03-18 17:48" pubdate>
+          2018年3月18日 下午
+        </time>
+      </span>
+    
+  </div>
+
+  <div class="mt-1">
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-chart"></i>
+        
+          <!-- compatible with older versions-->
+          937 字
+        
+      </span>
+    
+
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-clock-fill"></i>
+        
+        
+        
+          <!-- compatible with older versions-->
+          3 分钟
+        
+      </span>
+    
+
+    
+    
+  </div>
+
+
+        
+      </div>
+
+      
+    </div>
+  </div>
+</div>
+
+</div>
+
+  </header>
+
+  <main>
+    
+      
+
+<div class="container-fluid nopadding-x">
+  <div class="row nomargin-x">
+    <div class="side-col d-none d-lg-block col-lg-2">
+      
+
+    </div>
+
+    <div class="col-lg-8 nopadding-x-md">
+      <div class="container nopadding-x-md" id="board-ctn">
+        <div id="board">
+          <article class="post-content mx-auto">
+            <h1 id="seo-header">Android Study Plan IX - ClassLoaderß</h1>
+            
+            
+              <div class="markdown-body">
+                
+                <h1 id="Android学习计划"><a href="#Android学习计划" class="headerlink" title="Android学习计划"></a>Android学习计划</h1><p>话题：Android中的ClassLoader<br>1、Android中有哪几种ClassLoader？它们的作用和区别是什么？<br>2、简述ClassLoader的双亲委托模型<br>3、简述双亲委托模型在热修复领域的应用</p>
+<h1 id="答案"><a href="#答案" class="headerlink" title="答案"></a>答案</h1><h2 id="1-Android中有哪几种ClassLoader？它们的作用和区别是什么？"><a href="#1-Android中有哪几种ClassLoader？它们的作用和区别是什么？" class="headerlink" title="1.Android中有哪几种ClassLoader？它们的作用和区别是什么？"></a>1.Android中有哪几种ClassLoader？它们的作用和区别是什么？</h2><blockquote>
+<p>在Android程序中，.dex文件就是一群.class文件。</p>
+</blockquote>
+<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/study_plan/android_classloader.png" srcset="/img/loading.gif" lazyload class="full-image" alt="alt" title="SingleTop" /><meta itemprop="width" content="auto"/><meta itemprop="height" content="auto"/></span>
+
+<ul>
+<li><p><strong>BootClassLoader</strong></p>
+<blockquote>
+<p>BootClassLodaer是ClassLoader内部实现类，是只能包内可见，我们是无法调用的。在无父构造器传入的情况下，默认构建一个PathClassLoader且父构造器为BootClassLoader</p>
+</blockquote>
+ <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> ClassLoader <span class="hljs-title function_">createSystemClassLoader</span><span class="hljs-params">()</span> &#123;<br>        <span class="hljs-type">String</span> <span class="hljs-variable">classPath</span> <span class="hljs-operator">=</span> System.getProperty(<span class="hljs-string">&quot;java.class.path&quot;</span>, <span class="hljs-string">&quot;.&quot;</span>);<br>        <span class="hljs-type">String</span> <span class="hljs-variable">librarySearchPath</span> <span class="hljs-operator">=</span> System.getProperty(<span class="hljs-string">&quot;java.library.path&quot;</span>, <span class="hljs-string">&quot;&quot;</span>);<br>        <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">PathClassLoader</span>(classPath, librarySearchPath, BootClassLoader.getInstance());<br>    &#125;<br></code></pre></td></tr></table></figure>
+</li>
+<li><p><strong>URLClassLoader</strong></p>
+<blockquote>
+<p>只能用于加载jar文件，但是在dalvik（Android5.0之前的虚拟机）无法直接识别jar，所以Android中无法使用这个加载器。</p>
+</blockquote>
+</li>
+<li><p><strong>BaseDexClassLoader</strong></p>
+<blockquote>
+<p>用于加载各种dex中的类</p>
+</blockquote>
+ <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">BaseDexClassLoader</span> <span class="hljs-keyword">extends</span> <span class="hljs-title class_">ClassLoader</span> &#123;<br>    <span class="hljs-keyword">public</span> <span class="hljs-title function_">BaseDexClassLoader</span><span class="hljs-params">(String dexPath, File optimizedDirectory, String librarySearchPath, ClassLoader parent)</span> &#123;<br>        <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">RuntimeException</span>(<span class="hljs-string">&quot;Stub!&quot;</span>);<br>    &#125;<br>    ...<br>&#125;<br></code></pre></td></tr></table></figure>
+<blockquote>
+<p>主要构造函数介绍：</p>
+<ul>
+<li>dexPath：指<code>目标类所在的apk、dex或jar文件的路径，也可以是SD卡的路径</code>，类加载器从该路径加载目标类。如果包含多个路径，路径之间必须用特定的分隔符去分隔，特定的分隔符从<code>System.getProperty(&quot;path.separtor&quot;)</code>获取（默认分割符为”:”）。最终将路径上的文件ODEX优化到optimizedDirectory，然后进行加载。</li>
+<li>optimizedDirectory：解压出的dex文件路径，这个路径必须为内部路径，一般情况下的路径为<code>/data/data/&lt;Package_Name&gt;/</code></li>
+<li>librarySearchPath：存放目标类中使用的native文件库，也以”:”分割</li>
+<li>parent：父加载器，在Android中以<code>context.getClassLoader</code>作为父加载器。</li>
+</ul>
+</blockquote>
+</li>
+<li><p><strong>DexClassLoader</strong></p>
+<blockquote>
+<p>继承自BaseDexClassLoader，支持加载包含classes.dex的jar、apk，zip文件，可以是SD卡的路径。是实现热修复的关键。<strong>注意不要把优化后的文件放在外部存储，可能导致注入攻击。</strong></p>
+</blockquote>
+</li>
+<li><p><strong>PathClassLoader</strong></p>
+<blockquote>
+<p>用来加载Android系统类和应用程序的类，<strong>在dalvik上只能加载已安装apk的dex(&#x2F;data&#x2F;app目录)，在ART虚拟机上则没有这个限制</strong>。</p>
+</blockquote>
+  <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">PathClassLoader</span> <span class="hljs-keyword">extends</span> <span class="hljs-title class_">BaseDexClassLoader</span> &#123;<br>  <span class="hljs-keyword">public</span> <span class="hljs-title function_">PathClassLoader</span><span class="hljs-params">(String dexPath, ClassLoader parent)</span> &#123;<br>      <span class="hljs-built_in">super</span>((String)<span class="hljs-literal">null</span>, (File)<span class="hljs-literal">null</span>, (String)<span class="hljs-literal">null</span>, (ClassLoader)<span class="hljs-literal">null</span>);<br>      <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">RuntimeException</span>(<span class="hljs-string">&quot;Stub!&quot;</span>);<br>  &#125;<br><br>  <span class="hljs-keyword">public</span> <span class="hljs-title function_">PathClassLoader</span><span class="hljs-params">(String dexPath, String librarySearchPath, ClassLoader parent)</span> &#123;<br>      <span class="hljs-built_in">super</span>((String)<span class="hljs-literal">null</span>, (File)<span class="hljs-literal">null</span>, (String)<span class="hljs-literal">null</span>, (ClassLoader)<span class="hljs-literal">null</span>);<br>      <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">RuntimeException</span>(<span class="hljs-string">&quot;Stub!&quot;</span>);<br>  &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<blockquote>
+<p>在PathDexClassLoader的构造方法中optimizedDirectory为null，因为默认参数为<code>/data/dalvik-cache</code>目录。</p>
+</blockquote>
+</li>
+<li><p><strong>InMemoryDexClassLoader</strong></p>
+<blockquote>
+<p>用于加载内存中的dex文件(在API26中添加)</p>
+</blockquote>
+ <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">InMemoryDexClassLoader</span> <span class="hljs-keyword">extends</span> <span class="hljs-title class_">BaseDexClassLoader</span> &#123;<br>   <span class="hljs-keyword">public</span> <span class="hljs-title function_">InMemoryDexClassLoader</span><span class="hljs-params">(ByteBuffer[] dexBuffers, ClassLoader parent)</span> &#123;<br>       <span class="hljs-built_in">super</span>((String)<span class="hljs-literal">null</span>, (File)<span class="hljs-literal">null</span>, (String)<span class="hljs-literal">null</span>, (ClassLoader)<span class="hljs-literal">null</span>);<br>       <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">RuntimeException</span>(<span class="hljs-string">&quot;Stub!&quot;</span>);<br>   &#125;<br>    <span class="hljs-keyword">public</span> <span class="hljs-title function_">InMemoryDexClassLoader</span><span class="hljs-params">(ByteBuffer dexBuffer, ClassLoader parent)</span> &#123;<br>        <span class="hljs-built_in">super</span>((String)<span class="hljs-literal">null</span>, (File)<span class="hljs-literal">null</span>, (String)<span class="hljs-literal">null</span>, (ClassLoader)<span class="hljs-literal">null</span>);<br>        <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">RuntimeException</span>(<span class="hljs-string">&quot;Stub!&quot;</span>);<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+</li>
+<li><p><strong>DelegateClassLoader</strong></p>
+<blockquote>
+<p>是一个先查找在委托的类加载器(API27添加)，按照以下顺序实现加载：</p>
+<ol>
+<li>首先判断该类是否被加载</li>
+<li>搜索此类的类加载器是否加载过这个类</li>
+<li>使用当前加载器去尝试加载类</li>
+<li>最后委托给父加载器加载</li>
+</ol>
+</blockquote>
+</li>
+</ul>
+<h2 id="2-简述ClassLoader的双亲委托模型"><a href="#2-简述ClassLoader的双亲委托模型" class="headerlink" title="2.简述ClassLoader的双亲委托模型"></a>2.简述ClassLoader的双亲委托模型</h2><a href="/2018/04/16/JVM%E7%9B%B8%E5%85%B3%E5%8F%8A%E5%85%B6%E6%8B%93%E5%B1%95-%E4%B8%89/" title="JVM相关及其拓展(三) -- 虚拟机类加载器">JVM相关及其拓展(三) -- 虚拟机类加载器</a>
+
+<h2 id="3-简述双亲委托模型在热修复领域的应用"><a href="#3-简述双亲委托模型在热修复领域的应用" class="headerlink" title="3.简述双亲委托模型在热修复领域的应用"></a>3.简述双亲委托模型在热修复领域的应用</h2><p>一个ClassLoader文件可以有多少Dex文件，每个Dex文件是一个Element，多个Dex文件组成一个有序数组DexElements，当找类的时候会按照顺序遍历Dex文件，然后在当前遍历的Dex文件中找出类。由于双亲委托模型机制的存在，只要找到类就会停止检索并返回，找不到就会查询下一个Dex，所以只要我们先找到并加载修复Bug的文件，则有bug的Dex文件不会被加载。</p>
+<p>注意点：假设有个A类，引用了B类。发布过程中发现B类有bug，若想要发个新的B类，需要阻止A加上这个类标志CLASS_ISPREVERIFIED。</p>
+<h2 id="4-基本热修复代码实现"><a href="#4-基本热修复代码实现" class="headerlink" title="4. 基本热修复代码实现"></a>4. 基本热修复代码实现</h2>
+                
+              </div>
+            
+            <hr/>
+            <div>
+              <div class="post-metas my-3">
+  
+  
+    <div class="post-meta">
+      <i class="iconfont icon-tags"></i>
+      
+        <a href="/tags/Android/" class="print-no-link">#Android</a>
+      
+    </div>
+  
+</div>
+
+
+              
+  
+
+  <div class="license-box my-3">
+    <div class="license-title">
+      <div>Android Study Plan IX - ClassLoaderß</div>
+      <div>http://example.com/2018/03/18/Android-Study-Plan-IX/</div>
+    </div>
+    <div class="license-meta">
+      
+        <div class="license-meta-item">
+          <div>作者</div>
+          <div>Leo-Wxy</div>
+        </div>
+      
+      
+        <div class="license-meta-item license-meta-date">
+          <div>发布于</div>
+          <div>2018年3月18日</div>
+        </div>
+      
+      
+      
+        <div class="license-meta-item">
+          <div>许可协议</div>
+          <div>
+            
+              
+              
+                <a class="print-no-link" target="_blank" href="https://creativecommons.org/licenses/by/4.0/">
+                  <span class="hint--top hint--rounded" aria-label="BY - 署名">
+                    <i class="iconfont icon-cc-by"></i>
+                  </span>
+                </a>
+              
+            
+          </div>
+        </div>
+      
+    </div>
+    <div class="license-icon iconfont"></div>
+  </div>
+
+
+
+              
+                <div class="post-prevnext my-3">
+                  <article class="post-prev col-6">
+                    
+                    
+                      <a href="/2018/03/18/Glide%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90%E8%A6%81%E7%82%B9/" title="Glide源码解析要点">
+                        <i class="iconfont icon-arrowleft"></i>
+                        <span class="hidden-mobile">Glide源码解析要点</span>
+                        <span class="visible-mobile">上一篇</span>
+                      </a>
+                    
+                  </article>
+                  <article class="post-next col-6">
+                    
+                    
+                      <a href="/2018/03/18/Android-Study-Plan-VIII/" title="Android Study Plan VIII - Java引用类型">
+                        <span class="hidden-mobile">Android Study Plan VIII - Java引用类型</span>
+                        <span class="visible-mobile">下一篇</span>
+                        <i class="iconfont icon-arrowright"></i>
+                      </a>
+                    
+                  </article>
+                </div>
+              
+            </div>
+
+            
+          </article>
+        </div>
+      </div>
+    </div>
+
+    <div class="side-col d-none d-lg-block col-lg-2">
+      
+  <aside class="sidebar" style="margin-left: -1rem">
+    <div id="toc">
+  <p class="toc-header">
+    <i class="iconfont icon-list"></i>
+    <span>目录</span>
+  </p>
+  <div class="toc-body" id="toc-body"></div>
+</div>
+
+
+
+  </aside>
+
+
+    </div>
+  </div>
+</div>
+
+
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+
+
+
+
+    
+
+    
+      <a id="scroll-top-button" aria-label="TOP" href="#" role="button">
+        <i class="iconfont icon-arrowup" aria-hidden="true"></i>
+      </a>
+    
+
+    
+      <div class="modal fade" id="modalSearch" tabindex="-1" role="dialog" aria-labelledby="ModalLabel"
+     aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header text-center">
+        <h4 class="modal-title w-100 font-weight-bold">搜索</h4>
+        <button type="button" id="local-search-close" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body mx-3">
+        <div class="md-form mb-5">
+          <input type="text" id="local-search-input" class="form-control validate">
+          <label data-error="x" data-success="v" for="local-search-input">关键词</label>
+        </div>
+        <div class="list-group" id="local-search-result"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+    
+
+    
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+  
+    <div class="footer-content">
+       <a href="https://hexo.io" target="_blank" rel="nofollow noopener"><span>Hexo</span></a> <i class="iconfont icon-love"></i> <a href="https://github.com/fluid-dev/hexo-theme-fluid" target="_blank" rel="nofollow noopener"><span>Fluid</span></a> 
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+
+  <!-- Scripts -->
+  
+  <script  src="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.js" ></script>
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.css" />
+
+  <script>
+    NProgress.configure({"showSpinner":false,"trickleSpeed":100})
+    NProgress.start()
+    window.addEventListener('load', function() {
+      NProgress.done();
+    })
+  </script>
+
+
+<script  src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" ></script>
+<script  src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.min.js" ></script>
+<script  src="/js/events.js" ></script>
+<script  src="/js/plugins.js" ></script>
+
+
+
+
+
+  
+    <script  src="/js/img-lazyload.js" ></script>
+  
+
+
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/tocbot@4.12.0/dist/tocbot.min.js', function() {
+    var toc = jQuery('#toc');
+    if (toc.length === 0 || !window.tocbot) { return; }
+    var boardCtn = jQuery('#board-ctn');
+    var boardTop = boardCtn.offset().top;
+
+    window.tocbot.init(Object.assign({
+      tocSelector     : '#toc-body',
+      contentSelector : '.markdown-body',
+      linkClass       : 'tocbot-link',
+      activeLinkClass : 'tocbot-active-link',
+      listClass       : 'tocbot-list',
+      isCollapsedClass: 'tocbot-is-collapsed',
+      collapsibleClass: 'tocbot-is-collapsible',
+      scrollSmooth    : true,
+      includeTitleTags: true,
+      headingsOffset  : -boardTop,
+    }, CONFIG.toc));
+    if (toc.find('.toc-list-item').length > 0) {
+      toc.css('visibility', 'visible');
+    }
+
+    Fluid.events.registerRefreshCallback(function() {
+      if ('tocbot' in window) {
+        tocbot.refresh();
+        var toc = jQuery('#toc');
+        if (toc.length === 0 || !tocbot) {
+          return;
+        }
+        if (toc.find('.toc-list-item').length > 0) {
+          toc.css('visibility', 'visible');
+        }
+      }
+    });
+  });
+</script>
+
+
+  <script src=https://cdn.jsdelivr.net/npm/clipboard@2.0.6/dist/clipboard.min.js></script>
+
+  <script>Fluid.plugins.codeWidget();</script>
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/anchor-js@4.3.0/anchor.min.js', function() {
+    window.anchors.options = {
+      placement: CONFIG.anchorjs.placement,
+      visible  : CONFIG.anchorjs.visible
+    };
+    if (CONFIG.anchorjs.icon) {
+      window.anchors.options.icon = CONFIG.anchorjs.icon;
+    }
+    var el = (CONFIG.anchorjs.element || 'h1,h2,h3,h4,h5,h6').split(',');
+    var res = [];
+    for (var item of el) {
+      res.push('.markdown-body > ' + item.trim());
+    }
+    if (CONFIG.anchorjs.placement === 'left') {
+      window.anchors.options.class = 'anchorjs-link-left';
+    }
+    window.anchors.add(res.join(', '));
+
+    Fluid.events.registerRefreshCallback(function() {
+      if ('anchors' in window) {
+        anchors.removeAll();
+        var el = (CONFIG.anchorjs.element || 'h1,h2,h3,h4,h5,h6').split(',');
+        var res = [];
+        for (var item of el) {
+          res.push('.markdown-body > ' + item.trim());
+        }
+        if (CONFIG.anchorjs.placement === 'left') {
+          anchors.options.class = 'anchorjs-link-left';
+        }
+        anchors.add(res.join(', '));
+      }
+    });
+  });
+</script>
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.js', function() {
+    Fluid.plugins.fancyBox();
+  });
+</script>
+
+
+  <script>Fluid.plugins.imageCaption();</script>
+
+  <script  src="/js/local-search.js" ></script>
+
+
+
+
+
+<!-- 主题的启动项，将它保持在最底部 -->
+<!-- the boot of the theme, keep it at the bottom -->
+<script  src="/js/boot.js" ></script>
+
+
+  
+
+  <noscript>
+    <div class="noscript-warning">博客在允许 JavaScript 运行的环境下浏览效果更佳</div>
+  </noscript>
+</body>
+</html>

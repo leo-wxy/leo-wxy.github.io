@@ -1,0 +1,734 @@
+
+
+<!DOCTYPE html>
+<html lang="zh-CN" data-default-color-scheme=auto>
+
+
+
+<head>
+  <meta charset="UTF-8">
+
+  <link rel="apple-touch-icon" sizes="76x76" href="/img/favicon.png">
+  <link rel="icon" href="/img/favicon.png">
+  
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, shrink-to-fit=no">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  
+  <meta name="theme-color" content="#11527b">
+  <meta name="author" content="Leo-Wxy">
+  <meta name="keywords" content="">
+  
+    <meta name="description" content="Dalvik虚拟机 Dalvik Virtual Machine，简称Dalvik VM或者 DVM。DVM是Google专门为Android平台开发的虚拟机，是Android的重要组成部分，支持dex格式的Java应用程序运行。 dex格式是专门为DVM设计的一种压缩格式，适合内存和处理器速度有限的系统。    从架构图中可知，DVM运行在Android的运行时库层。 DVM与JVM的区别基">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Android中的GC分析-Dalvik和ART虚拟机">
+<meta property="og:url" content="http://example.com/2018/05/13/Android%E4%B8%AD%E7%9A%84GC%E5%88%86%E6%9E%90-Dalvik%E5%92%8CART%E8%99%9A%E6%8B%9F%E6%9C%BA/index.html">
+<meta property="og:site_name" content="Wxy的个人博客">
+<meta property="og:description" content="Dalvik虚拟机 Dalvik Virtual Machine，简称Dalvik VM或者 DVM。DVM是Google专门为Android平台开发的虚拟机，是Android的重要组成部分，支持dex格式的Java应用程序运行。 dex格式是专门为DVM设计的一种压缩格式，适合内存和处理器速度有限的系统。    从架构图中可知，DVM运行在Android的运行时库层。 DVM与JVM的区别基">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="http://example.com/images/Android%E7%B3%BB%E7%BB%9F%E6%9E%B6%E6%9E%84%E5%9B%BE.jpg">
+<meta property="og:image" content="http://example.com/images/%E6%89%A7%E8%A1%8C%E7%9A%84%E5%AD%97%E8%8A%82%E7%A0%81%E5%8C%BA%E5%88%AB.png">
+<meta property="og:image" content="http://example.com/images/DVM%E6%9E%B6%E6%9E%84.png">
+<meta property="og:image" content="http://example.com/images/ART%E8%BF%90%E8%A1%8C%E6%97%B6%E5%A0%86.png">
+<meta property="og:image" content="http://example.com/images/android_apk_build.png">
+<meta property="article:published_time" content="2018-05-13T02:10:54.000Z">
+<meta property="article:modified_time" content="2019-01-17T13:37:22.000Z">
+<meta property="article:author" content="Leo-Wxy">
+<meta property="article:tag" content="Android">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="http://example.com/images/Android%E7%B3%BB%E7%BB%9F%E6%9E%B6%E6%9E%84%E5%9B%BE.jpg">
+  
+  
+  
+  <title>Android中的GC分析-Dalvik和ART虚拟机 - Wxy的个人博客</title>
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css" />
+
+
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@4.0.0/github-markdown.min.css" />
+
+  <link  rel="stylesheet" href="/lib/hint/hint.min.css" />
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.css" />
+
+
+
+<!-- 主题依赖的图标库，不要自行修改 -->
+<!-- Do not modify the link that theme dependent icons -->
+
+<link rel="stylesheet" href="//at.alicdn.com/t/c/font_1749284_5i9bdhy70f8.css">
+
+
+
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1736178_kmeydafke9r.css">
+
+
+<link  rel="stylesheet" href="/css/main.css" />
+
+
+  <link id="highlight-css" rel="stylesheet" href="/css/highlight.css" />
+  
+    <link id="highlight-css-dark" rel="stylesheet" href="/css/highlight-dark.css" />
+  
+
+
+
+
+  <script id="fluid-configs">
+    var Fluid = window.Fluid || {};
+    Fluid.ctx = Object.assign({}, Fluid.ctx)
+    var CONFIG = {"hostname":"example.com","root":"/","version":"1.9.8","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false,"scope":[]},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"code_language":{"enable":true,"default":"TEXT"},"copy_btn":true,"image_caption":{"enable":true},"image_zoom":{"enable":true,"img_url_replace":["",""]},"toc":{"enable":true,"placement":"right","headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"loading_img":"/img/loading.gif","onlypost":false,"offset_factor":2},"web_analytics":{"enable":false,"follow_dnt":true,"baidu":null,"google":null,"tencent":{"sid":null,"cid":null},"leancloud":{"app_id":null,"app_key":null,"server_url":null,"path":"window.location.pathname","ignore_local":false},"umami":{"src":null,"website_id":null,"domains":null,"start_time":"2024-01-01T00:00:00.000Z","token":null,"api_server":null},"gtag":null,"woyaola":null,"cnzz":null},"search_path":"/local-search.xml","include_content_in_search":false};
+
+    if (CONFIG.web_analytics.follow_dnt) {
+      var dntVal = navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack;
+      Fluid.ctx.dnt = dntVal && (dntVal.startsWith('1') || dntVal.startsWith('yes') || dntVal.startsWith('on'));
+    }
+  </script>
+  <script  src="/js/utils.js" ></script>
+  <script  src="/js/color-schema.js" ></script>
+  
+
+
+  
+<meta name="generator" content="Hexo 8.1.1"></head>
+
+
+<body>
+  
+
+  <header>
+    
+
+<div class="header-inner" style="height: 30vh;">
+  <nav id="navbar" class="navbar fixed-top  navbar-expand-lg navbar-dark scrolling-navbar">
+  <div class="container">
+    <a class="navbar-brand" href="/">
+      <strong>Wxy&#39;s Blog</strong>
+    </a>
+
+    <button id="navbar-toggler-btn" class="navbar-toggler" type="button" data-toggle="collapse"
+            data-target="#navbarSupportedContent"
+            aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+      <div class="animated-icon"><span></span><span></span><span></span></div>
+    </button>
+
+    <!-- Collapsible content -->
+    <div class="collapse navbar-collapse" id="navbarSupportedContent">
+      <ul class="navbar-nav ml-auto text-center">
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/" target="_self">
+                <i class="iconfont icon-home-fill"></i>
+                <span>首页</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/archives/" target="_self">
+                <i class="iconfont icon-archive-fill"></i>
+                <span>归档</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/tags/" target="_self">
+                <i class="iconfont icon-tags-fill"></i>
+                <span>标签</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/about/" target="_self">
+                <i class="iconfont icon-user-fill"></i>
+                <span>关于</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/links/" target="_self">
+                <i class="iconfont icon-link-fill"></i>
+                <span>友链</span>
+              </a>
+            </li>
+          
+        
+        
+          <li class="nav-item" id="search-btn">
+            <a class="nav-link" target="_self" href="javascript:;" data-toggle="modal" data-target="#modalSearch" aria-label="Search">
+              <i class="iconfont icon-search"></i>
+            </a>
+          </li>
+          
+        
+        
+          <li class="nav-item" id="color-toggle-btn">
+            <a class="nav-link" target="_self" href="javascript:;" aria-label="Color Toggle">
+              <i class="iconfont icon-dark" id="color-toggle-icon"></i>
+            </a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+  
+
+<div id="banner" class="banner" parallax=true
+     style="background: url('/img/default.png') no-repeat center center; background-size: cover;">
+  <div class="full-bg-img">
+    <div class="mask flex-center" style="background-color: rgba(0, 0, 0, 0.3)">
+      <div class="banner-text text-center fade-in-up">
+        <div class="h2">
+          
+            <span id="subtitle">Android中的GC分析-Dalvik和ART虚拟机</span>
+          
+        </div>
+
+        
+          
+  <div class="mt-3">
+    
+    
+      <span class="post-meta">
+        <i class="iconfont icon-date-fill" aria-hidden="true"></i>
+        <time datetime="2018-05-13 10:10" pubdate>
+          2018年5月13日 上午
+        </time>
+      </span>
+    
+  </div>
+
+  <div class="mt-1">
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-chart"></i>
+        
+          <!-- compatible with older versions-->
+          2.5k 字
+        
+      </span>
+    
+
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-clock-fill"></i>
+        
+        
+        
+          <!-- compatible with older versions-->
+          8 分钟
+        
+      </span>
+    
+
+    
+    
+  </div>
+
+
+        
+      </div>
+
+      
+    </div>
+  </div>
+</div>
+
+</div>
+
+  </header>
+
+  <main>
+    
+      
+
+<div class="container-fluid nopadding-x">
+  <div class="row nomargin-x">
+    <div class="side-col d-none d-lg-block col-lg-2">
+      
+
+    </div>
+
+    <div class="col-lg-8 nopadding-x-md">
+      <div class="container nopadding-x-md" id="board-ctn">
+        <div id="board">
+          <article class="post-content mx-auto">
+            <h1 id="seo-header">Android中的GC分析-Dalvik和ART虚拟机</h1>
+            
+            
+              <div class="markdown-body">
+                
+                <!--如何对JVM进行优化 class文件如何转成dex文件-->
+
+<h2 id="Dalvik虚拟机"><a href="#Dalvik虚拟机" class="headerlink" title="Dalvik虚拟机"></a>Dalvik虚拟机</h2><blockquote>
+<p><code>Dalvik Virtual Machine</code>，简称Dalvik VM或者 DVM。DVM是Google专门为Android平台开发的虚拟机，是Android的重要组成部分，支持<code>dex格式</code>的Java应用程序运行。</p>
+<p><code>dex格式</code>是专门为DVM设计的一种压缩格式，适合内存和处理器速度有限的系统。</p>
+</blockquote>
+<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/Android系统架构图.jpg" srcset="/img/loading.gif" lazyload class="full-image" alt="Android系统架构图" title="Android系统架构图" /><meta itemprop="width" content="auto"/><meta itemprop="height" content="auto"/></span>
+
+<p>从架构图中可知，DVM运行在Android的运行时库层。</p>
+<h3 id="DVM与JVM的区别"><a href="#DVM与JVM的区别" class="headerlink" title="DVM与JVM的区别"></a>DVM与JVM的区别</h3><h4 id="基于的架构不同"><a href="#基于的架构不同" class="headerlink" title="基于的架构不同"></a>基于的架构不同</h4><p>JVM是基于栈的，意味着需要去栈中读写数据，所需的指令会更多，会导致速度变慢，不适用于性能有限的移动设备。</p>
+<p>DVM是基于寄存器的，不会有基于栈的虚拟机在复制数据时，使用大量的出入栈指令，同时指令更紧凑，简洁。</p>
+<h4 id="执行的字节码不同"><a href="#执行的字节码不同" class="headerlink" title="执行的字节码不同"></a>执行的字节码不同</h4><p>Java类被编译成一个或多个.class文件，并打包成jar文件，JVM通过对应的.class和jar文件获取相应的字节码。</p>
+<p><strong>执行顺序为： .java文件 -&gt; .class文件 -&gt; .jar文件</strong></p>
+<p>DVM运行的是Dalvik字节码，所有的Dalvik字节码由Java字节码转换而来，并被打包到一个dex文件中。DVM通过dex文件执行字节码。</p>
+<p><strong>执行顺序为： .java文件 -&gt; .class文件 -&gt; .dex文件</strong></p>
+<p><strong>dex文件体积小。Android SDK中有一个<code>dx</code>工具将Java字节码转换为Dalvik字节码。</strong></p>
+<p>dx工具对Java类文件重新排序，消除在类文件中出现的所有冗余信息，避免虚拟机在初始化时反复进行文件加载与解析。<strong>消除其中的冗余信息，重新组合成一个常量池，所有类文件共享同一个常量池。由于dx工具对常量池的压缩，使得相同的字符串，常量在dex文件中只出现一次，从而减小文件体积。并把所有的.class文件整合到.dex文件中，减少了I&#x2F;O操作，加快类查找速度。</strong></p>
+<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/执行的字节码区别.png" srcset="/img/loading.gif" lazyload class="full-image" alt="执行的字节码区别" title="执行的字节码区别" /><meta itemprop="width" content="auto"/><meta itemprop="height" content="auto"/></span>
+
+<p>简单来讲，dex格式文件就是将多个class文件中共有的部分统一存放，取出冗余信息。</p>
+<h4 id="DVM允许在有限的内存中同时允许多个进程"><a href="#DVM允许在有限的内存中同时允许多个进程" class="headerlink" title="DVM允许在有限的内存中同时允许多个进程"></a>DVM允许在有限的内存中同时允许多个进程</h4><p>在Android中的每一个应用都运行在一个DVM实例中，每一个DVM实例都运行在一个独立的进程空间中，独立的进程可以防止在虚拟机崩溃时导致所有程序关闭。</p>
+<h4 id="DVM由Zygote创建和初始化"><a href="#DVM由Zygote创建和初始化" class="headerlink" title="DVM由Zygote创建和初始化"></a>DVM由Zygote创建和初始化</h4><p>每当系统需要创建一个应用程序时，Zygote就会fork自身，快速的创建和初始化一个DVM实例，用于应用程序的运行。</p>
+<h4 id="DVM拥有共享机制"><a href="#DVM拥有共享机制" class="headerlink" title="DVM拥有共享机制"></a>DVM拥有共享机制</h4><p>不同应用之间可以在运行时共享相同的类，拥有更高的效率。JVM不支持这种共享机制，不同的程序都是彼此独立的。</p>
+<h4 id="JIT编译"><a href="#JIT编译" class="headerlink" title="JIT编译"></a>JIT编译</h4><p><code>Just In Time Compiler</code>即时编译器，从Android2.2开始支持了<code>JIT</code>。</p>
+<p><em>JIT会对多次运行的代码进行编译，生成相当精简的本地机器码，这样在下次执行相同的逻辑时，直接使用编译之后的本地机器码，而不是每次都需要编译。</em></p>
+<p><strong>每次重新打开应用程序，都需要JIT编译。</strong></p>
+<h3 id="DVM架构"><a href="#DVM架构" class="headerlink" title="DVM架构"></a>DVM架构</h3><p>DVM源码位于dalvik&#x2F;目录下。</p>
+<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/DVM架构.png" srcset="/img/loading.gif" lazyload class="full-image" alt="DVM架构" title="DVM架构" /><meta itemprop="width" content="auto"/><meta itemprop="height" content="auto"/></span>
+
+<p>首先Java编译器的.class文件经过<code>DX工具</code>转换为.dex文件，.dex文件由类加载器进行处理，接着解释器根据指令集对Dalvik字节码进行解释、执行，最后交于Linux处理。</p>
+<h3 id="DVM运行时堆"><a href="#DVM运行时堆" class="headerlink" title="DVM运行时堆"></a>DVM运行时堆</h3><p>DVM运行时堆使用<strong>标记-清除</strong>算法进行GC，它由两个Space以及多个辅助数据结构组成，两个Space分别是<code>Zygote Space(Zygote Heap)</code>和<code>Allocation Space(Active Heap)</code>。</p>
+<p><code>Zygote Space</code>用来管理Zygote进程在启动过程中预加载和创建的各种对象，<code>Zygote Space</code>不会触发GC。所有进程都共享该区域，比如系统资源。</p>
+<p><code>Allocation Space</code>是在Zygote进程fork第一个子进程之前创建的，它是一种私有进程，Zygote进程及fork的子进程在<code>Allocation Space</code>进行对象分配和释放。</p>
+<p>还有以下数据结构：</p>
+<p><code>Card Table</code>：记录垃圾信息</p>
+<p><code>Heap Bitmap</code>：用来记录上次GC存活的对象，另一个用来记录这次GC存活的对象</p>
+<p><code>Mark Stack</code>：遍历存活的对象。</p>
+<h3 id="DVM-GC过程"><a href="#DVM-GC过程" class="headerlink" title="DVM-GC过程"></a>DVM-GC过程</h3><ol>
+<li>当GC被触发的时候，会去查找所有活动的对象，这个时候整个程序与虚拟机内部的所有线程就会挂起，可以在较少的堆栈里找到所引用的对象。<strong>回收动作和应用程序是同时执行的(非并发执行)。</strong></li>
+<li>GC对符合条件的对象进行标记</li>
+<li>GC对标记的对象进行回收</li>
+<li>恢复所有线程的执行现场继续执行</li>
+</ol>
+<p>GC的执行会相当快速，但如果出现频繁GC并且内存资源少，就会导致UI卡顿，掉帧。因为是和应用程序同时执行的。</p>
+<h2 id="ART虚拟机"><a href="#ART虚拟机" class="headerlink" title="ART虚拟机"></a>ART虚拟机</h2><blockquote>
+<p>ART虚拟机是在Android4.4发布的，用来替换Dalvik虚拟机。5.0之后默认采用ART虚拟机。</p>
+</blockquote>
+<h3 id="ART和DVM的区别"><a href="#ART和DVM的区别" class="headerlink" title="ART和DVM的区别"></a>ART和DVM的区别</h3><ol>
+<li><p>DVM每次运行应用时，字节码都需要JIT编译器译为机器码，会使得应用程序运行效率降低。在ART中采用<strong>AOT(ahead of time Compilation，预编译)</strong>，将字节码预先编译成机器码并存储在本地，这样应用程序每次运行就不需要执行编译了，大大提升运行效率。</p>
+<p><code>AOT</code>优点：</p>
+<ul>
+<li>系统性能提升明显</li>
+<li>应用启动更快，体验更流畅</li>
+<li>设备的耗电量降低</li>
+</ul>
+<p><code>AOT</code>缺点：</p>
+<ul>
+<li>使得应用程序安装时间变长，尤其是复杂的应用</li>
+<li>由于字节码预先编译成机器码，机器码需要的存储空间会多一些，会占用较多的存储空间</li>
+</ul>
+<p>在Android 7.0中加入了<code>JIT</code>，不会把字节码全部编译成机器码，而是在运行中将热点代码编译成机器码。从而缩短安装时间及减少安装空间。</p>
+</li>
+<li><p>DVM是为32位CPU设计的，而ART支持64位并兼容32位</p>
+</li>
+<li><p>ART对GC进行了改进，比如更频繁的执行并行垃圾收集，减少GC暂停次数</p>
+</li>
+<li><p>ART的运行时堆空间划分和DVM不同。</p>
+</li>
+</ol>
+<h3 id="ART的运行时堆"><a href="#ART的运行时堆" class="headerlink" title="ART的运行时堆"></a>ART的运行时堆</h3><p>ART的GC类型有多种，主要分为<code>Mark-Sweep GC(标记-整理)</code>和<code>Compacting GC()</code>。ART运行时堆得空间根据不同的GC类型也有不同的划分，默认采用CMS方案。</p>
+<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/ART运行时堆.png" srcset="/img/loading.gif" lazyload class="full-image" alt="ART运行时堆" title="ART运行时堆" /><meta itemprop="width" content="auto"/><meta itemprop="height" content="auto"/></span>
+
+<h3 id="ART-GC过程-提高内存使用，减少碎片化"><a href="#ART-GC过程-提高内存使用，减少碎片化" class="headerlink" title="ART-GC过程 - 提高内存使用，减少碎片化"></a>ART-GC过程 - 提高内存使用，减少碎片化</h3><ol>
+<li>GC将会锁住Java堆，扫描并进行标记</li>
+<li>标记完毕释放Java堆的锁，并且挂起所有线程</li>
+<li>GC对标记的对象进行回收</li>
+<li>恢复所有线程的执行线程继续运行</li>
+<li>重复步骤2-4直到结束</li>
+</ol>
+<p>Art改善了GC过程：<strong>将其非并发过程改成了部分并发，还有就是堆内存的重新分配管理。</strong></p>
+<p>DVM内存管理特点：<strong>内存碎片化严重，这也是由于标记-清除算法导致的。</strong></p>
+<p>ART的解决方案：在ART中，它将Java分了一块空间<code>Large Object Space</code>，专门用来存放大对象。同时ART引入了<code>moving collector</code>技术，将不连续的物理内存块进行对其，对齐后碎片问题得到了很好的解决。</p>
+<p>使用<code>Large Object Space</code>是因为<code>moving collector</code>对大块内存的位移时间过长，需要降低时间并提高内存利用率。</p>
+<h3 id="Apk打包流程"><a href="#Apk打包流程" class="headerlink" title="Apk打包流程"></a>Apk打包流程</h3><span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/android_apk_build.png" srcset="/img/loading.gif" lazyload class="full-image" alt="android_apk_build" title="android_apk_build" /><meta itemprop="width" content="auto"/><meta itemprop="height" content="auto"/></span>
+
+<p>根据流程图可知，apk打包流程分为7步：</p>
+<ol>
+<li>通过aapt打包res资源文件，生成<code>R.java、resource.asrc,res文件</code></li>
+<li>处理.aidl文件，生成对应的Java接口文件</li>
+<li>通过Java Compiler编译R.java、Java源文件，生成.class文件</li>
+<li>通过 dx工具，将.class文件以及三方库中的.class文件合并生成 classes.dex</li>
+<li>通过apkbuilder工具，将aapt生成的resource.arsc和res文件、assets文件以及classes.dex一起打包生成apk</li>
+<li>通过Jarsigner工具，对上面的apk进行debug或release签名</li>
+<li>通过Zipalign工具，将签名后的apk进行对齐处理。(<em>帮助操作系统更高效率的根据请求索引资源，按着有利于系统处理的方式对apk征用的资源文件进行排列</em>)</li>
+</ol>
+<h3 id="Apk安装流程"><a href="#Apk安装流程" class="headerlink" title="Apk安装流程"></a>Apk安装流程</h3><p>Apk开始安装时会执行以下几步：<em>(例如安装包名为 com.example.wxy 应用名为Demo的apk)</em></p>
+<ul>
+<li><p>解析APK中的<code>AndroidManifest.xml</code>，解析的内容会被存储到<code>/data/system/packages.xml</code>和<code>/data/system/package.list</code>中。</p>
+</li>
+<li><p><code>packages.list</code>中会指名了该apk包应用的默认存储的位置<code>/data/data/com.example.wxy</code>,<code>package.xml</code>会包含该应用申请的全新，签名和代码所在位置等信息</p>
+<figure class="highlight xml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><code class="hljs xml">/data/system/packages.list<br>com.example.wxy.ipc 10021 1 /data/user/0/com.example.wxy.ipc default:targetSdkVersion=28 3003<br></code></pre></td></tr></table></figure>
+
+<figure class="highlight xml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><code class="hljs xml"> /data/system/packages.xml   <br><span class="hljs-tag">&lt;<span class="hljs-name">package</span> <span class="hljs-attr">name</span>=<span class="hljs-string">&quot;com.example.wxy.ipc&quot;</span> <span class="hljs-attr">codePath</span>=<span class="hljs-string">&quot;/data/app/com.example.wxy.ipc-OTMEWujgopdNrmJevxTbaA==&quot;</span> <span class="hljs-attr">nativeLibraryPath</span>=<span class="hljs-string">&quot;/data/app/com.example.wxy.ipc-OTMEWujgopdNrmJevxTbaA==/lib&quot;</span> <span class="hljs-attr">publicFlags</span>=<span class="hljs-string">&quot;810073926&quot;</span> <span class="hljs-attr">privateFlags</span>=<span class="hljs-string">&quot;0&quot;</span> <span class="hljs-attr">ft</span>=<span class="hljs-string">&quot;1673c5a86e8&quot;</span> <span class="hljs-attr">it</span>=<span class="hljs-string">&quot;1673ae27837&quot;</span> <span class="hljs-attr">ut</span>=<span class="hljs-string">&quot;1673c5a8ab8&quot;</span> <span class="hljs-attr">version</span>=<span class="hljs-string">&quot;1&quot;</span> <span class="hljs-attr">userId</span>=<span class="hljs-string">&quot;10021&quot;</span>&gt;</span><br>        <span class="hljs-tag">&lt;<span class="hljs-name">sigs</span> <span class="hljs-attr">count</span>=<span class="hljs-string">&quot;1&quot;</span> <span class="hljs-attr">schemeVersion</span>=<span class="hljs-string">&quot;2&quot;</span>&gt;</span><br>            <span class="hljs-tag">&lt;<span class="hljs-name">cert</span> <span class="hljs-attr">index</span>=<span class="hljs-string">&quot;15&quot;</span> /&gt;</span><br>        <span class="hljs-tag">&lt;/<span class="hljs-name">sigs</span>&gt;</span><br>        <span class="hljs-tag">&lt;<span class="hljs-name">perms</span>&gt;</span><br>            <span class="hljs-tag">&lt;<span class="hljs-name">item</span> <span class="hljs-attr">name</span>=<span class="hljs-string">&quot;android.permission.INTERNET&quot;</span> <span class="hljs-attr">granted</span>=<span class="hljs-string">&quot;true&quot;</span> <span class="hljs-attr">flags</span>=<span class="hljs-string">&quot;0&quot;</span> /&gt;</span><br>            <span class="hljs-tag">&lt;<span class="hljs-name">item</span> <span class="hljs-attr">name</span>=<span class="hljs-string">&quot;android.permission.ACCESS_NETWORK_STATE&quot;</span> <span class="hljs-attr">granted</span>=<span class="hljs-string">&quot;true&quot;</span> <span class="hljs-attr">flags</span>=<span class="hljs-string">&quot;0&quot;</span> /&gt;</span><br>            <span class="hljs-tag">&lt;<span class="hljs-name">item</span> <span class="hljs-attr">name</span>=<span class="hljs-string">&quot;com.example.wxy.permission.checkBook&quot;</span> <span class="hljs-attr">granted</span>=<span class="hljs-string">&quot;true&quot;</span> <span class="hljs-attr">flags</span>=<span class="hljs-string">&quot;0&quot;</span> /&gt;</span><br>        <span class="hljs-tag">&lt;/<span class="hljs-name">perms</span>&gt;</span><br>        <span class="hljs-tag">&lt;<span class="hljs-name">proper-signing-keyset</span> <span class="hljs-attr">identifier</span>=<span class="hljs-string">&quot;16&quot;</span> /&gt;</span><br>    <span class="hljs-tag">&lt;/<span class="hljs-name">package</span>&gt;</span><br></code></pre></td></tr></table></figure>
+
+<p>标记了一个<code>userId</code>，Android系统可以利用该值来管理应用</p>
+</li>
+<li><p>根据<code>packages.xml</code>指定的<code>codePath</code>，创建一个目录，apk被命名为<code>base.apk</code>并拷贝到此，其中lib目录用在存放native库。</p>
+</li>
+<li><p>此时应用就可以运行了。为了提升效率，Android系统在应用安装时还会做些优化操作，把所有可运行的dex文件单独提取放在一块并做些优化。</p>
+<ul>
+<li>在DVM时，会使用dexopt把base.apk中的dex文件优化为odex，存储在<code>/data/dalvik-cache</code>中.</li>
+<li>在ART时，则会使用dex2oat优化成oat文件也存储在该目录下，并且文件名一样，但是文件会大很多，因为ART会把dex优化成机器码，所以运行更快。</li>
+</ul>
+</li>
+</ul>
+
+                
+              </div>
+            
+            <hr/>
+            <div>
+              <div class="post-metas my-3">
+  
+  
+    <div class="post-meta">
+      <i class="iconfont icon-tags"></i>
+      
+        <a href="/tags/Android/" class="print-no-link">#Android</a>
+      
+    </div>
+  
+</div>
+
+
+              
+  
+
+  <div class="license-box my-3">
+    <div class="license-title">
+      <div>Android中的GC分析-Dalvik和ART虚拟机</div>
+      <div>http://example.com/2018/05/13/Android中的GC分析-Dalvik和ART虚拟机/</div>
+    </div>
+    <div class="license-meta">
+      
+        <div class="license-meta-item">
+          <div>作者</div>
+          <div>Leo-Wxy</div>
+        </div>
+      
+      
+        <div class="license-meta-item license-meta-date">
+          <div>发布于</div>
+          <div>2018年5月13日</div>
+        </div>
+      
+      
+      
+        <div class="license-meta-item">
+          <div>许可协议</div>
+          <div>
+            
+              
+              
+                <a class="print-no-link" target="_blank" href="https://creativecommons.org/licenses/by/4.0/">
+                  <span class="hint--top hint--rounded" aria-label="BY - 署名">
+                    <i class="iconfont icon-cc-by"></i>
+                  </span>
+                </a>
+              
+            
+          </div>
+        </div>
+      
+    </div>
+    <div class="license-icon iconfont"></div>
+  </div>
+
+
+
+              
+                <div class="post-prevnext my-3">
+                  <article class="post-prev col-6">
+                    
+                    
+                      <a href="/2018/05/14/Handler%E6%9C%BA%E5%88%B6%E5%8D%B3%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/" title="Handler机制源码解析">
+                        <i class="iconfont icon-arrowleft"></i>
+                        <span class="hidden-mobile">Handler机制源码解析</span>
+                        <span class="visible-mobile">上一篇</span>
+                      </a>
+                    
+                  </article>
+                  <article class="post-next col-6">
+                    
+                    
+                      <a href="/2018/05/13/Android-Study-Plan-XV/" title="Android-Study-Plan-XV -- 四大组件">
+                        <span class="hidden-mobile">Android-Study-Plan-XV -- 四大组件</span>
+                        <span class="visible-mobile">下一篇</span>
+                        <i class="iconfont icon-arrowright"></i>
+                      </a>
+                    
+                  </article>
+                </div>
+              
+            </div>
+
+            
+          </article>
+        </div>
+      </div>
+    </div>
+
+    <div class="side-col d-none d-lg-block col-lg-2">
+      
+  <aside class="sidebar" style="margin-left: -1rem">
+    <div id="toc">
+  <p class="toc-header">
+    <i class="iconfont icon-list"></i>
+    <span>目录</span>
+  </p>
+  <div class="toc-body" id="toc-body"></div>
+</div>
+
+
+
+  </aside>
+
+
+    </div>
+  </div>
+</div>
+
+
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+
+
+
+
+    
+
+    
+      <a id="scroll-top-button" aria-label="TOP" href="#" role="button">
+        <i class="iconfont icon-arrowup" aria-hidden="true"></i>
+      </a>
+    
+
+    
+      <div class="modal fade" id="modalSearch" tabindex="-1" role="dialog" aria-labelledby="ModalLabel"
+     aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header text-center">
+        <h4 class="modal-title w-100 font-weight-bold">搜索</h4>
+        <button type="button" id="local-search-close" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body mx-3">
+        <div class="md-form mb-5">
+          <input type="text" id="local-search-input" class="form-control validate">
+          <label data-error="x" data-success="v" for="local-search-input">关键词</label>
+        </div>
+        <div class="list-group" id="local-search-result"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+    
+
+    
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+  
+    <div class="footer-content">
+       <a href="https://hexo.io" target="_blank" rel="nofollow noopener"><span>Hexo</span></a> <i class="iconfont icon-love"></i> <a href="https://github.com/fluid-dev/hexo-theme-fluid" target="_blank" rel="nofollow noopener"><span>Fluid</span></a> 
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+
+  <!-- Scripts -->
+  
+  <script  src="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.js" ></script>
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.css" />
+
+  <script>
+    NProgress.configure({"showSpinner":false,"trickleSpeed":100})
+    NProgress.start()
+    window.addEventListener('load', function() {
+      NProgress.done();
+    })
+  </script>
+
+
+<script  src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" ></script>
+<script  src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.min.js" ></script>
+<script  src="/js/events.js" ></script>
+<script  src="/js/plugins.js" ></script>
+
+
+
+
+
+  
+    <script  src="/js/img-lazyload.js" ></script>
+  
+
+
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/tocbot@4.12.0/dist/tocbot.min.js', function() {
+    var toc = jQuery('#toc');
+    if (toc.length === 0 || !window.tocbot) { return; }
+    var boardCtn = jQuery('#board-ctn');
+    var boardTop = boardCtn.offset().top;
+
+    window.tocbot.init(Object.assign({
+      tocSelector     : '#toc-body',
+      contentSelector : '.markdown-body',
+      linkClass       : 'tocbot-link',
+      activeLinkClass : 'tocbot-active-link',
+      listClass       : 'tocbot-list',
+      isCollapsedClass: 'tocbot-is-collapsed',
+      collapsibleClass: 'tocbot-is-collapsible',
+      scrollSmooth    : true,
+      includeTitleTags: true,
+      headingsOffset  : -boardTop,
+    }, CONFIG.toc));
+    if (toc.find('.toc-list-item').length > 0) {
+      toc.css('visibility', 'visible');
+    }
+
+    Fluid.events.registerRefreshCallback(function() {
+      if ('tocbot' in window) {
+        tocbot.refresh();
+        var toc = jQuery('#toc');
+        if (toc.length === 0 || !tocbot) {
+          return;
+        }
+        if (toc.find('.toc-list-item').length > 0) {
+          toc.css('visibility', 'visible');
+        }
+      }
+    });
+  });
+</script>
+
+
+  <script src=https://cdn.jsdelivr.net/npm/clipboard@2.0.6/dist/clipboard.min.js></script>
+
+  <script>Fluid.plugins.codeWidget();</script>
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/anchor-js@4.3.0/anchor.min.js', function() {
+    window.anchors.options = {
+      placement: CONFIG.anchorjs.placement,
+      visible  : CONFIG.anchorjs.visible
+    };
+    if (CONFIG.anchorjs.icon) {
+      window.anchors.options.icon = CONFIG.anchorjs.icon;
+    }
+    var el = (CONFIG.anchorjs.element || 'h1,h2,h3,h4,h5,h6').split(',');
+    var res = [];
+    for (var item of el) {
+      res.push('.markdown-body > ' + item.trim());
+    }
+    if (CONFIG.anchorjs.placement === 'left') {
+      window.anchors.options.class = 'anchorjs-link-left';
+    }
+    window.anchors.add(res.join(', '));
+
+    Fluid.events.registerRefreshCallback(function() {
+      if ('anchors' in window) {
+        anchors.removeAll();
+        var el = (CONFIG.anchorjs.element || 'h1,h2,h3,h4,h5,h6').split(',');
+        var res = [];
+        for (var item of el) {
+          res.push('.markdown-body > ' + item.trim());
+        }
+        if (CONFIG.anchorjs.placement === 'left') {
+          anchors.options.class = 'anchorjs-link-left';
+        }
+        anchors.add(res.join(', '));
+      }
+    });
+  });
+</script>
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.js', function() {
+    Fluid.plugins.fancyBox();
+  });
+</script>
+
+
+  <script>Fluid.plugins.imageCaption();</script>
+
+  <script  src="/js/local-search.js" ></script>
+
+
+
+
+
+<!-- 主题的启动项，将它保持在最底部 -->
+<!-- the boot of the theme, keep it at the bottom -->
+<script  src="/js/boot.js" ></script>
+
+
+  
+
+  <noscript>
+    <div class="noscript-warning">博客在允许 JavaScript 运行的环境下浏览效果更佳</div>
+  </noscript>
+</body>
+</html>

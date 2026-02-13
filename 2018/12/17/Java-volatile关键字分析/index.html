@@ -1,0 +1,699 @@
+
+
+<!DOCTYPE html>
+<html lang="zh-CN" data-default-color-scheme=auto>
+
+
+
+<head>
+  <meta charset="UTF-8">
+
+  <link rel="apple-touch-icon" sizes="76x76" href="/img/favicon.png">
+  <link rel="icon" href="/img/favicon.png">
+  
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, shrink-to-fit=no">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  
+  <meta name="theme-color" content="#11527b">
+  <meta name="author" content="Leo-Wxy">
+  <meta name="keywords" content="">
+  
+    <meta name="description" content="volatile基础概念volatile的主要作用是保证可见性以及有序性，不一定保证原子性。 JVM提供的最轻量级的同步机制。 当一个变量被volatile关键字修饰后，就会具备两层语义：  保证此变量对所有线程的可见性，这里指  当一条线程修改了这个变量的值，新值对于其他线程来说是立即可得知的。 禁止进行指令重排序优化  volatile 保证可见性在使用volatile关键字修饰一个变">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Java-volatile原理及解析">
+<meta property="og:url" content="http://example.com/2018/12/17/Java-volatile%E5%85%B3%E9%94%AE%E5%AD%97%E5%88%86%E6%9E%90/index.html">
+<meta property="og:site_name" content="Wxy的个人博客">
+<meta property="og:description" content="volatile基础概念volatile的主要作用是保证可见性以及有序性，不一定保证原子性。 JVM提供的最轻量级的同步机制。 当一个变量被volatile关键字修饰后，就会具备两层语义：  保证此变量对所有线程的可见性，这里指  当一条线程修改了这个变量的值，新值对于其他线程来说是立即可得知的。 禁止进行指令重排序优化  volatile 保证可见性在使用volatile关键字修饰一个变">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="http://example.com/images/volatile.png">
+<meta property="og:image" content="http://example.com/images/volatile-process.png">
+<meta property="og:image" content="http://example.com/images/volatile%E8%AF%BB.webp">
+<meta property="og:image" content="http://example.com/images/volatile%E5%86%99.webp">
+<meta property="article:published_time" content="2018-12-17T07:53:52.000Z">
+<meta property="article:modified_time" content="2020-11-17T01:44:04.000Z">
+<meta property="article:author" content="Leo-Wxy">
+<meta property="article:tag" content="Java">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="http://example.com/images/volatile.png">
+  
+  
+  
+  <title>Java-volatile原理及解析 - Wxy的个人博客</title>
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css" />
+
+
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@4.0.0/github-markdown.min.css" />
+
+  <link  rel="stylesheet" href="/lib/hint/hint.min.css" />
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.css" />
+
+
+
+<!-- 主题依赖的图标库，不要自行修改 -->
+<!-- Do not modify the link that theme dependent icons -->
+
+<link rel="stylesheet" href="//at.alicdn.com/t/c/font_1749284_5i9bdhy70f8.css">
+
+
+
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1736178_kmeydafke9r.css">
+
+
+<link  rel="stylesheet" href="/css/main.css" />
+
+
+  <link id="highlight-css" rel="stylesheet" href="/css/highlight.css" />
+  
+    <link id="highlight-css-dark" rel="stylesheet" href="/css/highlight-dark.css" />
+  
+
+
+
+
+  <script id="fluid-configs">
+    var Fluid = window.Fluid || {};
+    Fluid.ctx = Object.assign({}, Fluid.ctx)
+    var CONFIG = {"hostname":"example.com","root":"/","version":"1.9.8","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false,"scope":[]},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"code_language":{"enable":true,"default":"TEXT"},"copy_btn":true,"image_caption":{"enable":true},"image_zoom":{"enable":true,"img_url_replace":["",""]},"toc":{"enable":true,"placement":"right","headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"loading_img":"/img/loading.gif","onlypost":false,"offset_factor":2},"web_analytics":{"enable":false,"follow_dnt":true,"baidu":null,"google":null,"tencent":{"sid":null,"cid":null},"leancloud":{"app_id":null,"app_key":null,"server_url":null,"path":"window.location.pathname","ignore_local":false},"umami":{"src":null,"website_id":null,"domains":null,"start_time":"2024-01-01T00:00:00.000Z","token":null,"api_server":null},"gtag":null,"woyaola":null,"cnzz":null},"search_path":"/local-search.xml","include_content_in_search":false};
+
+    if (CONFIG.web_analytics.follow_dnt) {
+      var dntVal = navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack;
+      Fluid.ctx.dnt = dntVal && (dntVal.startsWith('1') || dntVal.startsWith('yes') || dntVal.startsWith('on'));
+    }
+  </script>
+  <script  src="/js/utils.js" ></script>
+  <script  src="/js/color-schema.js" ></script>
+  
+
+
+  
+<meta name="generator" content="Hexo 8.1.1"></head>
+
+
+<body>
+  
+
+  <header>
+    
+
+<div class="header-inner" style="height: 30vh;">
+  <nav id="navbar" class="navbar fixed-top  navbar-expand-lg navbar-dark scrolling-navbar">
+  <div class="container">
+    <a class="navbar-brand" href="/">
+      <strong>Wxy&#39;s Blog</strong>
+    </a>
+
+    <button id="navbar-toggler-btn" class="navbar-toggler" type="button" data-toggle="collapse"
+            data-target="#navbarSupportedContent"
+            aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+      <div class="animated-icon"><span></span><span></span><span></span></div>
+    </button>
+
+    <!-- Collapsible content -->
+    <div class="collapse navbar-collapse" id="navbarSupportedContent">
+      <ul class="navbar-nav ml-auto text-center">
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/" target="_self">
+                <i class="iconfont icon-home-fill"></i>
+                <span>首页</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/archives/" target="_self">
+                <i class="iconfont icon-archive-fill"></i>
+                <span>归档</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/tags/" target="_self">
+                <i class="iconfont icon-tags-fill"></i>
+                <span>标签</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/about/" target="_self">
+                <i class="iconfont icon-user-fill"></i>
+                <span>关于</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/links/" target="_self">
+                <i class="iconfont icon-link-fill"></i>
+                <span>友链</span>
+              </a>
+            </li>
+          
+        
+        
+          <li class="nav-item" id="search-btn">
+            <a class="nav-link" target="_self" href="javascript:;" data-toggle="modal" data-target="#modalSearch" aria-label="Search">
+              <i class="iconfont icon-search"></i>
+            </a>
+          </li>
+          
+        
+        
+          <li class="nav-item" id="color-toggle-btn">
+            <a class="nav-link" target="_self" href="javascript:;" aria-label="Color Toggle">
+              <i class="iconfont icon-dark" id="color-toggle-icon"></i>
+            </a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+  
+
+<div id="banner" class="banner" parallax=true
+     style="background: url('/img/default.png') no-repeat center center; background-size: cover;">
+  <div class="full-bg-img">
+    <div class="mask flex-center" style="background-color: rgba(0, 0, 0, 0.3)">
+      <div class="banner-text text-center fade-in-up">
+        <div class="h2">
+          
+            <span id="subtitle">Java-volatile原理及解析</span>
+          
+        </div>
+
+        
+          
+  <div class="mt-3">
+    
+    
+      <span class="post-meta">
+        <i class="iconfont icon-date-fill" aria-hidden="true"></i>
+        <time datetime="2018-12-17 15:53" pubdate>
+          2018年12月17日 下午
+        </time>
+      </span>
+    
+  </div>
+
+  <div class="mt-1">
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-chart"></i>
+        
+          <!-- compatible with older versions-->
+          1.2k 字
+        
+      </span>
+    
+
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-clock-fill"></i>
+        
+        
+        
+          <!-- compatible with older versions-->
+          4 分钟
+        
+      </span>
+    
+
+    
+    
+  </div>
+
+
+        
+      </div>
+
+      
+    </div>
+  </div>
+</div>
+
+</div>
+
+  </header>
+
+  <main>
+    
+      
+
+<div class="container-fluid nopadding-x">
+  <div class="row nomargin-x">
+    <div class="side-col d-none d-lg-block col-lg-2">
+      
+
+    </div>
+
+    <div class="col-lg-8 nopadding-x-md">
+      <div class="container nopadding-x-md" id="board-ctn">
+        <div id="board">
+          <article class="post-content mx-auto">
+            <h1 id="seo-header">Java-volatile原理及解析</h1>
+            
+            
+              <div class="markdown-body">
+                
+                <!--缓存一致性 指令重排序概念-->
+
+<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/volatile.png" srcset="/img/loading.gif" lazyload class="full-image" alt="volatile相关概念" title="volatile相关概念" /><meta itemprop="width" content="auto"/><meta itemprop="height" content="auto"/></span>
+
+<h2 id="volatile基础概念"><a href="#volatile基础概念" class="headerlink" title="volatile基础概念"></a>volatile基础概念</h2><p><em><strong>volatile的主要作用是保证可见性以及有序性，不一定保证原子性。</strong></em></p>
+<p><strong>JVM提供的最轻量级的同步机制。</strong></p>
+<p>当一个变量被<code>volatile</code>关键字修饰后，就会具备两层语义：</p>
+<ul>
+<li><strong>保证此变量对所有线程的可见性，这里指  当一条线程修改了这个变量的值，新值对于其他线程来说是立即可得知的。</strong></li>
+<li><strong>禁止进行指令重排序优化</strong></li>
+</ul>
+<h3 id="volatile-保证可见性"><a href="#volatile-保证可见性" class="headerlink" title="volatile 保证可见性"></a>volatile 保证可见性</h3><p>在使用<code>volatile</code>关键字修饰一个变量后，该变量在一个线程中被修改后，会发生如下事情：</p>
+<ol>
+<li>修改后，修改的变量值会强制立即写入主内存中</li>
+<li>然后强制过期其他线程中工作内存中的缓存，使缓存无效</li>
+<li>由于缓存无效，其他线程需要读取该变量值时，会强制重新从主内存中读取</li>
+</ol>
+<blockquote>
+<p>当访问共享变量时，多个线程也会在自己的工作内存中有一份共享变量的副本。当某个线程更改了自己工作内存中的数据时，由于某些原因（线程阻塞）没有及时的刷新数据至主内存，然后其他线程的工作内存中的数据还是老数据。就会导致<code>缓存一致性</code>问题。</p>
+<p><strong>缓存一致性</strong>：当其他线程读取该变量时，发现该缓存是无效的，就会从主内存中重新读取。</p>
+</blockquote>
+<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/volatile-process.png" srcset="/img/loading.gif" lazyload class="full-image" alt="volatile可见性" title="volatile可见性" /><meta itemprop="width" content="auto"/><meta itemprop="height" content="auto"/></span>
+
+
+
+<h3 id="volatile-保证有序性"><a href="#volatile-保证有序性" class="headerlink" title="volatile 保证有序性"></a>volatile 保证有序性</h3><p><code>volatile</code>禁止指令重排序，可以在一定程度上保证有序性。</p>
+<p><strong>指令重排序</strong>：JVM为了优化指令，提高程序运行效率，在不影响<strong>单线程</strong>执行结果的前提下，尽可能的提高并行度。</p>
+<p>volatile关键字通过提供“<strong>内存屏障(重排序时不能把后面的指令重排序到内存屏障之前的位置)</strong>”的方式来防止指令被重排序，为了实现volatile的内存语义，编译器在生成字节码时，会在指令序列中插入内存屏障来禁止特定类型的处理器重排序。<code>加入volatile关键字的代码会多出一个lock前缀指令</code>。</p>
+<p>内存屏障提供如下功能：</p>
+<ul>
+<li>重排序时不会把后面的指令重排序到内存屏障之前的位置—<code>有序性</code></li>
+<li>本CPU的Cache立即写入内存，并且会引起别的CPU或者别的内核无效化其Cache，可以是对volatile变量的修改对其他CPU可见—<code>可见性</code></li>
+</ul>
+<p><code>内存屏障</code>在<code>volatile</code>读写时是不同位置插入<code>lock</code>指令</p>
+<ul>
+<li><p><code>volatile读</code></p>
+<p>在<code>volatile读</code>操作后分别插入<code>LoadLoad</code>和<code>LoadStore</code>屏障</p>
+<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/volatile读.webp" srcset="/img/loading.gif" lazyload class="full-image" alt="volatile读" title="volatile读" /><meta itemprop="width" content="auto"/><meta itemprop="height" content="auto"/></span>
+
+<p><code>LoadLoad</code>屏障：禁止<code>volatile读</code>与后面的普通读进行重排序</p>
+<p><code>LoadStore</code>屏障：禁止<code>volatile读</code>与后面的普通写进行重排序</p>
+</li>
+<li><p><code>volatile写</code></p>
+<p>在<code>volatile写</code>操作前后分别插入<code>StoreStore</code>和<code>StoreLoad</code>屏障</p>
+<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/volatile写.webp" srcset="/img/loading.gif" lazyload class="full-image" alt="volatile写" title="volatile写" /><meta itemprop="width" content="auto"/><meta itemprop="height" content="auto"/></span>
+
+<p><code>StoreStore</code>屏障：保证<code>volatile写</code>之前的普通写操作已经对所有线程可见，该屏障保证<strong>前面的所有普通写操作的值都刷新到主内存。</strong></p>
+<p><code>StoreLoad</code>屏障：禁止<code>volatile写</code>与后面可能存在的<code>volatile读/写</code>进行重排序。</p>
+</li>
+</ul>
+<h3 id="volatile不保证原子性"><a href="#volatile不保证原子性" class="headerlink" title="volatile不保证原子性"></a>volatile不保证原子性</h3><p><code>volatile</code>只能保证对单个volatile变量的读&#x2F;写具有原子性，但是对于<code>volatile++</code>这样的复合操作没办法。</p>
+<p>自增操作 <code>volatile++</code>实际执行了三步：</p>
+<ol>
+<li>读取变量的初始值</li>
+<li>在CPU中加1</li>
+<li>重新写入工作内存，在写入主内存</li>
+</ol>
+<p>要想保证原子性，只能借助于<code>synchronized、Lock和java.util.concurrent.atomic包下的原子操作类</code>保证这些操作时原子性操作。</p>
+<h2 id="volatile应用场景"><a href="#volatile应用场景" class="headerlink" title="volatile应用场景"></a>volatile应用场景</h2><p><code>volatile</code>由于无法保证原子性，所以要使用必须具备以下两个条件：</p>
+<ul>
+<li><p>对变量的写操作不依赖于当前值 </p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">volatile</span> <span class="hljs-type">int</span> <span class="hljs-variable">a</span> <span class="hljs-operator">=</span> <span class="hljs-number">0</span> ;<br>a = a * <span class="hljs-number">2</span>;<br></code></pre></td></tr></table></figure>
+</li>
+<li><p>该变量没有包含在具有其他变量的不变式中</p>
+<p><em><strong>在多线程场景下，这两种情况即时使用<code>volatile</code>修饰，也有可能会有同步问题。</strong></em></p>
+</li>
+</ul>
+<h2 id="volatile使用实例"><a href="#volatile使用实例" class="headerlink" title="volatile使用实例"></a>volatile使用实例</h2><ol>
+<li><p>状态量标记</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">volatile</span> <span class="hljs-type">bool</span> <span class="hljs-variable">flag</span> <span class="hljs-operator">=</span> <span class="hljs-literal">true</span>;<br><br><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">write</span><span class="hljs-params">()</span>&#123;<br>    flag = <span class="hljs-literal">false</span>;<br>&#125;<br><br><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">modify</span><span class="hljs-params">()</span>&#123;<br>    <span class="hljs-keyword">if</span>(flag)&#123;<br>        doSth();<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+</li>
+<li><p>单例模式的实现(DCL)</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">class</span> <span class="hljs-title class_">Singleton</span>&#123;<br>    <span class="hljs-keyword">private</span> <span class="hljs-title function_">Singleton</span><span class="hljs-params">()</span>&#123;<br>        <br>    &#125;<br>    <br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">volatile</span> <span class="hljs-keyword">static</span> Singleton sInstance;<br>    <br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Singleton <span class="hljs-title function_">getInstence</span><span class="hljs-params">()</span>&#123;<br>        <span class="hljs-keyword">if</span>(sInstance == <span class="hljs-literal">null</span>)&#123;<br>            <span class="hljs-keyword">synchronized</span>(Sineleton.class)&#123;<br>                <span class="hljs-keyword">if</span>(sInstance == <span class="hljs-literal">null</span>)&#123;<br>                    sInstance = <span class="hljs-keyword">new</span> <span class="hljs-title class_">Singleton</span>();<br>                  <span class="hljs-comment">/**</span><br><span class="hljs-comment">                  * 1.内存中创建对象</span><br><span class="hljs-comment">                  * 2.分配内存，并将指针指向内存区域</span><br><span class="hljs-comment">                  * 如果此时发生指令重排序，可能导致构造函数在初始化对象完成就赋值完成，导致其他线程获取对象为空，所以使用volatile进行修饰，避免指令重排序</span><br><span class="hljs-comment">                  */</span><br>                &#125;<br>            &#125; <br>        &#125;<br>         <span class="hljs-keyword">return</span> sInstance;<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure></li>
+</ol>
+<h2 id="volatile和-synchronized区别"><a href="#volatile和-synchronized区别" class="headerlink" title="volatile和 synchronized区别"></a>volatile和 synchronized区别</h2><ul>
+<li><code>volatile</code>仅能使用在变量级别，<code>synchronized</code>适用于变量、方法和类</li>
+<li><code>volatile</code>仅能实现变量修改可见性，不保证原子性；<code>synchronized</code>可以保证可见性及原子性</li>
+<li><code>volatile</code>不会造成线程的阻塞；<code>synchronized</code>会造成阻塞(<code>阻塞同步</code>)</li>
+<li><code>volatile</code>由于禁止指令重排序，不会被编译器优化；<code>synchronized</code>会被优化</li>
+</ul>
+<h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a target="_blank" rel="noopener" href="https://juejin.im/post/5ea913d35188256d4576d199#heading-17">volatile</a></p>
+
+                
+              </div>
+            
+            <hr/>
+            <div>
+              <div class="post-metas my-3">
+  
+  
+    <div class="post-meta">
+      <i class="iconfont icon-tags"></i>
+      
+        <a href="/tags/Java/" class="print-no-link">#Java</a>
+      
+    </div>
+  
+</div>
+
+
+              
+  
+
+  <div class="license-box my-3">
+    <div class="license-title">
+      <div>Java-volatile原理及解析</div>
+      <div>http://example.com/2018/12/17/Java-volatile关键字分析/</div>
+    </div>
+    <div class="license-meta">
+      
+        <div class="license-meta-item">
+          <div>作者</div>
+          <div>Leo-Wxy</div>
+        </div>
+      
+      
+        <div class="license-meta-item license-meta-date">
+          <div>发布于</div>
+          <div>2018年12月17日</div>
+        </div>
+      
+      
+      
+        <div class="license-meta-item">
+          <div>许可协议</div>
+          <div>
+            
+              
+              
+                <a class="print-no-link" target="_blank" href="https://creativecommons.org/licenses/by/4.0/">
+                  <span class="hint--top hint--rounded" aria-label="BY - 署名">
+                    <i class="iconfont icon-cc-by"></i>
+                  </span>
+                </a>
+              
+            
+          </div>
+        </div>
+      
+    </div>
+    <div class="license-icon iconfont"></div>
+  </div>
+
+
+
+              
+                <div class="post-prevnext my-3">
+                  <article class="post-prev col-6">
+                    
+                    
+                      <a href="/2018/12/18/Atomic%E5%8E%9F%E5%AD%90%E6%93%8D%E4%BD%9C%E7%B1%BB%E5%88%86%E6%9E%90/" title="CAS操作&amp;Atomic原子操作类分析">
+                        <i class="iconfont icon-arrowleft"></i>
+                        <span class="hidden-mobile">CAS操作&amp;Atomic原子操作类分析</span>
+                        <span class="visible-mobile">上一篇</span>
+                      </a>
+                    
+                  </article>
+                  <article class="post-next col-6">
+                    
+                    
+                      <a href="/2018/12/17/DiskLruCache%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/" title="DiskLruCache源码分析">
+                        <span class="hidden-mobile">DiskLruCache源码分析</span>
+                        <span class="visible-mobile">下一篇</span>
+                        <i class="iconfont icon-arrowright"></i>
+                      </a>
+                    
+                  </article>
+                </div>
+              
+            </div>
+
+            
+          </article>
+        </div>
+      </div>
+    </div>
+
+    <div class="side-col d-none d-lg-block col-lg-2">
+      
+  <aside class="sidebar" style="margin-left: -1rem">
+    <div id="toc">
+  <p class="toc-header">
+    <i class="iconfont icon-list"></i>
+    <span>目录</span>
+  </p>
+  <div class="toc-body" id="toc-body"></div>
+</div>
+
+
+
+  </aside>
+
+
+    </div>
+  </div>
+</div>
+
+
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+
+
+
+
+    
+
+    
+      <a id="scroll-top-button" aria-label="TOP" href="#" role="button">
+        <i class="iconfont icon-arrowup" aria-hidden="true"></i>
+      </a>
+    
+
+    
+      <div class="modal fade" id="modalSearch" tabindex="-1" role="dialog" aria-labelledby="ModalLabel"
+     aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header text-center">
+        <h4 class="modal-title w-100 font-weight-bold">搜索</h4>
+        <button type="button" id="local-search-close" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body mx-3">
+        <div class="md-form mb-5">
+          <input type="text" id="local-search-input" class="form-control validate">
+          <label data-error="x" data-success="v" for="local-search-input">关键词</label>
+        </div>
+        <div class="list-group" id="local-search-result"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+    
+
+    
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+  
+    <div class="footer-content">
+       <a href="https://hexo.io" target="_blank" rel="nofollow noopener"><span>Hexo</span></a> <i class="iconfont icon-love"></i> <a href="https://github.com/fluid-dev/hexo-theme-fluid" target="_blank" rel="nofollow noopener"><span>Fluid</span></a> 
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+
+  <!-- Scripts -->
+  
+  <script  src="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.js" ></script>
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.css" />
+
+  <script>
+    NProgress.configure({"showSpinner":false,"trickleSpeed":100})
+    NProgress.start()
+    window.addEventListener('load', function() {
+      NProgress.done();
+    })
+  </script>
+
+
+<script  src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" ></script>
+<script  src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.min.js" ></script>
+<script  src="/js/events.js" ></script>
+<script  src="/js/plugins.js" ></script>
+
+
+
+
+
+  
+    <script  src="/js/img-lazyload.js" ></script>
+  
+
+
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/tocbot@4.12.0/dist/tocbot.min.js', function() {
+    var toc = jQuery('#toc');
+    if (toc.length === 0 || !window.tocbot) { return; }
+    var boardCtn = jQuery('#board-ctn');
+    var boardTop = boardCtn.offset().top;
+
+    window.tocbot.init(Object.assign({
+      tocSelector     : '#toc-body',
+      contentSelector : '.markdown-body',
+      linkClass       : 'tocbot-link',
+      activeLinkClass : 'tocbot-active-link',
+      listClass       : 'tocbot-list',
+      isCollapsedClass: 'tocbot-is-collapsed',
+      collapsibleClass: 'tocbot-is-collapsible',
+      scrollSmooth    : true,
+      includeTitleTags: true,
+      headingsOffset  : -boardTop,
+    }, CONFIG.toc));
+    if (toc.find('.toc-list-item').length > 0) {
+      toc.css('visibility', 'visible');
+    }
+
+    Fluid.events.registerRefreshCallback(function() {
+      if ('tocbot' in window) {
+        tocbot.refresh();
+        var toc = jQuery('#toc');
+        if (toc.length === 0 || !tocbot) {
+          return;
+        }
+        if (toc.find('.toc-list-item').length > 0) {
+          toc.css('visibility', 'visible');
+        }
+      }
+    });
+  });
+</script>
+
+
+  <script src=https://cdn.jsdelivr.net/npm/clipboard@2.0.6/dist/clipboard.min.js></script>
+
+  <script>Fluid.plugins.codeWidget();</script>
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/anchor-js@4.3.0/anchor.min.js', function() {
+    window.anchors.options = {
+      placement: CONFIG.anchorjs.placement,
+      visible  : CONFIG.anchorjs.visible
+    };
+    if (CONFIG.anchorjs.icon) {
+      window.anchors.options.icon = CONFIG.anchorjs.icon;
+    }
+    var el = (CONFIG.anchorjs.element || 'h1,h2,h3,h4,h5,h6').split(',');
+    var res = [];
+    for (var item of el) {
+      res.push('.markdown-body > ' + item.trim());
+    }
+    if (CONFIG.anchorjs.placement === 'left') {
+      window.anchors.options.class = 'anchorjs-link-left';
+    }
+    window.anchors.add(res.join(', '));
+
+    Fluid.events.registerRefreshCallback(function() {
+      if ('anchors' in window) {
+        anchors.removeAll();
+        var el = (CONFIG.anchorjs.element || 'h1,h2,h3,h4,h5,h6').split(',');
+        var res = [];
+        for (var item of el) {
+          res.push('.markdown-body > ' + item.trim());
+        }
+        if (CONFIG.anchorjs.placement === 'left') {
+          anchors.options.class = 'anchorjs-link-left';
+        }
+        anchors.add(res.join(', '));
+      }
+    });
+  });
+</script>
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.js', function() {
+    Fluid.plugins.fancyBox();
+  });
+</script>
+
+
+  <script>Fluid.plugins.imageCaption();</script>
+
+  <script  src="/js/local-search.js" ></script>
+
+
+
+
+
+<!-- 主题的启动项，将它保持在最底部 -->
+<!-- the boot of the theme, keep it at the bottom -->
+<script  src="/js/boot.js" ></script>
+
+
+  
+
+  <noscript>
+    <div class="noscript-warning">博客在允许 JavaScript 运行的环境下浏览效果更佳</div>
+  </noscript>
+</body>
+</html>

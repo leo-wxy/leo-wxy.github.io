@@ -1,0 +1,745 @@
+
+
+<!DOCTYPE html>
+<html lang="zh-CN" data-default-color-scheme=auto>
+
+
+
+<head>
+  <meta charset="UTF-8">
+
+  <link rel="apple-touch-icon" sizes="76x76" href="/img/favicon.png">
+  <link rel="icon" href="/img/favicon.png">
+  
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, shrink-to-fit=no">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  
+  <meta name="theme-color" content="#11527b">
+  <meta name="author" content="Leo-Wxy">
+  <meta name="keywords" content="">
+  
+    <meta name="description" content="主要包括Handler其他使用知识点 1. 子线程创建Handler对象  不可以直接在子线程创建Handler对象，因为Handler对象必须要绑定一个Looper，才可以使用。 若在子线程需要使用Handler，则需要先创建一个Looper对象即执行Looper.prepare()然后再创建Handler对象时调用Looper.myLooper()获取Looper对象传入方法，最后调用Loop">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Handler机制源码解析(二)">
+<meta property="og:url" content="http://example.com/2018/10/07/Handler%E6%9C%BA%E5%88%B6%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90-%E4%BA%8C/index.html">
+<meta property="og:site_name" content="Wxy的个人博客">
+<meta property="og:description" content="主要包括Handler其他使用知识点 1. 子线程创建Handler对象  不可以直接在子线程创建Handler对象，因为Handler对象必须要绑定一个Looper，才可以使用。 若在子线程需要使用Handler，则需要先创建一个Looper对象即执行Looper.prepare()然后再创建Handler对象时调用Looper.myLooper()获取Looper对象传入方法，最后调用Loop">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="http://example.com/images/Handler%E6%8B%93%E5%B1%95%E7%9F%A5%E8%AF%86%E7%82%B9.png">
+<meta property="og:image" content="http://example.com/images/Handler-%E5%AD%90%E7%BA%BF%E7%A8%8B%E5%88%9B%E5%BB%BAHandler%E5%AF%B9%E8%B1%A1.png">
+<meta property="og:image" content="http://example.com/images/Handler-IdleHandler.png">
+<meta property="og:image" content="http://example.com/images/activity_binder.png">
+<meta property="og:image" content="http://example.com/images/Handler-%E4%B8%BB%E7%BA%BF%E7%A8%8B%E6%B6%88%E6%81%AF%E6%A8%A1%E5%9E%8B.png">
+<meta property="og:image" content="http://example.com/images/Handler-View.post.png">
+<meta property="article:published_time" content="2018-10-07T03:08:24.000Z">
+<meta property="article:modified_time" content="2020-11-17T06:00:06.000Z">
+<meta property="article:author" content="Leo-Wxy">
+<meta property="article:tag" content="源码解析">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="http://example.com/images/Handler%E6%8B%93%E5%B1%95%E7%9F%A5%E8%AF%86%E7%82%B9.png">
+  
+  
+  
+  <title>Handler机制源码解析(二) - Wxy的个人博客</title>
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css" />
+
+
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@4.0.0/github-markdown.min.css" />
+
+  <link  rel="stylesheet" href="/lib/hint/hint.min.css" />
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.css" />
+
+
+
+<!-- 主题依赖的图标库，不要自行修改 -->
+<!-- Do not modify the link that theme dependent icons -->
+
+<link rel="stylesheet" href="//at.alicdn.com/t/c/font_1749284_5i9bdhy70f8.css">
+
+
+
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1736178_kmeydafke9r.css">
+
+
+<link  rel="stylesheet" href="/css/main.css" />
+
+
+  <link id="highlight-css" rel="stylesheet" href="/css/highlight.css" />
+  
+    <link id="highlight-css-dark" rel="stylesheet" href="/css/highlight-dark.css" />
+  
+
+
+
+
+  <script id="fluid-configs">
+    var Fluid = window.Fluid || {};
+    Fluid.ctx = Object.assign({}, Fluid.ctx)
+    var CONFIG = {"hostname":"example.com","root":"/","version":"1.9.8","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false,"scope":[]},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"code_language":{"enable":true,"default":"TEXT"},"copy_btn":true,"image_caption":{"enable":true},"image_zoom":{"enable":true,"img_url_replace":["",""]},"toc":{"enable":true,"placement":"right","headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"loading_img":"/img/loading.gif","onlypost":false,"offset_factor":2},"web_analytics":{"enable":false,"follow_dnt":true,"baidu":null,"google":null,"tencent":{"sid":null,"cid":null},"leancloud":{"app_id":null,"app_key":null,"server_url":null,"path":"window.location.pathname","ignore_local":false},"umami":{"src":null,"website_id":null,"domains":null,"start_time":"2024-01-01T00:00:00.000Z","token":null,"api_server":null},"gtag":null,"woyaola":null,"cnzz":null},"search_path":"/local-search.xml","include_content_in_search":false};
+
+    if (CONFIG.web_analytics.follow_dnt) {
+      var dntVal = navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack;
+      Fluid.ctx.dnt = dntVal && (dntVal.startsWith('1') || dntVal.startsWith('yes') || dntVal.startsWith('on'));
+    }
+  </script>
+  <script  src="/js/utils.js" ></script>
+  <script  src="/js/color-schema.js" ></script>
+  
+
+
+  
+<meta name="generator" content="Hexo 8.1.1"></head>
+
+
+<body>
+  
+
+  <header>
+    
+
+<div class="header-inner" style="height: 30vh;">
+  <nav id="navbar" class="navbar fixed-top  navbar-expand-lg navbar-dark scrolling-navbar">
+  <div class="container">
+    <a class="navbar-brand" href="/">
+      <strong>Wxy&#39;s Blog</strong>
+    </a>
+
+    <button id="navbar-toggler-btn" class="navbar-toggler" type="button" data-toggle="collapse"
+            data-target="#navbarSupportedContent"
+            aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+      <div class="animated-icon"><span></span><span></span><span></span></div>
+    </button>
+
+    <!-- Collapsible content -->
+    <div class="collapse navbar-collapse" id="navbarSupportedContent">
+      <ul class="navbar-nav ml-auto text-center">
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/" target="_self">
+                <i class="iconfont icon-home-fill"></i>
+                <span>首页</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/archives/" target="_self">
+                <i class="iconfont icon-archive-fill"></i>
+                <span>归档</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/tags/" target="_self">
+                <i class="iconfont icon-tags-fill"></i>
+                <span>标签</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/about/" target="_self">
+                <i class="iconfont icon-user-fill"></i>
+                <span>关于</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/links/" target="_self">
+                <i class="iconfont icon-link-fill"></i>
+                <span>友链</span>
+              </a>
+            </li>
+          
+        
+        
+          <li class="nav-item" id="search-btn">
+            <a class="nav-link" target="_self" href="javascript:;" data-toggle="modal" data-target="#modalSearch" aria-label="Search">
+              <i class="iconfont icon-search"></i>
+            </a>
+          </li>
+          
+        
+        
+          <li class="nav-item" id="color-toggle-btn">
+            <a class="nav-link" target="_self" href="javascript:;" aria-label="Color Toggle">
+              <i class="iconfont icon-dark" id="color-toggle-icon"></i>
+            </a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+  
+
+<div id="banner" class="banner" parallax=true
+     style="background: url('/img/default.png') no-repeat center center; background-size: cover;">
+  <div class="full-bg-img">
+    <div class="mask flex-center" style="background-color: rgba(0, 0, 0, 0.3)">
+      <div class="banner-text text-center fade-in-up">
+        <div class="h2">
+          
+            <span id="subtitle">Handler机制源码解析(二)</span>
+          
+        </div>
+
+        
+          
+  <div class="mt-3">
+    
+    
+      <span class="post-meta">
+        <i class="iconfont icon-date-fill" aria-hidden="true"></i>
+        <time datetime="2018-10-07 11:08" pubdate>
+          2018年10月7日 上午
+        </time>
+      </span>
+    
+  </div>
+
+  <div class="mt-1">
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-chart"></i>
+        
+          <!-- compatible with older versions-->
+          3.7k 字
+        
+      </span>
+    
+
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-clock-fill"></i>
+        
+        
+        
+          <!-- compatible with older versions-->
+          12 分钟
+        
+      </span>
+    
+
+    
+    
+  </div>
+
+
+        
+      </div>
+
+      
+    </div>
+  </div>
+</div>
+
+</div>
+
+  </header>
+
+  <main>
+    
+      
+
+<div class="container-fluid nopadding-x">
+  <div class="row nomargin-x">
+    <div class="side-col d-none d-lg-block col-lg-2">
+      
+
+    </div>
+
+    <div class="col-lg-8 nopadding-x-md">
+      <div class="container nopadding-x-md" id="board-ctn">
+        <div id="board">
+          <article class="post-content mx-auto">
+            <h1 id="seo-header">Handler机制源码解析(二)</h1>
+            
+            
+              <div class="markdown-body">
+                
+                <h1 id="主要包括Handler其他使用知识点"><a href="#主要包括Handler其他使用知识点" class="headerlink" title="主要包括Handler其他使用知识点"></a>主要包括Handler其他使用知识点</h1><p><img src="/images/Handler%E6%8B%93%E5%B1%95%E7%9F%A5%E8%AF%86%E7%82%B9.png" srcset="/img/loading.gif" lazyload alt="Handler拓展知识"></p>
+<h2 id="1-子线程创建Handler对象"><a href="#1-子线程创建Handler对象" class="headerlink" title="1. 子线程创建Handler对象"></a>1. 子线程创建Handler对象</h2><p><img src="/images/Handler-%E5%AD%90%E7%BA%BF%E7%A8%8B%E5%88%9B%E5%BB%BAHandler%E5%AF%B9%E8%B1%A1.png" srcset="/img/loading.gif" lazyload alt="Handler-子线程创建Handler对象"></p>
+<blockquote>
+<p>不可以直接在子线程创建Handler对象，因为Handler对象必须要绑定一个Looper，才可以使用。</p>
+<p>若在子线程需要使用Handler，则需要先创建一个Looper对象即执行<code>Looper.prepare()</code>然后再创建Handler对象时调用<code>Looper.myLooper()</code>获取Looper对象传入方法，最后调用<code>Looper.loop()</code>开始运行。</p>
+</blockquote>
+<figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-keyword">class</span> <span class="hljs-title class_">MyActivity</span> : <span class="hljs-type">Activity</span>&#123;<br>    <span class="hljs-keyword">lateinit</span> <span class="hljs-keyword">var</span> mThread: MyThread<br>    <span class="hljs-keyword">lateinit</span> <span class="hljs-keyword">var</span> mHandler: MyHandler<br>    <br>    <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">onCreate</span><span class="hljs-params">(savedInstanceState: <span class="hljs-type">Bundle</span>?)</span></span> &#123;<br>        <span class="hljs-keyword">super</span>.onCreate(savedInstanceState)<br>        setContentView(R.layout.act_main)<br>        <span class="hljs-comment">//初始化子线程</span><br>        mThread = Mythread()<br>        mThread.start()<br>        <span class="hljs-comment">//需要发出的消息</span><br>        <span class="hljs-keyword">val</span> message = Message.obtain()<br>        message.obj = <span class="hljs-string">&quot;test&quot;</span><br>        <span class="hljs-comment">//初始化Handler</span><br>        mHandler = MyHandler(<span class="hljs-keyword">this</span>, mThread.childLooper)+<br>        <span class="hljs-comment">//发送消息</span><br>        mHandler.sendMessage(message)<br>    &#125;<br>    <br>    <span class="hljs-comment">//子线程</span><br>    <span class="hljs-keyword">class</span> <span class="hljs-title class_">MyThread</span> : <span class="hljs-type">Thread</span>() &#123;<br>        <span class="hljs-keyword">var</span> childLooper: Looper? = <span class="hljs-literal">null</span><br>        <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">run</span><span class="hljs-params">()</span></span> &#123;<br>            Looper.prepare()<br>            childLooper = Looper.myLooper()<br>            Looper.loop()<br>        &#125;<br>    &#125;<br>    <br>    <span class="hljs-comment">//安全的Handler写法</span><br>     <span class="hljs-keyword">class</span> <span class="hljs-title class_">MyHandler</span>(activity: MyActivity, looper: Looper?) : Handler(looper) &#123;<br>        <span class="hljs-keyword">var</span> mWeakRe: WeakReference&lt;MyActivity&gt; = WeakReference(activity)<br><br>        <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">handleMessage</span><span class="hljs-params">(msg: <span class="hljs-type">Message</span>?)</span></span> &#123;<br>            <span class="hljs-keyword">super</span>.handleMessage(msg)<br>            <span class="hljs-keyword">val</span> activity: MyActivity? = mWeakRe.<span class="hljs-keyword">get</span>()<br>            <span class="hljs-keyword">if</span> (activity!=<span class="hljs-literal">null</span>)&#123;<br>                <span class="hljs-comment">//添加handlerMessage需要处理的逻辑</span><br>            &#125;<br>        &#125;<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>以上代码执行完毕后就可以在子线程调用Handler对象。</p>
+<p><strong>但是，在多次执行过程中，会有<font color = 'red'>java.lang.NullPointerException: Attempt to read from field ‘android.os.MessageQueue android.os.Looper.mQueue’ on a null object reference</font>空指针导致应用崩溃。<strong>调试过程中发现是由于Looper对象为空导致的异常。由于</strong>在子线程<code>run()</code>初始化了Looper对象，Handler对象的初始化依然继续执行，Looper对象此时尚未初始化好，导致空指针异常。</strong></p>
+<p>由于这种情况的出现是随机的，不是百分百重现，为了保证应用的运行就需要引入<code>HandlerThread</code>这个类，可以帮我们解决这个问题。</p>
+<figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-comment">//HandlerThread示例代码</span><br><span class="hljs-keyword">class</span> <span class="hljs-title class_">MyActivity</span> : <span class="hljs-type">Activity</span>&#123;<br>    <span class="hljs-keyword">lateinit</span> <span class="hljs-keyword">var</span> mHandler: MyHandler<br>    <span class="hljs-keyword">var</span> mHandlerThread: HandlerThread?=<span class="hljs-literal">null</span><br>    <br>    <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">onCreate</span><span class="hljs-params">(savedInstanceState: <span class="hljs-type">Bundle</span>?)</span></span> &#123;<br>        <span class="hljs-keyword">super</span>.onCreate(savedInstanceState)<br>        setContentView(R.layout.act_main)<br>        <span class="hljs-comment">//初始化HandlerThread并指定线程名字为test</span><br>        mHandlerThread = HandlerThread(<span class="hljs-string">&quot;test&quot;</span>,Process.THREAD_PRIORITY_BACKGROUND)<br>        mHandlerThread?.start()<br>        <span class="hljs-comment">//需要发出的消息</span><br>        <span class="hljs-keyword">val</span> message = Message.obtain()<br>        message.obj = <span class="hljs-string">&quot;test&quot;</span><br>        <span class="hljs-comment">//初始化Handler</span><br>        mHandler = MyHandler(<span class="hljs-keyword">this</span>, mHandlerThread?.looper)<br>        <span class="hljs-comment">//发送消息</span><br>        mHandler.sendMessage(message)<br>    &#125;<br>    <br>    <span class="hljs-comment">//安全的Handler写法</span><br>    <span class="hljs-keyword">class</span> <span class="hljs-title class_">MyHandler</span>(activity: MyActivity, looper: Looper?) : Handler(looper) &#123;<br>        <span class="hljs-keyword">var</span> mWeakRe: WeakReference&lt;MyActivity&gt; = WeakReference(activity)<br><br>        <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">handleMessage</span><span class="hljs-params">(msg: <span class="hljs-type">Message</span>?)</span></span> &#123;<br>            <span class="hljs-keyword">super</span>.handleMessage(msg)<br>            <span class="hljs-keyword">val</span> activity: MyActivity? = mWeakRe.<span class="hljs-keyword">get</span>()<br>            <span class="hljs-keyword">if</span> (activity!=<span class="hljs-literal">null</span>)&#123;<br>                <span class="hljs-comment">//添加handlerMessage需要处理的逻辑</span><br>            &#125;<br>        &#125;<br>    &#125;<br>    <br>    <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">onDestroy</span><span class="hljs-params">()</span></span> &#123;<br>        <span class="hljs-keyword">super</span>.onDestroy()<br>        <span class="hljs-comment">//结束时停止thread</span><br>        mHandlerThread?.quit()<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>以上代码执行完毕后即在HandlerThread可以调用Handler对象。</p>
+<p>我们需要从源码去分析为什么使用<code>HandlerThread</code>可以避免上述异常，是怎样一个机制实现的。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">// 源码位置:../core/java/android/os/HandlerThread.java</span><br><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">HandlerThread</span> <span class="hljs-keyword">extends</span> <span class="hljs-title class_">Thread</span> &#123;<br>    ...<br>     <span class="hljs-comment">//设置线程优先级 优先级主要分为UI线程和后台线程(Background)</span><br>    <span class="hljs-type">int</span> mPriority;<br>    <span class="hljs-keyword">public</span> <span class="hljs-title function_">HandlerThread</span><span class="hljs-params">(String name)</span> &#123;<br>        <span class="hljs-built_in">super</span>(name);<br>        <span class="hljs-comment">//默认标准App线程优先级</span><br>        mPriority = Process.THREAD_PRIORITY_DEFAULT;<br>    &#125;<br>    <br>    <span class="hljs-keyword">public</span> <span class="hljs-title function_">HandlerThread</span><span class="hljs-params">(String name, <span class="hljs-type">int</span> priority)</span> &#123;<br>        <span class="hljs-built_in">super</span>(name);<br>        mPriority = priority;<br>    &#125;<br>    <br>    <span class="hljs-comment">//可以重写这个方法，在内部新建Handler对象</span><br>    <span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">onLooperPrepared</span><span class="hljs-params">()</span> &#123;<br>    &#125;<br>    <br>    <span class="hljs-meta">@Override</span><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">run</span><span class="hljs-params">()</span> &#123;<br>        <span class="hljs-comment">//获取到线程ID</span><br>        mTid = Process.myTid();<br>        <span class="hljs-comment">//创建对应的Looper，MessageQueue对象</span><br>        Looper.prepare();<br>        <span class="hljs-keyword">synchronized</span> (<span class="hljs-built_in">this</span>) &#123;<br>            <span class="hljs-comment">//对mLooper进行赋值</span><br>            mLooper = Looper.myLooper();<br>            <span class="hljs-comment">//唤醒等待Looper赋值而阻塞的所有线程</span><br>            notifyAll();<br>        &#125;<br>        Process.setThreadPriority(mPriority);<br>        onLooperPrepared();<br>        Looper.loop();<br>        mTid = -<span class="hljs-number">1</span>;<br>    &#125;<br>    <br>    <span class="hljs-keyword">public</span> Looper <span class="hljs-title function_">getLooper</span><span class="hljs-params">()</span> &#123;<br>        <span class="hljs-comment">//判断当前线程是否存活 关闭则返回空</span><br>        <span class="hljs-keyword">if</span> (!isAlive()) &#123;<br>            <span class="hljs-keyword">return</span> <span class="hljs-literal">null</span>;<br>        &#125;<br>        <br>        <span class="hljs-comment">// If the thread has been started, wait until the looper has been created.</span><br>        <span class="hljs-keyword">synchronized</span> (<span class="hljs-built_in">this</span>) &#123;<br>            <span class="hljs-comment">//mLooper==null表明当前Looper对象尚未初始化</span><br>            <span class="hljs-keyword">while</span> (isAlive() &amp;&amp; mLooper == <span class="hljs-literal">null</span>) &#123;<br>                <span class="hljs-keyword">try</span> &#123;<br>                    <span class="hljs-comment">//调用线程等待 直至初始化完成 阻塞其他线程</span><br>                    wait();<br>                &#125; <span class="hljs-keyword">catch</span> (InterruptedException e) &#123;<br>                &#125;<br>            &#125;<br>        &#125;<br>        <span class="hljs-comment">//返回Looper对象</span><br>        <span class="hljs-keyword">return</span> mLooper;<br>    &#125;<br>    <br>    <span class="hljs-comment">//内嵌一个可以直接引用的Handler对象，外部可以直接使用</span><br>    <span class="hljs-meta">@NonNull</span><br>    <span class="hljs-keyword">public</span> Handler <span class="hljs-title function_">getThreadHandler</span><span class="hljs-params">()</span> &#123;<br>        <span class="hljs-keyword">if</span> (mHandler == <span class="hljs-literal">null</span>) &#123;<br>            mHandler = <span class="hljs-keyword">new</span> <span class="hljs-title class_">Handler</span>(getLooper());<br>        &#125;<br>        <span class="hljs-keyword">return</span> mHandler;<br>    &#125;<br>    <br>    <span class="hljs-comment">//HandlerThread退出 同步于Looper.quit()</span><br>    <span class="hljs-keyword">public</span> <span class="hljs-type">boolean</span> <span class="hljs-title function_">quit</span><span class="hljs-params">()</span> &#123;<br>        <span class="hljs-type">Looper</span> <span class="hljs-variable">looper</span> <span class="hljs-operator">=</span> getLooper();<br>        <span class="hljs-keyword">if</span> (looper != <span class="hljs-literal">null</span>) &#123;<br>            looper.quit();<br>            <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;<br>        &#125;<br>        <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;<br>    &#125;<br>    <br>    <span class="hljs-comment">//HandlerThread退出 同步于Looper.quitSafely()</span><br>    <span class="hljs-keyword">public</span> <span class="hljs-type">boolean</span> <span class="hljs-title function_">quitSafely</span><span class="hljs-params">()</span> &#123;<br>        <span class="hljs-type">Looper</span> <span class="hljs-variable">looper</span> <span class="hljs-operator">=</span> getLooper();<br>        <span class="hljs-keyword">if</span> (looper != <span class="hljs-literal">null</span>) &#123;<br>            looper.quitSafely();<br>            <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;<br>        &#125;<br>        <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>总结：</p>
+<ul>
+<li><code>HandlerThread</code>内嵌了Handler,Looper,MessageQueue对象</li>
+<li><code>HandlerThread</code>内部使用<code>wait(),notifyAll()</code>等线程同步方式保证<code>mLooper</code>对象不会为空，<code>wait()</code>当Looper对象尚未初始化完成时阻塞其他线程，<code>notifyAll()</code>当mLooper对象不为空时，通知其他线程使用mLooper。</li>
+</ul>
+<h2 id="2-IdleHandler"><a href="#2-IdleHandler" class="headerlink" title="2. IdleHandler"></a>2. IdleHandler</h2><p><img src="/images/Handler-IdleHandler.png" srcset="/img/loading.gif" lazyload alt="Handler-IdleHandler"></p>
+<blockquote>
+<p>当Looper里面的Message暂时处理完毕即<strong>全部消息处理完毕或者阻塞等待新消息</strong>时会调用<code>IdleHandler</code>这个类去处理一些空闲时间的消息。</p>
+<p>继承<code>IdleHandler</code>这个接口，需要设置<code>queueIdle()</code>的返回值。若返回<code>false</code>则调用一次后会移除，为<code>true</code>则继续持有，空闲时依然会调用。</p>
+<p>概括就是：<strong>优先级别较低的<code>Message</code>，只有当<code>Looper</code>中没有消息要处理时，才会去处理<code>IdleHandler</code>。</strong></p>
+</blockquote>
+<figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-comment">//使用示例代码</span><br><span class="hljs-keyword">val</span> message = Message.obtain()<br>message.obj = <span class="hljs-string">&quot;1234&quot;</span><br>handler.sendMessage(message)<br><br><span class="hljs-keyword">val</span> delayMessage=Message.obtain()<br>delayMessage.obj=<span class="hljs-string">&quot;12344&quot;</span><br>handler.sendMessageDelayed(delayMessage,<span class="hljs-number">3000</span>)<br><br><span class="hljs-comment">//子线程添加IdleHandler 限制API23以上使用</span><br>mHandlerThread?.looper?.queue?.addIdleHandler(OnceIdleHandler())<br>mHandlerThread?.looper?.queue?.addIdleHandler(ForeverIdleHandler())<br><span class="hljs-comment">//主线程添加IdleHandler</span><br>Looper.myQueue().addIdleHandler(OnceIdleHandler())<br>Looper.myQueue().addIdleHandler(ForeverIdleHandler())<br><br><span class="hljs-comment">//只使用一次的IdleHandler</span><br><span class="hljs-keyword">class</span> <span class="hljs-title class_">OnceIdleHandler</span> : <span class="hljs-type">MessageQueue.IdleHandler</span> &#123;<br>    <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">queueIdle</span><span class="hljs-params">()</span></span>: <span class="hljs-built_in">Boolean</span> &#123;<br>        LogUtils.e(<span class="hljs-string">&quot;idle once&quot;</span>)<br>        <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span><br>    &#125;<br>&#125;<br><br><span class="hljs-comment">//一直持续存在的IdleHandler</span><br><span class="hljs-keyword">class</span> <span class="hljs-title class_">ForeverIdleHandler</span> : <span class="hljs-type">MessageQueue.IdleHandler</span> &#123;<br>    <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">queueIdle</span><span class="hljs-params">()</span></span>: <span class="hljs-built_in">Boolean</span> &#123;<br>        LogUtils.e(<span class="hljs-string">&quot;idle forever&quot;</span>)<br>        <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span><br>    &#125;<br>&#125;<br><br><span class="hljs-comment">//需要移除IdleHandler 调用</span><br> Looper.myQueue().removeIdleHandler(OnceIdleHandler())<br> Looper.myQueue().removeIdleHandler(ForeverIdleHandler())<br></code></pre></td></tr></table></figure>
+
+<p>集成上述代码即可测试IdleHandler的使用，接下来要分析源码的实现以及使用场景。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">// 源码位置:../core/java/android/os/MessageQueue.java</span><br>   <span class="hljs-comment">/**</span><br><span class="hljs-comment">     * IdleHandler定义</span><br><span class="hljs-comment">     * Callback interface for discovering when a thread is going to block</span><br><span class="hljs-comment">     * waiting for more messages.</span><br><span class="hljs-comment">     */</span><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">interface</span> <span class="hljs-title class_">IdleHandler</span> &#123;<br>        <span class="hljs-comment">/**</span><br><span class="hljs-comment">         * Called when the message queue has run out of messages and will now</span><br><span class="hljs-comment">         * wait for more.  Return true to keep your idle handler active, false</span><br><span class="hljs-comment">         * to have it removed.  This may be called if there are still messages</span><br><span class="hljs-comment">         * pending in the queue, but they are all scheduled to be dispatched</span><br><span class="hljs-comment">         * after the current time.</span><br><span class="hljs-comment">         */</span><br>        <span class="hljs-type">boolean</span> <span class="hljs-title function_">queueIdle</span><span class="hljs-params">()</span>;<br>    &#125;<br>   <span class="hljs-comment">//mIdleHandlers 是ArrayList型 故可以重复添加</span><br>   <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> ArrayList&lt;IdleHandler&gt; mIdleHandlers = <span class="hljs-keyword">new</span> <span class="hljs-title class_">ArrayList</span>&lt;IdleHandler&gt;();<br>   <span class="hljs-comment">//往MessageQueue中添加一个IdleHandler对象</span><br>   <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">addIdleHandler</span><span class="hljs-params">(<span class="hljs-meta">@NonNull</span> IdleHandler handler)</span> &#123;<br>        <span class="hljs-keyword">if</span> (handler == <span class="hljs-literal">null</span>) &#123;<br>            <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">NullPointerException</span>(<span class="hljs-string">&quot;Can&#x27;t add a null IdleHandler&quot;</span>);<br>        &#125;<br>        <span class="hljs-keyword">synchronized</span> (<span class="hljs-built_in">this</span>) &#123;<br>            <span class="hljs-comment">//添加IdleHandler是线程安全的 </span><br>            mIdleHandlers.add(handler);<br>        &#125;<br>    &#125;<br>   <br>    <span class="hljs-comment">//移除一个IdleHandler</span><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">removeIdleHandler</span><span class="hljs-params">(<span class="hljs-meta">@NonNull</span> IdleHandler handler)</span> &#123;<br>        <span class="hljs-keyword">synchronized</span> (<span class="hljs-built_in">this</span>) &#123;<br>            mIdleHandlers.remove(handler);<br>        &#125;<br>    &#125;<br><br>    <span class="hljs-comment">//调用上述方法往mIdleHandlers添加或移除IdleHandler对象后 需要在next()方法中 去使用mIdleHandlers中的对象</span><br>   Message <span class="hljs-title function_">next</span><span class="hljs-params">()</span> &#123;<br>       <span class="hljs-comment">//无限循环</span><br>       <span class="hljs-keyword">for</span>(;;)&#123;<br>           ...<br>                <span class="hljs-comment">// If first time idle, then get the number of idlers to run.</span><br>                <span class="hljs-comment">// Idle handles only run if the queue is empty or if the first message</span><br>                <span class="hljs-comment">// in the queue (possibly a barrier) is due to be handled in the future.</span><br>                <span class="hljs-keyword">if</span> (pendingIdleHandlerCount &lt; <span class="hljs-number">0</span><br>                        &amp;&amp; (mMessages == <span class="hljs-literal">null</span> || now &lt; mMessages.<span class="hljs-keyword">when</span>)) &#123;<br>                    pendingIdleHandlerCount = mIdleHandlers.size();<br>                &#125;<br>                <span class="hljs-keyword">if</span> (pendingIdleHandlerCount &lt;= <span class="hljs-number">0</span>) &#123;<br>                    <span class="hljs-comment">// 判断当前没有空闲线程可执行 则继续堵塞</span><br>                    mBlocked = <span class="hljs-literal">true</span>;<br>                    <span class="hljs-keyword">continue</span>;<br>                &#125;<br><br>                <span class="hljs-keyword">if</span> (mPendingIdleHandlers == <span class="hljs-literal">null</span>) &#123;<br>                    mPendingIdleHandlers = <span class="hljs-keyword">new</span> <span class="hljs-title class_">IdleHandler</span>[Math.max(pendingIdleHandlerCount, <span class="hljs-number">4</span>)];<br>                &#125;<br>                mPendingIdleHandlers = mIdleHandlers.toArray(mPendingIdleHandlers);<br>       &#125;<br>       <br>       <span class="hljs-comment">// Run the idle handlers.</span><br>            <span class="hljs-comment">// We only ever reach this code block during the first iteration.</span><br>            <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> <span class="hljs-variable">i</span> <span class="hljs-operator">=</span> <span class="hljs-number">0</span>; i &lt; pendingIdleHandlerCount; i++) &#123;<br>                <span class="hljs-keyword">final</span> <span class="hljs-type">IdleHandler</span> <span class="hljs-variable">idler</span> <span class="hljs-operator">=</span> mPendingIdleHandlers[i];<br>                mPendingIdleHandlers[i] = <span class="hljs-literal">null</span>; <span class="hljs-comment">// release the reference to the handler</span><br><br>                <span class="hljs-type">boolean</span> <span class="hljs-variable">keep</span> <span class="hljs-operator">=</span> <span class="hljs-literal">false</span>;<br>                <span class="hljs-keyword">try</span> &#123;<br>                    <span class="hljs-comment">//获取继承接口定义的queueIdle()返回值 判定后续是否需要继续执行</span><br>                    keep = idler.queueIdle();<br>                &#125; <span class="hljs-keyword">catch</span> (Throwable t) &#123;<br>                    Log.wtf(TAG, <span class="hljs-string">&quot;IdleHandler threw exception&quot;</span>, t);<br>                &#125;<br><br>                <span class="hljs-keyword">if</span> (!keep) &#123;<br>                    <span class="hljs-comment">//不需要继续执行 则自动移除对象</span><br>                    <span class="hljs-keyword">synchronized</span> (<span class="hljs-built_in">this</span>) &#123;<br>                        mIdleHandlers.remove(idler);<br>                    &#125;<br>                &#125;<br>            &#125;<br>   &#125;<br></code></pre></td></tr></table></figure>
+
+<h2 id="3-Handler常见问题"><a href="#3-Handler常见问题" class="headerlink" title="3. Handler常见问题"></a>3. Handler常见问题</h2><h3 id="1-消息机制中的主要引用对象及其关系"><a href="#1-消息机制中的主要引用对象及其关系" class="headerlink" title="1. 消息机制中的主要引用对象及其关系"></a>1. 消息机制中的主要引用对象及其关系</h3><blockquote>
+<p><code>Looper ，MessageQueue，Message，ThreadLocal，Handler </code></p>
+</blockquote>
+<ol>
+<li>Looper对象有一个MessageQueue,MessgaeQueue为一个消息队列来存储Message</li>
+<li>Message中带有一个Handler对象，从Looper中取出消息后，可以直接调用到Handler的相关方法</li>
+<li>Handler发送消息时会把自身封装进Message  <code>Message.ontain(Handler h ,int what,int arg1,int arg2,Object onj)</code></li>
+<li>Handler通过获取Looper对象中的MessageQueue插入消息来发送Message</li>
+<li>Looper创建对象时会把自己保存至ThreadLocal中，并提供一个<code>public static Looper myLooper()</code>方法来返回一个Looper对象</li>
+</ol>
+<h3 id="2-Android主线程不会因为Looper-loop-死循环卡死"><a href="#2-Android主线程不会因为Looper-loop-死循环卡死" class="headerlink" title="2. Android主线程不会因为Looper.loop()死循环卡死"></a>2. Android主线程不会因为<code>Looper.loop()</code>死循环卡死</h3><p>当线程中的可执行代码执行完成后，线程生命周期便该终止，线程就要退出。通过<strong>死循环</strong>的方式可以保证线程一直存活。</p>
+<p>简单来说就是<strong>循环里有阻塞<code>阻塞的原理是利用Linux的管道机制(PIPE/EPOLL)机制实现</code>，所以死循环不会一直执行，由于大部分时间都是没有消息的，所以主线程大部分处于休眠状态，也不会过度消耗CPU资源导致卡死。</strong></p>
+<p>先说明进程和线程的区别：</p>
+<blockquote>
+<p><strong>进程</strong>：每个app运行时首先会创建一个进程，该进程是由zygote fork出来的，用于承载运行app上的Activity&#x2F;Service等组件。进程对于上层应用来说是完全透明的，目的是为了<code>让App都运行在Android Runtimr</code>。大多数情况下一个App运行在一个线程中，除非配置了<code>Android:Process</code>属性，或者通过native fork 进程。</p>
+<p><strong>线程</strong>：线程比较常见，每次<code>new Thread().start()</code>都会创建一个新线程。并且与当前App所在进程之间资源共享。<code>在CPU看来进程或线程无非是一段可执行的代码，CPU采用CFS调度算法，保证每个task尽可能公平享有CPU时间片</code>。</p>
+<p>拓展知识：CFS调度算法是一种完全公平调度算法，基本设计思路是根据各个进程的权重来分配运行时间**。</p>
+</blockquote>
+<p>当进入死循环时又该如何处理其他事务呢？<strong>需要创建新的线程去处理</strong>。</p>
+<p>主线程进入Looper的死循环后，需要处理 activity的各个生命周期的回调函数执行(<code>在同一个线程下，代码是按顺序执行的，如果死循环堵塞了，后续该如何执行</code>)。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">//源码地址 android/app/ActivityThread.java </span><br><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">main</span><span class="hljs-params">(String[] args)</span>&#123;<br>    ...<br>    <span class="hljs-comment">//Looper初始化</span><br>    Looper.prepareMainLooper();<br>    <span class="hljs-comment">//new 一个ActivityThread并调用了attach方法</span><br>    <span class="hljs-type">ActivityThread</span> <span class="hljs-variable">thread</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">ActivityThread</span>();<br>    thread.attach(<span class="hljs-literal">false</span>);<br><br>    <span class="hljs-keyword">if</span> (sMainThreadHandler == <span class="hljs-literal">null</span>) &#123;<br>        sMainThreadHandler = thread.getHandler();<br>    &#125;<br><br>    <span class="hljs-keyword">if</span> (<span class="hljs-literal">false</span>) &#123;<br>       Looper.myLooper().setMessageLogging(<span class="hljs-keyword">new</span><br>             <span class="hljs-title class_">LogPrinter</span>(Log.DEBUG, <span class="hljs-string">&quot;ActivityThread&quot;</span>));<br>       &#125;<br><br>       <span class="hljs-comment">// End of event ActivityThreadMain.</span><br>       Trace.traceEnd(Trace.TRACE_TAG_ACTIVITY_MANAGER);<br>       Looper.loop();<br><br>       <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">RuntimeException</span>(<span class="hljs-string">&quot;Main thread loop unexpectedly exited&quot;</span>);<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>源码中在初始化ActivityThread时也会初始化一个<code>H类型的成员，它继承了Handler</code>。</p>
+<p>源码中调用<code>thread.attach(false)</code>时,<strong>回去创建一个Binder进程（具体代指ApplicationThread,Binder的服务端，用于接收系统AMS发出来的事件），由Handler线程发送Message至主线程。</strong></p>
+<p>所以在主线程开启Looper死循环之前，就已经启动了一个Binder线程并且准备了<code>H 这一个Handler类</code>，就可以用于处理一些死循环之外的事务。<code>仅需通过Binder线程向H发送消息即可</code>。</p>
+<p><img src="/images/activity_binder.png" srcset="/img/loading.gif" lazyload alt="App运行过程"></p>
+<p><strong>system_server进程即为系统进程</strong>，里面运行了大量的系统服务，比如上图提供了<code>ApplicationThreadProxy以及ActivityManagerService</code>，这两者都基于IBinder接口，都是Binder线程。</p>
+<p><strong>App进程即为我们常说的应用程序</strong>，主线程主要负责Activity等组件的生命周期以及UI绘制。每个App进程中至少会包括两个binder线程:<code>ApplicationThread和ActivityManagerProxy</code>。</p>
+<p><strong>Binder用于不同进程间的通信，由一个进程的Binder客户端向另一个进程的服务端发送事务。</strong></p>
+<p><strong>Handler则用于同一进程间不同线程的通信。</strong></p>
+<h3 id="3-主线程的消息模型"><a href="#3-主线程的消息模型" class="headerlink" title="3.主线程的消息模型"></a>3.主线程的消息模型</h3><p><img src="/images/Handler-%E4%B8%BB%E7%BA%BF%E7%A8%8B%E6%B6%88%E6%81%AF%E6%A8%A1%E5%9E%8B.png" srcset="/img/loading.gif" lazyload alt="Handler-主线程消息模型"></p>
+<p>上图中绘制出主线程(ActivityThread)是如何循环的,简单的文字表达就是</p>
+<blockquote>
+<p><code>ActivityManagerService(AMS)</code> &#x3D;&#x3D;直接调用&#x3D;&#x3D;&gt;<code>ApplicationThreadProxy(ATP)</code>&#x3D;&#x3D;Binder&#x3D;&#x3D;&gt;<code>ApplicationThread</code>&#x3D;&#x3D;Handler方式&#x3D;&#x3D;&gt;<code>ActivityThread</code></p>
+<p>主线程(ActivityThread)通过<code>ApplicationThread</code>和<code>ActivityManagerService</code>进行进程间通信，AMS以进程间通信的方式完成<code>ActivityThread</code>的请求后回调<code>ApplicationThread</code>中的Binder方法。然后由<code>ApplicationThread</code>向<code>ActivityThread</code>中的<code>H</code>发送消息，然后收到消息后 把处理逻辑发送至<code>ActivityThread</code>中去执行。</p>
+</blockquote>
+<h3 id="4-Message的触发统计"><a href="#4-Message的触发统计" class="headerlink" title="4.Message的触发统计"></a>4.Message的触发统计</h3><blockquote>
+<p>Message是在MessageQueue中进行存放，事件的分发需要通过Looper.loop()从<code>MessageQueue</code>中获取Message，<code>BlockCanary</code>就是通过计算事件分发的时间间隔来判断当前是否出现卡顿。</p>
+</blockquote>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">//Looper.java</span><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">setMessageLogging</span><span class="hljs-params">(<span class="hljs-meta">@Nullable</span> Printer printer)</span> &#123;<br>        mLogging = printer;<br>    &#125;<br><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">loop</span><span class="hljs-params">()</span> &#123;<br>      <span class="hljs-keyword">for</span> (;;) &#123;<br>        <span class="hljs-comment">//读取设置的 logging</span><br>            <span class="hljs-keyword">final</span> <span class="hljs-type">Printer</span> <span class="hljs-variable">logging</span> <span class="hljs-operator">=</span> me.mLogging;<br>            <span class="hljs-keyword">if</span> (logging != <span class="hljs-literal">null</span>) &#123;<br>                logging.println(<span class="hljs-string">&quot;&gt;&gt;&gt;&gt;&gt; Dispatching to &quot;</span> + msg.target + <span class="hljs-string">&quot; &quot;</span> +<br>                        msg.callback + <span class="hljs-string">&quot;: &quot;</span> + msg.what);<br>            &#125;<br>        <br>        ...<br>          <span class="hljs-comment">//事件分发</span><br>            <span class="hljs-keyword">if</span> (logging != <span class="hljs-literal">null</span>) &#123;<br>                logging.println(<span class="hljs-string">&quot;&lt;&lt;&lt;&lt;&lt; Finished to &quot;</span> + msg.target + <span class="hljs-string">&quot; &quot;</span> + msg.callback);<br>            &#125;<br>      &#125;<br>    &#125;<br></code></pre></td></tr></table></figure>
+
+<p>可以通过给Handler中的Looper对象设置<code>setMessageLogging()</code>，对事件的分发进行监听。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><code class="hljs java">Looper.getMainLooper().setMessageLogging(<span class="hljs-keyword">new</span> <span class="hljs-title class_">Printer</span>()&#123;<br>  <span class="hljs-meta">@Override</span><br>  <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">println</span><span class="hljs-params">(String x)</span>&#123;<br>    <span class="hljs-comment">//x 包含了以下内容  Message.target Message.callback  Message.what</span><br>  &#125;<br>&#125;)<br></code></pre></td></tr></table></figure>
+
+
+
+<h3 id="5-View-post-和Handler-post-有什么区别？"><a href="#5-View-post-和Handler-post-有什么区别？" class="headerlink" title="5.View.post()和Handler.post()有什么区别？"></a>5.View.post()和Handler.post()有什么区别？</h3><p><img src="/images/Handler-View.post.png" srcset="/img/loading.gif" lazyload alt="Handler-View.post"></p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">//View.java</span><br>    <span class="hljs-keyword">public</span> <span class="hljs-type">boolean</span> <span class="hljs-title function_">post</span><span class="hljs-params">(Runnable action)</span> &#123;<br>        <span class="hljs-keyword">final</span> <span class="hljs-type">AttachInfo</span> <span class="hljs-variable">attachInfo</span> <span class="hljs-operator">=</span> mAttachInfo;<br>        <span class="hljs-keyword">if</span> (attachInfo != <span class="hljs-literal">null</span>) &#123;<br>            <span class="hljs-keyword">return</span> attachInfo.mHandler.post(action);<br>        &#125;<br><br>        <span class="hljs-comment">// Postpone the runnable until we know on which thread it needs to run.</span><br>        <span class="hljs-comment">// Assume that the runnable will be successfully placed after attach.</span><br>        getRunQueue().post(action);<br>        <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;<br>    &#125;<br></code></pre></td></tr></table></figure>
+
+<p>需要判断<code>attachInfo</code>是否为null，不为null直接执行<code>handler.post()</code>去执行任务；否则，插入到<code>getRunQueue()</code>中。</p>
+<p>现在需要分为两部分进行分析：</p>
+<h4 id="AttachInfo"><a href="#AttachInfo" class="headerlink" title="AttachInfo"></a>AttachInfo</h4><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">//View.java</span><br>    <span class="hljs-keyword">void</span> <span class="hljs-title function_">dispatchAttachedToWindow</span><span class="hljs-params">(AttachInfo info, <span class="hljs-type">int</span> visibility)</span> &#123;<br>      <span class="hljs-comment">//在此处进行赋值</span><br>      mAttachInfo = info;<br>      ...<br>    &#125;<br></code></pre></td></tr></table></figure>
+
+<p>这时需要知道何时调用了<code>dispatchAttachedToWindow()</code>，需要向上看</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">//ViewGroup.java</span><br>    <span class="hljs-keyword">void</span> <span class="hljs-title function_">dispatchAttachedToWindow</span><span class="hljs-params">(AttachInfo info, <span class="hljs-type">int</span> visibility)</span> &#123;<br>       ...<br>        <span class="hljs-keyword">final</span> <span class="hljs-type">int</span> <span class="hljs-variable">count</span> <span class="hljs-operator">=</span> mChildrenCount;<br>        <span class="hljs-keyword">final</span> View[] children = mChildren;<br>        <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> <span class="hljs-variable">i</span> <span class="hljs-operator">=</span> <span class="hljs-number">0</span>; i &lt; count; i++) &#123;<br>            <span class="hljs-keyword">final</span> <span class="hljs-type">View</span> <span class="hljs-variable">child</span> <span class="hljs-operator">=</span> children[i];<br>            child.dispatchAttachedToWindow(info,<br>                    combineVisibility(visibility, child.getVisibility()));<br>        &#125;<br>        <span class="hljs-keyword">final</span> <span class="hljs-type">int</span> <span class="hljs-variable">transientCount</span> <span class="hljs-operator">=</span> mTransientIndices == <span class="hljs-literal">null</span> ? <span class="hljs-number">0</span> : mTransientIndices.size();<br>        <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> <span class="hljs-variable">i</span> <span class="hljs-operator">=</span> <span class="hljs-number">0</span>; i &lt; transientCount; ++i) &#123;<br>            <span class="hljs-type">View</span> <span class="hljs-variable">view</span> <span class="hljs-operator">=</span> mTransientViews.get(i);<br>            view.dispatchAttachedToWindow(info,<br>                    combineVisibility(visibility, view.getVisibility()));<br>        &#125;<br>    &#125;<br></code></pre></td></tr></table></figure>
+
+<p>再往上就是<code>DecorView</code>，<code>DecorView</code>继承自<code>ViewGroup</code>，所以最终就是到了<code>ViewRootImpl</code></p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">//ViewRootImpl.java</span><br><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">performTraversals</span><span class="hljs-params">()</span> &#123;<br>   <span class="hljs-comment">//mView 此处指的是 DecorView</span><br>   <span class="hljs-keyword">final</span> <span class="hljs-type">View</span> <span class="hljs-variable">host</span> <span class="hljs-operator">=</span> mView;<br> ...<br>        <span class="hljs-keyword">if</span> (mFirst) &#123;<br>            mFullRedrawNeeded = <span class="hljs-literal">true</span>;<br>            mLayoutRequested = <span class="hljs-literal">true</span>;<br>         ...<br>            host.dispatchAttachedToWindow(mAttachInfo, <span class="hljs-number">0</span>);           <br>        &#125;<br>  ...<br>    <span class="hljs-comment">//绘制流程</span><br>    performMeasure()<br>    <br>    performLayout()<br>    <br>    performDtraw()<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>是从<code>ViewRootImpl.performTraversal()</code>向下执行到<code>DecorView.dispatchAttachedToWindow()</code>最后执行到<code>View.dispatchAttachedToWindow()</code></p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-title function_">ViewRootImpl</span><span class="hljs-params">(Context context, Display display)</span> &#123;<br>...<br>        mFirst = <span class="hljs-literal">true</span>; <span class="hljs-comment">// true for the first time the view is added</span><br>        mAdded = <span class="hljs-literal">false</span>;<br>        mAttachInfo = <span class="hljs-keyword">new</span> <span class="hljs-title class_">View</span>.AttachInfo(mWindowSession, mWindow, display, <span class="hljs-built_in">this</span>, mHandler, <span class="hljs-built_in">this</span>,<br>                context);<br>  ...<br>  <br>&#125;<br><br><span class="hljs-keyword">final</span> <span class="hljs-type">ViewRootHandler</span> <span class="hljs-variable">mHandler</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">ViewRootHandler</span>();<br></code></pre></td></tr></table></figure>
+
+<p>是在<code>ViewRootImpl</code>初始化的时候构建了<code>AttachInfo</code>对象，其中<code>attachInfo.handler</code>指的就是<code>ViewRootHandler</code></p>
+<p>所以最后通过<code>View.post()</code>执行的任务都会切换到<code>ViewRootHandler</code>上去执行。</p>
+<h4 id="HandlerActionQueue"><a href="#HandlerActionQueue" class="headerlink" title="HandlerActionQueue"></a>HandlerActionQueue</h4><p>当<code>mAttachInfo</code>未赋值时(<code>尚未执行 dispatchAttachedToWindow()</code>)，缓存当前无法执行的Runnable</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">//HandlerActionQueue.java</span><br><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">HandlerActionQueue</span> &#123;<br>  <span class="hljs-keyword">private</span> HandlerAction[] mActions;<br>  <br>  <span class="hljs-comment">//缓存任务</span><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">post</span><span class="hljs-params">(Runnable action)</span> &#123;<br>        postDelayed(action, <span class="hljs-number">0</span>);<br>    &#125;<br><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">postDelayed</span><span class="hljs-params">(Runnable action, <span class="hljs-type">long</span> delayMillis)</span> &#123;<br>        <span class="hljs-keyword">final</span> <span class="hljs-type">HandlerAction</span> <span class="hljs-variable">handlerAction</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">HandlerAction</span>(action, delayMillis);<br><br>        <span class="hljs-keyword">synchronized</span> (<span class="hljs-built_in">this</span>) &#123;<br>            <span class="hljs-keyword">if</span> (mActions == <span class="hljs-literal">null</span>) &#123;<br>                mActions = <span class="hljs-keyword">new</span> <span class="hljs-title class_">HandlerAction</span>[<span class="hljs-number">4</span>];<br>            &#125;<br>            mActions = GrowingArrayUtils.append(mActions, mCount, handlerAction);<br>            mCount++;<br>        &#125;<br>    &#125;<br>  <br>  <span class="hljs-comment">//执行缓存的任务</span><br>      <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">executeActions</span><span class="hljs-params">(Handler handler)</span> &#123;<br>        <span class="hljs-keyword">synchronized</span> (<span class="hljs-built_in">this</span>) &#123;<br>            <span class="hljs-keyword">final</span> HandlerAction[] actions = mActions;<br>            <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> <span class="hljs-variable">i</span> <span class="hljs-operator">=</span> <span class="hljs-number">0</span>, count = mCount; i &lt; count; i++) &#123;<br>                <span class="hljs-keyword">final</span> <span class="hljs-type">HandlerAction</span> <span class="hljs-variable">handlerAction</span> <span class="hljs-operator">=</span> actions[i];<br>                handler.postDelayed(handlerAction.action, handlerAction.delay);<br>            &#125;<br><br>            mActions = <span class="hljs-literal">null</span>;<br>            mCount = <span class="hljs-number">0</span>;<br>        &#125;<br>    &#125;<br>  <br>  <span class="hljs-comment">//缓存runnable和执行时间</span><br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">HandlerAction</span> &#123;<br>        <span class="hljs-keyword">final</span> Runnable action;<br>        <span class="hljs-keyword">final</span> <span class="hljs-type">long</span> delay;<br><br>        <span class="hljs-keyword">public</span> <span class="hljs-title function_">HandlerAction</span><span class="hljs-params">(Runnable action, <span class="hljs-type">long</span> delay)</span> &#123;<br>            <span class="hljs-built_in">this</span>.action = action;<br>            <span class="hljs-built_in">this</span>.delay = delay;<br>        &#125;<br><br>        <span class="hljs-keyword">public</span> <span class="hljs-type">boolean</span> <span class="hljs-title function_">matches</span><span class="hljs-params">(Runnable otherAction)</span> &#123;<br>            <span class="hljs-keyword">return</span> otherAction == <span class="hljs-literal">null</span> &amp;&amp; action == <span class="hljs-literal">null</span><br>                    || action != <span class="hljs-literal">null</span> &amp;&amp; action.equals(otherAction);<br>        &#125;<br>    &#125;  <br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>当<code>mAttachInfo</code>尚未赋值时，就会缓存<code>View.post()</code>要执行的任务</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">//View.java</span><br>    <span class="hljs-keyword">void</span> <span class="hljs-title function_">dispatchAttachedToWindow</span><span class="hljs-params">(AttachInfo info, <span class="hljs-type">int</span> visibility)</span> &#123;<br>      mAttachInfo = info;<br>      ...<br>        <span class="hljs-keyword">if</span> (mRunQueue != <span class="hljs-literal">null</span>) &#123;<br>            mRunQueue.executeActions(info.mHandler);<br>            mRunQueue = <span class="hljs-literal">null</span>;<br>        &#125;     <br>      ...<br>    &#125;<br></code></pre></td></tr></table></figure>
+
+<p>在<code>dispatchAttachedToWindow()</code>执行了关键的两步：</p>
+<ol>
+<li>赋值<code>mAttachInfo</code></li>
+<li>执行<code>View.post()</code>未执行的任务</li>
+</ol>
+<h4 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h4><blockquote>
+<p><code>View.post()</code>内部自动分为两种情况：</p>
+<ul>
+<li>尚未执行<code>dispatchAttachedToWindow()</code>：尚未赋值<code>mAttachInfo</code>，将需要执行的任务缓存到<code>HandlerActionQueue</code>，等待&#96;&#96;dispatchAttachedToWindow()<code>之后通过</code>ViewRootHandler&#96;执行。</li>
+<li>已执行<code>dispatchAttachedToWindow()</code>：已赋值<code>mAttachInfo</code>，直接调用<code>ViewRootHandler</code>执行对应任务即可。</li>
+</ul>
+<p><code>ViewRootHandler</code>绑定的Looper为<code>MainLooper</code>，所以通过<code>View.post()</code>的操作都会在主线程执行。</p>
+<p><code>dispatchAttachedToWindow()</code>是在<code>ViewRoootImpl.performTraversals()</code>中执行的。</p>
+</blockquote>
+<h4 id="为什么可以获取宽高"><a href="#为什么可以获取宽高" class="headerlink" title="为什么可以获取宽高"></a>为什么可以获取宽高</h4><p>前面有讲过在<code>onCreate()</code>调用<code>View.post()</code>可以获取View的宽和高，下面简单的分析原因。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">//ViewRootImpl.java</span><br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">performTraversals</span><span class="hljs-params">()</span> &#123;<br>      ...<br>        host.dispatchAttachedToWindow(mAttachInfo, <span class="hljs-number">0</span>);<br>      ...<br>        <span class="hljs-comment">// 绘制流程</span><br>    &#125;<br><br>    <span class="hljs-keyword">void</span> <span class="hljs-title function_">doTraversal</span><span class="hljs-params">()</span> &#123;<br>        <span class="hljs-keyword">if</span> (mTraversalScheduled) &#123;<br>            mTraversalScheduled = <span class="hljs-literal">false</span>;<br>          ...<br>            performTraversals();<br><br>        &#125;<br>    &#125;<br><br>    <span class="hljs-keyword">final</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">TraversalRunnable</span> <span class="hljs-keyword">implements</span> <span class="hljs-title class_">Runnable</span> &#123;<br>        <span class="hljs-meta">@Override</span><br>        <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">run</span><span class="hljs-params">()</span> &#123;<br>            doTraversal();<br>        &#125;<br>    &#125;<br><br>    <span class="hljs-keyword">final</span> <span class="hljs-type">TraversalRunnable</span> <span class="hljs-variable">mTraversalRunnable</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">TraversalRunnable</span>();<br><br>    <span class="hljs-keyword">void</span> <span class="hljs-title function_">scheduleTraversals</span><span class="hljs-params">()</span> &#123;<br>        <span class="hljs-keyword">if</span> (!mTraversalScheduled) &#123;<br>            mTraversalScheduled = <span class="hljs-literal">true</span>;<br>            mTraversalBarrier = mHandler.getLooper().getQueue().postSyncBarrier();<br>          <span class="hljs-comment">//交给Chreographer在收到Vsync信号去执行 mTraversalRunnable 也就是 performTraversals()</span><br>            mChoreographer.postCallback(<br>                    Choreographer.CALLBACK_TRAVERSAL, mTraversalRunnable, <span class="hljs-literal">null</span>);<br>           ...<br>        &#125;<br>    &#125;<br></code></pre></td></tr></table></figure>
+
+<p>这边转到<code>Choreographer</code></p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">//Choreographer.java</span><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> Choreographer <span class="hljs-title function_">getInstance</span><span class="hljs-params">()</span> &#123;<br>        <span class="hljs-keyword">return</span> sThreadInstance.get();<br>    &#125;<br><br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> ThreadLocal&lt;Choreographer&gt; sThreadInstance =<br>            <span class="hljs-keyword">new</span> <span class="hljs-title class_">ThreadLocal</span>&lt;Choreographer&gt;() &#123;<br>        <span class="hljs-meta">@Override</span><br>        <span class="hljs-keyword">protected</span> Choreographer <span class="hljs-title function_">initialValue</span><span class="hljs-params">()</span> &#123;<br>            <span class="hljs-type">Looper</span> <span class="hljs-variable">looper</span> <span class="hljs-operator">=</span> Looper.myLooper();<span class="hljs-comment">//此时looper对应的是MainLooper</span><br>            <span class="hljs-keyword">if</span> (looper == <span class="hljs-literal">null</span>) &#123;<br>                <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">IllegalStateException</span>(<span class="hljs-string">&quot;The current thread must have a looper!&quot;</span>);<br>            &#125;<br>            <span class="hljs-type">Choreographer</span> <span class="hljs-variable">choreographer</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">Choreographer</span>(looper, VSYNC_SOURCE_APP);<br>            <span class="hljs-keyword">if</span> (looper == Looper.getMainLooper()) &#123;<br>                mMainInstance = choreographer;<br>            &#125;<br>            <span class="hljs-keyword">return</span> choreographer;<br>        &#125;<br>    &#125;;<br><br>    <span class="hljs-keyword">private</span> <span class="hljs-title function_">Choreographer</span><span class="hljs-params">(Looper looper, <span class="hljs-type">int</span> vsyncSource)</span> &#123;<br>        mLooper = looper;<br>        mHandler = <span class="hljs-keyword">new</span> <span class="hljs-title class_">FrameHandler</span>(looper);<span class="hljs-comment">//由MainLooper构建的Handler</span><br>      ...<br>    &#125;<br><br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">postCallbackDelayedInternal</span><span class="hljs-params">(<span class="hljs-type">int</span> callbackType,</span><br><span class="hljs-params">            Object action, Object token, <span class="hljs-type">long</span> delayMillis)</span> &#123;<br>        <span class="hljs-keyword">if</span> (DEBUG_FRAMES) &#123;<br>            Log.d(TAG, <span class="hljs-string">&quot;PostCallback: type=&quot;</span> + callbackType<br>                    + <span class="hljs-string">&quot;, action=&quot;</span> + action + <span class="hljs-string">&quot;, token=&quot;</span> + token<br>                    + <span class="hljs-string">&quot;, delayMillis=&quot;</span> + delayMillis);<br>        &#125;<br><br>        <span class="hljs-keyword">synchronized</span> (mLock) &#123;<br>            <span class="hljs-keyword">final</span> <span class="hljs-type">long</span> <span class="hljs-variable">now</span> <span class="hljs-operator">=</span> SystemClock.uptimeMillis();<br>            <span class="hljs-keyword">final</span> <span class="hljs-type">long</span> <span class="hljs-variable">dueTime</span> <span class="hljs-operator">=</span> now + delayMillis;<br>            mCallbackQueues[callbackType].addCallbackLocked(dueTime, action, token);<br><br>            <span class="hljs-keyword">if</span> (dueTime &lt;= now) &#123;<br>                scheduleFrameLocked(now);<br>            &#125; <span class="hljs-keyword">else</span> &#123;<br>                <span class="hljs-type">Message</span> <span class="hljs-variable">msg</span> <span class="hljs-operator">=</span> mHandler.obtainMessage(MSG_DO_SCHEDULE_CALLBACK, action);<br>                msg.arg1 = callbackType；<br>                msg.setAsynchronous(<span class="hljs-literal">true</span>);<span class="hljs-comment">//设置异步消息 把TraversalRunnable置于消息里</span><br>                mHandler.sendMessageAtTime(msg, dueTime);<br>            &#125;<br>        &#125;<br>    &#125;<br></code></pre></td></tr></table></figure>
+
+<p>根据上述源码分析得到结论<code>TraversalRunnable</code>也会运行到FrameHandler上。</p>
+<p>Handler的MessageQueue是按照顺序执行的，就需要等到<code>performTraversals()</code>执行完毕后，才可以执行后续的任务(HandlerActionQueue中缓存的任务。)。</p>
+
+                
+              </div>
+            
+            <hr/>
+            <div>
+              <div class="post-metas my-3">
+  
+  
+    <div class="post-meta">
+      <i class="iconfont icon-tags"></i>
+      
+        <a href="/tags/%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/" class="print-no-link">#源码解析</a>
+      
+    </div>
+  
+</div>
+
+
+              
+  
+
+  <div class="license-box my-3">
+    <div class="license-title">
+      <div>Handler机制源码解析(二)</div>
+      <div>http://example.com/2018/10/07/Handler机制源码解析-二/</div>
+    </div>
+    <div class="license-meta">
+      
+        <div class="license-meta-item">
+          <div>作者</div>
+          <div>Leo-Wxy</div>
+        </div>
+      
+      
+        <div class="license-meta-item license-meta-date">
+          <div>发布于</div>
+          <div>2018年10月7日</div>
+        </div>
+      
+      
+      
+        <div class="license-meta-item">
+          <div>许可协议</div>
+          <div>
+            
+              
+              
+                <a class="print-no-link" target="_blank" href="https://creativecommons.org/licenses/by/4.0/">
+                  <span class="hint--top hint--rounded" aria-label="BY - 署名">
+                    <i class="iconfont icon-cc-by"></i>
+                  </span>
+                </a>
+              
+            
+          </div>
+        </div>
+      
+    </div>
+    <div class="license-icon iconfont"></div>
+  </div>
+
+
+
+              
+                <div class="post-prevnext my-3">
+                  <article class="post-prev col-6">
+                    
+                    
+                      <a href="/2018/12/09/ThreadLocal%E5%8E%9F%E7%90%86%E5%88%86%E6%9E%90/" title="ThreadLocal原理分析">
+                        <i class="iconfont icon-arrowleft"></i>
+                        <span class="hidden-mobile">ThreadLocal原理分析</span>
+                        <span class="visible-mobile">上一篇</span>
+                      </a>
+                    
+                  </article>
+                  <article class="post-next col-6">
+                    
+                    
+                      <a href="/2018/08/26/Android-Study-Plan-%E5%8A%A8%E6%80%81%E6%9D%83%E9%99%90/" title="Android-Study-Plan-动态权限">
+                        <span class="hidden-mobile">Android-Study-Plan-动态权限</span>
+                        <span class="visible-mobile">下一篇</span>
+                        <i class="iconfont icon-arrowright"></i>
+                      </a>
+                    
+                  </article>
+                </div>
+              
+            </div>
+
+            
+          </article>
+        </div>
+      </div>
+    </div>
+
+    <div class="side-col d-none d-lg-block col-lg-2">
+      
+  <aside class="sidebar" style="margin-left: -1rem">
+    <div id="toc">
+  <p class="toc-header">
+    <i class="iconfont icon-list"></i>
+    <span>目录</span>
+  </p>
+  <div class="toc-body" id="toc-body"></div>
+</div>
+
+
+
+  </aside>
+
+
+    </div>
+  </div>
+</div>
+
+
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+
+
+
+
+    
+
+    
+      <a id="scroll-top-button" aria-label="TOP" href="#" role="button">
+        <i class="iconfont icon-arrowup" aria-hidden="true"></i>
+      </a>
+    
+
+    
+      <div class="modal fade" id="modalSearch" tabindex="-1" role="dialog" aria-labelledby="ModalLabel"
+     aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header text-center">
+        <h4 class="modal-title w-100 font-weight-bold">搜索</h4>
+        <button type="button" id="local-search-close" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body mx-3">
+        <div class="md-form mb-5">
+          <input type="text" id="local-search-input" class="form-control validate">
+          <label data-error="x" data-success="v" for="local-search-input">关键词</label>
+        </div>
+        <div class="list-group" id="local-search-result"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+    
+
+    
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+  
+    <div class="footer-content">
+       <a href="https://hexo.io" target="_blank" rel="nofollow noopener"><span>Hexo</span></a> <i class="iconfont icon-love"></i> <a href="https://github.com/fluid-dev/hexo-theme-fluid" target="_blank" rel="nofollow noopener"><span>Fluid</span></a> 
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+
+  <!-- Scripts -->
+  
+  <script  src="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.js" ></script>
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.css" />
+
+  <script>
+    NProgress.configure({"showSpinner":false,"trickleSpeed":100})
+    NProgress.start()
+    window.addEventListener('load', function() {
+      NProgress.done();
+    })
+  </script>
+
+
+<script  src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" ></script>
+<script  src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.min.js" ></script>
+<script  src="/js/events.js" ></script>
+<script  src="/js/plugins.js" ></script>
+
+
+
+
+
+  
+    <script  src="/js/img-lazyload.js" ></script>
+  
+
+
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/tocbot@4.12.0/dist/tocbot.min.js', function() {
+    var toc = jQuery('#toc');
+    if (toc.length === 0 || !window.tocbot) { return; }
+    var boardCtn = jQuery('#board-ctn');
+    var boardTop = boardCtn.offset().top;
+
+    window.tocbot.init(Object.assign({
+      tocSelector     : '#toc-body',
+      contentSelector : '.markdown-body',
+      linkClass       : 'tocbot-link',
+      activeLinkClass : 'tocbot-active-link',
+      listClass       : 'tocbot-list',
+      isCollapsedClass: 'tocbot-is-collapsed',
+      collapsibleClass: 'tocbot-is-collapsible',
+      scrollSmooth    : true,
+      includeTitleTags: true,
+      headingsOffset  : -boardTop,
+    }, CONFIG.toc));
+    if (toc.find('.toc-list-item').length > 0) {
+      toc.css('visibility', 'visible');
+    }
+
+    Fluid.events.registerRefreshCallback(function() {
+      if ('tocbot' in window) {
+        tocbot.refresh();
+        var toc = jQuery('#toc');
+        if (toc.length === 0 || !tocbot) {
+          return;
+        }
+        if (toc.find('.toc-list-item').length > 0) {
+          toc.css('visibility', 'visible');
+        }
+      }
+    });
+  });
+</script>
+
+
+  <script src=https://cdn.jsdelivr.net/npm/clipboard@2.0.6/dist/clipboard.min.js></script>
+
+  <script>Fluid.plugins.codeWidget();</script>
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/anchor-js@4.3.0/anchor.min.js', function() {
+    window.anchors.options = {
+      placement: CONFIG.anchorjs.placement,
+      visible  : CONFIG.anchorjs.visible
+    };
+    if (CONFIG.anchorjs.icon) {
+      window.anchors.options.icon = CONFIG.anchorjs.icon;
+    }
+    var el = (CONFIG.anchorjs.element || 'h1,h2,h3,h4,h5,h6').split(',');
+    var res = [];
+    for (var item of el) {
+      res.push('.markdown-body > ' + item.trim());
+    }
+    if (CONFIG.anchorjs.placement === 'left') {
+      window.anchors.options.class = 'anchorjs-link-left';
+    }
+    window.anchors.add(res.join(', '));
+
+    Fluid.events.registerRefreshCallback(function() {
+      if ('anchors' in window) {
+        anchors.removeAll();
+        var el = (CONFIG.anchorjs.element || 'h1,h2,h3,h4,h5,h6').split(',');
+        var res = [];
+        for (var item of el) {
+          res.push('.markdown-body > ' + item.trim());
+        }
+        if (CONFIG.anchorjs.placement === 'left') {
+          anchors.options.class = 'anchorjs-link-left';
+        }
+        anchors.add(res.join(', '));
+      }
+    });
+  });
+</script>
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.js', function() {
+    Fluid.plugins.fancyBox();
+  });
+</script>
+
+
+  <script>Fluid.plugins.imageCaption();</script>
+
+  <script  src="/js/local-search.js" ></script>
+
+
+
+
+
+<!-- 主题的启动项，将它保持在最底部 -->
+<!-- the boot of the theme, keep it at the bottom -->
+<script  src="/js/boot.js" ></script>
+
+
+  
+
+  <noscript>
+    <div class="noscript-warning">博客在允许 JavaScript 运行的环境下浏览效果更佳</div>
+  </noscript>
+</body>
+</html>

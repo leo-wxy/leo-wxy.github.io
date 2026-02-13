@@ -1,0 +1,756 @@
+
+
+<!DOCTYPE html>
+<html lang="zh-CN" data-default-color-scheme=auto>
+
+
+
+<head>
+  <meta charset="UTF-8">
+
+  <link rel="apple-touch-icon" sizes="76x76" href="/img/favicon.png">
+  <link rel="icon" href="/img/favicon.png">
+  
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, shrink-to-fit=no">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  
+  <meta name="theme-color" content="#11527b">
+  <meta name="author" content="Leo-Wxy">
+  <meta name="keywords" content="">
+  
+    <meta name="description" content="Java中提供了种类丰富的锁，定义这些锁可以在适当的场景中发挥更好的作用。 乐观锁&amp;悲观锁乐观锁 每次去拿取数据的时候认为不会有人进行修改，所以不会去添加锁。只是会在更新数据时去判断是否有其他线程对这个数据进行了修改。通过判断版本号检测是否发生了更新，未发生变化直接写入新数据；发生了变化，就需要重复执行‌读版本号-比较有无发生变化-写入新数据操作。在Java中一般通过CAS算法实现。例如A">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Java中的锁事">
+<meta property="og:url" content="http://example.com/2019/03/15/Java%E4%B8%AD%E7%9A%84%E9%94%81%E4%BA%8B/index.html">
+<meta property="og:site_name" content="Wxy的个人博客">
+<meta property="og:description" content="Java中提供了种类丰富的锁，定义这些锁可以在适当的场景中发挥更好的作用。 乐观锁&amp;悲观锁乐观锁 每次去拿取数据的时候认为不会有人进行修改，所以不会去添加锁。只是会在更新数据时去判断是否有其他线程对这个数据进行了修改。通过判断版本号检测是否发生了更新，未发生变化直接写入新数据；发生了变化，就需要重复执行‌读版本号-比较有无发生变化-写入新数据操作。在Java中一般通过CAS算法实现。例如A">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="http://example.com/images/MarkWord.png">
+<meta property="article:published_time" content="2019-03-15T01:18:31.000Z">
+<meta property="article:modified_time" content="2019-03-15T13:03:14.000Z">
+<meta property="article:author" content="Leo-Wxy">
+<meta property="article:tag" content="Hide">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="http://example.com/images/MarkWord.png">
+  
+  
+  
+  <title>Java中的锁事 - Wxy的个人博客</title>
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css" />
+
+
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@4.0.0/github-markdown.min.css" />
+
+  <link  rel="stylesheet" href="/lib/hint/hint.min.css" />
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.css" />
+
+
+
+<!-- 主题依赖的图标库，不要自行修改 -->
+<!-- Do not modify the link that theme dependent icons -->
+
+<link rel="stylesheet" href="//at.alicdn.com/t/c/font_1749284_5i9bdhy70f8.css">
+
+
+
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1736178_kmeydafke9r.css">
+
+
+<link  rel="stylesheet" href="/css/main.css" />
+
+
+  <link id="highlight-css" rel="stylesheet" href="/css/highlight.css" />
+  
+    <link id="highlight-css-dark" rel="stylesheet" href="/css/highlight-dark.css" />
+  
+
+
+
+
+  <script id="fluid-configs">
+    var Fluid = window.Fluid || {};
+    Fluid.ctx = Object.assign({}, Fluid.ctx)
+    var CONFIG = {"hostname":"example.com","root":"/","version":"1.9.8","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false,"scope":[]},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"code_language":{"enable":true,"default":"TEXT"},"copy_btn":true,"image_caption":{"enable":true},"image_zoom":{"enable":true,"img_url_replace":["",""]},"toc":{"enable":true,"placement":"right","headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"loading_img":"/img/loading.gif","onlypost":false,"offset_factor":2},"web_analytics":{"enable":false,"follow_dnt":true,"baidu":null,"google":null,"tencent":{"sid":null,"cid":null},"leancloud":{"app_id":null,"app_key":null,"server_url":null,"path":"window.location.pathname","ignore_local":false},"umami":{"src":null,"website_id":null,"domains":null,"start_time":"2024-01-01T00:00:00.000Z","token":null,"api_server":null},"gtag":null,"woyaola":null,"cnzz":null},"search_path":"/local-search.xml","include_content_in_search":false};
+
+    if (CONFIG.web_analytics.follow_dnt) {
+      var dntVal = navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack;
+      Fluid.ctx.dnt = dntVal && (dntVal.startsWith('1') || dntVal.startsWith('yes') || dntVal.startsWith('on'));
+    }
+  </script>
+  <script  src="/js/utils.js" ></script>
+  <script  src="/js/color-schema.js" ></script>
+  
+
+
+  
+<meta name="generator" content="Hexo 8.1.1"></head>
+
+
+<body>
+  
+
+  <header>
+    
+
+<div class="header-inner" style="height: 30vh;">
+  <nav id="navbar" class="navbar fixed-top  navbar-expand-lg navbar-dark scrolling-navbar">
+  <div class="container">
+    <a class="navbar-brand" href="/">
+      <strong>Wxy&#39;s Blog</strong>
+    </a>
+
+    <button id="navbar-toggler-btn" class="navbar-toggler" type="button" data-toggle="collapse"
+            data-target="#navbarSupportedContent"
+            aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+      <div class="animated-icon"><span></span><span></span><span></span></div>
+    </button>
+
+    <!-- Collapsible content -->
+    <div class="collapse navbar-collapse" id="navbarSupportedContent">
+      <ul class="navbar-nav ml-auto text-center">
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/" target="_self">
+                <i class="iconfont icon-home-fill"></i>
+                <span>首页</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/archives/" target="_self">
+                <i class="iconfont icon-archive-fill"></i>
+                <span>归档</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/tags/" target="_self">
+                <i class="iconfont icon-tags-fill"></i>
+                <span>标签</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/about/" target="_self">
+                <i class="iconfont icon-user-fill"></i>
+                <span>关于</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/links/" target="_self">
+                <i class="iconfont icon-link-fill"></i>
+                <span>友链</span>
+              </a>
+            </li>
+          
+        
+        
+          <li class="nav-item" id="search-btn">
+            <a class="nav-link" target="_self" href="javascript:;" data-toggle="modal" data-target="#modalSearch" aria-label="Search">
+              <i class="iconfont icon-search"></i>
+            </a>
+          </li>
+          
+        
+        
+          <li class="nav-item" id="color-toggle-btn">
+            <a class="nav-link" target="_self" href="javascript:;" aria-label="Color Toggle">
+              <i class="iconfont icon-dark" id="color-toggle-icon"></i>
+            </a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+  
+
+<div id="banner" class="banner" parallax=true
+     style="background: url('/img/default.png') no-repeat center center; background-size: cover;">
+  <div class="full-bg-img">
+    <div class="mask flex-center" style="background-color: rgba(0, 0, 0, 0.3)">
+      <div class="banner-text text-center fade-in-up">
+        <div class="h2">
+          
+            <span id="subtitle">Java中的锁事</span>
+          
+        </div>
+
+        
+          
+  <div class="mt-3">
+    
+    
+      <span class="post-meta">
+        <i class="iconfont icon-date-fill" aria-hidden="true"></i>
+        <time datetime="2019-03-15 09:18" pubdate>
+          2019年3月15日 上午
+        </time>
+      </span>
+    
+  </div>
+
+  <div class="mt-1">
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-chart"></i>
+        
+          <!-- compatible with older versions-->
+          2.6k 字
+        
+      </span>
+    
+
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-clock-fill"></i>
+        
+        
+        
+          <!-- compatible with older versions-->
+          9 分钟
+        
+      </span>
+    
+
+    
+    
+  </div>
+
+
+        
+      </div>
+
+      
+    </div>
+  </div>
+</div>
+
+</div>
+
+  </header>
+
+  <main>
+    
+      
+
+<div class="container-fluid nopadding-x">
+  <div class="row nomargin-x">
+    <div class="side-col d-none d-lg-block col-lg-2">
+      
+
+    </div>
+
+    <div class="col-lg-8 nopadding-x-md">
+      <div class="container nopadding-x-md" id="board-ctn">
+        <div id="board">
+          <article class="post-content mx-auto">
+            <h1 id="seo-header">Java中的锁事</h1>
+            
+            
+              <div class="markdown-body">
+                
+                <p>Java中提供了种类丰富的锁，定义这些锁可以在适当的场景中发挥更好的作用。</p>
+<h2 id="乐观锁-悲观锁"><a href="#乐观锁-悲观锁" class="headerlink" title="乐观锁&amp;悲观锁"></a>乐观锁&amp;悲观锁</h2><h3 id="乐观锁"><a href="#乐观锁" class="headerlink" title="乐观锁"></a>乐观锁</h3><blockquote>
+<p>每次去拿取数据的时候认为不会有人进行修改，所以不会去添加锁。只是会在更新数据时去判断是否有其他线程对这个数据进行了修改。通过判断<strong>版本号</strong>检测是否发生了更新，未发生变化直接写入新数据；发生了变化，就需要重复执行<strong>‌读版本号-比较有无发生变化-写入新数据</strong>操作。<br>在Java中一般通过<code>CAS算法</code>实现。例如<code>Atomic*</code>类内部都是通过<code>CAS</code>实现的。<br>乐观锁适合<strong>读操作多</strong>的场景，不加锁可以大大提升读操作的效率。</p>
+</blockquote>
+<h4 id="CAS算法"><a href="#CAS算法" class="headerlink" title="CAS算法"></a>CAS算法</h4><blockquote>
+<p><code>compare and swap(比较与交换)</code>，是一种无锁算法(<em>在不使用锁的情况下实现线程间的变量同步</em>)。</p>
+</blockquote>
+<p><code>CAS算法</code>涉及了三个操作数：</p>
+<ul>
+<li>需要读写的内存值 <strong>V</strong></li>
+<li>进行比较的值 <strong>A</strong></li>
+<li>要写入的新值 <strong>B</strong></li>
+</ul>
+<p><strong>当且仅当V的值等于A时，CAS通过原子方式更新V的值为B。否则不会执行任何操作(<code>比较与更新为一个原子操作</code>)，一般情况下为一个<code>自旋操作</code>，需要不断进行重试。</strong></p>
+<h4 id="乐观锁缺点"><a href="#乐观锁缺点" class="headerlink" title="乐观锁缺点"></a>乐观锁缺点</h4><h5 id="ABA问题"><a href="#ABA问题" class="headerlink" title="ABA问题"></a>ABA问题</h5><p><code>CAS</code>需要在操作值的时候检查内存值是否发生了变化，没有发生变化才会去更新值。但有一种特殊情况，内存中的值发生了<code>A-&gt;B-&gt;A</code>这类变化，在检查时得到的结果就是没有发生变化，这显然是不合理的。</p>
+<p>解决该问题的方法有两种：</p>
+<ul>
+<li>通过在变量前面添加版本号，每次变量更新时进行版本号增加操作，可以保证监听到值的变化</li>
+<li>通过<code>AtomicStampedReference</code>类解决，需要检查当前引用与预期引用，当前标记与预期标记是否相同，相同则更新。</li>
+</ul>
+<h5 id="循环时间长开销大"><a href="#循环时间长开销大" class="headerlink" title="循环时间长开销大"></a>循环时间长开销大</h5><p><code>CAS</code>操作不成功时，默认会进行自旋操作(<em>直到成功为止</em>)，会一直占用CPU资源造成极大的消耗。</p>
+<p>可以通过<code>处理器的pause指令</code>进行解决。</p>
+<blockquote>
+<p><code>pause指令</code>有两个作用：</p>
+<ul>
+<li>延迟流水线执行</li>
+<li>避免退出循环时因为内存顺序冲突引起CPU流水线被清空</li>
+</ul>
+</blockquote>
+<h5 id="只能保证一个共享变量的原子操作"><a href="#只能保证一个共享变量的原子操作" class="headerlink" title="只能保证一个共享变量的原子操作"></a>只能保证一个共享变量的原子操作</h5><p><code>CAS</code>只对单个变量有效，无法对多个变量同时生效。</p>
+<p>可以通过<code>AtomicReference</code>来保证引用对象之间的原子性，把多个变量放于同一个对象里进行CAS操作。</p>
+<h3 id="悲观锁"><a href="#悲观锁" class="headerlink" title="悲观锁"></a>悲观锁</h3><blockquote>
+<p>每次去拿取数据的时候都认为别人会进行修改，所以每次在拿数据的时候都会进行上锁操作，确保数据不会被其他线程修改。在其他线程想要操作该数据时，就会被<strong>阻塞</strong>直到得到锁(<em>共享资源每次只给一个线程使用，其他线程被阻塞，等到当前线程使用完毕后，其他线程才可以获取锁</em>)。</p>
+<p>可以通过<code>Thread.holdsLock()</code>来获取当前线程是否持有锁。</p>
+</blockquote>
+<p>悲观锁适合<strong>写操作多</strong>的场景，可以保证进行写操作时的数据正确。</p>
+<p>其中Java中的<code>synchronized</code>及<code>Lock</code>就是悲观锁的具体实现。</p>
+<h2 id="锁的状态"><a href="#锁的状态" class="headerlink" title="锁的状态"></a>锁的状态</h2><p>在JVM中锁的状态分为四种：</p>
+<ul>
+<li>无锁：例如CAS操作</li>
+<li>偏向锁</li>
+<li>轻量级锁</li>
+<li>重量级锁：<code>synchronized</code></li>
+</ul>
+<p>锁的进化状态为：<strong>无锁 -&gt; 偏向锁 -&gt; 轻量级锁 -&gt; 重量级锁</strong>。<code>不可退化</code></p>
+<h3 id="对象头"><a href="#对象头" class="headerlink" title="对象头"></a>对象头</h3><blockquote>
+<p>锁的每个状态都是有标记的，他们都存储于<strong>对象头的Mark Word</strong>中。</p>
+</blockquote>
+<p>对象头分为两部分：<code>Mark Word</code>、<code>Klass Pointer</code></p>
+<p><code>Mark Word</code>：存储对象的HashCode，分代年龄、线程ID以及锁标志信息。</p>
+<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/MarkWord.png" srcset="/img/loading.gif" lazyload class="full-image" alt="Mark Word" title="Mark Word" /><meta itemprop="width" content="auto"/><meta itemprop="height" content="auto"/></span>
+
+<p>其中四种锁状态主要对应在锁标志位上</p>
+<table>
+<thead>
+<tr>
+<th>锁状态</th>
+<th>锁标志</th>
+<th>存储内容</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>无锁</td>
+<td>01</td>
+<td>对象的HashCode、分代年龄、是否是偏向锁(0)</td>
+</tr>
+<tr>
+<td>偏向锁</td>
+<td>01</td>
+<td>偏向线程ID、偏向时间戳、分代年龄，是否是偏向锁(1)</td>
+</tr>
+<tr>
+<td>轻量级锁</td>
+<td>00</td>
+<td>指向栈中锁记录的指针</td>
+</tr>
+<tr>
+<td>重量级锁</td>
+<td>10</td>
+<td>指向互斥量(重量级锁)的指针</td>
+</tr>
+</tbody></table>
+<p><code>Klass Pointer</code>：对象指向它的类元数据指针，虚拟机通过该指针确定实例。</p>
+<h3 id="无锁"><a href="#无锁" class="headerlink" title="无锁"></a>无锁</h3><blockquote>
+<p>不会对资源进行锁定，所有线程都能访问并修改同一个资源，但是只能有一个线程修改成功在同一时间内。</p>
+</blockquote>
+<p>无锁的特点就是修改操作在循环中进行，线程会不断的去尝试修改共享资源。如果修改成功就直接退出，否则继续循环尝试。</p>
+<p><strong>在已存在线程修改共享资源时，其他线程会进入自旋状态直至修改成功。</strong></p>
+<h4 id="自旋锁"><a href="#自旋锁" class="headerlink" title="自旋锁"></a>自旋锁</h4><blockquote>
+<p>如果持有锁的线程能在很短的时间内就释放锁，其他需要等待竞争锁的线程就不需要在<strong>内核态和用户态</strong>之间进行切换，导致进入阻塞状态，其他线程只有执行<strong>自旋</strong>，等待执行操作的线程释放锁之后就可以去直接获取锁，避免线程切换的开销。</p>
+</blockquote>
+<h5 id="优缺点"><a href="#优缺点" class="headerlink" title="优缺点"></a>优缺点</h5><p>自旋锁尽可能的减少<strong>阻塞</strong>发生，对于<code>锁的竞争不激烈且不会占用锁事件过长的操作</code>性能提升明显，自旋的消耗相对线程的切换小很多。在线程阻塞和唤醒的过程中会发生两次<em>上下文切换</em>过程。</p>
+<blockquote>
+<p>上下文切换：当CPU执行从一个线程切换到另一个线程时，需要先存储当前线程的本地数据、程序指针等。然后载入另一线程的本地数据、程序指针等，然后开始执行另一个线程。</p>
+</blockquote>
+<p>自旋锁本身是有缺点的，无法代替<strong>阻塞</strong>功能。自旋虽然避免了线程切换的开销，但是需要占用CPU。如果锁被占用的时间很短，自旋锁的效果就会非常好。</p>
+<p>但是，如果锁被占用的时间很长，其他自旋等待的线程就会一直占用CPU资源，导致极大的浪费。这时就需要去关闭自旋锁。</p>
+<p><em>默认设置自旋次数超过10次<code>-XX:PreBlockSpin进行修改</code>就会自动关闭并挂起当前线程。</em></p>
+<h4 id="自适应自旋锁"><a href="#自适应自旋锁" class="headerlink" title="自适应自旋锁"></a>自适应自旋锁</h4><blockquote>
+<p>在1.6之前，自旋次数上限是写死的，在1.6之后引入了<code>自适应自旋锁</code>，意味着自旋上限不再是固定的，而是根据 <strong>上一次同一个锁上的自旋时间以及锁拥有者的状态进行决定的</strong>。</p>
+</blockquote>
+<h3 id="偏向锁"><a href="#偏向锁" class="headerlink" title="偏向锁"></a>偏向锁</h3><blockquote>
+<p>一段同步代码一直被同一个线程访问，那么该线程自动获取锁，降低获取锁的代价。</p>
+</blockquote>
+<h4 id="适用场景"><a href="#适用场景" class="headerlink" title="适用场景"></a>适用场景</h4><p>始终只有一个线程在执行同步代码块，即使没有执行完，也不会有其他线程去执行同步代码块。<strong>为了在只有一个线程执行同步代码块时提高性能。</strong></p>
+<p>在高并发场景下会直接禁用偏向锁，通过设置<code>-XX:-UseBiasedLocking</code>。关闭后，会进入<strong>轻量级锁</strong>。</p>
+<h4 id="获取过程"><a href="#获取过程" class="headerlink" title="获取过程"></a>获取过程</h4><ol>
+<li>当线程访问同步块代码并获取锁时，会在<code>Mark Word</code>中存入当前线程的ID并设置偏向锁标识为1</li>
+<li>再次有线程访问该代码块时，先去判断<code>Mark Word</code>中偏向锁标识是否为1且线程ID是否一致</li>
+<li>若一致，则执行同步代码</li>
+<li>不一致时，需要通过<code>CAS</code>去获取锁，如果竞争成功，修改<code>Mark Word</code>中的线程ID为当前线程</li>
+<li>若竞争失败，说明当前还有其他线程在竞争锁。那么就需要释放偏向锁。</li>
+</ol>
+<h4 id="释放过程"><a href="#释放过程" class="headerlink" title="释放过程"></a>释放过程</h4><p>偏向锁只有遇到其他线程竞争偏向锁时，持有偏向锁的线程才会释放锁，线程不会主动释放偏向锁。</p>
+<p>偏向锁的释放，需要等待<strong>全局安全点(safe-point)-当前时间点没有字节码在执行</strong>，会首先暂停拥有偏向锁的线程，并判断该锁对象是否处于被锁定状态。</p>
+<p>释放偏向锁后恢复<strong>无锁</strong>状态或进化到**轻量级锁(标记00)**状态。</p>
+<h3 id="轻量级锁"><a href="#轻量级锁" class="headerlink" title="轻量级锁"></a>轻量级锁</h3><blockquote>
+<p>轻量级锁是由偏向锁升级来的，当偏向锁被另一个线程访问时，偏向锁就会升级为轻量锁。</p>
+<p>在没有多线程竞争的前提下，减少传统的重量级锁使用操作系统互斥量产生的性能消耗。<strong>轻量级锁并不是用来替代传统重量级锁。</strong></p>
+</blockquote>
+<h4 id="加锁过程"><a href="#加锁过程" class="headerlink" title="加锁过程"></a>加锁过程</h4><ol>
+<li>代码进入同步块的时候，如果同步对象锁状态为无锁状态(标志位01，是否为偏向锁0)，在当前线程的栈帧中建立一个<code>Lock record</code>用于存储<code>Mark Word</code>，名为<code>Displaced Mark Word</code>。</li>
+<li>拷贝当前线程对象头的<code>Mark Word</code>到<code>Lock Record</code>中</li>
+<li>拷贝成功后，虚拟机使用<code>CAS</code>操作尝试将对象的<code>Mark Word</code>更新为指向<code>Lock Record</code>指针，并将<code>Lock Record</code>指针指向<code>Mark Word</code></li>
+<li>更新成功，该线程就拥有了对象的锁，并且设置<code>Mark Word</code>的锁标志位为<code>00</code>，表明当前处于轻量级锁定状态。</li>
+</ol>
+<blockquote>
+<p>如果更新失败，虚拟机首先检查<code>Mark Word</code>。</p>
+</blockquote>
+<h4 id="释放锁过程"><a href="#释放锁过程" class="headerlink" title="释放锁过程"></a>释放锁过程</h4><h3 id="重量级锁"><a href="#重量级锁" class="headerlink" title="重量级锁"></a>重量级锁</h3><h4 id="阻塞"><a href="#阻塞" class="headerlink" title="阻塞"></a>阻塞</h4><h2 id="锁优化"><a href="#锁优化" class="headerlink" title="锁优化"></a>锁优化</h2><h3 id="锁消除"><a href="#锁消除" class="headerlink" title="锁消除"></a>锁消除</h3><h3 id="锁粗化"><a href="#锁粗化" class="headerlink" title="锁粗化"></a>锁粗化</h3><h2 id="其他锁分类"><a href="#其他锁分类" class="headerlink" title="其他锁分类"></a>其他锁分类</h2><h3 id="公平锁-非公平锁"><a href="#公平锁-非公平锁" class="headerlink" title="公平锁&amp;非公平锁"></a>公平锁&amp;非公平锁</h3><h3 id="可重入锁-非重入锁"><a href="#可重入锁-非重入锁" class="headerlink" title="可重入锁&amp;非重入锁"></a>可重入锁&amp;非重入锁</h3><h3 id="独占锁-共享锁"><a href="#独占锁-共享锁" class="headerlink" title="独占锁&amp;共享锁"></a>独占锁&amp;共享锁</h3><h3 id="读写锁"><a href="#读写锁" class="headerlink" title="读写锁"></a>读写锁</h3><h2 id="死锁"><a href="#死锁" class="headerlink" title="死锁"></a>死锁</h2><blockquote>
+<p>两个或两个以上的线程在执行过程中，因争夺资源而造成的一种互相等待的现象，若无外力作用，他们会互相阻塞。</p>
+</blockquote>
+<p>产生死锁的条件有4个：</p>
+<ul>
+<li>互斥条件：一个资源每次只能被一个线程占用</li>
+<li>请求与保持条件：一个线程因请求资源而阻塞时，对已获得的资源保持不放</li>
+<li>不剥夺条件：线程已获得的资源，未使用完之前不得强行剥夺</li>
+<li>循环等待条件：若干进程之间形成一种头尾相接的循环等待资源关系。</li>
+</ul>
+<h2 id="内容引用"><a href="#内容引用" class="headerlink" title="内容引用"></a>内容引用</h2><p><a target="_blank" rel="noopener" href="https://juejin.im/post/5c8a00e56fb9a049a42feb54#heading-21">JAVA中锁的深入理解与解析</a></p>
+<p><a target="_blank" rel="noopener" href="https://juejin.im/post/5bee576fe51d45710c6a51e0#heading-2">不可不说的Java“锁”事</a></p>
+
+                
+              </div>
+            
+            <hr/>
+            <div>
+              <div class="post-metas my-3">
+  
+  
+    <div class="post-meta">
+      <i class="iconfont icon-tags"></i>
+      
+        <a href="/tags/Hide/" class="print-no-link">#Hide</a>
+      
+    </div>
+  
+</div>
+
+
+              
+  
+
+  <div class="license-box my-3">
+    <div class="license-title">
+      <div>Java中的锁事</div>
+      <div>http://example.com/2019/03/15/Java中的锁事/</div>
+    </div>
+    <div class="license-meta">
+      
+        <div class="license-meta-item">
+          <div>作者</div>
+          <div>Leo-Wxy</div>
+        </div>
+      
+      
+        <div class="license-meta-item license-meta-date">
+          <div>发布于</div>
+          <div>2019年3月15日</div>
+        </div>
+      
+      
+      
+        <div class="license-meta-item">
+          <div>许可协议</div>
+          <div>
+            
+              
+              
+                <a class="print-no-link" target="_blank" href="https://creativecommons.org/licenses/by/4.0/">
+                  <span class="hint--top hint--rounded" aria-label="BY - 署名">
+                    <i class="iconfont icon-cc-by"></i>
+                  </span>
+                </a>
+              
+            
+          </div>
+        </div>
+      
+    </div>
+    <div class="license-icon iconfont"></div>
+  </div>
+
+
+
+              
+                <div class="post-prevnext my-3">
+                  <article class="post-prev col-6">
+                    
+                    
+                      <a href="/2019/03/21/%E7%BB%84%E4%BB%B6%E9%97%B4%E9%80%9A%E4%BF%A1%E2%80%94%E2%80%94LiveDataBus/" title="组件间通信——LiveDataBus">
+                        <i class="iconfont icon-arrowleft"></i>
+                        <span class="hidden-mobile">组件间通信——LiveDataBus</span>
+                        <span class="visible-mobile">上一篇</span>
+                      </a>
+                    
+                  </article>
+                  <article class="post-next col-6">
+                    
+                    
+                      <a href="/2019/03/14/%E5%8D%9A%E5%AE%A2%E5%AF%BC%E8%AF%BB/" title="博客导读">
+                        <span class="hidden-mobile">博客导读</span>
+                        <span class="visible-mobile">下一篇</span>
+                        <i class="iconfont icon-arrowright"></i>
+                      </a>
+                    
+                  </article>
+                </div>
+              
+            </div>
+
+            
+          </article>
+        </div>
+      </div>
+    </div>
+
+    <div class="side-col d-none d-lg-block col-lg-2">
+      
+  <aside class="sidebar" style="margin-left: -1rem">
+    <div id="toc">
+  <p class="toc-header">
+    <i class="iconfont icon-list"></i>
+    <span>目录</span>
+  </p>
+  <div class="toc-body" id="toc-body"></div>
+</div>
+
+
+
+  </aside>
+
+
+    </div>
+  </div>
+</div>
+
+
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+
+
+
+
+    
+
+    
+      <a id="scroll-top-button" aria-label="TOP" href="#" role="button">
+        <i class="iconfont icon-arrowup" aria-hidden="true"></i>
+      </a>
+    
+
+    
+      <div class="modal fade" id="modalSearch" tabindex="-1" role="dialog" aria-labelledby="ModalLabel"
+     aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header text-center">
+        <h4 class="modal-title w-100 font-weight-bold">搜索</h4>
+        <button type="button" id="local-search-close" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body mx-3">
+        <div class="md-form mb-5">
+          <input type="text" id="local-search-input" class="form-control validate">
+          <label data-error="x" data-success="v" for="local-search-input">关键词</label>
+        </div>
+        <div class="list-group" id="local-search-result"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+    
+
+    
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+  
+    <div class="footer-content">
+       <a href="https://hexo.io" target="_blank" rel="nofollow noopener"><span>Hexo</span></a> <i class="iconfont icon-love"></i> <a href="https://github.com/fluid-dev/hexo-theme-fluid" target="_blank" rel="nofollow noopener"><span>Fluid</span></a> 
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+
+  <!-- Scripts -->
+  
+  <script  src="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.js" ></script>
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.css" />
+
+  <script>
+    NProgress.configure({"showSpinner":false,"trickleSpeed":100})
+    NProgress.start()
+    window.addEventListener('load', function() {
+      NProgress.done();
+    })
+  </script>
+
+
+<script  src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" ></script>
+<script  src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.min.js" ></script>
+<script  src="/js/events.js" ></script>
+<script  src="/js/plugins.js" ></script>
+
+
+
+
+
+  
+    <script  src="/js/img-lazyload.js" ></script>
+  
+
+
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/tocbot@4.12.0/dist/tocbot.min.js', function() {
+    var toc = jQuery('#toc');
+    if (toc.length === 0 || !window.tocbot) { return; }
+    var boardCtn = jQuery('#board-ctn');
+    var boardTop = boardCtn.offset().top;
+
+    window.tocbot.init(Object.assign({
+      tocSelector     : '#toc-body',
+      contentSelector : '.markdown-body',
+      linkClass       : 'tocbot-link',
+      activeLinkClass : 'tocbot-active-link',
+      listClass       : 'tocbot-list',
+      isCollapsedClass: 'tocbot-is-collapsed',
+      collapsibleClass: 'tocbot-is-collapsible',
+      scrollSmooth    : true,
+      includeTitleTags: true,
+      headingsOffset  : -boardTop,
+    }, CONFIG.toc));
+    if (toc.find('.toc-list-item').length > 0) {
+      toc.css('visibility', 'visible');
+    }
+
+    Fluid.events.registerRefreshCallback(function() {
+      if ('tocbot' in window) {
+        tocbot.refresh();
+        var toc = jQuery('#toc');
+        if (toc.length === 0 || !tocbot) {
+          return;
+        }
+        if (toc.find('.toc-list-item').length > 0) {
+          toc.css('visibility', 'visible');
+        }
+      }
+    });
+  });
+</script>
+
+
+  <script src=https://cdn.jsdelivr.net/npm/clipboard@2.0.6/dist/clipboard.min.js></script>
+
+  <script>Fluid.plugins.codeWidget();</script>
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/anchor-js@4.3.0/anchor.min.js', function() {
+    window.anchors.options = {
+      placement: CONFIG.anchorjs.placement,
+      visible  : CONFIG.anchorjs.visible
+    };
+    if (CONFIG.anchorjs.icon) {
+      window.anchors.options.icon = CONFIG.anchorjs.icon;
+    }
+    var el = (CONFIG.anchorjs.element || 'h1,h2,h3,h4,h5,h6').split(',');
+    var res = [];
+    for (var item of el) {
+      res.push('.markdown-body > ' + item.trim());
+    }
+    if (CONFIG.anchorjs.placement === 'left') {
+      window.anchors.options.class = 'anchorjs-link-left';
+    }
+    window.anchors.add(res.join(', '));
+
+    Fluid.events.registerRefreshCallback(function() {
+      if ('anchors' in window) {
+        anchors.removeAll();
+        var el = (CONFIG.anchorjs.element || 'h1,h2,h3,h4,h5,h6').split(',');
+        var res = [];
+        for (var item of el) {
+          res.push('.markdown-body > ' + item.trim());
+        }
+        if (CONFIG.anchorjs.placement === 'left') {
+          anchors.options.class = 'anchorjs-link-left';
+        }
+        anchors.add(res.join(', '));
+      }
+    });
+  });
+</script>
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.js', function() {
+    Fluid.plugins.fancyBox();
+  });
+</script>
+
+
+  <script>Fluid.plugins.imageCaption();</script>
+
+  <script  src="/js/local-search.js" ></script>
+
+
+
+
+
+<!-- 主题的启动项，将它保持在最底部 -->
+<!-- the boot of the theme, keep it at the bottom -->
+<script  src="/js/boot.js" ></script>
+
+
+  
+
+  <noscript>
+    <div class="noscript-warning">博客在允许 JavaScript 运行的环境下浏览效果更佳</div>
+  </noscript>
+</body>
+</html>
