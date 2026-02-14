@@ -28,7 +28,7 @@
 <meta property="og:locale" content="zh_CN">
 <meta property="og:image" content="https://leo-wxy.github.io/images/%E8%BE%93%E5%85%A5%E4%BA%8B%E4%BB%B6%E8%B6%85%E6%97%B6%E7%9B%91%E6%B5%8B.webp">
 <meta property="article:published_time" content="2019-01-28T01:56:42.000Z">
-<meta property="article:modified_time" content="2021-06-20T07:34:49.000Z">
+<meta property="article:modified_time" content="2026-02-14T13:30:50.139Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="Android">
 <meta name="twitter:card" content="summary_large_image">
@@ -226,7 +226,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          2.4k 字
+          2.8k 字
         
       </span>
     
@@ -238,7 +238,7 @@
         
         
           <!-- compatible with older versions-->
-          8 分钟
+          9 分钟
         
       </span>
     
@@ -322,6 +322,19 @@
 <p>当应用主线程被卡住时，再点击其他组件也是无响应，因为事件派发是串行的，上一事件未处理完毕，下一事件不会向下执行。</p>
 <p>在<code>Activity.onCreate()</code>执行耗时操作，不管用户如何操作都不会发生ANR，因为输入事件相关监听机制尚未建立起来。</p>
 <p>输入事件由<code>InputDispatcher</code>调度，待处理的输入输出事件都会进入队列中等待，设计了一个等待超时的判断。</p>
+<h4 id="Input-ANR的子类型"><a href="#Input-ANR的子类型" class="headerlink" title="Input ANR的子类型"></a>Input ANR的子类型</h4><p>Input ANR本质是：<code>InputDispatcher</code>将事件投递给目标窗口后，在超时时间（默认5s）内没有收到窗口“处理完成”的回执（<code>finish signal</code>），最终触发<code>appNotResponding</code>。</p>
+<h5 id="Input-dispatching-timed-out"><a href="#Input-dispatching-timed-out" class="headerlink" title="Input dispatching timed out"></a>Input dispatching timed out</h5><ul>
+<li>含义：目标窗口存在，但窗口在超时时间内没有完成输入事件处理。</li>
+<li>典型日志关键字：<code>Input dispatching timed out</code>、<code>focused window has not finished processing</code>、<code>touched window has not finished processing</code>。</li>
+<li>常见根因：主线程执行耗时任务、主线程被锁阻塞、主线程同步Binder&#x2F;IO调用、CPU资源被其他进程抢占。</li>
+<li>机制特征：输入分发是串行推进的，前一条事件未完成会阻塞后续输入，用户体感就是“点哪里都没反应”。</li>
+</ul>
+<h5 id="No-focused-window"><a href="#No-focused-window" class="headerlink" title="No focused window"></a>No focused window</h5><ul>
+<li>含义：系统存在<code>focused app</code>，但没有可接收输入的<code>focused window</code>。</li>
+<li>典型日志关键字：<code>No focused window</code>、<code>no window has focus but there is a focused application</code>。</li>
+<li>常见根因：Activity启动阶段窗口尚未建立完成、窗口焦点切换异常、窗口被设置为不可获取焦点（如<code>FLAG_NOT_FOCUSABLE</code>）。</li>
+<li>场景特点：冷启动或页面切换阶段更容易出现该类型。</li>
+</ul>
 <h3 id="Service超时监测"><a href="#Service超时监测" class="headerlink" title="Service超时监测"></a>Service超时监测</h3><p>本身有分析过<code>Service的启动流程</code>，在其中了解到<code>ActiveServices.realStartServiceLocked()</code>是真正的Service启动流程。</p>
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">// ../core/java/com/android/server/am/ActiveServices.java  </span><br><span class="hljs-comment">// How long we wait for a service to finish executing.</span><br>    <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> <span class="hljs-type">int</span> <span class="hljs-variable">SERVICE_TIMEOUT</span> <span class="hljs-operator">=</span> <span class="hljs-number">20</span>*<span class="hljs-number">1000</span>;<br><br>    <span class="hljs-comment">// How long we wait for a service to finish executing.</span><br>    <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> <span class="hljs-type">int</span> <span class="hljs-variable">SERVICE_BACKGROUND_TIMEOUT</span> <span class="hljs-operator">=</span> SERVICE_TIMEOUT * <span class="hljs-number">10</span>;<br><br><span class="hljs-comment">//真正启动Service</span><br><span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">realStartServiceLocked</span><span class="hljs-params">(ServiceRecord r,</span><br><span class="hljs-params">            ProcessRecord app, <span class="hljs-type">boolean</span> execInFg)</span> <span class="hljs-keyword">throws</span> RemoteException &#123;<br>        ...<br>        <span class="hljs-comment">// 主要是为了设置ANR超时，可以看出在正式启动Service之前开始ANR监测；</span><br>        bumpServiceExecutingLocked(r, execInFg, <span class="hljs-string">&quot;create&quot;</span>);<br>       <span class="hljs-comment">// 启动过程调用scheduleCreateService方法,最终会调用Service.onCreate方法；</span><br>        app.thread.scheduleCreateService(r, r.serviceInfo,<br>        <span class="hljs-comment">// 绑定过程中，这个方法中会调用app.thread.scheduleBindService方法</span><br>        requestServiceBindingsLocked(r, execInFg);<br>        <span class="hljs-comment">// 调动Service的其他方法，如onStartCommand，也是IPC通讯</span><br>        sendServiceArgsLocked(r, execInFg, <span class="hljs-literal">true</span>);<br>    &#125;<br><br><span class="hljs-comment">//设置超时监测                                         </span><br><span class="hljs-keyword">void</span> <span class="hljs-title function_">scheduleServiceTimeoutLocked</span><span class="hljs-params">(ProcessRecord proc)</span> &#123;<br>        <span class="hljs-keyword">if</span> (proc.executingServices.size() == <span class="hljs-number">0</span> || proc.thread == <span class="hljs-literal">null</span>) &#123;<br>            <span class="hljs-keyword">return</span>;<br>        &#125;<br>        <span class="hljs-type">Message</span> <span class="hljs-variable">msg</span> <span class="hljs-operator">=</span> mAm.mHandler.obtainMessage(<br>                ActivityManagerService.SERVICE_TIMEOUT_MSG);<br>        msg.obj = proc;<br>        <span class="hljs-comment">// 在serviceDoneExecutingLocked中会remove该SERVICE_TIMEOUT_MSG消息，</span><br>        <span class="hljs-comment">// 当超时后仍没有remove SERVICE_TIMEOUT_MSG消息，则执行ActiveServices. serviceTimeout()方法；</span><br>        mAm.mHandler.sendMessageDelayed(msg,<br>                proc.execServicesFg ? SERVICE_TIMEOUT : SERVICE_BACKGROUND_TIMEOUT);<br>        <span class="hljs-comment">// 前台进程中执行Service，SERVICE_TIMEOUT=20s；后台进程中执行Service，SERVICE_BACKGROUND_TIMEOUT=200s</span><br>    &#125;<br><br><span class="hljs-comment">//在AMS中收到了  SERVICE_TIMEOUT_MSG Message就会触发该方法                                       </span><br><span class="hljs-keyword">void</span> <span class="hljs-title function_">serviceTimeout</span><span class="hljs-params">(ProcessRecord proc)</span> &#123;<br>    ...<br>    <span class="hljs-keyword">final</span> <span class="hljs-type">long</span> <span class="hljs-variable">maxTime</span> <span class="hljs-operator">=</span>  now -<br>              (proc.execServicesFg ? SERVICE_TIMEOUT : SERVICE_BACKGROUND_TIMEOUT);<br>    ...<br>    <span class="hljs-comment">// 寻找运行超时的Service</span><br>    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i=proc.executingServices.size()-<span class="hljs-number">1</span>; i&gt;=<span class="hljs-number">0</span>; i--) &#123;<br>        <span class="hljs-type">ServiceRecord</span> <span class="hljs-variable">sr</span> <span class="hljs-operator">=</span> proc.executingServices.valueAt(i);<br>        <span class="hljs-keyword">if</span> (sr.executingStart &lt; maxTime) &#123;<br>            timeout = sr;<br>            <span class="hljs-keyword">break</span>;<br>        &#125;<br>       ...<br>    &#125;<br>    ...<br>    <span class="hljs-comment">// 判断执行Service超时的进程是否在最近运行进程列表，如果不在，则忽略这个ANR</span><br>    <span class="hljs-keyword">if</span> (timeout != <span class="hljs-literal">null</span> &amp;&amp; mAm.mLruProcesses.contains(proc)) &#123;<br>        anrMessage = <span class="hljs-string">&quot;executing service &quot;</span> + timeout.shortName;<br>    &#125;<br>    ...<br>    <span class="hljs-keyword">if</span> (anrMessage != <span class="hljs-literal">null</span>) &#123;<br>        <span class="hljs-comment">// 当存在timeout的service，则执行appNotResponding，报告ANR</span><br>        mAm.appNotResponding(proc, <span class="hljs-literal">null</span>, <span class="hljs-literal">null</span>, <span class="hljs-literal">false</span>, anrMessage);<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
 
@@ -355,6 +368,19 @@
 </ul>
 </li>
 </ol>
+<h3 id="Input-ANR排查关键字"><a href="#Input-ANR排查关键字" class="headerlink" title="Input ANR排查关键字"></a>Input ANR排查关键字</h3><p>针对Input ANR，建议按“<code>ANR原因</code> -&gt; <code>输入分发</code> -&gt; <code>窗口焦点</code> -&gt; <code>主线程堆栈</code>”顺序排查。</p>
+<ol>
+<li><code>ANR原因定位</code>：<code>am_anr</code>、<code>ANR in</code>、<code>Reason:</code>、<code>Input dispatching timed out</code>、<code>No focused window</code></li>
+<li><code>输入分发状态</code>：<code>InputDispatcher</code>、<code>Wait queue</code>、<code>head age</code>、<code>has not finished processing</code></li>
+<li><code>CPU负载信息</code>：<code>Load:</code>、<code>CPU usage from</code>、<code>TOTAL</code>、<code>iowait</code>、<code>faults major/minor</code></li>
+<li><code>主线程阻塞特征</code>：<code>&quot;main&quot;</code>、<code>state=Blocked|Runnable|Native</code>、<code>waiting to lock</code>、<code>BinderProxy.transact</code></li>
+<li><code>窗口与焦点状态</code>：<code>mCurrentFocus</code>、<code>mFocusedApp</code>、<code>FocusedWindow</code>、<code>FocusedApplication</code></li>
+</ol>
+<p>可直接使用以下命令快速检索：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><code class="hljs shell">adb logcat -b events -v threadtime | rg &quot;am_anr|ANR in|Reason:&quot;<br>adb logcat -v threadtime | rg &quot;Input dispatching timed out|No focused window|InputDispatcher|Wait queue|head age|has not finished processing&quot;<br>adb shell dumpsys window | rg &quot;mCurrentFocus|mFocusedApp|hasFocus&quot;<br>adb shell dumpsys input | rg &quot;FocusedApplication|FocusedWindow|ANR|Wait queue&quot;<br>adb pull /data/anr/traces.txt<br></code></pre></td></tr></table></figure>
+
+
+
 <h2 id="ANR避免和检测"><a href="#ANR避免和检测" class="headerlink" title="ANR避免和检测"></a>ANR避免和检测</h2><p>默认情况下，Android应用程序通常在单线程上运行——<strong>主线程</strong>。ANR的发生场景主要是在主线程中进行了耗时操作。</p>
 <blockquote>
 <p>哪些算作UI主线程？</p>

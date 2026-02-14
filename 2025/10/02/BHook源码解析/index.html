@@ -19,15 +19,15 @@
   <meta name="author" content="Leo-Wxy">
   <meta name="keywords" content="">
   
-    <meta name="description" content="BHook源码解析 基于 ByteHook 1.1.1（main 分支实现思路）分析，侧重 Android Native Hook 的基础原理与核心源码链路。  ByteHookByteHook（也常写作 BHook）是字节开源的 Android PLT Hook 框架。 它提供三类 Hook 能力：  bytehook_hook_single：只 Hook 指定 caller so。 byteh">
+    <meta name="description" content="BHook源码解析 基于 ByteHook 1.1.1（main 分支思路），只保留核心链路与高价值细节。  ByteHook 是什么ByteHook（BHook）是 Android Native 的 PLT Hook 框架。 核心动作：解析调用方 ELF 的重定位项 -&gt; 找到 GOT&#x2F;DATA 地址 -&gt; 改写为代理函数地址。 相比“能改 GOT 就行”的实现，ByteH">
 <meta property="og:type" content="article">
 <meta property="og:title" content="BHook源码解析">
 <meta property="og:url" content="https://leo-wxy.github.io/2025/10/02/BHook%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/index.html">
 <meta property="og:site_name" content="Wxy的个人博客">
-<meta property="og:description" content="BHook源码解析 基于 ByteHook 1.1.1（main 分支实现思路）分析，侧重 Android Native Hook 的基础原理与核心源码链路。  ByteHookByteHook（也常写作 BHook）是字节开源的 Android PLT Hook 框架。 它提供三类 Hook 能力：  bytehook_hook_single：只 Hook 指定 caller so。 byteh">
+<meta property="og:description" content="BHook源码解析 基于 ByteHook 1.1.1（main 分支思路），只保留核心链路与高价值细节。  ByteHook 是什么ByteHook（BHook）是 Android Native 的 PLT Hook 框架。 核心动作：解析调用方 ELF 的重定位项 -&gt; 找到 GOT&#x2F;DATA 地址 -&gt; 改写为代理函数地址。 相比“能改 GOT 就行”的实现，ByteH">
 <meta property="og:locale" content="zh_CN">
 <meta property="article:published_time" content="2025-10-02T01:18:44.000Z">
-<meta property="article:modified_time" content="2026-02-14T08:07:14.627Z">
+<meta property="article:modified_time" content="2026-02-14T13:16:36.418Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="源码解析">
 <meta name="twitter:card" content="summary_large_image">
@@ -224,7 +224,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          2.1k 字
+          1.5k 字
         
       </span>
     
@@ -236,7 +236,7 @@
         
         
           <!-- compatible with older versions-->
-          7 分钟
+          5 分钟
         
       </span>
     
@@ -292,151 +292,465 @@
               <div class="markdown-body">
                 
                 <h1 id="BHook源码解析"><a href="#BHook源码解析" class="headerlink" title="BHook源码解析"></a>BHook源码解析</h1><blockquote>
-<p>基于 ByteHook 1.1.1（main 分支实现思路）分析，侧重 Android Native Hook 的基础原理与核心源码链路。</p>
+<p>基于 ByteHook 1.1.1（main 分支思路），只保留核心链路与高价值细节。</p>
 </blockquote>
-<h2 id="ByteHook"><a href="#ByteHook" class="headerlink" title="ByteHook"></a>ByteHook</h2><p>ByteHook（也常写作 BHook）是字节开源的 Android PLT Hook 框架。</p>
-<p>它提供三类 Hook 能力：</p>
+<h2 id="ByteHook-是什么"><a href="#ByteHook-是什么" class="headerlink" title="ByteHook 是什么"></a>ByteHook 是什么</h2><p>ByteHook（BHook）是 Android Native 的 PLT Hook 框架。</p>
+<p>核心动作：<strong>解析调用方 ELF 的重定位项 -&gt; 找到 GOT&#x2F;DATA 地址 -&gt; 改写为代理函数地址</strong>。</p>
+<p>相比“能改 GOT 就行”的实现，ByteHook重点在工程化：</p>
 <ul>
-<li><code>bytehook_hook_single</code>：只 Hook 指定 caller so。</li>
-<li><code>bytehook_hook_partial</code>：按过滤器 Hook 部分 caller so。</li>
-<li><code>bytehook_hook_all</code>：Hook 全部 caller so。</li>
+<li>支持 <code>single / partial / all</code> 三种任务模型。</li>
+<li>支持新 so 加载后的自动补 Hook。</li>
+<li>automatic 模式下支持多方 Hook 共存与独立 unhook。</li>
+<li>提供信号保护、CFI 处理、records 记录等稳定性能力。</li>
 </ul>
-<p>并支持：</p>
-<ul>
-<li>自动对新加载 so 补 Hook。</li>
-<li>多个 Hook&#x2F;Unhook 互不冲突（automatic 模式）。</li>
-<li>递归&#x2F;环形调用保护。</li>
-<li>记录 Hook 操作日志（records）。</li>
-</ul>
-<h2 id="ByteHook使用示例"><a href="#ByteHook使用示例" class="headerlink" title="ByteHook使用示例"></a>ByteHook使用示例</h2><p><a target="_blank" rel="noopener" href="https://github.com/bytedance/bhook/blob/main/doc/quickstart.zh-CN.md">https://github.com/bytedance/bhook/blob/main/doc/quickstart.zh-CN.md</a></p>
-<h2 id="主要源码分析"><a href="#主要源码分析" class="headerlink" title="主要源码分析"></a>主要源码分析</h2><p>主要是从 init 到修改GOT的顺序看核心链路</p>
-<h3 id="初始化入口-bytehook-init"><a href="#初始化入口-bytehook-init" class="headerlink" title="初始化入口(bytehook_init)"></a>初始化入口(bytehook_init)</h3><blockquote>
-<p>负责运行时的基础设置</p>
-</blockquote>
-<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-comment">// bytehook/src/main/cpp/bytehook.c</span><br><span class="hljs-function"><span class="hljs-type">int</span> <span class="hljs-title">bytehook_init</span><span class="hljs-params">(<span class="hljs-type">int</span> mode, <span class="hljs-type">bool</span> debug)</span> </span>&#123;<br><span class="hljs-meta">#<span class="hljs-keyword">define</span> GOTO_END(errnum)          \</span><br><span class="hljs-meta">  do &#123;                            \</span><br><span class="hljs-meta">    bytehook_init_errno = errnum; \</span><br><span class="hljs-meta">    goto end;                     \</span><br><span class="hljs-meta">  &#125; while (0)</span><br><br>  <span class="hljs-type">bool</span> do_init = <span class="hljs-literal">false</span>;<br>  <span class="hljs-keyword">if</span> (__predict_true(BYTEHOOK_STATUS_CODE_UNINIT == bytehook_init_errno)) &#123;<br>    <span class="hljs-type">static</span> <span class="hljs-type">pthread_mutex_t</span> lock = PTHREAD_MUTEX_INITIALIZER;<br>    <span class="hljs-built_in">pthread_mutex_lock</span>(&amp;lock);<br>    <span class="hljs-keyword">if</span> (__predict_true(BYTEHOOK_STATUS_CODE_UNINIT == bytehook_init_errno)) &#123;<br>      do_init = <span class="hljs-literal">true</span>;<br>      <span class="hljs-built_in">bh_log_set_debug</span>(debug);<br>      <span class="hljs-keyword">if</span> (__predict_false(BYTEHOOK_MODE_AUTOMATIC != mode &amp;&amp; BYTEHOOK_MODE_MANUAL != mode))<br>        <span class="hljs-built_in">GOTO_END</span>(BYTEHOOK_STATUS_CODE_INITERR_INVALID_ARG);<br>      bytehook_mode = mode;<br>      <span class="hljs-keyword">if</span> (__predict_false(<span class="hljs-number">0</span> != <span class="hljs-built_in">bh_linker_init</span>())) <span class="hljs-built_in">GOTO_END</span>(BYTEHOOK_STATUS_CODE_INITERR_SYM);<br>      <span class="hljs-keyword">if</span> (__predict_false(<span class="hljs-number">0</span> != <span class="hljs-built_in">bytesig_init</span>(SIGSEGV))) <span class="hljs-built_in">GOTO_END</span>(BYTEHOOK_STATUS_CODE_INITERR_SIG);<br>      <span class="hljs-keyword">if</span> (__predict_false(<span class="hljs-number">0</span> != <span class="hljs-built_in">bytesig_init</span>(SIGBUS))) <span class="hljs-built_in">GOTO_END</span>(BYTEHOOK_STATUS_CODE_INITERR_SIG);<br>      <span class="hljs-keyword">if</span> (__predict_false(<span class="hljs-number">0</span> != <span class="hljs-built_in">bh_cfi_disable_slowpath</span>())) <span class="hljs-built_in">GOTO_END</span>(BYTEHOOK_STATUS_CODE_INITERR_CFI);<br>      <span class="hljs-keyword">if</span> (__predict_false(<span class="hljs-number">0</span> != <span class="hljs-built_in">bh_safe_init</span>())) <span class="hljs-built_in">GOTO_END</span>(BYTEHOOK_STATUS_CODE_INITERR_SAFE);<br>      <span class="hljs-keyword">if</span> (BYTEHOOK_IS_AUTOMATIC_MODE) &#123;<br>        <span class="hljs-keyword">if</span> (__predict_false(<span class="hljs-number">0</span> != <span class="hljs-built_in">bh_hub_init</span>())) <span class="hljs-built_in">GOTO_END</span>(BYTEHOOK_STATUS_CODE_INITERR_HUB);<br>      &#125;<br><br><span class="hljs-meta">#<span class="hljs-keyword">undef</span> GOTO_END</span><br><br>      bytehook_init_errno = BYTEHOOK_STATUS_CODE_OK;<br>    &#125;<br>  end:<br>    <span class="hljs-built_in">pthread_mutex_unlock</span>(&amp;lock);<br>  &#125;<br><br>  <span class="hljs-built_in">BH_LOG_ALWAYS_SHOW</span>(<span class="hljs-string">&quot;%s: bytehook init(mode: %s, debuggable: %s), return: %d, real-init: %s&quot;</span>,<br>                     <span class="hljs-built_in">bytehook_get_version</span>(), BYTEHOOK_MODE_AUTOMATIC == mode ? <span class="hljs-string">&quot;AUTOMATIC&quot;</span> : <span class="hljs-string">&quot;MANUAL&quot;</span>,<br>                     debug ? <span class="hljs-string">&quot;true&quot;</span> : <span class="hljs-string">&quot;false&quot;</span>, bytehook_init_errno, do_init ? <span class="hljs-string">&quot;yes&quot;</span> : <span class="hljs-string">&quot;no&quot;</span>);<br>  <span class="hljs-keyword">return</span> bytehook_init_errno;<br>&#125;<br></code></pre></td></tr></table></figure>
+<h2 id="总链路（先记这个）"><a href="#总链路（先记这个）" class="headerlink" title="总链路（先记这个）"></a>总链路（先记这个）</h2><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><code class="hljs text">init:<br>bytehook_init<br>  -&gt; bh_linker_init<br>  -&gt; bytesig_init(SIGSEGV/SIGBUS)<br>  -&gt; bh_cfi_disable_slowpath<br>  -&gt; bh_safe_init<br>  -&gt; (automatic) bh_hub_init<br><br>hook:<br>bytehook_hook_* <br>  -&gt; bh_task_manager_hook<br>  -&gt; bh_task_hook<br>  -&gt; bh_elf_relocator_hook<br>  -&gt; bh_elf_find_symbol_and_gots_by_symbol_name<br>  -&gt; bh_switch_hook<br>  -&gt; bh_elf_relocator_reloc<br><br>unhook:<br>bytehook_unhook<br>  -&gt; bh_task_manager_unhook<br>  -&gt; bh_task_unhook<br>  -&gt; bh_elf_relocator_unhook<br>  -&gt; bh_switch_unhook<br></code></pre></td></tr></table></figure>
 
-<p>主要做了以下事情：</p>
-<ul>
-<li>初始化linker适配层 - bh_linker_init</li>
-<li>初始化signal保护 - bytesig_init (SIGSEGV &#x2F; SIGBUS)</li>
-<li>处理 cfi 兼容 - bh_cfi_disable_slowpath</li>
-<li>初始化 hub 和 trampoline - bh_hub_init</li>
-</ul>
-<h3 id="注册Hook请求-bytehook-hook"><a href="#注册Hook请求-bytehook-hook" class="headerlink" title="注册Hook请求(bytehook_hook_*)"></a>注册Hook请求(bytehook_hook_*)</h3><blockquote>
-<p>业务可以调用的hook api</p>
-</blockquote>
-<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-function"><span class="hljs-type">bytehook_stub_t</span> <span class="hljs-title">bytehook_hook_single</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">char</span> *caller_path_name, <span class="hljs-type">const</span> <span class="hljs-type">char</span> *callee_path_name,</span></span><br><span class="hljs-params"><span class="hljs-function">                                     <span class="hljs-type">const</span> <span class="hljs-type">char</span> *sym_name, <span class="hljs-type">void</span> *new_func, <span class="hljs-type">bytehook_hooked_t</span> hooked,</span></span><br><span class="hljs-params"><span class="hljs-function">                                     <span class="hljs-type">void</span> *hooked_arg)</span> </span>&#123;<br>  <span class="hljs-type">const</span> <span class="hljs-type">void</span> *caller_addr = __builtin_return_address(<span class="hljs-number">0</span>);<br>  <span class="hljs-keyword">if</span> (<span class="hljs-literal">NULL</span> == caller_path_name || <span class="hljs-literal">NULL</span> == sym_name || <span class="hljs-literal">NULL</span> == new_func) <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;<br>  <span class="hljs-keyword">if</span> (BYTEHOOK_STATUS_CODE_OK != bytehook_init_errno) <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;<br><br>  <span class="hljs-type">bh_task_t</span> *task = <span class="hljs-built_in">bh_task_create_single</span>(caller_path_name, callee_path_name, sym_name, new_func, hooked,<br>                                          hooked_arg, <span class="hljs-literal">false</span>);<br>  <span class="hljs-keyword">if</span> (<span class="hljs-literal">NULL</span> != task) &#123;<br>    <span class="hljs-built_in">bh_task_manager_add</span>(task);<br>    <span class="hljs-built_in">bh_task_manager_hook</span>(task);<br>    <span class="hljs-built_in">bh_recorder_add_hook</span>(task-&gt;status_code, caller_path_name, sym_name, (<span class="hljs-type">uintptr_t</span>)new_func, (<span class="hljs-type">uintptr_t</span>)task,<br>                         (<span class="hljs-type">uintptr_t</span>)caller_addr);<br>  &#125;<br>  <span class="hljs-keyword">return</span> (<span class="hljs-type">bytehook_stub_t</span>)task;<br>&#125;<br><br><span class="hljs-function"><span class="hljs-type">bytehook_stub_t</span> <span class="hljs-title">bytehook_hook_partial</span><span class="hljs-params">(<span class="hljs-type">bytehook_caller_allow_filter_t</span> caller_allow_filter,</span></span><br><span class="hljs-params"><span class="hljs-function">                                      <span class="hljs-type">void</span> *caller_allow_filter_arg, <span class="hljs-type">const</span> <span class="hljs-type">char</span> *callee_path_name,</span></span><br><span class="hljs-params"><span class="hljs-function">                                      <span class="hljs-type">const</span> <span class="hljs-type">char</span> *sym_name, <span class="hljs-type">void</span> *new_func, <span class="hljs-type">bytehook_hooked_t</span> hooked,</span></span><br><span class="hljs-params"><span class="hljs-function">                                      <span class="hljs-type">void</span> *hooked_arg)</span> </span>&#123;<br>  <span class="hljs-type">const</span> <span class="hljs-type">void</span> *caller_addr = __builtin_return_address(<span class="hljs-number">0</span>);<br>  <span class="hljs-keyword">if</span> (<span class="hljs-literal">NULL</span> == caller_allow_filter || <span class="hljs-literal">NULL</span> == sym_name || <span class="hljs-literal">NULL</span> == new_func) <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;<br>  <span class="hljs-keyword">if</span> (BYTEHOOK_STATUS_CODE_OK != bytehook_init_errno) <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;<br><br>  <span class="hljs-type">bh_task_t</span> *task = <span class="hljs-built_in">bh_task_create_partial</span>(caller_allow_filter, caller_allow_filter_arg, callee_path_name,<br>                                           sym_name, new_func, hooked, hooked_arg, <span class="hljs-literal">false</span>);<br>  <span class="hljs-keyword">if</span> (<span class="hljs-literal">NULL</span> != task) &#123;<br>    <span class="hljs-built_in">bh_task_manager_add</span>(task);<br>    <span class="hljs-built_in">bh_task_manager_hook</span>(task);<br>    <span class="hljs-built_in">bh_recorder_add_hook</span>(BYTEHOOK_STATUS_CODE_MAX, <span class="hljs-string">&quot;PARTIAL&quot;</span>, sym_name, (<span class="hljs-type">uintptr_t</span>)new_func, (<span class="hljs-type">uintptr_t</span>)task,<br>                         (<span class="hljs-type">uintptr_t</span>)caller_addr);<br>  &#125;<br>  <span class="hljs-keyword">return</span> (<span class="hljs-type">bytehook_stub_t</span>)task;<br>&#125;<br><br><span class="hljs-function"><span class="hljs-type">bytehook_stub_t</span> <span class="hljs-title">bytehook_hook_all</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">char</span> *callee_path_name, <span class="hljs-type">const</span> <span class="hljs-type">char</span> *sym_name, <span class="hljs-type">void</span> *new_func,</span></span><br><span class="hljs-params"><span class="hljs-function">                                  <span class="hljs-type">bytehook_hooked_t</span> hooked, <span class="hljs-type">void</span> *hooked_arg)</span> </span>&#123;<br>  <span class="hljs-type">const</span> <span class="hljs-type">void</span> *caller_addr = __builtin_return_address(<span class="hljs-number">0</span>);<br>  <span class="hljs-keyword">if</span> (<span class="hljs-literal">NULL</span> == sym_name || <span class="hljs-literal">NULL</span> == new_func) <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;<br>  <span class="hljs-keyword">if</span> (BYTEHOOK_STATUS_CODE_OK != bytehook_init_errno) <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;<br><br>  <span class="hljs-type">bh_task_t</span> *task = <span class="hljs-built_in">bh_task_create_all</span>(callee_path_name, sym_name, new_func, hooked, hooked_arg, <span class="hljs-literal">false</span>);<br>  <span class="hljs-keyword">if</span> (<span class="hljs-literal">NULL</span> != task) &#123;<br>    <span class="hljs-built_in">bh_task_manager_add</span>(task);<br>    <span class="hljs-built_in">bh_task_manager_hook</span>(task);<br>    <span class="hljs-built_in">bh_recorder_add_hook</span>(BYTEHOOK_STATUS_CODE_MAX, <span class="hljs-string">&quot;ALL&quot;</span>, sym_name, (<span class="hljs-type">uintptr_t</span>)new_func, (<span class="hljs-type">uintptr_t</span>)task,<br>                         (<span class="hljs-type">uintptr_t</span>)caller_addr);<br>  &#125;<br>  <span class="hljs-keyword">return</span> (<span class="hljs-type">bytehook_stub_t</span>)task;<br>&#125;<br></code></pre></td></tr></table></figure>
+<h2 id="单页流程图"><a href="#单页流程图" class="headerlink" title="单页流程图"></a>单页流程图</h2><pre><code class=" mermaid">flowchart TD
+    A[bytehook_init] --&gt; B[bh_linker_init / bytesig / cfi / safe]
+    B --&gt; C&#123;mode&#125;
+    C --&gt;|automatic| D[bh_hub_init]
+    C --&gt;|manual| E[skip hub init]
 
-<h4 id="hook单个调用者-bytehook-hook-single"><a href="#hook单个调用者-bytehook-hook-single" class="headerlink" title="hook单个调用者(bytehook_hook_single)"></a>hook单个调用者(bytehook_hook_single)</h4><ul>
-<li>在已加载的所有 ELF 中寻找目标调用者。如果找到，则执行 hook task，然后将 task 标记为已完成，最后执行 hooked 回调通知外部。</li>
-<li>如果未找到调用者，则将 task 标记为未完成。</li>
-<li>未来某一时刻，目标调用者被加载到内存中，此时 ByteHook 会自动对它执行 hook task，然后将 task 标记为已完成，最后执行 hooked 回调通知外部。</li>
-</ul>
-<h4 id="hook部分调用者-bytehook-hook-partial"><a href="#hook部分调用者-bytehook-hook-partial" class="headerlink" title="hook部分调用者(bytehook_hook_partial)"></a>hook部分调用者(bytehook_hook_partial)</h4><ul>
-<li>此类任务永远处于未完成状态。</li>
-<li>在已加载的所有 ELF 中使用 <code>caller_allow_filter</code> 过滤函数进行匹配，对匹配成功的调用者们，逐个执行 hook task，同时逐个执行 hooked 回调通知外部。</li>
-<li>未来有任何新的 ELF 被加载到内存时，ByteHook 都会自动的用 <code>caller_allow_filter</code> 过滤函数去尝试匹配，一旦匹配成功，就会对它执行 hook task，再执行 hooked 回调通知外部。</li>
-</ul>
-<h4 id="hook全部调用者-bytehook-hook-all"><a href="#hook全部调用者-bytehook-hook-all" class="headerlink" title="hook全部调用者(bytehook_hook_all)"></a>hook全部调用者(bytehook_hook_all)</h4><ul>
-<li>和 hook 部分调用者（<code>bytehook_hook_partial()</code>）的情况类似，区别仅在于不需要过滤函数了，而是“来者不拒”的对“所有已加载的 ELF”和“未来加载的 ELF”都执行 hook task，以及 hooked 回调。</li>
-</ul>
-<p>上述方法的核心对象是 <code>bh_task_t</code>。表示一个Hook请求</p>
-<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-comment">// bytehook/src/main/cpp/bh_task.h</span><br><span class="hljs-keyword">typedef</span> <span class="hljs-keyword">struct</span> <span class="hljs-title class_">bh_task</span> &#123;<br>  <span class="hljs-type">bh_task_type_t</span> type;<br>  <span class="hljs-type">bh_task_status_t</span> status;<br>  <span class="hljs-type">int</span> status_code;  <span class="hljs-comment">// for recorder, single type only</span><br>  <span class="hljs-type">bool</span> is_invisible;<br><br>  <span class="hljs-comment">// caller</span><br>  <span class="hljs-type">char</span> *caller_path_name;                              <span class="hljs-comment">// for single</span><br>  <span class="hljs-type">uintptr_t</span> caller_load_bias;                          <span class="hljs-comment">// for single</span><br>  <span class="hljs-type">bytehook_caller_allow_filter_t</span> caller_allow_filter;  <span class="hljs-comment">// for partial</span><br>  <span class="hljs-type">void</span> *caller_allow_filter_arg;                       <span class="hljs-comment">// for partial</span><br><br>  <span class="hljs-comment">// callee</span><br>  <span class="hljs-type">char</span> *callee_path_name;<br>  <span class="hljs-type">void</span> *callee_addr;<br><br>  <span class="hljs-comment">// symbol</span><br>  <span class="hljs-type">char</span> *sym_name;<br><br>  <span class="hljs-comment">// new function address</span><br>  <span class="hljs-type">void</span> *new_func;<br><br>  <span class="hljs-comment">// callback</span><br>  <span class="hljs-type">bytehook_hooked_t</span> hooked;<br>  <span class="hljs-type">void</span> *hooked_arg;<br><br>  <span class="hljs-built_in">TAILQ_ENTRY</span>(bh_task, ) link;<br>&#125; <span class="hljs-type">bh_task_t</span>;<br></code></pre></td></tr></table></figure>
+    F[bytehook_hook_single/partial/all] --&gt; G[create bh_task]
+    G --&gt; H[bh_task_manager_hook]
+    H --&gt; I[bh_task_hook]
+    I --&gt; J[bh_elf_relocator_hook]
+    J --&gt; K[bh_elf_find_symbol_and_gots_by_symbol_name]
+    K --&gt; L[bh_switch_hook]
+    L --&gt; M&#123;mode&#125;
+    M --&gt;|manual| N[GOT -&gt; new_func]
+    M --&gt;|automatic| O[GOT -&gt; hub_trampo + add_proxy]
 
-<p>主要是下面几个参数：</p>
-<ul>
-<li>sym_name：目标符号</li>
-<li>new_func：新函数地址</li>
-<li>caller &#x2F; callee ：限定条件</li>
-<li>状态与回调信息</li>
-</ul>
-<h3 id="Task管理与调度-bh-task-mamager"><a href="#Task管理与调度-bh-task-mamager" class="headerlink" title="Task管理与调度(bh_task_mamager)"></a>Task管理与调度(bh_task_mamager)</h3><blockquote>
-<p>主要有以下两个任务：</p>
-<ul>
-<li>对当前进程中已加载的 ELF 执行 Task</li>
-<li>后续新加载的ELF，补充执行Task</li>
-</ul>
-</blockquote>
-<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-comment">// bytehook/src/main/cpp/bh_task_manager.c</span><br><br><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">bh_task_manager_add</span><span class="hljs-params">(<span class="hljs-type">bh_task_t</span> *task)</span> </span>&#123;<br>  <span class="hljs-built_in">pthread_rwlock_wrlock</span>(&amp;bh_tasks_lock);<br>  <span class="hljs-built_in">TAILQ_INSERT_TAIL</span>(&amp;bh_tasks, task, link);<br>  <span class="hljs-built_in">pthread_rwlock_unlock</span>(&amp;bh_tasks_lock);<br>&#125;<br><br><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">bh_task_manager_hook</span><span class="hljs-params">(<span class="hljs-type">bh_task_t</span> *task)</span> </span>&#123;<br>  ...<br><br><span class="hljs-meta">#<span class="hljs-keyword">if</span> BH_LINKER_MAYBE_NOT_SUPPORT_DL_INIT_FINI_MONITOR</span><br>  <span class="hljs-built_in">bh_dl_monitor_dlclose_rdlock</span>();<br><span class="hljs-meta">#<span class="hljs-keyword">endif</span></span><br>  <span class="hljs-built_in">bh_task_hook</span>(task);<br><span class="hljs-meta">#<span class="hljs-keyword">if</span> BH_LINKER_MAYBE_NOT_SUPPORT_DL_INIT_FINI_MONITOR</span><br>  <span class="hljs-built_in">bh_dl_monitor_dlclose_unlock</span>();<br><span class="hljs-meta">#<span class="hljs-keyword">endif</span></span><br>&#125;<br></code></pre></td></tr></table></figure>
+    P[dlopen/android_dlopen_ext] --&gt; Q[bh_dl_monitor post_dlopen]
+    Q --&gt; R[bh_elf_manager_refresh]
+    R --&gt; I
 
-<h3 id="ELF缓存管理-bh-elf-manager"><a href="#ELF缓存管理-bh-elf-manager" class="headerlink" title="ELF缓存管理(bh_elf_manager)"></a>ELF缓存管理(bh_elf_manager)</h3><blockquote>
-<p>维护进程内的ELF列表，支持增删与生命周期同步</p>
-</blockquote>
-<ul>
-<li><p>bh_elf_manager_load：初次加载缓存</p>
-</li>
-<li><p>bh_elf_manager_refresh：刷新所有ELF</p>
-</li>
-<li><p>bh_elf_manager_add &#x2F; bh_elf_manager_del：增加&#x2F;删除缓存</p>
-</li>
-<li><p>bh_elf_manager_find_elf：从维护的 ELF缓存里，按照so名称&#x2F;路径返回一个可用的ELF对象</p>
-</li>
-</ul>
-<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-comment">// bytehook/src/main/cpp/bh_task.c</span><br><br><span class="hljs-function"><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title">bh_task_handle</span><span class="hljs-params">(<span class="hljs-type">bh_task_t</span> *self)</span> </span>&#123;<br>  <span class="hljs-keyword">switch</span> (self-&gt;type) &#123;<br>    <span class="hljs-keyword">case</span> BH_TASK_TYPE_SINGLE: &#123;<br>      <span class="hljs-type">bh_elf_t</span> *caller_elf = <span class="hljs-built_in">bh_elf_manager_find_elf</span>(self-&gt;caller_path_name);<br>      <span class="hljs-keyword">if</span> (<span class="hljs-literal">NULL</span> != caller_elf) &#123;<br>        <span class="hljs-built_in">bh_task_hook_or_unhook</span>(self, caller_elf);<br>        <span class="hljs-built_in">bh_elf_decrement_ref_count</span>(caller_elf);<br>      &#125;<br>      <span class="hljs-keyword">break</span>;<br>    &#125;<br>    <span class="hljs-keyword">case</span> BH_TASK_TYPE_ALL:<br>    <span class="hljs-keyword">case</span> BH_TASK_TYPE_PARTIAL:<br>      <span class="hljs-built_in">bh_elf_manager_iterate</span>(bh_task_elf_iterate_cb, (<span class="hljs-type">void</span> *)self);<br>      <span class="hljs-keyword">break</span>;<br>  &#125;<br>&#125;<br><br><span class="hljs-comment">// bytehook/src/main/cpp/bh_elf_manager.c</span><br><span class="hljs-function"><span class="hljs-type">bh_elf_t</span> *<span class="hljs-title">bh_elf_manager_find_elf</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">char</span> *pathname)</span> </span>&#123;<br>  <span class="hljs-type">bh_elf_t</span> *elf = <span class="hljs-literal">NULL</span>;<br><br>  <span class="hljs-built_in">pthread_rwlock_rdlock</span>(&amp;bh_elfs_lock);<br>  <span class="hljs-built_in">TAILQ_FOREACH</span>(elf, &amp;bh_elfs, link_list) &#123;<br>    <span class="hljs-keyword">if</span> (<span class="hljs-number">0</span> == elf-&gt;abandoned_ts &amp;&amp; !elf-&gt;error &amp;&amp; <span class="hljs-built_in">bh_elf_is_match</span>(elf, pathname)) <span class="hljs-keyword">break</span>;<br>  &#125;<br>  <span class="hljs-keyword">if</span> (<span class="hljs-literal">NULL</span> != elf) <span class="hljs-built_in">bh_elf_increment_ref_count</span>(elf);<br>  <span class="hljs-built_in">pthread_rwlock_unlock</span>(&amp;bh_elfs_lock);<br><br>  <span class="hljs-keyword">return</span> elf;<br>&#125;<br></code></pre></td></tr></table></figure>
+    S[bytehook_unhook] --&gt; T[bh_task_manager_unhook]
+    T --&gt; U[bh_task_unhook]
+    U --&gt; V[bh_elf_relocator_unhook]
+    V --&gt; W[bh_switch_unhook]
+    W --&gt; X&#123;mode&#125;
+    X --&gt;|manual| Y[restore orig_addr]
+    X --&gt;|automatic| Z[del proxy; empty then restore]
+</code></pre>
 
-<h3 id="ELF信息-bh-elf"><a href="#ELF信息-bh-elf" class="headerlink" title="ELF信息(bh_elf)"></a>ELF信息(bh_elf)</h3><blockquote>
-<p>主要是两件事情：</p>
-<ul>
-<li>ELF动态信息解析</li>
-<li>符号定位与GOT表收集</li>
-</ul>
-</blockquote>
-<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-comment">// bytehook/src/main/cpp/bh_elf.c</span><br><span class="hljs-function"><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title">bh_elf_parse_dynamic_unsafe</span><span class="hljs-params">(<span class="hljs-type">bh_elf_t</span> *self, ElfW(Dyn) *dynamic)</span> </span>&#123;<br>  <span class="hljs-comment">// 解析 .dynamic</span><br><span class="hljs-keyword">case</span> DT_JMPREL: self-&gt;rel_plt = ...;<br><span class="hljs-keyword">case</span> DT_PLTRELSZ: self-&gt;rel_plt_cnt = ...;<br><span class="hljs-keyword">case</span> DT_REL/DT_RELA: self-&gt;rel_dyn = ...;<br><span class="hljs-keyword">case</span> DT_RELSZ/DT_RELASZ: self-&gt;rel_dyn_cnt = ...;<br><span class="hljs-keyword">case</span> DT_SYMTAB: self-&gt;dynsym = ...;<br><span class="hljs-keyword">case</span> DT_STRTAB: self-&gt;dynstr = ...;<br><span class="hljs-keyword">case</span> DT_HASH/DT_GNU_HASH: ...<br>&#125;<br></code></pre></td></tr></table></figure>
 
-<p>主要是处理 如下字段</p>
+<h2 id="关键模块速览"><a href="#关键模块速览" class="headerlink" title="关键模块速览"></a>关键模块速览</h2><table>
+<thead>
+<tr>
+<th align="left">模块</th>
+<th align="left">关键文件</th>
+<th align="left">作用</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">API 入口</td>
+<td align="left"><code>bytehook.c</code></td>
+<td align="left">对外 init&#x2F;hook&#x2F;unhook 接口</td>
+</tr>
+<tr>
+<td align="left">Task</td>
+<td align="left"><code>bh_task.c</code></td>
+<td align="left">定义 hook 任务模型与状态</td>
+</tr>
+<tr>
+<td align="left">Task 管理</td>
+<td align="left"><code>bh_task_manager.c</code></td>
+<td align="left">管理任务队列，触发执行</td>
+</tr>
+<tr>
+<td align="left">ELF 缓存</td>
+<td align="left"><code>bh_elf_manager.c</code></td>
+<td align="left">维护进程中 ELF 列表与生命周期</td>
+</tr>
+<tr>
+<td align="left">ELF 解析</td>
+<td align="left"><code>bh_elf.c</code></td>
+<td align="left">解析 <code>.dynamic</code> 与重定位项</td>
+</tr>
+<tr>
+<td align="left">重定位改写</td>
+<td align="left"><code>bh_elf_relocator.c</code></td>
+<td align="left"><code>mprotect + atomic</code> 写 GOT&#x2F;DATA</td>
+</tr>
+<tr>
+<td align="left">模式切换</td>
+<td align="left"><code>bh_switch.c</code></td>
+<td align="left">manual&#x2F;automatic 分流</td>
+</tr>
+<tr>
+<td align="left">automatic 运行时</td>
+<td align="left"><code>bh_hub.c</code></td>
+<td align="left">proxy 链、prev 调用、递归保护</td>
+</tr>
+<tr>
+<td align="left">so 监控</td>
+<td align="left"><code>bh_dl_monitor.c</code></td>
+<td align="left">监听 <code>dlopen</code> 家族，处理增量 so</td>
+</tr>
+</tbody></table>
+<h2 id="初始化：bytehook-init-做了什么"><a href="#初始化：bytehook-init-做了什么" class="headerlink" title="初始化：bytehook_init 做了什么"></a>初始化：<code>bytehook_init</code> 做了什么</h2><table>
+<thead>
+<tr>
+<th align="left">步骤</th>
+<th align="left">关键函数</th>
+<th align="left">作用</th>
+<th align="left">失败码（示例）</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">参数校验</td>
+<td align="left">mode 检查</td>
+<td align="left">只允许 automatic&#x2F;manual</td>
+<td align="left"><code>INITERR_INVALID_ARG</code></td>
+</tr>
+<tr>
+<td align="left">linker 适配</td>
+<td align="left"><code>bh_linker_init</code></td>
+<td align="left">适配不同 Android linker 符号</td>
+<td align="left"><code>INITERR_SYM</code></td>
+</tr>
+<tr>
+<td align="left">信号保护</td>
+<td align="left"><code>bytesig_init</code></td>
+<td align="left">把危险读写从崩溃转为可控错误</td>
+<td align="left"><code>INITERR_SIG</code></td>
+</tr>
+<tr>
+<td align="left">CFI 处理</td>
+<td align="left"><code>bh_cfi_disable_slowpath</code></td>
+<td align="left">处理 CFI 相关限制</td>
+<td align="left"><code>INITERR_CFI</code></td>
+</tr>
+<tr>
+<td align="left">安全封装</td>
+<td align="left"><code>bh_safe_init</code></td>
+<td align="left">安全 syscall&#x2F;TLS 包装</td>
+<td align="left"><code>INITERR_SAFE</code></td>
+</tr>
+<tr>
+<td align="left">automatic 准备</td>
+<td align="left"><code>bh_hub_init</code></td>
+<td align="left">初始化 trampoline&#x2F;proxy 运行时</td>
+<td align="left"><code>INITERR_HUB</code></td>
+</tr>
+</tbody></table>
+<h2 id="Hook-API-与-Task-模型"><a href="#Hook-API-与-Task-模型" class="headerlink" title="Hook API 与 Task 模型"></a>Hook API 与 Task 模型</h2><table>
+<thead>
+<tr>
+<th align="left">API</th>
+<th align="left">作用</th>
+<th align="left">任务状态特点</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><code>bytehook_hook_single</code></td>
+<td align="left">只 hook 指定 caller so</td>
+<td align="left">命中后可进入 finished</td>
+</tr>
+<tr>
+<td align="left"><code>bytehook_hook_partial</code></td>
+<td align="left">按过滤函数 hook 部分 caller</td>
+<td align="left">长期任务，持续监听新 so</td>
+</tr>
+<tr>
+<td align="left"><code>bytehook_hook_all</code></td>
+<td align="left">hook 所有 caller</td>
+<td align="left">长期任务，持续监听新 so</td>
+</tr>
+</tbody></table>
+<p><code>bh_task_t</code> 里最关键的字段：</p>
 <ul>
-<li>.rel.plt &#x2F; .rela.plt</li>
-<li>.rel.dyn &#x2F; .rela.dyn</li>
-<li>.dynsym</li>
-<li>.dynstr</li>
-<li>.rel.dyn &#x2F; .rela.dyn (APS2 format) - Android对重定位表做的‘私有压缩格式’，主要为了减少so体积</li>
+<li><code>sym_name</code>：目标符号</li>
+<li><code>new_func</code>：代理函数</li>
+<li><code>caller_path_name</code> &#x2F; <code>callee_path_name</code>：匹配边界</li>
+<li><code>status</code> &#x2F; <code>status_code</code>：任务状态与结果</li>
 </ul>
-<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-comment">// bytehook/src/main/cpp/bh_elf.c</span><br><br><span class="hljs-built_in">ElfW</span>(Sym) *<span class="hljs-built_in">bh_elf_find_symbol_and_gots_by_symbol_name</span>(<span class="hljs-type">bh_elf_t</span> *self, <span class="hljs-type">const</span> <span class="hljs-type">char</span> *sym_name, <span class="hljs-type">void</span> *callee_addr,<br>                                                      <span class="hljs-type">bh_array_t</span> *gots, <span class="hljs-type">bh_array_t</span> *prots) &#123;<br>  <span class="hljs-keyword">if</span> (self-&gt;error) <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;<br>  <span class="hljs-keyword">if</span> (<span class="hljs-number">0</span> != <span class="hljs-built_in">bh_elf_parse_dynamic</span>(self)) <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;<br><br>  <span class="hljs-built_in">ElfW</span>(Sym) *sym = <span class="hljs-literal">NULL</span>;<br><br>  <span class="hljs-built_in">BH_SIG_TRY</span>(SIGSEGV, SIGBUS) &#123;<br>    sym = <span class="hljs-built_in">bh_elf_find_symbol_and_gots_by_symbol_name_unsafe</span>(self, sym_name, callee_addr, gots, prots);<br>  &#125;<br>  <span class="hljs-built_in">BH_SIG_CATCH</span>() &#123;<br>    self-&gt;error = <span class="hljs-literal">true</span>;<br>    sym = <span class="hljs-literal">NULL</span>;<br>  &#125;<br>  BH_SIG_EXIT<br><br>  <span class="hljs-keyword">return</span> sym;<br>&#125;<br><br><span class="hljs-function"><span class="hljs-type">static</span> <span class="hljs-title">ElfW</span><span class="hljs-params">(Sym)</span> *<span class="hljs-title">bh_elf_find_symbol_and_gots_by_symbol_name_unsafe</span><span class="hljs-params">(<span class="hljs-type">bh_elf_t</span> *self, <span class="hljs-type">const</span> <span class="hljs-type">char</span> *sym_name,</span></span><br><span class="hljs-params"><span class="hljs-function">                                                                    <span class="hljs-type">void</span> *callee_addr, <span class="hljs-type">bh_array_t</span> *gots,</span></span><br><span class="hljs-params"><span class="hljs-function">                                                                    <span class="hljs-type">bh_array_t</span> *prots)</span> </span>&#123;<br>  <span class="hljs-built_in">ElfW</span>(Sym) *sym = <span class="hljs-literal">NULL</span>;<br><br>  <span class="hljs-comment">// From: SYSV hash (.hash -&gt; .dynsym -&gt; .dynstr), O(x) + O(1) + O(1)</span><br>  <span class="hljs-comment">// Notice: If ELF is linked as &quot;-Wl,--hash-style=gnu&quot;, there will be no .hash section.</span><br>  <span class="hljs-comment">//         The SYSV hash contains both imported and exported symbols.</span><br>  <span class="hljs-keyword">if</span> (self-&gt;sysv_hash.buckets_cnt &gt; <span class="hljs-number">0</span>) sym = <span class="hljs-built_in">bh_elf_find_symbol_by_name_use_sysv_hash</span>(self, sym_name);<br><br>  <span class="hljs-comment">// From: GNU hash (.gnu.hash -&gt; .dynsym -&gt; .dynstr), O(x) + O(1) + O(1)</span><br>  <span class="hljs-comment">// Notice: If ELF is linked as &quot;-Wl,--hash-style=sysv&quot;, there will be no .gnu.hash section.</span><br>  <span class="hljs-comment">//         The GNU hash only contains exported symbols.</span><br>  <span class="hljs-keyword">if</span> (<span class="hljs-literal">NULL</span> == sym &amp;&amp; self-&gt;gnu_hash.buckets_cnt &gt; <span class="hljs-number">0</span>)<br>    sym = <span class="hljs-built_in">bh_elf_find_symbol_by_name_use_gnu_hash</span>(self, sym_name);<br><br>  <span class="hljs-comment">// If we have already found &quot;sym&quot; at this moment, then we do not need to use &quot;strcmp()&quot; to</span><br>  <span class="hljs-comment">// compare &quot;sym_name&quot; in the following linear search, and the following search will be faster.</span><br><br>  <span class="hljs-comment">// linear Search sym and GOTS in .rel.plt</span><br>  <span class="hljs-keyword">for</span> (<span class="hljs-type">size_t</span> i = <span class="hljs-number">0</span>; i &lt; self-&gt;rel_plt_cnt; i++)<br>    <span class="hljs-keyword">if</span> (<span class="hljs-number">0</span> != <span class="hljs-built_in">bh_elf_check_reloc</span>(self, &amp;(self-&gt;rel_plt[i]), sym_name, callee_addr, gots, prots, &amp;sym, <span class="hljs-literal">true</span>))<br>      <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;<br><br>  <span class="hljs-comment">// linear Search sym and GOTS in .rel.dyn</span><br>  <span class="hljs-keyword">for</span> (<span class="hljs-type">size_t</span> i = <span class="hljs-number">0</span>; i &lt; self-&gt;rel_dyn_cnt; i++)<br>    <span class="hljs-keyword">if</span> (<span class="hljs-number">0</span> != <span class="hljs-built_in">bh_elf_check_reloc</span>(self, &amp;(self-&gt;rel_dyn[i]), sym_name, callee_addr, gots, prots, &amp;sym, <span class="hljs-literal">false</span>))<br>      <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;<br><br>  <span class="hljs-comment">// linear Search sym and GOTS in .rel.dyn (APS2 format)</span><br>  <span class="hljs-type">uintptr_t</span> pkg[<span class="hljs-number">6</span>] = &#123;(<span class="hljs-type">uintptr_t</span>)self, (<span class="hljs-type">uintptr_t</span>)sym_name, (<span class="hljs-type">uintptr_t</span>)callee_addr,<br>                      (<span class="hljs-type">uintptr_t</span>)gots, (<span class="hljs-type">uintptr_t</span>)prots,    (<span class="hljs-type">uintptr_t</span>)&amp;sym&#125;;<br>  <span class="hljs-keyword">if</span> (<span class="hljs-literal">NULL</span> != self-&gt;rel_dyn_aps2) &#123;<br>    <span class="hljs-type">bh_sleb128_decoder_t</span> decoder;<br>    <span class="hljs-built_in">bh_sleb128_decoder_init</span>(&amp;decoder, self-&gt;rel_dyn_aps2, self-&gt;rel_dyn_aps2_sz);<br>    <span class="hljs-built_in">bh_elf_iterate_aps2</span>(&amp;decoder, bh_elf_find_got_by_sym_unsafe_aps2_cb, pkg);<br>  &#125;<br><br>  <span class="hljs-keyword">return</span> sym;<br>&#125;<br></code></pre></td></tr></table></figure>
+<h2 id="hooked-回调语义（高频易混淆）"><a href="#hooked-回调语义（高频易混淆）" class="headerlink" title="hooked 回调语义（高频易混淆）"></a>hooked 回调语义（高频易混淆）</h2><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><code class="hljs c"><span class="hljs-keyword">typedef</span> <span class="hljs-title function_">void</span> <span class="hljs-params">(*<span class="hljs-type">bytehook_hooked_t</span>)</span><span class="hljs-params">(<span class="hljs-type">bytehook_stub_t</span> task_stub, <span class="hljs-type">int</span> status_code,</span><br><span class="hljs-params">                                  <span class="hljs-type">const</span> <span class="hljs-type">char</span> *caller_path_name, <span class="hljs-type">const</span> <span class="hljs-type">char</span> *sym_name,</span><br><span class="hljs-params">                                  <span class="hljs-type">void</span> *new_func, <span class="hljs-type">void</span> *prev_func, <span class="hljs-type">void</span> *arg)</span>;<br></code></pre></td></tr></table></figure>
 
-<p>执行以下逻辑：</p>
+<table>
+<thead>
+<tr>
+<th align="left">场景</th>
+<th align="left">status_code</th>
+<th align="left"><code>prev_func</code> 含义</th>
+<th align="left">是否回调</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">manual hook 成功</td>
+<td align="left"><code>OK</code></td>
+<td align="left">原始函数地址</td>
+<td align="left">是</td>
+</tr>
+<tr>
+<td align="left">automatic hook 成功</td>
+<td align="left"><code>OK</code></td>
+<td align="left">当前位点原始地址（由 hub&#x2F;switch 管理）</td>
+<td align="left">是</td>
+</tr>
+<tr>
+<td align="left">manual 早期回调</td>
+<td align="left"><code>ORIG_ADDR</code></td>
+<td align="left">原始函数地址（改 GOT 前）</td>
+<td align="left">是</td>
+</tr>
+<tr>
+<td align="left">single 失败</td>
+<td align="left"><code>NOSYM/SET_GOT/...</code></td>
+<td align="left"><code>NULL</code></td>
+<td align="left">是</td>
+</tr>
+<tr>
+<td align="left">partial&#x2F;all 的 <code>NOSYM</code>&#x2F;<code>READ_ELF</code></td>
+<td align="left"><code>NOSYM/READ_ELF</code></td>
+<td align="left"><code>NULL</code></td>
+<td align="left">否（内部跳过）</td>
+</tr>
+<tr>
+<td align="left">unhook 阶段</td>
+<td align="left">各类 unhook 码</td>
+<td align="left">-</td>
+<td align="left">否（UNHOOKING 状态）</td>
+</tr>
+</tbody></table>
+<h2 id="ELF-解析与改写（核心实现）"><a href="#ELF-解析与改写（核心实现）" class="headerlink" title="ELF 解析与改写（核心实现）"></a>ELF 解析与改写（核心实现）</h2><h3 id="1-解析动态信息"><a href="#1-解析动态信息" class="headerlink" title="1) 解析动态信息"></a>1) 解析动态信息</h3><p><code>bh_elf_parse_dynamic</code> 解析：</p>
 <ul>
-<li>用 SYSV &#x2F; GNU hash 定位符号</li>
-<li>线性扫描重定位项，筛选对应符号</li>
-<li>收集所有要改写的地址 (GOT)和页保护属性</li>
+<li><code>DT_SYMTAB / DT_STRTAB</code></li>
+<li><code>DT_JMPREL / DT_REL(A)</code></li>
+<li><code>DT_HASH / DT_GNU_HASH</code></li>
 </ul>
-<h3 id="改写地址-bh-elf-relocator"><a href="#改写地址-bh-elf-relocator" class="headerlink" title="改写地址(bh_elf_relocator)"></a>改写地址(bh_elf_relocator)</h3><blockquote>
-<p>在这里进行最终的替换逻辑</p>
-</blockquote>
-<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-comment">// bytehook/src/main/cpp/bh_elf_relocator.c</span><br><span class="hljs-function"><span class="hljs-type">int</span> <span class="hljs-title">bh_elf_relocator_reloc</span><span class="hljs-params">(<span class="hljs-type">bh_elf_t</span> *elf, <span class="hljs-type">bh_task_t</span> *task, <span class="hljs-type">bh_array_t</span> *gots, <span class="hljs-type">bh_array_t</span> *prots,</span></span><br><span class="hljs-params"><span class="hljs-function">                           <span class="hljs-type">uintptr_t</span> new_addr, <span class="hljs-type">uintptr_t</span> *orig_addr)</span> </span>&#123;<br>  <span class="hljs-comment">// get original address</span><br>  <span class="hljs-type">uintptr_t</span> real_orig_addr = <span class="hljs-number">0</span>;<br>  <span class="hljs-built_in">BH_SIG_TRY</span>(SIGSEGV, SIGBUS) &#123;<br>    real_orig_addr = (<span class="hljs-type">uintptr_t</span>)(*((<span class="hljs-type">void</span> **)gots-&gt;data[<span class="hljs-number">0</span>]));<br>  &#125;<br>  <span class="hljs-built_in">BH_SIG_CATCH</span>() &#123;<br>    <span class="hljs-keyword">return</span> BYTEHOOK_STATUS_CODE_READ_ELF;<br>  &#125;<br>  <span class="hljs-function">BH_SIG_EXIT</span><br><span class="hljs-function"></span><br><span class="hljs-function">  <span class="hljs-title">if</span> <span class="hljs-params">(<span class="hljs-literal">NULL</span> != orig_addr)</span> *orig_addr </span>= real_orig_addr;<br><br>  <span class="hljs-comment">// do callback with BYTEHOOK_STATUS_CODE_ORIG_ADDR for manual-mode</span><br>  <span class="hljs-comment">//</span><br>  <span class="hljs-comment">// In manual mode, the caller needs to save the original function address</span><br>  <span class="hljs-comment">// in the hooked callback, and then may call the original function through</span><br>  <span class="hljs-comment">// this address in the proxy function. So we need to execute the hooked callback</span><br>  <span class="hljs-comment">// first, and then execute the address replacement in the GOT, otherwise it</span><br>  <span class="hljs-comment">// will cause a crash due to timing issues.</span><br>  <span class="hljs-built_in">bh_task_do_orig_func_callback</span>(task, elf-&gt;pathname, (<span class="hljs-type">void</span> *)real_orig_addr);<br><br>  <span class="hljs-keyword">for</span> (<span class="hljs-type">size_t</span> i = <span class="hljs-number">0</span>; i &lt; gots-&gt;count; i++) &#123;<br>    <span class="hljs-type">void</span> *got = (<span class="hljs-type">void</span> *)gots-&gt;data[i];<br>    <span class="hljs-type">int</span> prot = (<span class="hljs-type">int</span>)prots-&gt;data[i];<br><br>    <span class="hljs-comment">// add write permission</span><br>    <span class="hljs-keyword">if</span> (<span class="hljs-number">0</span> == (prot &amp; PROT_WRITE)) &#123;<br>      <span class="hljs-keyword">if</span> (<span class="hljs-number">0</span> != <span class="hljs-built_in">bh_util_set_addr_protect</span>(got, prot | PROT_WRITE)) <span class="hljs-keyword">return</span> BYTEHOOK_STATUS_CODE_SET_PROT;<br>    &#125;<br><br>    <span class="hljs-comment">// replace the target function address by &quot;new_func&quot;</span><br>    <span class="hljs-built_in">BH_SIG_TRY</span>(SIGSEGV, SIGBUS) &#123;<br>      __atomic_store_n((<span class="hljs-type">uintptr_t</span> *)got, (<span class="hljs-type">uintptr_t</span>)new_addr, __ATOMIC_SEQ_CST);<br>    &#125;<br>    <span class="hljs-built_in">BH_SIG_CATCH</span>() &#123;<br>      <span class="hljs-keyword">return</span> BYTEHOOK_STATUS_CODE_SET_GOT;<br>    &#125;<br>    BH_SIG_EXIT<br><br>    <span class="hljs-comment">// delete write permission</span><br>    <span class="hljs-comment">//    if (0 == (prot &amp; PROT_WRITE)) bh_util_set_addr_protect(got, prot);</span><br>  &#125;<br><br>  <span class="hljs-keyword">return</span> BYTEHOOK_STATUS_CODE_OK;<br>&#125;<br><br></code></pre></td></tr></table></figure>
+<h3 id="2-定位符号并收集-GOT-DATA"><a href="#2-定位符号并收集-GOT-DATA" class="headerlink" title="2) 定位符号并收集 GOT&#x2F;DATA"></a>2) 定位符号并收集 GOT&#x2F;DATA</h3><p><code>bh_elf_find_symbol_and_gots_by_symbol_name</code>：</p>
+<ol>
+<li>先用 SYSV&#x2F;GNU hash 定位符号。</li>
+<li>扫描 <code>.rel.plt/.rela.plt</code>、<code>.rel.dyn/.rela.dyn</code>。</li>
+<li>兼容 APS2 压缩重定位格式。</li>
+<li>收集命中地址和页权限。</li>
+</ol>
+<h3 id="3-执行改写"><a href="#3-执行改写" class="headerlink" title="3) 执行改写"></a>3) 执行改写</h3><p><code>bh_elf_relocator_reloc</code>：</p>
+<ul>
+<li>读取原地址。</li>
+<li>必要时 <code>mprotect</code> 加写权限。</li>
+<li><code>__atomic_store_n</code> 写新地址。</li>
+</ul>
+<p>并用 <code>BH_SIG_TRY(SIGSEGV, SIGBUS)</code> 兜底，避免直接崩溃。</p>
+<h2 id="模式切换：automatic-vs-manual"><a href="#模式切换：automatic-vs-manual" class="headerlink" title="模式切换：automatic vs manual"></a>模式切换：automatic vs manual</h2><table>
+<thead>
+<tr>
+<th align="left">维度</th>
+<th align="left">manual</th>
+<th align="left">automatic</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">首次写入</td>
+<td align="left">GOT -&gt; <code>new_func</code></td>
+<td align="left">GOT -&gt; <code>hub_trampo</code></td>
+</tr>
+<tr>
+<td align="left">重复 Hook 同位点</td>
+<td align="left">常见 <code>DUP</code></td>
+<td align="left">追加 proxy 到 hub</td>
+</tr>
+<tr>
+<td align="left">调用链</td>
+<td align="left">单层替换</td>
+<td align="left">多层 proxy 链</td>
+</tr>
+<tr>
+<td align="left">调原函数</td>
+<td align="left">通常依赖 <code>ORIG_ADDR</code> 保存地址</td>
+<td align="left">用 <code>BYTEHOOK_CALL_PREV</code> 动态取下一跳</td>
+</tr>
+<tr>
+<td align="left">unhook</td>
+<td align="left">直接恢复 <code>orig_addr</code></td>
+<td align="left">先删 proxy，最后一个删掉才恢复 <code>orig_addr</code></td>
+</tr>
+<tr>
+<td align="left">推荐</td>
+<td align="left">单方控制&#x2F;调试</td>
+<td align="left">线上与多 SDK 并存</td>
+</tr>
+</tbody></table>
+<p>automatic 相关关键方法：</p>
+<ul>
+<li><code>bh_hub_push_stack</code></li>
+<li><code>bh_hub_add_proxy</code></li>
+<li><code>bh_hub_get_prev_func</code></li>
+<li><code>bh_hub_pop_stack</code></li>
+</ul>
+<h2 id="新-so-自动补-Hook：bh-dl-monitor"><a href="#新-so-自动补-Hook：bh-dl-monitor" class="headerlink" title="新 so 自动补 Hook：bh_dl_monitor"></a>新 so 自动补 Hook：<code>bh_dl_monitor</code></h2><table>
+<thead>
+<tr>
+<th align="left">API Level</th>
+<th align="left">Hook 目标</th>
+<th align="left">关键兼容策略</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">16 ~ 20</td>
+<td align="left"><code>dlopen</code></td>
+<td align="left">直接走 <code>dlopen</code> 代理</td>
+</tr>
+<tr>
+<td align="left">21 ~ 23</td>
+<td align="left"><code>dlopen</code> + <code>android_dlopen_ext</code></td>
+<td align="left">增加 <code>android_dlopen_ext</code> 监控</td>
+</tr>
+<tr>
+<td align="left">24 ~ 25</td>
+<td align="left"><code>dlopen</code> + <code>android_dlopen_ext</code></td>
+<td align="left">兼容 7.x linker namespace（<code>dlopen_ext</code> &#x2F; <code>do_dlopen</code>）</td>
+</tr>
+<tr>
+<td align="left">&gt;&#x3D; 26</td>
+<td align="left"><code>__loader_dlopen</code> + <code>__loader_android_dlopen_ext</code></td>
+<td align="left">适配 O+ 导出入口变化</td>
+</tr>
+</tbody></table>
+<p>统一闭环：<code>post_dlopen -&gt; bh_elf_manager_refresh -&gt; 对新 ELF 执行 task</code>。</p>
+<h2 id="Unhook-过程"><a href="#Unhook-过程" class="headerlink" title="Unhook 过程"></a>Unhook 过程</h2><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><code class="hljs text">bytehook_unhook<br>  -&gt; bh_task_manager_del<br>  -&gt; bh_task_manager_unhook<br>  -&gt; bh_task_unhook (status=UNHOOKING)<br>  -&gt; bh_elf_relocator_unhook<br>  -&gt; bh_switch_unhook<br></code></pre></td></tr></table></figure>
 
-<p>主要执行了以下几步：</p>
-<ul>
-<li>读取原地址：real_orig_addr</li>
-<li>mprotect 设置写权限：bh_util_set_addr_protect(got, prot | PROT_WRITE)</li>
-<li>写入新地址：__atomic_store_n</li>
-</ul>
-<h3 id="模式切换-bh-switch"><a href="#模式切换-bh-switch" class="headerlink" title="模式切换(bh_switch)"></a>模式切换(bh_switch)</h3><blockquote>
-<p>支持两种模式切换：</p>
-<ul>
-<li>manual</li>
-<li>automatic</li>
-</ul>
-</blockquote>
-<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-comment">// bytehook/src/main/cpp/bh_switch.c</span><br><br><span class="hljs-function"><span class="hljs-type">int</span> <span class="hljs-title">bh_switch_hook</span><span class="hljs-params">(<span class="hljs-type">bh_elf_t</span> *elf, <span class="hljs-type">bh_task_t</span> *task, ElfW(Sym) *sym, <span class="hljs-type">bh_array_t</span> *gots, <span class="hljs-type">bh_array_t</span> *prots,</span></span><br><span class="hljs-params"><span class="hljs-function">                   <span class="hljs-type">uintptr_t</span> new_addr, <span class="hljs-type">uintptr_t</span> *orig_addr)</span> </span>&#123;<br>  <span class="hljs-type">int</span> r;<br>  <span class="hljs-keyword">if</span> (BYTEHOOK_IS_MANUAL_MODE)<br>    r = <span class="hljs-built_in">bh_switch_hook_unique</span>(elf, task, sym, gots, prots, new_addr, orig_addr);<br>  <span class="hljs-keyword">else</span><br>    r = <span class="hljs-built_in">bh_switch_hook_shared</span>(elf, task, sym, gots, prots, new_addr, orig_addr);<br><br>  <span class="hljs-keyword">if</span> (<span class="hljs-number">0</span> == r)<br>    <span class="hljs-built_in">BH_LOG_INFO</span>(<span class="hljs-string">&quot;switch: hook in %s mode OK: sym %&quot;</span> PRIxPTR <span class="hljs-string">&quot;, new_addr %&quot;</span> PRIxPTR <span class="hljs-string">&quot;, orig_addr %&quot;</span> PRIxPTR,<br>                BYTEHOOK_IS_MANUAL_MODE ? <span class="hljs-string">&quot;MANUAL&quot;</span> : <span class="hljs-string">&quot;AUTOMATIC&quot;</span>, (<span class="hljs-type">uintptr_t</span>)sym, new_addr, *orig_addr);<br><br>  <span class="hljs-keyword">return</span> r;<br>&#125;<br><br><span class="hljs-function"><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title">bh_switch_hook_unique</span><span class="hljs-params">(<span class="hljs-type">bh_elf_t</span> *elf, <span class="hljs-type">bh_task_t</span> *task, ElfW(Sym) *sym, <span class="hljs-type">bh_array_t</span> *gots,</span></span><br><span class="hljs-params"><span class="hljs-function">                                 <span class="hljs-type">bh_array_t</span> *prots, <span class="hljs-type">uintptr_t</span> new_addr, <span class="hljs-type">uintptr_t</span> *orig_addr)</span> </span>&#123;<br> ...<br>     <span class="hljs-keyword">if</span> (<span class="hljs-number">0</span> != (r = <span class="hljs-built_in">bh_elf_relocator_reloc</span>(elf, task, gots, prots, new_addr, &amp;self-&gt;orig_addr))) &#123;<br>    <span class="hljs-built_in">TAILQ_REMOVE</span>(&amp;mgr-&gt;switches, self, link);<br>    useless = self;<br>    <span class="hljs-keyword">goto</span> end;<br>  &#125;<br>&#125;<br><br><br><span class="hljs-function"><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title">bh_switch_hook_shared</span><span class="hljs-params">(<span class="hljs-type">bh_elf_t</span> *elf, <span class="hljs-type">bh_task_t</span> *task, ElfW(Sym) *sym, <span class="hljs-type">bh_array_t</span> *gots,</span></span><br><span class="hljs-params"><span class="hljs-function">                                 <span class="hljs-type">bh_array_t</span> *prots, <span class="hljs-type">uintptr_t</span> new_addr, <span class="hljs-type">uintptr_t</span> *orig_addr)</span> </span>&#123;<br>  ...<br>        <span class="hljs-comment">// do reloc &amp; return original-address</span><br>    <span class="hljs-keyword">if</span> (<span class="hljs-number">0</span> != (r = <span class="hljs-built_in">bh_elf_relocator_reloc</span>(elf, task, gots, prots, hub_trampo,<br>                                         <span class="hljs-built_in">bh_hub_get_orig_addr_addr</span>(self-&gt;hub)))) &#123;<br>      <span class="hljs-built_in">TAILQ_REMOVE</span>(&amp;mgr-&gt;switches, self, link);<br>      useless = self;<br>      <span class="hljs-keyword">goto</span> end;<br>    &#125;<br>    self-&gt;orig_addr = <span class="hljs-built_in">bh_hub_get_orig_addr</span>(self-&gt;hub);<br>    *orig_addr = self-&gt;orig_addr;<br>&#125;<br></code></pre></td></tr></table></figure>
+<table>
+<thead>
+<tr>
+<th align="left">模式</th>
+<th align="left">unhook 行为</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">manual</td>
+<td align="left">直接恢复 <code>orig_addr</code>，移除 switch</td>
+</tr>
+<tr>
+<td align="left">automatic</td>
+<td align="left">先删当前 proxy；仅当最后一个 proxy 移除时恢复 <code>orig_addr</code></td>
+</tr>
+</tbody></table>
+<h2 id="Hook-生效边界与失效场景"><a href="#Hook-生效边界与失效场景" class="headerlink" title="Hook 生效边界与失效场景"></a>Hook 生效边界与失效场景</h2><p>生效前提：<strong>调用必须经过导入重定位项</strong>。</p>
+<table>
+<thead>
+<tr>
+<th align="left">场景</th>
+<th align="left">结果</th>
+<th align="left">原因</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">同 so 内部直调</td>
+<td align="left">常不生效</td>
+<td align="left">不经过 PLT&#x2F;GOT</td>
+</tr>
+<tr>
+<td align="left">inline&#x2F;LTO</td>
+<td align="left">常不生效</td>
+<td align="left">调用点被优化掉</td>
+</tr>
+<tr>
+<td align="left"><code>-Bsymbolic</code></td>
+<td align="left">常不生效</td>
+<td align="left">内部本地绑定优先</td>
+</tr>
+<tr>
+<td align="left"><code>dlsym</code> 函数指针直调</td>
+<td align="left">可能不生效</td>
+<td align="left">调用来源不在该导入项</td>
+</tr>
+<tr>
+<td align="left">caller&#x2F;callee&#x2F;sym 不匹配</td>
+<td align="left"><code>NOSYM</code></td>
+<td align="left">匹配条件错误</td>
+</tr>
+<tr>
+<td align="left">页权限或地址异常</td>
+<td align="left"><code>SET_PROT/SET_GOT</code></td>
+<td align="left">改写失败</td>
+</tr>
+</tbody></table>
+<p>实用判断：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs bash">readelf -rW libcaller.so | grep <span class="hljs-string">&quot;目标符号名&quot;</span><br></code></pre></td></tr></table></figure>
 
-<p>manual模式执行 <code>bh_switch_hook_unique</code>，GOT表直接写<code>new_func</code></p>
-<p>automatic模式执行<code>bh_switch_hook_shared</code>，GOT表写入<code>hub_trampo</code></p>
-<h4 id="automatic模式下的参数-bh-hub"><a href="#automatic模式下的参数-bh-hub" class="headerlink" title="automatic模式下的参数(bh_hub)"></a>automatic模式下的参数(bh_hub)</h4><blockquote>
-<p>负责 automatic 模式下运行时参数分发</p>
-</blockquote>
-<ul>
-<li>bh_hub_push_stack</li>
-<li>bh_hub_add_proxy</li>
-<li>bh_hub_get_prev_func</li>
-<li>bh_hub_pop_stack</li>
+<p>看不到重定位项，基本不在 ByteHook 生效边界内。</p>
+<h2 id="常见状态码速查"><a href="#常见状态码速查" class="headerlink" title="常见状态码速查"></a>常见状态码速查</h2><table>
+<thead>
+<tr>
+<th align="left">状态码</th>
+<th align="left">含义</th>
+<th align="left">优先排查</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><code>INITERR_INVALID_ARG</code></td>
+<td align="left">初始化参数错</td>
+<td align="left">检查 init mode</td>
+</tr>
+<tr>
+<td align="left"><code>INITERR_SYM</code></td>
+<td align="left">linker 适配失败</td>
+<td align="left">看 <code>bh_linker_init</code> 分支</td>
+</tr>
+<tr>
+<td align="left"><code>INITERR_SIG</code></td>
+<td align="left">信号保护失败</td>
+<td align="left">看 <code>bytesig_init</code></td>
+</tr>
+<tr>
+<td align="left"><code>INITERR_DLMTR</code></td>
+<td align="left">so 监控初始化失败</td>
+<td align="left">看 <code>bh_dl_monitor</code> 或 dl_init&#x2F;fini 注册</td>
+</tr>
+<tr>
+<td align="left"><code>NOSYM</code></td>
+<td align="left">未找到符号&#x2F;重定位项</td>
+<td align="left"><code>readelf -rW</code> + 参数核对</td>
+</tr>
+<tr>
+<td align="left"><code>READ_ELF</code></td>
+<td align="left">ELF 读取异常</td>
+<td align="left">看并发卸载&#x2F;目标 so 状态</td>
+</tr>
+<tr>
+<td align="left"><code>SET_PROT</code></td>
+<td align="left"><code>mprotect</code> 失败</td>
+<td align="left">看页权限与映射</td>
+</tr>
+<tr>
+<td align="left"><code>SET_GOT</code></td>
+<td align="left">写 GOT 失败</td>
+<td align="left">看地址有效性与并发</td>
+</tr>
+<tr>
+<td align="left"><code>DUP</code></td>
+<td align="left">manual 重复 Hook 同位点</td>
+<td align="left">切 automatic 或调整策略</td>
+</tr>
+<tr>
+<td align="left"><code>NOT_FOUND</code></td>
+<td align="left">unhook 目标不存在</td>
+<td align="left">检查 stub 生命周期&#x2F;重复 unhook</td>
+</tr>
+</tbody></table>
+<h2 id="快速排查顺序"><a href="#快速排查顺序" class="headerlink" title="快速排查顺序"></a>快速排查顺序</h2><ol>
+<li><code>bytehook_init</code> 是否成功。</li>
+<li><code>caller/callee/sym</code> 是否精确匹配。</li>
+<li><code>readelf -rW</code> 是否存在目标导入重定位。</li>
+<li>查看 records 与 debug 日志中的状态码。</li>
+<li>检查代理函数是否正确使用 <code>BYTEHOOK_CALL_PREV</code>、<code>BYTEHOOK_STACK_SCOPE/POP_STACK</code>。</li>
+</ol>
+<h2 id="要点总结"><a href="#要点总结" class="headerlink" title="要点总结"></a>要点总结</h2><ul>
+<li>ByteHook 本质是 PLT Hook：改调用方 GOT&#x2F;DATA，不改函数入口。</li>
+<li>BHook主链路：<code>init -&gt; task -&gt; elf -&gt; reloc -&gt; switch -&gt; monitor -&gt; unhook</code>。</li>
+<li>生效前提是调用经过导入重定位项；同 so 直调、inline&#x2F;LTO 常不在边界内。</li>
+<li>automatic 用 hub&#x2F;proxy 链解决多方 Hook 冲突；manual 更适合单方调试场景。</li>
+<li>新 so 自动补 Hook 依赖 <code>dlopen</code> 监控或 <code>dl_init/dl_fini</code> 回调。</li>
+<li>线上稳定性核心是 signal 保护、CFI 兼容、并发同步与状态码可观测。</li>
 </ul>
-<p>这套机制主要是为了解决如下问题：</p>
-<ul>
-<li>多proxy链式执行</li>
-<li>避免调用形成递归</li>
-</ul>
-<h3 id="SO加载监控-bh-dl-monitor"><a href="#SO加载监控-bh-dl-monitor" class="headerlink" title="SO加载监控(bh_dl_monitor)"></a>SO加载监控(bh_dl_monitor)</h3><h1 id="参考地址"><a href="#参考地址" class="headerlink" title="参考地址"></a>参考地址</h1><p><a target="_blank" rel="noopener" href="https://github.com/bytedance/bhook">ByteHook 仓库</a></p>
+<h2 id="参考地址"><a href="#参考地址" class="headerlink" title="参考地址"></a>参考地址</h2><p><a target="_blank" rel="noopener" href="https://github.com/bytedance/bhook">ByteHook 仓库</a></p>
 <p><a target="_blank" rel="noopener" href="https://github.com/bytedance/bhook/blob/main/doc/overview.zh-CN.md">项目介绍和原理概述</a></p>
+<p><a target="_blank" rel="noopener" href="https://github.com/bytedance/bhook/blob/main/doc/quickstart.zh-CN.md">快速开始</a></p>
+<p><a target="_blank" rel="noopener" href="https://github.com/bytedance/bhook/blob/main/doc/native_manual.zh-CN.md">Native API 手册</a></p>
+<p><a target="_blank" rel="noopener" href="https://github.com/bytedance/bhook/blob/main/doc/status_code.zh-CN.md">状态码文档</a></p>
 <p><a target="_blank" rel="noopener" href="https://cs.android.com/android/platform/superproject/main/+/main:bionic/linker/">Android bionic linker 源码</a></p>
 
                 
@@ -517,8 +831,8 @@
                   <article class="post-next col-6">
                     
                     
-                      <a href="/2025/10/02/BHook%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90_backup/" title="BHook源码解析">
-                        <span class="hidden-mobile">BHook源码解析</span>
+                      <a href="/2023/02/26/Rust%E5%88%9D%E8%AF%86/" title="Rust初识">
+                        <span class="hidden-mobile">Rust初识</span>
                         <span class="visible-mobile">下一篇</span>
                         <i class="iconfont icon-arrowright"></i>
                       </a>
@@ -563,6 +877,21 @@
 
   
 
+
+
+  <script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/mermaid@8.8.3/dist/mermaid.min.js', function() {
+    mermaid.initialize({"theme":"default"});
+
+    Fluid.utils.listenDOMLoaded(function() {
+      Fluid.events.registerRefreshCallback(function() {
+        if ('mermaid' in window) {
+          mermaid.init();
+        }
+      });
+    });
+  });
+</script>
 
 
 
