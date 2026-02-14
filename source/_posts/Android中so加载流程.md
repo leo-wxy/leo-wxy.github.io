@@ -6,6 +6,8 @@ tags: Android
 top: 10
 ---
 
+![SO加载原理](/images/SO加载原理.png)
+
 在 {%post_link Android中的Hook-PLTHook %} 和 {%post_link Android中的Hook-InlineHook %}里，Hook 的生效点分别在 GOT 表项和函数入口。
 要真正理解 Hook 的时机、边界和稳定性，必须先搞清楚 SO 是怎么被系统加载起来的。
 
@@ -137,7 +139,7 @@ void* OpenNativeLibrary(JNIEnv* env,
 
 ## 2.1 重复加载与 ClassLoader 行为（dlclose 边界）
 
-在 Java 层，so 加载不仅取决于路径，还受到 ClassLoader 的约束。实战里可以先记下面这张 2x2 表：
+在 Java 层，so 加载不仅取决于路径，还受到 ClassLoader 的约束。
 
 | 场景 | 结果（常见） |
 | :-- | :-- |
@@ -259,9 +261,39 @@ void* do_dlopen(const char* name, int flags,
   }
 
   ...
-   
              
 }
+
+
+static soinfo* find_library(android_namespace_t* ns,
+                            const char* name, int rtld_flags,
+                            const android_dlextinfo* extinfo,
+                            soinfo* needed_by) {
+  soinfo* si = nullptr;
+
+  if (name == nullptr) {
+    si = solist_get_somain();
+  } else if (!find_libraries(ns,
+                             needed_by,
+                             &name,
+                             1,
+                             &si,
+                             nullptr,
+                             0,
+                             rtld_flags,
+                             extinfo,
+                             false /* add_as_children */)) {
+    if (si != nullptr) {
+      soinfo_unload(si);
+    }
+    return nullptr;
+  }
+
+  si->increment_ref_count();
+
+  return si;
+}
+
 
 bool find_libraries(android_namespace_t* ns,
                     soinfo* start_with,
