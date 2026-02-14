@@ -63,7 +63,7 @@ y = top + translationY;
 
 Android系统也提供了相应的方法可以直接获取对应参数。但是，不能在初始时就去获取，由于那时View还没有开始绘制，获取的都是0；
 
-如何获取可以参考这个 {% post_link Android-Study-Plan-V %}
+
 
 ### 2.View触控
 

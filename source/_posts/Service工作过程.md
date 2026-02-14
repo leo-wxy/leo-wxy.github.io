@@ -5,9 +5,6 @@ tags: Android
 top: 11
 ---
 
-## Service基础知识
-
-{% post_link Android-Study-Plan-II%}
 
 ## Service工作过程
 
