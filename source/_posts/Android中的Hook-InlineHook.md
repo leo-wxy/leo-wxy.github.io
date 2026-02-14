@@ -13,7 +13,7 @@ top: 10
 > 本文定位：面向 Android 开发者的 Inline Hook 原理入门，重点是理解“为什么要用、怎么工作、如何验证生效”。
 >
 
-在 `{% post_link Android中的Hook-PLTHook %}` 里，PLT Hook 的切入点是“导入方模块的 GOT 表项”。 
+在 {%post_link Android中的Hook-PLTHook%} 里，PLT Hook 的切入点是“导入方模块的 GOT 表项”。 
 这意味着它拦截的是**调用路径**，不是**函数本体**。
 
 ## 与 PLT Hook 的边界差异

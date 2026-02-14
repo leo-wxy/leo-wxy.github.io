@@ -6,7 +6,7 @@ tags: Android
 top: 10
 ---
 
-在 `{% post_link Android中的Hook-PLTHook %}` 和 `{% post_link Android中的Hook-InlineHook %}` 里，Hook 的生效点分别在 GOT 表项和函数入口。
+在 {%post_link Android中的Hook-PLTHook %} 和 {%post_link Android中的Hook-InlineHook %}里，Hook 的生效点分别在 GOT 表项和函数入口。
 要真正理解 Hook 的时机、边界和稳定性，必须先搞清楚 SO 是怎么被系统加载起来的。
 
 # SO 加载流程总览
