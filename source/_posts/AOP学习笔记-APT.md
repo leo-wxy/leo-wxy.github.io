@@ -2,7 +2,7 @@
 title: AOP学习笔记-APT
 date: 2019-04-17 21:05:41
 tags: AOP
-top: 10
+top: 9
 ---
 
 > APT全称`Annotation Processing Tool`-注解处理器，用于在代码编译期间解析注解并生成新的Java文件，减少手动的代码输入。
