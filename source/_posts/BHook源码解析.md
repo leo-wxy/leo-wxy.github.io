@@ -4,539 +4,295 @@ typora-root-url: ../
 date: 2025-10-02 09:18:44
 tags: 源码解析
 top: 10
+mermaid: true
 ---
 
 # BHook源码解析
 
+> 基于 ByteHook 1.1.1（main 分支思路），只保留核心链路与高价值细节。
 
 
-> 基于 ByteHook 1.1.1（main 分支实现思路）分析，侧重 Android Native Hook 的基础原理与核心源码链路。
+## ByteHook 是什么
+
+ByteHook（BHook）是 Android Native 的 PLT Hook 框架。
+
+核心动作：**解析调用方 ELF 的重定位项 -> 找到 GOT/DATA 地址 -> 改写为代理函数地址**。
+
+相比“能改 GOT 就行”的实现，ByteHook重点在工程化：
+
+- 支持 `single / partial / all` 三种任务模型。
+- 支持新 so 加载后的自动补 Hook。
+- automatic 模式下支持多方 Hook 共存与独立 unhook。
+- 提供信号保护、CFI 处理、records 记录等稳定性能力。
 
 
+## 总链路（先记这个）
 
-## ByteHook
+```text
+init:
+bytehook_init
+  -> bh_linker_init
+  -> bytesig_init(SIGSEGV/SIGBUS)
+  -> bh_cfi_disable_slowpath
+  -> bh_safe_init
+  -> (automatic) bh_hub_init
 
-ByteHook（也常写作 BHook）是字节开源的 Android PLT Hook 框架。
+hook:
+bytehook_hook_* 
+  -> bh_task_manager_hook
+  -> bh_task_hook
+  -> bh_elf_relocator_hook
+  -> bh_elf_find_symbol_and_gots_by_symbol_name
+  -> bh_switch_hook
+  -> bh_elf_relocator_reloc
 
-它提供三类 Hook 能力：
-
-- `bytehook_hook_single`：只 Hook 指定 caller so。
-- `bytehook_hook_partial`：按过滤器 Hook 部分 caller so。
-- `bytehook_hook_all`：Hook 全部 caller so。
-
-并支持：
-
-- 自动对新加载 so 补 Hook。
-- 多个 Hook/Unhook 互不冲突（automatic 模式）。
-- 递归/环形调用保护。
-- 记录 Hook 操作日志（records）。
-
-
-
-## ByteHook使用示例
-
-https://github.com/bytedance/bhook/blob/main/doc/quickstart.zh-CN.md
-
-
-
-## 主要源码分析
-
-主要是从 init 到修改GOT的顺序看核心链路
-
-### 初始化入口(bytehook_init)
-
-> 负责运行时的基础设置
-
-```c++
-// bytehook/src/main/cpp/bytehook.c
-int bytehook_init(int mode, bool debug) {
-#define GOTO_END(errnum)          \
-  do {                            \
-    bytehook_init_errno = errnum; \
-    goto end;                     \
-  } while (0)
-
-  bool do_init = false;
-  if (__predict_true(BYTEHOOK_STATUS_CODE_UNINIT == bytehook_init_errno)) {
-    static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
-    pthread_mutex_lock(&lock);
-    if (__predict_true(BYTEHOOK_STATUS_CODE_UNINIT == bytehook_init_errno)) {
-      do_init = true;
-      bh_log_set_debug(debug);
-      if (__predict_false(BYTEHOOK_MODE_AUTOMATIC != mode && BYTEHOOK_MODE_MANUAL != mode))
-        GOTO_END(BYTEHOOK_STATUS_CODE_INITERR_INVALID_ARG);
-      bytehook_mode = mode;
-      if (__predict_false(0 != bh_linker_init())) GOTO_END(BYTEHOOK_STATUS_CODE_INITERR_SYM);
-      if (__predict_false(0 != bytesig_init(SIGSEGV))) GOTO_END(BYTEHOOK_STATUS_CODE_INITERR_SIG);
-      if (__predict_false(0 != bytesig_init(SIGBUS))) GOTO_END(BYTEHOOK_STATUS_CODE_INITERR_SIG);
-      if (__predict_false(0 != bh_cfi_disable_slowpath())) GOTO_END(BYTEHOOK_STATUS_CODE_INITERR_CFI);
-      if (__predict_false(0 != bh_safe_init())) GOTO_END(BYTEHOOK_STATUS_CODE_INITERR_SAFE);
-      if (BYTEHOOK_IS_AUTOMATIC_MODE) {
-        if (__predict_false(0 != bh_hub_init())) GOTO_END(BYTEHOOK_STATUS_CODE_INITERR_HUB);
-      }
-
-#undef GOTO_END
-
-      bytehook_init_errno = BYTEHOOK_STATUS_CODE_OK;
-    }
-  end:
-    pthread_mutex_unlock(&lock);
-  }
-
-  BH_LOG_ALWAYS_SHOW("%s: bytehook init(mode: %s, debuggable: %s), return: %d, real-init: %s",
-                     bytehook_get_version(), BYTEHOOK_MODE_AUTOMATIC == mode ? "AUTOMATIC" : "MANUAL",
-                     debug ? "true" : "false", bytehook_init_errno, do_init ? "yes" : "no");
-  return bytehook_init_errno;
-}
+unhook:
+bytehook_unhook
+  -> bh_task_manager_unhook
+  -> bh_task_unhook
+  -> bh_elf_relocator_unhook
+  -> bh_switch_unhook
 ```
 
-主要做了以下事情：
+## 单页流程图
 
-- 初始化linker适配层 - bh_linker_init
-- 初始化signal保护 - bytesig_init (SIGSEGV / SIGBUS)
-- 处理 cfi 兼容 - bh_cfi_disable_slowpath
-- 初始化 hub 和 trampoline - bh_hub_init
+```mermaid
+flowchart TD
+    A[bytehook_init] --> B[bh_linker_init / bytesig / cfi / safe]
+    B --> C{mode}
+    C -->|automatic| D[bh_hub_init]
+    C -->|manual| E[skip hub init]
 
+    F[bytehook_hook_single/partial/all] --> G[create bh_task]
+    G --> H[bh_task_manager_hook]
+    H --> I[bh_task_hook]
+    I --> J[bh_elf_relocator_hook]
+    J --> K[bh_elf_find_symbol_and_gots_by_symbol_name]
+    K --> L[bh_switch_hook]
+    L --> M{mode}
+    M -->|manual| N[GOT -> new_func]
+    M -->|automatic| O[GOT -> hub_trampo + add_proxy]
 
+    P[dlopen/android_dlopen_ext] --> Q[bh_dl_monitor post_dlopen]
+    Q --> R[bh_elf_manager_refresh]
+    R --> I
 
-### 注册Hook请求(bytehook_hook_*)
-
-> 业务可以调用的hook api
-
-```c++
-bytehook_stub_t bytehook_hook_single(const char *caller_path_name, const char *callee_path_name,
-                                     const char *sym_name, void *new_func, bytehook_hooked_t hooked,
-                                     void *hooked_arg) {
-  const void *caller_addr = __builtin_return_address(0);
-  if (NULL == caller_path_name || NULL == sym_name || NULL == new_func) return NULL;
-  if (BYTEHOOK_STATUS_CODE_OK != bytehook_init_errno) return NULL;
-
-  bh_task_t *task = bh_task_create_single(caller_path_name, callee_path_name, sym_name, new_func, hooked,
-                                          hooked_arg, false);
-  if (NULL != task) {
-    bh_task_manager_add(task);
-    bh_task_manager_hook(task);
-    bh_recorder_add_hook(task->status_code, caller_path_name, sym_name, (uintptr_t)new_func, (uintptr_t)task,
-                         (uintptr_t)caller_addr);
-  }
-  return (bytehook_stub_t)task;
-}
-
-bytehook_stub_t bytehook_hook_partial(bytehook_caller_allow_filter_t caller_allow_filter,
-                                      void *caller_allow_filter_arg, const char *callee_path_name,
-                                      const char *sym_name, void *new_func, bytehook_hooked_t hooked,
-                                      void *hooked_arg) {
-  const void *caller_addr = __builtin_return_address(0);
-  if (NULL == caller_allow_filter || NULL == sym_name || NULL == new_func) return NULL;
-  if (BYTEHOOK_STATUS_CODE_OK != bytehook_init_errno) return NULL;
-
-  bh_task_t *task = bh_task_create_partial(caller_allow_filter, caller_allow_filter_arg, callee_path_name,
-                                           sym_name, new_func, hooked, hooked_arg, false);
-  if (NULL != task) {
-    bh_task_manager_add(task);
-    bh_task_manager_hook(task);
-    bh_recorder_add_hook(BYTEHOOK_STATUS_CODE_MAX, "PARTIAL", sym_name, (uintptr_t)new_func, (uintptr_t)task,
-                         (uintptr_t)caller_addr);
-  }
-  return (bytehook_stub_t)task;
-}
-
-bytehook_stub_t bytehook_hook_all(const char *callee_path_name, const char *sym_name, void *new_func,
-                                  bytehook_hooked_t hooked, void *hooked_arg) {
-  const void *caller_addr = __builtin_return_address(0);
-  if (NULL == sym_name || NULL == new_func) return NULL;
-  if (BYTEHOOK_STATUS_CODE_OK != bytehook_init_errno) return NULL;
-
-  bh_task_t *task = bh_task_create_all(callee_path_name, sym_name, new_func, hooked, hooked_arg, false);
-  if (NULL != task) {
-    bh_task_manager_add(task);
-    bh_task_manager_hook(task);
-    bh_recorder_add_hook(BYTEHOOK_STATUS_CODE_MAX, "ALL", sym_name, (uintptr_t)new_func, (uintptr_t)task,
-                         (uintptr_t)caller_addr);
-  }
-  return (bytehook_stub_t)task;
-}
+    S[bytehook_unhook] --> T[bh_task_manager_unhook]
+    T --> U[bh_task_unhook]
+    U --> V[bh_elf_relocator_unhook]
+    V --> W[bh_switch_unhook]
+    W --> X{mode}
+    X -->|manual| Y[restore orig_addr]
+    X -->|automatic| Z[del proxy; empty then restore]
 ```
 
-#### hook单个调用者(bytehook_hook_single)
 
-- 在已加载的所有 ELF 中寻找目标调用者。如果找到，则执行 hook task，然后将 task 标记为已完成，最后执行 hooked 回调通知外部。
-- 如果未找到调用者，则将 task 标记为未完成。
-- 未来某一时刻，目标调用者被加载到内存中，此时 ByteHook 会自动对它执行 hook task，然后将 task 标记为已完成，最后执行 hooked 回调通知外部。
+## 关键模块速览
 
-#### hook部分调用者(bytehook_hook_partial)
-
-- 此类任务永远处于未完成状态。
-- 在已加载的所有 ELF 中使用 `caller_allow_filter` 过滤函数进行匹配，对匹配成功的调用者们，逐个执行 hook task，同时逐个执行 hooked 回调通知外部。
-- 未来有任何新的 ELF 被加载到内存时，ByteHook 都会自动的用 `caller_allow_filter` 过滤函数去尝试匹配，一旦匹配成功，就会对它执行 hook task，再执行 hooked 回调通知外部。
-
-#### hook全部调用者(bytehook_hook_all)
-
-- 和 hook 部分调用者（`bytehook_hook_partial()`）的情况类似，区别仅在于不需要过滤函数了，而是“来者不拒”的对“所有已加载的 ELF”和“未来加载的 ELF”都执行 hook task，以及 hooked 回调。
-
+| 模块 | 关键文件 | 作用 |
+| :-- | :-- | :-- |
+| API 入口 | `bytehook.c` | 对外 init/hook/unhook 接口 |
+| Task | `bh_task.c` | 定义 hook 任务模型与状态 |
+| Task 管理 | `bh_task_manager.c` | 管理任务队列，触发执行 |
+| ELF 缓存 | `bh_elf_manager.c` | 维护进程中 ELF 列表与生命周期 |
+| ELF 解析 | `bh_elf.c` | 解析 `.dynamic` 与重定位项 |
+| 重定位改写 | `bh_elf_relocator.c` | `mprotect + atomic` 写 GOT/DATA |
+| 模式切换 | `bh_switch.c` | manual/automatic 分流 |
+| automatic 运行时 | `bh_hub.c` | proxy 链、prev 调用、递归保护 |
+| so 监控 | `bh_dl_monitor.c` | 监听 `dlopen` 家族，处理增量 so |
 
 
-上述方法的核心对象是 `bh_task_t`。表示一个Hook请求
+## 初始化：`bytehook_init` 做了什么
 
-```c++
-// bytehook/src/main/cpp/bh_task.h
-typedef struct bh_task {
-  bh_task_type_t type;
-  bh_task_status_t status;
-  int status_code;  // for recorder, single type only
-  bool is_invisible;
+| 步骤 | 关键函数 | 作用 | 失败码（示例） |
+| :-- | :-- | :-- | :-- |
+| 参数校验 | mode 检查 | 只允许 automatic/manual | `INITERR_INVALID_ARG` |
+| linker 适配 | `bh_linker_init` | 适配不同 Android linker 符号 | `INITERR_SYM` |
+| 信号保护 | `bytesig_init` | 把危险读写从崩溃转为可控错误 | `INITERR_SIG` |
+| CFI 处理 | `bh_cfi_disable_slowpath` | 处理 CFI 相关限制 | `INITERR_CFI` |
+| 安全封装 | `bh_safe_init` | 安全 syscall/TLS 包装 | `INITERR_SAFE` |
+| automatic 准备 | `bh_hub_init` | 初始化 trampoline/proxy 运行时 | `INITERR_HUB` |
 
-  // caller
-  char *caller_path_name;                              // for single
-  uintptr_t caller_load_bias;                          // for single
-  bytehook_caller_allow_filter_t caller_allow_filter;  // for partial
-  void *caller_allow_filter_arg;                       // for partial
 
-  // callee
-  char *callee_path_name;
-  void *callee_addr;
+## Hook API 与 Task 模型
 
-  // symbol
-  char *sym_name;
+| API | 作用 | 任务状态特点 |
+| :-- | :-- | :-- |
+| `bytehook_hook_single` | 只 hook 指定 caller so | 命中后可进入 finished |
+| `bytehook_hook_partial` | 按过滤函数 hook 部分 caller | 长期任务，持续监听新 so |
+| `bytehook_hook_all` | hook 所有 caller | 长期任务，持续监听新 so |
 
-  // new function address
-  void *new_func;
+`bh_task_t` 里最关键的字段：
 
-  // callback
-  bytehook_hooked_t hooked;
-  void *hooked_arg;
+- `sym_name`：目标符号
+- `new_func`：代理函数
+- `caller_path_name` / `callee_path_name`：匹配边界
+- `status` / `status_code`：任务状态与结果
 
-  TAILQ_ENTRY(bh_task, ) link;
-} bh_task_t;
+
+## hooked 回调语义（高频易混淆）
+
+```c
+typedef void (*bytehook_hooked_t)(bytehook_stub_t task_stub, int status_code,
+                                  const char *caller_path_name, const char *sym_name,
+                                  void *new_func, void *prev_func, void *arg);
 ```
 
-主要是下面几个参数：
+| 场景 | status_code | `prev_func` 含义 | 是否回调 |
+| :-- | :-- | :-- | :-- |
+| manual hook 成功 | `OK` | 原始函数地址 | 是 |
+| automatic hook 成功 | `OK` | 当前位点原始地址（由 hub/switch 管理） | 是 |
+| manual 早期回调 | `ORIG_ADDR` | 原始函数地址（改 GOT 前） | 是 |
+| single 失败 | `NOSYM/SET_GOT/...` | `NULL` | 是 |
+| partial/all 的 `NOSYM`/`READ_ELF` | `NOSYM/READ_ELF` | `NULL` | 否（内部跳过） |
+| unhook 阶段 | 各类 unhook 码 | - | 否（UNHOOKING 状态） |
 
-- sym_name：目标符号
-- new_func：新函数地址
-- caller / callee ：限定条件
-- 状态与回调信息
+
+## ELF 解析与改写（核心实现）
+
+### 1) 解析动态信息
+
+`bh_elf_parse_dynamic` 解析：
+
+- `DT_SYMTAB / DT_STRTAB`
+- `DT_JMPREL / DT_REL(A)`
+- `DT_HASH / DT_GNU_HASH`
+
+### 2) 定位符号并收集 GOT/DATA
+
+`bh_elf_find_symbol_and_gots_by_symbol_name`：
+
+1. 先用 SYSV/GNU hash 定位符号。
+2. 扫描 `.rel.plt/.rela.plt`、`.rel.dyn/.rela.dyn`。
+3. 兼容 APS2 压缩重定位格式。
+4. 收集命中地址和页权限。
+
+### 3) 执行改写
+
+`bh_elf_relocator_reloc`：
+
+- 读取原地址。
+- 必要时 `mprotect` 加写权限。
+- `__atomic_store_n` 写新地址。
+
+并用 `BH_SIG_TRY(SIGSEGV, SIGBUS)` 兜底，避免直接崩溃。
 
 
+## 模式切换：automatic vs manual
 
-### Task管理与调度(bh_task_mamager)
+| 维度 | manual | automatic |
+| :-- | :-- | :-- |
+| 首次写入 | GOT -> `new_func` | GOT -> `hub_trampo` |
+| 重复 Hook 同位点 | 常见 `DUP` | 追加 proxy 到 hub |
+| 调用链 | 单层替换 | 多层 proxy 链 |
+| 调原函数 | 通常依赖 `ORIG_ADDR` 保存地址 | 用 `BYTEHOOK_CALL_PREV` 动态取下一跳 |
+| unhook | 直接恢复 `orig_addr` | 先删 proxy，最后一个删掉才恢复 `orig_addr` |
+| 推荐 | 单方控制/调试 | 线上与多 SDK 并存 |
 
-> 主要有以下两个任务：
->
-> - 对当前进程中已加载的 ELF 执行 Task
-> - 后续新加载的ELF，补充执行Task
+automatic 相关关键方法：
 
-```c++
-// bytehook/src/main/cpp/bh_task_manager.c
+- `bh_hub_push_stack`
+- `bh_hub_add_proxy`
+- `bh_hub_get_prev_func`
+- `bh_hub_pop_stack`
 
-void bh_task_manager_add(bh_task_t *task) {
-  pthread_rwlock_wrlock(&bh_tasks_lock);
-  TAILQ_INSERT_TAIL(&bh_tasks, task, link);
-  pthread_rwlock_unlock(&bh_tasks_lock);
-}
 
-void bh_task_manager_hook(bh_task_t *task) {
-  ...
+## 新 so 自动补 Hook：`bh_dl_monitor`
 
-#if BH_LINKER_MAYBE_NOT_SUPPORT_DL_INIT_FINI_MONITOR
-  bh_dl_monitor_dlclose_rdlock();
-#endif
-  bh_task_hook(task);
-#if BH_LINKER_MAYBE_NOT_SUPPORT_DL_INIT_FINI_MONITOR
-  bh_dl_monitor_dlclose_unlock();
-#endif
-}
+| API Level | Hook 目标 | 关键兼容策略 |
+| :-- | :-- | :-- |
+| 16 ~ 20 | `dlopen` | 直接走 `dlopen` 代理 |
+| 21 ~ 23 | `dlopen` + `android_dlopen_ext` | 增加 `android_dlopen_ext` 监控 |
+| 24 ~ 25 | `dlopen` + `android_dlopen_ext` | 兼容 7.x linker namespace（`dlopen_ext` / `do_dlopen`） |
+| >= 26 | `__loader_dlopen` + `__loader_android_dlopen_ext` | 适配 O+ 导出入口变化 |
+
+统一闭环：`post_dlopen -> bh_elf_manager_refresh -> 对新 ELF 执行 task`。
+
+
+## Unhook 过程
+
+```text
+bytehook_unhook
+  -> bh_task_manager_del
+  -> bh_task_manager_unhook
+  -> bh_task_unhook (status=UNHOOKING)
+  -> bh_elf_relocator_unhook
+  -> bh_switch_unhook
 ```
 
-### ELF缓存管理(bh_elf_manager)
+| 模式 | unhook 行为 |
+| :-- | :-- |
+| manual | 直接恢复 `orig_addr`，移除 switch |
+| automatic | 先删当前 proxy；仅当最后一个 proxy 移除时恢复 `orig_addr` |
 
-> 维护进程内的ELF列表，支持增删与生命周期同步
 
-- bh_elf_manager_load：初次加载缓存
-- bh_elf_manager_refresh：刷新所有ELF
-- bh_elf_manager_add / bh_elf_manager_del：增加/删除缓存
+## Hook 生效边界与失效场景
 
-- bh_elf_manager_find_elf：从维护的 ELF缓存里，按照so名称/路径返回一个可用的ELF对象
+生效前提：**调用必须经过导入重定位项**。
 
-```c++
-// bytehook/src/main/cpp/bh_task.c
+| 场景 | 结果 | 原因 |
+| :-- | :-- | :-- |
+| 同 so 内部直调 | 常不生效 | 不经过 PLT/GOT |
+| inline/LTO | 常不生效 | 调用点被优化掉 |
+| `-Bsymbolic` | 常不生效 | 内部本地绑定优先 |
+| `dlsym` 函数指针直调 | 可能不生效 | 调用来源不在该导入项 |
+| caller/callee/sym 不匹配 | `NOSYM` | 匹配条件错误 |
+| 页权限或地址异常 | `SET_PROT/SET_GOT` | 改写失败 |
 
-static void bh_task_handle(bh_task_t *self) {
-  switch (self->type) {
-    case BH_TASK_TYPE_SINGLE: {
-      bh_elf_t *caller_elf = bh_elf_manager_find_elf(self->caller_path_name);
-      if (NULL != caller_elf) {
-        bh_task_hook_or_unhook(self, caller_elf);
-        bh_elf_decrement_ref_count(caller_elf);
-      }
-      break;
-    }
-    case BH_TASK_TYPE_ALL:
-    case BH_TASK_TYPE_PARTIAL:
-      bh_elf_manager_iterate(bh_task_elf_iterate_cb, (void *)self);
-      break;
-  }
-}
+实用判断：
 
-// bytehook/src/main/cpp/bh_elf_manager.c
-bh_elf_t *bh_elf_manager_find_elf(const char *pathname) {
-  bh_elf_t *elf = NULL;
-
-  pthread_rwlock_rdlock(&bh_elfs_lock);
-  TAILQ_FOREACH(elf, &bh_elfs, link_list) {
-    if (0 == elf->abandoned_ts && !elf->error && bh_elf_is_match(elf, pathname)) break;
-  }
-  if (NULL != elf) bh_elf_increment_ref_count(elf);
-  pthread_rwlock_unlock(&bh_elfs_lock);
-
-  return elf;
-}
+```bash
+readelf -rW libcaller.so | grep "目标符号名"
 ```
 
-### ELF信息(bh_elf)
-
-> 主要是两件事情：
->
-> - ELF动态信息解析
-> - 符号定位与GOT表收集
-
-```c++
-// bytehook/src/main/cpp/bh_elf.c
-static void bh_elf_parse_dynamic_unsafe(bh_elf_t *self, ElfW(Dyn) *dynamic) {
-  // 解析 .dynamic
-case DT_JMPREL: self->rel_plt = ...;
-case DT_PLTRELSZ: self->rel_plt_cnt = ...;
-case DT_REL/DT_RELA: self->rel_dyn = ...;
-case DT_RELSZ/DT_RELASZ: self->rel_dyn_cnt = ...;
-case DT_SYMTAB: self->dynsym = ...;
-case DT_STRTAB: self->dynstr = ...;
-case DT_HASH/DT_GNU_HASH: ...
-}
-```
-
-主要是处理 如下字段
-
-- .rel.plt / .rela.plt
-- .rel.dyn / .rela.dyn
-- .dynsym
-- .dynstr
-- .rel.dyn / .rela.dyn (APS2 format) - Android对重定位表做的‘私有压缩格式’，主要为了减少so体积
-
-```c++
-// bytehook/src/main/cpp/bh_elf.c
-
-ElfW(Sym) *bh_elf_find_symbol_and_gots_by_symbol_name(bh_elf_t *self, const char *sym_name, void *callee_addr,
-                                                      bh_array_t *gots, bh_array_t *prots) {
-  if (self->error) return NULL;
-  if (0 != bh_elf_parse_dynamic(self)) return NULL;
-
-  ElfW(Sym) *sym = NULL;
-
-  BH_SIG_TRY(SIGSEGV, SIGBUS) {
-    sym = bh_elf_find_symbol_and_gots_by_symbol_name_unsafe(self, sym_name, callee_addr, gots, prots);
-  }
-  BH_SIG_CATCH() {
-    self->error = true;
-    sym = NULL;
-  }
-  BH_SIG_EXIT
-
-  return sym;
-}
-
-static ElfW(Sym) *bh_elf_find_symbol_and_gots_by_symbol_name_unsafe(bh_elf_t *self, const char *sym_name,
-                                                                    void *callee_addr, bh_array_t *gots,
-                                                                    bh_array_t *prots) {
-  ElfW(Sym) *sym = NULL;
-
-  // From: SYSV hash (.hash -> .dynsym -> .dynstr), O(x) + O(1) + O(1)
-  // Notice: If ELF is linked as "-Wl,--hash-style=gnu", there will be no .hash section.
-  //         The SYSV hash contains both imported and exported symbols.
-  if (self->sysv_hash.buckets_cnt > 0) sym = bh_elf_find_symbol_by_name_use_sysv_hash(self, sym_name);
-
-  // From: GNU hash (.gnu.hash -> .dynsym -> .dynstr), O(x) + O(1) + O(1)
-  // Notice: If ELF is linked as "-Wl,--hash-style=sysv", there will be no .gnu.hash section.
-  //         The GNU hash only contains exported symbols.
-  if (NULL == sym && self->gnu_hash.buckets_cnt > 0)
-    sym = bh_elf_find_symbol_by_name_use_gnu_hash(self, sym_name);
-
-  // If we have already found "sym" at this moment, then we do not need to use "strcmp()" to
-  // compare "sym_name" in the following linear search, and the following search will be faster.
-
-  // linear Search sym and GOTS in .rel.plt
-  for (size_t i = 0; i < self->rel_plt_cnt; i++)
-    if (0 != bh_elf_check_reloc(self, &(self->rel_plt[i]), sym_name, callee_addr, gots, prots, &sym, true))
-      return NULL;
-
-  // linear Search sym and GOTS in .rel.dyn
-  for (size_t i = 0; i < self->rel_dyn_cnt; i++)
-    if (0 != bh_elf_check_reloc(self, &(self->rel_dyn[i]), sym_name, callee_addr, gots, prots, &sym, false))
-      return NULL;
-
-  // linear Search sym and GOTS in .rel.dyn (APS2 format)
-  uintptr_t pkg[6] = {(uintptr_t)self, (uintptr_t)sym_name, (uintptr_t)callee_addr,
-                      (uintptr_t)gots, (uintptr_t)prots,    (uintptr_t)&sym};
-  if (NULL != self->rel_dyn_aps2) {
-    bh_sleb128_decoder_t decoder;
-    bh_sleb128_decoder_init(&decoder, self->rel_dyn_aps2, self->rel_dyn_aps2_sz);
-    bh_elf_iterate_aps2(&decoder, bh_elf_find_got_by_sym_unsafe_aps2_cb, pkg);
-  }
-
-  return sym;
-}
-```
-
-执行以下逻辑：
-
-- 用 SYSV / GNU hash 定位符号
-- 线性扫描重定位项，筛选对应符号
-- 收集所有要改写的地址 (GOT)和页保护属性
+看不到重定位项，基本不在 ByteHook 生效边界内。
 
 
+## 常见状态码速查
 
-### 改写地址(bh_elf_relocator)
-
-> 在这里进行最终的替换逻辑
-
-```c++
-// bytehook/src/main/cpp/bh_elf_relocator.c
-int bh_elf_relocator_reloc(bh_elf_t *elf, bh_task_t *task, bh_array_t *gots, bh_array_t *prots,
-                           uintptr_t new_addr, uintptr_t *orig_addr) {
-  // get original address
-  uintptr_t real_orig_addr = 0;
-  BH_SIG_TRY(SIGSEGV, SIGBUS) {
-    real_orig_addr = (uintptr_t)(*((void **)gots->data[0]));
-  }
-  BH_SIG_CATCH() {
-    return BYTEHOOK_STATUS_CODE_READ_ELF;
-  }
-  BH_SIG_EXIT
-
-  if (NULL != orig_addr) *orig_addr = real_orig_addr;
-
-  // do callback with BYTEHOOK_STATUS_CODE_ORIG_ADDR for manual-mode
-  //
-  // In manual mode, the caller needs to save the original function address
-  // in the hooked callback, and then may call the original function through
-  // this address in the proxy function. So we need to execute the hooked callback
-  // first, and then execute the address replacement in the GOT, otherwise it
-  // will cause a crash due to timing issues.
-  bh_task_do_orig_func_callback(task, elf->pathname, (void *)real_orig_addr);
-
-  for (size_t i = 0; i < gots->count; i++) {
-    void *got = (void *)gots->data[i];
-    int prot = (int)prots->data[i];
-
-    // add write permission
-    if (0 == (prot & PROT_WRITE)) {
-      if (0 != bh_util_set_addr_protect(got, prot | PROT_WRITE)) return BYTEHOOK_STATUS_CODE_SET_PROT;
-    }
-
-    // replace the target function address by "new_func"
-    BH_SIG_TRY(SIGSEGV, SIGBUS) {
-      __atomic_store_n((uintptr_t *)got, (uintptr_t)new_addr, __ATOMIC_SEQ_CST);
-    }
-    BH_SIG_CATCH() {
-      return BYTEHOOK_STATUS_CODE_SET_GOT;
-    }
-    BH_SIG_EXIT
-
-    // delete write permission
-    //    if (0 == (prot & PROT_WRITE)) bh_util_set_addr_protect(got, prot);
-  }
-
-  return BYTEHOOK_STATUS_CODE_OK;
-}
-
-```
-
-主要执行了以下几步：
-
-- 读取原地址：real_orig_addr
-- mprotect 设置写权限：bh_util_set_addr_protect(got, prot | PROT_WRITE)
-- 写入新地址：__atomic_store_n
+| 状态码 | 含义 | 优先排查 |
+| :-- | :-- | :-- |
+| `INITERR_INVALID_ARG` | 初始化参数错 | 检查 init mode |
+| `INITERR_SYM` | linker 适配失败 | 看 `bh_linker_init` 分支 |
+| `INITERR_SIG` | 信号保护失败 | 看 `bytesig_init` |
+| `INITERR_DLMTR` | so 监控初始化失败 | 看 `bh_dl_monitor` 或 dl_init/fini 注册 |
+| `NOSYM` | 未找到符号/重定位项 | `readelf -rW` + 参数核对 |
+| `READ_ELF` | ELF 读取异常 | 看并发卸载/目标 so 状态 |
+| `SET_PROT` | `mprotect` 失败 | 看页权限与映射 |
+| `SET_GOT` | 写 GOT 失败 | 看地址有效性与并发 |
+| `DUP` | manual 重复 Hook 同位点 | 切 automatic 或调整策略 |
+| `NOT_FOUND` | unhook 目标不存在 | 检查 stub 生命周期/重复 unhook |
 
 
+## 快速排查顺序
 
-### 模式切换(bh_switch)
-
-> 支持两种模式切换：
->
-> - manual
-> - automatic
-
-```c++
-// bytehook/src/main/cpp/bh_switch.c
-
-int bh_switch_hook(bh_elf_t *elf, bh_task_t *task, ElfW(Sym) *sym, bh_array_t *gots, bh_array_t *prots,
-                   uintptr_t new_addr, uintptr_t *orig_addr) {
-  int r;
-  if (BYTEHOOK_IS_MANUAL_MODE)
-    r = bh_switch_hook_unique(elf, task, sym, gots, prots, new_addr, orig_addr);
-  else
-    r = bh_switch_hook_shared(elf, task, sym, gots, prots, new_addr, orig_addr);
-
-  if (0 == r)
-    BH_LOG_INFO("switch: hook in %s mode OK: sym %" PRIxPTR ", new_addr %" PRIxPTR ", orig_addr %" PRIxPTR,
-                BYTEHOOK_IS_MANUAL_MODE ? "MANUAL" : "AUTOMATIC", (uintptr_t)sym, new_addr, *orig_addr);
-
-  return r;
-}
-
-static int bh_switch_hook_unique(bh_elf_t *elf, bh_task_t *task, ElfW(Sym) *sym, bh_array_t *gots,
-                                 bh_array_t *prots, uintptr_t new_addr, uintptr_t *orig_addr) {
- ...
-     if (0 != (r = bh_elf_relocator_reloc(elf, task, gots, prots, new_addr, &self->orig_addr))) {
-    TAILQ_REMOVE(&mgr->switches, self, link);
-    useless = self;
-    goto end;
-  }
-}
+1. `bytehook_init` 是否成功。
+2. `caller/callee/sym` 是否精确匹配。
+3. `readelf -rW` 是否存在目标导入重定位。
+4. 查看 records 与 debug 日志中的状态码。
+5. 检查代理函数是否正确使用 `BYTEHOOK_CALL_PREV`、`BYTEHOOK_STACK_SCOPE/POP_STACK`。
 
 
-static int bh_switch_hook_shared(bh_elf_t *elf, bh_task_t *task, ElfW(Sym) *sym, bh_array_t *gots,
-                                 bh_array_t *prots, uintptr_t new_addr, uintptr_t *orig_addr) {
-  ...
-        // do reloc & return original-address
-    if (0 != (r = bh_elf_relocator_reloc(elf, task, gots, prots, hub_trampo,
-                                         bh_hub_get_orig_addr_addr(self->hub)))) {
-      TAILQ_REMOVE(&mgr->switches, self, link);
-      useless = self;
-      goto end;
-    }
-    self->orig_addr = bh_hub_get_orig_addr(self->hub);
-    *orig_addr = self->orig_addr;
-}
-```
+## 要点总结
 
-manual模式执行 `bh_switch_hook_unique`，GOT表直接写`new_func`
-
-automatic模式执行`bh_switch_hook_shared`，GOT表写入`hub_trampo`
-
-#### automatic模式下的参数(bh_hub)
-
-> 负责 automatic 模式下运行时参数分发
-
-- bh_hub_push_stack
-- bh_hub_add_proxy
-- bh_hub_get_prev_func
-- bh_hub_pop_stack
-
-这套机制主要是为了解决如下问题：
-
-- 多proxy链式执行
-- 避免调用形成递归
+- ByteHook 本质是 PLT Hook：改调用方 GOT/DATA，不改函数入口。
+- BHook主链路：`init -> task -> elf -> reloc -> switch -> monitor -> unhook`。
+- 生效前提是调用经过导入重定位项；同 so 直调、inline/LTO 常不在边界内。
+- automatic 用 hub/proxy 链解决多方 Hook 冲突；manual 更适合单方调试场景。
+- 新 so 自动补 Hook 依赖 `dlopen` 监控或 `dl_init/dl_fini` 回调。
+- 线上稳定性核心是 signal 保护、CFI 兼容、并发同步与状态码可观测。
 
 
-
-### SO加载监控(bh_dl_monitor)
-
-
-
-# 参考地址
+## 参考地址
 
 [ByteHook 仓库](https://github.com/bytedance/bhook)
 
 [项目介绍和原理概述](https://github.com/bytedance/bhook/blob/main/doc/overview.zh-CN.md)
+
+[快速开始](https://github.com/bytedance/bhook/blob/main/doc/quickstart.zh-CN.md)
+
+[Native API 手册](https://github.com/bytedance/bhook/blob/main/doc/native_manual.zh-CN.md)
+
+[状态码文档](https://github.com/bytedance/bhook/blob/main/doc/status_code.zh-CN.md)
 
 [Android bionic linker 源码](https://cs.android.com/android/platform/superproject/main/+/main:bionic/linker/)

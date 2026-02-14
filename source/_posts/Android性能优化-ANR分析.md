@@ -51,6 +51,24 @@ ANR本质是**性能问题**。实际上是对应用程序主线程的限制，�
 
 输入事件由`InputDispatcher`调度，待处理的输入输出事件都会进入队列中等待，设计了一个等待超时的判断。
 
+#### Input ANR的子类型
+
+Input ANR本质是：`InputDispatcher`将事件投递给目标窗口后，在超时时间（默认5s）内没有收到窗口“处理完成”的回执（`finish signal`），最终触发`appNotResponding`。
+
+##### Input dispatching timed out
+
+- 含义：目标窗口存在，但窗口在超时时间内没有完成输入事件处理。
+- 典型日志关键字：`Input dispatching timed out`、`focused window has not finished processing`、`touched window has not finished processing`。
+- 常见根因：主线程执行耗时任务、主线程被锁阻塞、主线程同步Binder/IO调用、CPU资源被其他进程抢占。
+- 机制特征：输入分发是串行推进的，前一条事件未完成会阻塞后续输入，用户体感就是“点哪里都没反应”。
+
+##### No focused window
+
+- 含义：系统存在`focused app`，但没有可接收输入的`focused window`。
+- 典型日志关键字：`No focused window`、`no window has focus but there is a focused application`。
+- 常见根因：Activity启动阶段窗口尚未建立完成、窗口焦点切换异常、窗口被设置为不可获取焦点（如`FLAG_NOT_FOCUSABLE`）。
+- 场景特点：冷启动或页面切换阶段更容易出现该类型。
+
 ### Service超时监测
 
 本身有分析过`Service的启动流程`，在其中了解到`ActiveServices.realStartServiceLocked()`是真正的Service启动流程。
@@ -151,6 +169,26 @@ ANR问题的产生是由于主线程的任务无法在规定事件内无法完�
 3. `向下继续分析 trace文件`：trace文件记录了发生ANR前后该进程中各个线程的stack。对我们分析ANR问题最有价值的就是主线程的stack(`main`)。一般主线程trace中可能有如下几种情况：
    - 主线程是`running或native`而对应的栈对应了我们应用中的函数，则很有可能是执行该函数发生了超时
    - 主线程是`block`，主线程被锁，可以考虑进行优化代码，解除掉锁的状态。如果是死锁问题，需要及时处理
+
+### Input ANR排查关键字
+
+针对Input ANR，建议按“`ANR原因` -> `输入分发` -> `窗口焦点` -> `主线程堆栈`”顺序排查。
+
+1. `ANR原因定位`：`am_anr`、`ANR in`、`Reason:`、`Input dispatching timed out`、`No focused window`
+2. `输入分发状态`：`InputDispatcher`、`Wait queue`、`head age`、`has not finished processing`
+3. `CPU负载信息`：`Load:`、`CPU usage from`、`TOTAL`、`iowait`、`faults major/minor`
+4. `主线程阻塞特征`：`"main"`、`state=Blocked|Runnable|Native`、`waiting to lock`、`BinderProxy.transact`
+5. `窗口与焦点状态`：`mCurrentFocus`、`mFocusedApp`、`FocusedWindow`、`FocusedApplication`
+
+可直接使用以下命令快速检索：
+
+```shell
+adb logcat -b events -v threadtime | rg "am_anr|ANR in|Reason:"
+adb logcat -v threadtime | rg "Input dispatching timed out|No focused window|InputDispatcher|Wait queue|head age|has not finished processing"
+adb shell dumpsys window | rg "mCurrentFocus|mFocusedApp|hasFocus"
+adb shell dumpsys input | rg "FocusedApplication|FocusedWindow|ANR|Wait queue"
+adb pull /data/anr/traces.txt
+```
 
 
 
