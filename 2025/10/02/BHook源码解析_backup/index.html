@@ -1,0 +1,998 @@
+
+
+<!DOCTYPE html>
+<html lang="zh-CN" data-default-color-scheme=auto>
+
+
+
+<head>
+  <meta charset="UTF-8">
+
+  <link rel="apple-touch-icon" sizes="76x76" href="/img/favicon.png">
+  <link rel="icon" href="/img/favicon.png">
+  
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, shrink-to-fit=no">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  
+  <meta name="theme-color" content="#11527b">
+  <meta name="author" content="Leo-Wxy">
+  <meta name="keywords" content="">
+  
+    <meta name="description" content="基于 ByteHook 1.1.1（main 分支实现思路）分析，侧重 Android Native Hook 的基础原理与核心源码链路。  在 Android中的Hook-PLTHook、Android中的Hook-InlineHook、Android中so加载流程 之后再看 ByteHook，会更容易把源码串起来：  PLT Hook 负责“改哪里”（GOT&#x2F;DATA 导入项）。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="BHook源码解析">
+<meta property="og:url" content="https://leo-wxy.github.io/2025/10/02/BHook%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90_backup/index.html">
+<meta property="og:site_name" content="Wxy的个人博客">
+<meta property="og:description" content="基于 ByteHook 1.1.1（main 分支实现思路）分析，侧重 Android Native Hook 的基础原理与核心源码链路。  在 Android中的Hook-PLTHook、Android中的Hook-InlineHook、Android中so加载流程 之后再看 ByteHook，会更容易把源码串起来：  PLT Hook 负责“改哪里”（GOT&#x2F;DATA 导入项）。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2025-10-02T01:18:44.000Z">
+<meta property="article:modified_time" content="2026-02-14T03:42:35.534Z">
+<meta property="article:author" content="Leo-Wxy">
+<meta property="article:tag" content="源码解析">
+<meta name="twitter:card" content="summary_large_image">
+  
+  
+  
+  <title>BHook源码解析 - Wxy的个人博客</title>
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css" />
+
+
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@4.0.0/github-markdown.min.css" />
+
+  <link  rel="stylesheet" href="/lib/hint/hint.min.css" />
+
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.css" />
+
+
+
+<!-- 主题依赖的图标库，不要自行修改 -->
+<!-- Do not modify the link that theme dependent icons -->
+
+<link rel="stylesheet" href="//at.alicdn.com/t/c/font_1749284_5i9bdhy70f8.css">
+
+
+
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1736178_kmeydafke9r.css">
+
+
+<link  rel="stylesheet" href="/css/main.css" />
+
+
+  <link id="highlight-css" rel="stylesheet" href="/css/highlight.css" />
+  
+    <link id="highlight-css-dark" rel="stylesheet" href="/css/highlight-dark.css" />
+  
+
+
+
+
+  <script id="fluid-configs">
+    var Fluid = window.Fluid || {};
+    Fluid.ctx = Object.assign({}, Fluid.ctx)
+    var CONFIG = {"hostname":"leo-wxy.github.io","root":"/","version":"1.9.8","typing":{"enable":false,"typeSpeed":70,"cursorChar":"_","loop":false,"scope":[]},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"always","icon":"#"},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"code_language":{"enable":true,"default":"TEXT"},"copy_btn":true,"image_caption":{"enable":true},"image_zoom":{"enable":true,"img_url_replace":["",""]},"toc":{"enable":true,"placement":"left","headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"loading_img":"/img/loading.gif","onlypost":false,"offset_factor":2},"web_analytics":{"enable":false,"follow_dnt":true,"baidu":null,"google":null,"tencent":{"sid":null,"cid":null},"leancloud":{"app_id":null,"app_key":null,"server_url":null,"path":"window.location.pathname","ignore_local":false},"umami":{"src":null,"website_id":null,"domains":null,"start_time":"2024-01-01T00:00:00.000Z","token":null,"api_server":null},"gtag":null,"woyaola":null,"cnzz":null},"search_path":"/local-search.xml","include_content_in_search":false};
+
+    if (CONFIG.web_analytics.follow_dnt) {
+      var dntVal = navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack;
+      Fluid.ctx.dnt = dntVal && (dntVal.startsWith('1') || dntVal.startsWith('yes') || dntVal.startsWith('on'));
+    }
+  </script>
+  <script  src="/js/utils.js" ></script>
+  <script  src="/js/color-schema.js" ></script>
+  
+
+
+  
+<meta name="generator" content="Hexo 8.1.1"></head>
+
+
+<body>
+  
+
+  <header>
+    
+
+<div class="header-inner" style="height: 60vh;">
+  <nav id="navbar" class="navbar fixed-top  navbar-expand-lg navbar-dark scrolling-navbar">
+  <div class="container">
+    <a class="navbar-brand" href="/">
+      <strong>Wxy&#39;s Blog</strong>
+    </a>
+
+    <button id="navbar-toggler-btn" class="navbar-toggler" type="button" data-toggle="collapse"
+            data-target="#navbarSupportedContent"
+            aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+      <div class="animated-icon"><span></span><span></span><span></span></div>
+    </button>
+
+    <!-- Collapsible content -->
+    <div class="collapse navbar-collapse" id="navbarSupportedContent">
+      <ul class="navbar-nav ml-auto text-center">
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/" target="_self">
+                <i class="iconfont icon-home-fill"></i>
+                <span>首页</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/archives/" target="_self">
+                <i class="iconfont icon-archive-fill"></i>
+                <span>归档</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/tags/" target="_self">
+                <i class="iconfont icon-tags-fill"></i>
+                <span>标签</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/about/" target="_self">
+                <i class="iconfont icon-user-fill"></i>
+                <span>关于</span>
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/links/" target="_self">
+                <i class="iconfont icon-link-fill"></i>
+                <span>友链</span>
+              </a>
+            </li>
+          
+        
+        
+          <li class="nav-item" id="search-btn">
+            <a class="nav-link" target="_self" href="javascript:;" data-toggle="modal" data-target="#modalSearch" aria-label="Search">
+              <i class="iconfont icon-search"></i>
+            </a>
+          </li>
+          
+        
+        
+          <li class="nav-item" id="color-toggle-btn">
+            <a class="nav-link" target="_self" href="javascript:;" aria-label="Color Toggle">
+              <i class="iconfont icon-dark" id="color-toggle-icon"></i>
+            </a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+  
+
+<div id="banner" class="banner" parallax=true
+     style="background: url('/img/default.png') no-repeat center center; background-size: cover;">
+  <div class="full-bg-img">
+    <div class="mask flex-center" style="background-color: rgba(0, 0, 0, 0.3)">
+      <div class="banner-text text-center fade-in-up">
+        <div class="h2">
+          
+            <span id="subtitle">BHook源码解析</span>
+          
+        </div>
+
+        
+          
+  <div class="mt-3">
+    
+    
+      <span class="post-meta">
+        <i class="iconfont icon-date-fill" aria-hidden="true"></i>
+        <time datetime="2025-10-02 09:18" pubdate>
+          2025年10月2日 上午
+        </time>
+      </span>
+    
+  </div>
+
+  <div class="mt-1">
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-chart"></i>
+        
+          <!-- compatible with older versions-->
+          2.1k 字
+        
+      </span>
+    
+
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-clock-fill"></i>
+        
+        
+        
+          <!-- compatible with older versions-->
+          7 分钟
+        
+      </span>
+    
+
+    
+    
+  </div>
+
+
+        
+      </div>
+
+      
+    </div>
+  </div>
+</div>
+
+</div>
+
+  </header>
+
+  <main>
+    
+      
+
+<div class="container-fluid nopadding-x">
+  <div class="row nomargin-x">
+    <div class="side-col d-none d-lg-block col-lg-2">
+      
+  <aside class="sidebar" style="padding-left: 2rem; margin-right: -1rem">
+    <div id="toc">
+  <p class="toc-header">
+    <i class="iconfont icon-list"></i>
+    <span>目录</span>
+  </p>
+  <div class="toc-body" id="toc-body"></div>
+</div>
+
+
+
+  </aside>
+
+
+    </div>
+
+    <div class="col-lg-8 nopadding-x-md">
+      <div class="container nopadding-x-md" id="board-ctn">
+        <div id="board">
+          <article class="post-content mx-auto">
+            <h1 id="seo-header">BHook源码解析</h1>
+            
+            
+              <div class="markdown-body">
+                
+                <blockquote>
+<p>基于 ByteHook 1.1.1（main 分支实现思路）分析，侧重 Android Native Hook 的基础原理与核心源码链路。</p>
+</blockquote>
+<p>在 <a href="/2025/10/02/Android%E4%B8%AD%E7%9A%84Hook-PLTHook/" title="Android中的Hook-PLTHook">Android中的Hook-PLTHook</a>、<a href="/2025/10/02/Android%E4%B8%AD%E7%9A%84Hook-InlineHook/" title="Android中的Hook-InlineHook">Android中的Hook-InlineHook</a>、<a href="/2025/10/06/Android%E4%B8%ADso%E5%8A%A0%E8%BD%BD%E6%B5%81%E7%A8%8B/" title="Android中so加载流程">Android中so加载流程</a> 之后再看 ByteHook，会更容易把源码串起来：</p>
+<ul>
+<li>PLT Hook 负责“改哪里”（GOT&#x2F;DATA 导入项）。</li>
+<li>So 加载流程负责“何时改”（已加载 + 新加载）。</li>
+<li>Inline Hook 负责“边界对比”（函数入口改写 vs 导入调用点改写）。</li>
+</ul>
+<h2 id="ByteHook-定义"><a href="#ByteHook-定义" class="headerlink" title="ByteHook 定义"></a>ByteHook 定义</h2><p>ByteHook（也常写作 BHook）是字节开源的 Android PLT Hook 框架。</p>
+<p>它提供三类 Hook 能力：</p>
+<ul>
+<li><code>bytehook_hook_single</code>：只 Hook 指定 caller so。</li>
+<li><code>bytehook_hook_partial</code>：按过滤器 Hook 部分 caller so。</li>
+<li><code>bytehook_hook_all</code>：Hook 全部 caller so。</li>
+</ul>
+<p>并支持：</p>
+<ul>
+<li>自动对新加载 so 补 Hook。</li>
+<li>多个 Hook&#x2F;Unhook 互不冲突（automatic 模式）。</li>
+<li>递归&#x2F;环形调用保护。</li>
+<li>记录 Hook 操作日志（records）。</li>
+</ul>
+<h2 id="ByteHook-使用示例"><a href="#ByteHook-使用示例" class="headerlink" title="ByteHook 使用示例"></a>ByteHook 使用示例</h2><h3 id="初始化"><a href="#初始化" class="headerlink" title="初始化"></a>初始化</h3><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">import</span> com.bytedance.android.bytehook.ByteHook;<br><br><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">HookInit</span> &#123;<br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">synchronized</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">init</span><span class="hljs-params">()</span> &#123;<br>        <span class="hljs-comment">// 默认 automatic 模式</span><br>        <span class="hljs-type">int</span> <span class="hljs-variable">status</span> <span class="hljs-operator">=</span> ByteHook.init();<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<h3 id="Hook-单个-so"><a href="#Hook-单个-so" class="headerlink" title="Hook 单个 so"></a>Hook 单个 so</h3><figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&quot;bytehook.h&quot;</span></span><br><br><span class="hljs-type">static</span> <span class="hljs-type">bytehook_stub_t</span> g_stub = <span class="hljs-literal">nullptr</span>;<br><br><span class="hljs-function"><span class="hljs-type">size_t</span> <span class="hljs-title">my_strlen</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">char</span>* str)</span> </span>&#123;<br>    <span class="hljs-built_in">BYTEHOOK_STACK_SCOPE</span>();<br>    <span class="hljs-keyword">return</span> <span class="hljs-built_in">BYTEHOOK_CALL_PREV</span>(my_strlen, str);<br>&#125;<br><br><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">install_hook</span><span class="hljs-params">()</span> </span>&#123;<br>    g_stub = <span class="hljs-built_in">bytehook_hook_single</span>(<br>        <span class="hljs-string">&quot;libsample.so&quot;</span>,   <span class="hljs-comment">// caller</span><br>        <span class="hljs-literal">nullptr</span>,           <span class="hljs-comment">// callee 不限制</span><br>        <span class="hljs-string">&quot;strlen&quot;</span>,         <span class="hljs-comment">// symbol</span><br>        (<span class="hljs-type">void</span>*)my_strlen,<br>        <span class="hljs-literal">nullptr</span>,<br>        <span class="hljs-literal">nullptr</span><br>    );<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<h3 id="Unhook"><a href="#Unhook" class="headerlink" title="Unhook"></a>Unhook</h3><figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">uninstall_hook</span><span class="hljs-params">()</span> </span>&#123;<br>    <span class="hljs-keyword">if</span> (g_stub != <span class="hljs-literal">nullptr</span>) &#123;<br>        <span class="hljs-built_in">bytehook_unhook</span>(g_stub);<br>        g_stub = <span class="hljs-literal">nullptr</span>;<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<blockquote>
+<p>代理函数中建议总是配合 <code>BYTEHOOK_STACK_SCOPE()</code> + <code>BYTEHOOK_CALL_PREV()</code> 使用。</p>
+</blockquote>
+<h2 id="ByteHook-源码分析"><a href="#ByteHook-源码分析" class="headerlink" title="ByteHook 源码分析"></a>ByteHook 源码分析</h2><p>下面按“从 API 到改 GOT”的顺序看核心实现。</p>
+<h3 id="1-初始化入口：bytehook-init"><a href="#1-初始化入口：bytehook-init" class="headerlink" title="1. 初始化入口：bytehook_init"></a>1. 初始化入口：<code>bytehook_init</code></h3><p><code>bytehook.c</code> 中，<code>bytehook_init</code> 负责搭建运行时基础设施。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><code class="hljs c"><span class="hljs-type">int</span> <span class="hljs-title function_">bytehook_init</span><span class="hljs-params">(<span class="hljs-type">int</span> mode, <span class="hljs-type">bool</span> debug)</span> &#123;<br>  ...<br>  <span class="hljs-keyword">if</span> (<span class="hljs-number">0</span> != bh_linker_init()) ...<br>  <span class="hljs-keyword">if</span> (<span class="hljs-number">0</span> != bytesig_init(SIGSEGV)) ...<br>  <span class="hljs-keyword">if</span> (<span class="hljs-number">0</span> != bytesig_init(SIGBUS)) ...<br>  <span class="hljs-keyword">if</span> (<span class="hljs-number">0</span> != bh_cfi_disable_slowpath()) ...<br>  <span class="hljs-keyword">if</span> (<span class="hljs-number">0</span> != bh_safe_init()) ...<br>  <span class="hljs-keyword">if</span> (BYTEHOOK_IS_AUTOMATIC_MODE) &#123;<br>    <span class="hljs-keyword">if</span> (<span class="hljs-number">0</span> != bh_hub_init()) ...<br>  &#125;<br>  ...<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>关键点：</p>
+<ul>
+<li>初始化 linker 适配层。</li>
+<li>初始化 signal 保护（<code>SIGSEGV/SIGBUS</code>）。</li>
+<li>处理 CFI 相关兼容。</li>
+<li>automatic 模式下初始化 hub&#x2F;trampoline。</li>
+</ul>
+<h3 id="2-注册-Hook-请求：bytehook-hook"><a href="#2-注册-Hook-请求：bytehook-hook" class="headerlink" title="2. 注册 Hook 请求：bytehook_hook_*"></a>2. 注册 Hook 请求：<code>bytehook_hook_*</code></h3><p>对外 API 在 <code>bytehook.c</code>：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><code class="hljs c"><span class="hljs-type">bytehook_stub_t</span> <span class="hljs-title function_">bytehook_hook_single</span><span class="hljs-params">(...)</span> &#123;<br>  <span class="hljs-type">bh_task_t</span> *task = bh_task_create_single(...);<br>  <span class="hljs-keyword">if</span> (task != <span class="hljs-literal">NULL</span>) &#123;<br>    bh_task_manager_add(task);<br>    bh_task_manager_hook(task);<br>  &#125;<br>  <span class="hljs-keyword">return</span> (<span class="hljs-type">bytehook_stub_t</span>)task;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>这里的核心对象是 <code>bh_task_t</code>（定义在 <code>bh_task.c</code>），它表示一个 Hook 诉求，包含：</p>
+<ul>
+<li>目标符号 <code>sym_name</code></li>
+<li>新函数地址 <code>new_func</code></li>
+<li>caller&#x2F;callee 限定条件</li>
+<li>状态与回调信息</li>
+</ul>
+<h3 id="3-Task-管理与调度：bh-task-manager"><a href="#3-Task-管理与调度：bh-task-manager" class="headerlink" title="3. Task 管理与调度：bh_task_manager"></a>3. Task 管理与调度：<code>bh_task_manager</code></h3><p><code>bh_task_manager.c</code> 负责两件事：</p>
+<ol>
+<li>对当前进程中已加载 ELF 执行 task。</li>
+<li>在后续新 ELF 加载时，自动补执行 task。</li>
+</ol>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><code class="hljs c"><span class="hljs-type">void</span> <span class="hljs-title function_">bh_task_manager_hook</span><span class="hljs-params">(<span class="hljs-type">bh_task_t</span> *task)</span> &#123;<br>  ...<br>  bh_task_hook(task);<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p><code>single</code>、<code>partial</code>、<code>all</code> 的差异主要体现在 <code>bh_task_hook_or_unhook</code> 中的匹配策略：</p>
+<ul>
+<li><code>single</code>：命中一个 caller 后即可结束。</li>
+<li><code>partial</code>：通过过滤器匹配多个 caller。</li>
+<li><code>all</code>：遍历全部 caller。</li>
+</ul>
+<h3 id="4-ELF-缓存管理：bh-elf-manager"><a href="#4-ELF-缓存管理：bh-elf-manager" class="headerlink" title="4. ELF 缓存管理：bh_elf_manager"></a>4. ELF 缓存管理：<code>bh_elf_manager</code></h3><p><code>bh_elf_manager.c</code> 维护进程内 ELF 列表，支持增删与生命周期同步：</p>
+<ul>
+<li><code>bh_elf_manager_load</code>：初次加载缓存。</li>
+<li><code>bh_elf_manager_refresh</code>：刷新现有 ELF 与新 ELF。</li>
+<li><code>bh_elf_manager_add</code> &#x2F; <code>bh_elf_manager_del</code>：跟随加载与卸载更新缓存。</li>
+</ul>
+<p>它还维护引用计数，防止“正在 Hook 的 ELF 同时被卸载”。</p>
+<h3 id="5-ELF-动态信息解析：bh-elf-parse-dynamic"><a href="#5-ELF-动态信息解析：bh-elf-parse-dynamic" class="headerlink" title="5. ELF 动态信息解析：bh_elf_parse_dynamic"></a>5. ELF 动态信息解析：<code>bh_elf_parse_dynamic</code></h3><p><code>bh_elf.c</code> 中先解析 <code>.dynamic</code> 拿到关键索引：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><code class="hljs c"><span class="hljs-keyword">case</span> DT_JMPREL: self-&gt;rel_plt = ...;<br><span class="hljs-keyword">case</span> DT_PLTRELSZ: self-&gt;rel_plt_cnt = ...;<br><span class="hljs-keyword">case</span> DT_REL/DT_RELA: self-&gt;rel_dyn = ...;<br><span class="hljs-keyword">case</span> DT_RELSZ/DT_RELASZ: self-&gt;rel_dyn_cnt = ...;<br><span class="hljs-keyword">case</span> DT_SYMTAB: self-&gt;dynsym = ...;<br><span class="hljs-keyword">case</span> DT_STRTAB: self-&gt;dynstr = ...;<br><span class="hljs-keyword">case</span> DT_HASH/DT_GNU_HASH: ...<br></code></pre></td></tr></table></figure>
+
+<p>这里会处理：</p>
+<ul>
+<li><code>.rel.plt/.rela.plt</code></li>
+<li><code>.rel.dyn/.rela.dyn</code></li>
+<li>Android APS2 压缩重定位格式</li>
+</ul>
+<h3 id="6-符号定位与-GOT-收集"><a href="#6-符号定位与-GOT-收集" class="headerlink" title="6. 符号定位与 GOT 收集"></a>6. 符号定位与 GOT 收集</h3><p>核心函数：<code>bh_elf_find_symbol_and_gots_by_symbol_name</code>。</p>
+<p>执行逻辑：</p>
+<ol>
+<li>用 SYSV&#x2F;GNU hash 先定位符号（加速）。</li>
+<li>线性扫描重定位项，筛选对应符号。</li>
+<li>收集所有要改写的地址（GOT&#x2F;DATA）和页保护属性。</li>
+</ol>
+<p>即：不是只改一个地址，而是“同一符号的所有命中导入项”一起处理。</p>
+<h3 id="7-真正改写地址：bh-elf-relocator-reloc"><a href="#7-真正改写地址：bh-elf-relocator-reloc" class="headerlink" title="7. 真正改写地址：bh_elf_relocator_reloc"></a>7. 真正改写地址：<code>bh_elf_relocator_reloc</code></h3><p><code>bh_elf_relocator.c</code> 里执行最终替换：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><code class="hljs c"><span class="hljs-type">int</span> <span class="hljs-title function_">bh_elf_relocator_reloc</span><span class="hljs-params">(...)</span> &#123;<br>  <span class="hljs-comment">// 读取原地址</span><br>  real_orig_addr = *((<span class="hljs-type">void</span> **)gots-&gt;data[<span class="hljs-number">0</span>]);<br><br>  <span class="hljs-comment">// mprotect 放开写权限</span><br>  <span class="hljs-keyword">if</span> (<span class="hljs-number">0</span> == (prot &amp; PROT_WRITE)) &#123;<br>    bh_util_set_addr_protect(got, prot | PROT_WRITE);<br>  &#125;<br><br>  <span class="hljs-comment">// 原子写入新地址</span><br>  __atomic_store_n((<span class="hljs-type">uintptr_t</span> *)got, (<span class="hljs-type">uintptr_t</span>)new_addr, __ATOMIC_SEQ_CST);<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>并且危险读写都包在 <code>BH_SIG_TRY(SIGSEGV, SIGBUS)</code> 保护区内，避免直接崩溃。</p>
+<h3 id="8-automatic-manual-的核心分歧：bh-switch"><a href="#8-automatic-manual-的核心分歧：bh-switch" class="headerlink" title="8. automatic &#x2F; manual 的核心分歧：bh_switch"></a>8. automatic &#x2F; manual 的核心分歧：<code>bh_switch</code></h3><p><code>bh_switch.c</code> 是模式差异的关键。</p>
+<ul>
+<li>manual：<code>bh_switch_hook_unique</code><ul>
+<li>直接把 GOT 改到 <code>new_func</code>。</li>
+</ul>
+</li>
+<li>automatic：<code>bh_switch_hook_shared</code><ul>
+<li>首次把 GOT 改到 hub trampoline。</li>
+<li>每个 task 的 proxy 进入 hub 的 proxy list。</li>
+</ul>
+</li>
+</ul>
+<p>automatic 的价值：同一 Hook 点支持多方挂载与独立 unhook，不会互相覆盖。</p>
+<h3 id="9-Hub-与-trampoline：bh-hub"><a href="#9-Hub-与-trampoline：bh-hub" class="headerlink" title="9. Hub 与 trampoline：bh_hub"></a>9. Hub 与 trampoline：<code>bh_hub</code></h3><p><code>bh_hub.c</code> 负责 automatic 模式下的运行时分发：</p>
+<ul>
+<li>trampoline 先进入 <code>bh_hub_push_stack</code>。</li>
+<li>选择当前应执行的 proxy。</li>
+<li><code>BYTEHOOK_CALL_PREV</code> 从当前 frame 中找到“下一个 proxy 或原函数”。</li>
+<li><code>BYTEHOOK_POP_STACK</code> &#x2F; <code>BYTEHOOK_STACK_SCOPE</code> 负责栈清理。</li>
+</ul>
+<p>这套机制同时解决：</p>
+<ul>
+<li>多 proxy 链式执行。</li>
+<li>递归&#x2F;环形调用规避。</li>
+</ul>
+<h3 id="10-新-so-自动生效：bh-dl-monitor"><a href="#10-新-so-自动生效：bh-dl-monitor" class="headerlink" title="10. 新 so 自动生效：bh_dl_monitor"></a>10. 新 so 自动生效：<code>bh_dl_monitor</code></h3><p><code>bh_dl_monitor.c</code> 内部 hook：</p>
+<ul>
+<li><code>dlopen</code></li>
+<li><code>android_dlopen_ext</code></li>
+<li><code>dlclose</code></li>
+</ul>
+<p>在 post 回调里触发 ELF 刷新和 task 补执行。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><code class="hljs c"><span class="hljs-keyword">if</span> (<span class="hljs-literal">NULL</span> != bh_dl_monitor_post_dlopen &amp;&amp; <span class="hljs-literal">NULL</span> != handle) &#123;<br>  bh_dl_monitor_post_dlopen(...);<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>不同 Android 版本下，ByteHook 会选择不同符号路径（如 <code>__loader_dlopen</code> 等）做兼容。</p>
+<h4 id="10-1-版本兼容总表（bh-dl-monitor）"><a href="#10-1-版本兼容总表（bh-dl-monitor）" class="headerlink" title="10.1 版本兼容总表（bh_dl_monitor）"></a>10.1 版本兼容总表（<code>bh_dl_monitor</code>）</h4><table>
+<thead>
+<tr>
+<th align="left">API Level</th>
+<th align="left">Android 版本</th>
+<th align="left">Hook 目标符号</th>
+<th align="left">代理函数回调原始加载逻辑</th>
+<th align="left">关键兼容点</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">16 ~ 20</td>
+<td align="left">4.1 ~ 4.4W</td>
+<td align="left"><code>dlopen</code></td>
+<td align="left">直接调用原始 <code>dlopen</code>（manual 走 <code>orig_*</code>，automatic 走 <code>BYTEHOOK_CALL_PREV</code>）</td>
+<td align="left">老版本仅需覆盖 <code>dlopen</code></td>
+</tr>
+<tr>
+<td align="left">21 ~ 23</td>
+<td align="left">5.0 ~ 6.0</td>
+<td align="left"><code>dlopen</code> + <code>android_dlopen_ext</code></td>
+<td align="left">直接调用原始函数链</td>
+<td align="left">增加 <code>android_dlopen_ext</code> 入口</td>
+</tr>
+<tr>
+<td align="left">24 ~ 25</td>
+<td align="left">7.0 ~ 7.1</td>
+<td align="left"><code>dlopen</code> + <code>android_dlopen_ext</code></td>
+<td align="left">优先 <code>linker.dlopen_ext</code>，否则 <code>g_dl_mutex + do_dlopen</code>，并传 <code>caller_addr</code></td>
+<td align="left">兼容 7.x linker namespace 与内部调用链</td>
+</tr>
+<tr>
+<td align="left">&gt;&#x3D; 26</td>
+<td align="left">8.0+</td>
+<td align="left"><code>__loader_dlopen</code> + <code>__loader_android_dlopen_ext</code>（<code>libdl.so</code>）</td>
+<td align="left">调用原始 <code>__loader_*</code>（带 <code>caller_addr</code>）</td>
+<td align="left">适配 Android O+ 对外导出入口变化</td>
+</tr>
+</tbody></table>
+<p>无论哪个版本，加载成功后都会走 <code>post_dlopen -&gt; bh_elf_manager_refresh -&gt; task_manager 补 hook</code> 闭环。</p>
+<h4 id="10-2-Android-6（API-23）路径表"><a href="#10-2-Android-6（API-23）路径表" class="headerlink" title="10.2 Android 6（API 23）路径表"></a>10.2 Android 6（API 23）路径表</h4><table>
+<thead>
+<tr>
+<th align="left">阶段</th>
+<th align="left">关键函数</th>
+<th align="left">行为</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">Hook 注册</td>
+<td align="left"><code>bh_dl_monitor_hook</code></td>
+<td align="left">注册 <code>dlopen</code> + <code>android_dlopen_ext</code> 的内部 task</td>
+</tr>
+<tr>
+<td align="left">代理分支</td>
+<td align="left"><code>bh_dl_monitor_proxy_dlopen</code> &#x2F; <code>bh_dl_monitor_proxy_android_dlopen_ext</code></td>
+<td align="left">命中 <code>api_level &gt;= J &amp;&amp; api_level &lt;= M</code> 分支，调用原始函数链</td>
+</tr>
+<tr>
+<td align="left">增量刷新</td>
+<td align="left"><code>bh_dl_monitor_post_dlopen</code></td>
+<td align="left">成功后触发 <code>bh_elf_manager_refresh(...)</code></td>
+</tr>
+<tr>
+<td align="left">自动补挂</td>
+<td align="left"><code>bh_task_manager_hook_elf</code></td>
+<td align="left">对新加载 ELF 执行已注册 task</td>
+</tr>
+</tbody></table>
+<h4 id="10-3-dlclose-开关表（版本-架构）"><a href="#10-3-dlclose-开关表（版本-架构）" class="headerlink" title="10.3 dlclose 开关表（版本 + 架构）"></a>10.3 <code>dlclose</code> 开关表（版本 + 架构）</h4><table>
+<thead>
+<tr>
+<th align="left">条件</th>
+<th align="left">是否 Hook <code>dlclose</code></th>
+<th align="left">说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><code>aarch64</code></td>
+<td align="left">否</td>
+<td align="left"><code>bh_dl_monitor_need_to_hook_dlclose()</code> 固定返回 false</td>
+</tr>
+<tr>
+<td align="left"><code>arm</code> 且编译 API &gt;&#x3D; 21</td>
+<td align="left">否</td>
+<td align="left">新平台默认关闭</td>
+</tr>
+<tr>
+<td align="left"><code>arm</code> 且编译 API &lt; 21</td>
+<td align="left">运行时 API &lt; 21 时开启</td>
+<td align="left">仅旧系统分支开启</td>
+</tr>
+<tr>
+<td align="left">其他架构（x86&#x2F;x86_64 等）</td>
+<td align="left">是</td>
+<td align="left">参与卸载同步与 ELF 缓存一致性</td>
+</tr>
+</tbody></table>
+<h3 id="11-Unhook-过程"><a href="#11-Unhook-过程" class="headerlink" title="11. Unhook 过程"></a>11. Unhook 过程</h3><p><code>bytehook_unhook</code> 路径：</p>
+<p><code>bytehook_unhook -&gt; bh_task_manager_unhook -&gt; bh_task_unhook -&gt; bh_elf_relocator_unhook -&gt; bh_switch_unhook</code></p>
+<p>automatic 模式下：</p>
+<ul>
+<li>只移除当前 proxy；若仍有其他 proxy，GOT 保持指向 hub。</li>
+<li>当最后一个 proxy 被移除时，再恢复原始地址。</li>
+</ul>
+<h3 id="12-不同版本兼容逻辑（表格汇总）"><a href="#12-不同版本兼容逻辑（表格汇总）" class="headerlink" title="12. 不同版本兼容逻辑（表格汇总）"></a>12. 不同版本兼容逻辑（表格汇总）</h3><p>除了 <code>bh_dl_monitor</code>，ByteHook 还在 linker、ELF 解析和运行时安全层做了兼容。</p>
+<table>
+<thead>
+<tr>
+<th align="left">兼容点</th>
+<th align="left">判定条件</th>
+<th align="left">方案 A</th>
+<th align="left">方案 B</th>
+<th align="left">代码位置</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">新 ELF 增量监听</td>
+<td align="left"><code>bh_linker_is_support_dl_init_fini_monitor()</code></td>
+<td align="left">支持：注册 <code>dl_init/dl_fini</code> 回调（shadowhook）</td>
+<td align="left">不支持：hook <code>dlopen/android_dlopen_ext/dlclose</code> 后刷新 ELF</td>
+<td align="left"><code>bh_task_manager.c</code></td>
+</tr>
+<tr>
+<td align="left">linker 全局锁符号</td>
+<td align="left">Android 版本 + linker 导出差异</td>
+<td align="left">旧平台：<code>__dl__ZL10g_dl_mutex</code></td>
+<td align="left">U-QPR2 等新符号：<code>__dl_g_dl_mutex</code>（U 版本会双尝试）</td>
+<td align="left"><code>bh_linker.c</code></td>
+</tr>
+<tr>
+<td align="left">Android 7.x 加载入口</td>
+<td align="left">API <code>N/N_MR1</code></td>
+<td align="left">优先 <code>dlopen_ext</code></td>
+<td align="left">fallback <code>do_dlopen</code> + <code>g_dl_mutex</code> + 错误缓冲处理</td>
+<td align="left"><code>bh_linker.c</code> &#x2F; <code>bh_dl_monitor.c</code></td>
+</tr>
+<tr>
+<td align="left">ELF 名称匹配策略</td>
+<td align="left">位宽 + API</td>
+<td align="left">64 位：按路径匹配为主</td>
+<td align="left">32 位且 API &lt; 23：允许 basename 后缀匹配</td>
+<td align="left"><code>bh_linker.c</code></td>
+</tr>
+<tr>
+<td align="left">重定位类型适配</td>
+<td align="left">ABI（arm&#x2F;arm64&#x2F;x86&#x2F;x86_64&#x2F;riscv）</td>
+<td align="left">各 ABI 对应 <code>JUMP_SLOT/GLOB_DAT/ABS</code> 类型</td>
+<td align="left">riscv 分支单独处理 <code>GLOB_DAT</code> 差异</td>
+<td align="left"><code>bh_elf.c</code></td>
+</tr>
+<tr>
+<td align="left">CFI 处理</td>
+<td align="left">位宽 + API</td>
+<td align="left"><code>__LP64__</code> 且 API &gt;&#x3D; 26：处理 <code>__cfi_slowpath*</code></td>
+<td align="left">其他场景跳过 CFI Hook 路径</td>
+<td align="left"><code>bh_elf_relocator.c</code></td>
+</tr>
+<tr>
+<td align="left"><code>dlclose</code> 监控开关</td>
+<td align="left">架构 + 编译&#x2F;运行时 API</td>
+<td align="left">需要时开启：参与卸载同步与缓存一致性</td>
+<td align="left">不需要时关闭：减少额外干预面</td>
+<td align="left"><code>bh_dl_monitor.c</code></td>
+</tr>
+</tbody></table>
+<h4 id="12-1-Linker-初始化分版本表（bh-linker-init）"><a href="#12-1-Linker-初始化分版本表（bh-linker-init）" class="headerlink" title="12.1 Linker 初始化分版本表（bh_linker_init）"></a>12.1 Linker 初始化分版本表（<code>bh_linker_init</code>）</h4><table>
+<thead>
+<tr>
+<th align="left">版本区间</th>
+<th align="left">处理逻辑</th>
+<th align="left">目的</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">API &lt; 21（4.x）</td>
+<td align="left"><code>bh_linker_mutex_get_by_stack()</code> 获取 <code>g_dl_mutex</code></td>
+<td align="left">兼容旧 linker，不依赖新符号导出</td>
+</tr>
+<tr>
+<td align="left">API 21+ 且命中 <code>g_dl_mutex</code> 分支</td>
+<td align="left">解析 linker 中 <code>g_dl_mutex</code> 符号并保存</td>
+<td align="left">配合 7.x fallback 路径与锁内调用</td>
+</tr>
+<tr>
+<td align="left">API 24~25（7.x）</td>
+<td align="left">解析 <code>dlopen_ext</code>；失败则解析 <code>do_dlopen</code> + 错误缓冲符号</td>
+<td align="left">处理 namespace 后 <code>dlopen</code> 调用链变化</td>
+</tr>
+<tr>
+<td align="left">API 34+（U&#x2F;U-QPR2）</td>
+<td align="left">同时兼容旧&#x2F;新 <code>g_dl_mutex</code> 符号名</td>
+<td align="left">适配同 API 代际内符号变更</td>
+</tr>
+</tbody></table>
+<h2 id="ByteHook-关键设计点"><a href="#ByteHook-关键设计点" class="headerlink" title="ByteHook 关键设计点"></a>ByteHook 关键设计点</h2><h3 id="1-任务模型清晰"><a href="#1-任务模型清晰" class="headerlink" title="1) 任务模型清晰"></a>1) 任务模型清晰</h3><p><code>single/partial/all</code> 对应不同覆盖范围，便于在稳定性与覆盖率之间取舍。</p>
+<h3 id="2-automatic-模式工程化更完整"><a href="#2-automatic-模式工程化更完整" class="headerlink" title="2) automatic 模式工程化更完整"></a>2) automatic 模式工程化更完整</h3><p>通过 <code>switch + hub + trampoline</code> 解决多重 Hook&#x2F;Unhook 冲突。</p>
+<h3 id="3-兼容-Android-linker-现实差异"><a href="#3-兼容-Android-linker-现实差异" class="headerlink" title="3) 兼容 Android linker 现实差异"></a>3) 兼容 Android linker 现实差异</h3><p>处理 basename&#x2F;pathname 差异、7.x&#x2F;8.x 之后的符号与 namespace 变化。</p>
+<h3 id="4-稳定性补齐"><a href="#4-稳定性补齐" class="headerlink" title="4) 稳定性补齐"></a>4) 稳定性补齐</h3><p>signal-safe 保护、CFI 处理、dlclose 同步、recordable 记录。</p>
+<h2 id="ByteHook-作用边界"><a href="#ByteHook-作用边界" class="headerlink" title="ByteHook 作用边界"></a>ByteHook 作用边界</h2><p>ByteHook 属于 PLT Hook，生效边界与 PLT&#x2F;GOT 路径一致：</p>
+<ul>
+<li>能拦截：经过导入表的外部符号调用。</li>
+<li>常拦不到：同 so 内直调、<code>static</code> 函数、被 inline&#x2F;LTO 优化掉的调用。</li>
+<li>需关注：<code>-Bsymbolic</code>、符号版本、linker namespace 导致的匹配偏差。</li>
+</ul>
+<h2 id="调用链小结"><a href="#调用链小结" class="headerlink" title="调用链小结"></a>调用链小结</h2><pre><code class=" mermaid">sequenceDiagram
+    participant App
+    participant API as bytehook.c
+    participant TM as bh_task_manager
+    participant EM as bh_elf_manager
+    participant ER as bh_elf_relocator
+    participant SW as bh_switch/bh_hub
+
+    App-&gt;&gt;API: bytehook_hook_single/partial/all
+    API-&gt;&gt;TM: 创建并注册 task
+    TM-&gt;&gt;EM: 匹配 caller ELF
+    EM-&gt;&gt;ER: 查符号与重定位项
+    ER-&gt;&gt;SW: 选择 automatic/manual
+    SW-&gt;&gt;ER: 返回写入地址
+    ER-&gt;&gt;ER: mprotect + 原子写 GOT/DATA
+    ER--&gt;&gt;App: hooked callback
+</code></pre>
+
+
+
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>ByteHook 的核心仍是 PLT Hook：解析 ELF、定位导入重定位项、改写 GOT&#x2F;DATA。</p>
+<p>它真正拉开差距的地方在工程化：</p>
+<ul>
+<li>任务模型（single&#x2F;partial&#x2F;all）</li>
+<li>automatic 模式下的多 Hook 协同</li>
+<li>新 so 自动补 Hook</li>
+<li>稳定性保护（signal&#x2F;CFI&#x2F;并发同步）</li>
+</ul>
+<p>所以理解 ByteHook，建议始终按这条主线：</p>
+<p><strong>task -&gt; elf manager -&gt; relocator -&gt; switch&#x2F;hub -&gt; monitor</strong>。</p>
+<h2 id="参考地址"><a href="#参考地址" class="headerlink" title="参考地址"></a>参考地址</h2><p><a target="_blank" rel="noopener" href="https://github.com/bytedance/bhook">ByteHook 仓库</a></p>
+<p><a target="_blank" rel="noopener" href="https://github.com/bytedance/bhook/blob/main/doc/overview.zh-CN.md">项目介绍和原理概述</a></p>
+<p><a target="_blank" rel="noopener" href="https://github.com/bytedance/bhook/blob/main/doc/quickstart.zh-CN.md">快速开始</a></p>
+<p><a target="_blank" rel="noopener" href="https://github.com/bytedance/bhook/blob/main/doc/native_manual.zh-CN.md">Native API 手册</a></p>
+<p><a target="_blank" rel="noopener" href="https://github.com/bytedance/bhook/blob/main/doc/status_code.zh-CN.md">状态码文档</a></p>
+<p><a target="_blank" rel="noopener" href="https://cs.android.com/android/platform/superproject/main/+/main:bionic/linker/">Android bionic linker 源码</a></p>
+
+                
+              </div>
+            
+            <hr/>
+            <div>
+              <div class="post-metas my-3">
+  
+  
+    <div class="post-meta">
+      <i class="iconfont icon-tags"></i>
+      
+        <a href="/tags/%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/" class="print-no-link">#源码解析</a>
+      
+    </div>
+  
+</div>
+
+
+              
+  
+
+  <div class="license-box my-3">
+    <div class="license-title">
+      <div>BHook源码解析</div>
+      <div>https://leo-wxy.github.io/2025/10/02/BHook源码解析_backup/</div>
+    </div>
+    <div class="license-meta">
+      
+        <div class="license-meta-item">
+          <div>作者</div>
+          <div>Leo-Wxy</div>
+        </div>
+      
+      
+        <div class="license-meta-item license-meta-date">
+          <div>发布于</div>
+          <div>2025年10月2日</div>
+        </div>
+      
+      
+      
+        <div class="license-meta-item">
+          <div>许可协议</div>
+          <div>
+            
+              
+              
+                <a class="print-no-link" target="_blank" href="https://creativecommons.org/licenses/by/4.0/">
+                  <span class="hint--top hint--rounded" aria-label="BY - 署名">
+                    <i class="iconfont icon-cc-by"></i>
+                  </span>
+                </a>
+              
+            
+          </div>
+        </div>
+      
+    </div>
+    <div class="license-icon iconfont"></div>
+  </div>
+
+
+
+              
+                <div class="post-prevnext my-3">
+                  <article class="post-prev col-6">
+                    
+                    
+                      <a href="/2025/10/02/BHook%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/" title="BHook源码解析">
+                        <i class="iconfont icon-arrowleft"></i>
+                        <span class="hidden-mobile">BHook源码解析</span>
+                        <span class="visible-mobile">上一篇</span>
+                      </a>
+                    
+                  </article>
+                  <article class="post-next col-6">
+                    
+                    
+                      <a href="/2023/02/26/Rust%E5%88%9D%E8%AF%86/" title="Rust初识">
+                        <span class="hidden-mobile">Rust初识</span>
+                        <span class="visible-mobile">下一篇</span>
+                        <i class="iconfont icon-arrowright"></i>
+                      </a>
+                    
+                  </article>
+                </div>
+              
+            </div>
+
+            
+          </article>
+        </div>
+      </div>
+    </div>
+
+    <div class="side-col d-none d-lg-block col-lg-2">
+      
+
+    </div>
+  </div>
+</div>
+
+
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  <script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/mermaid@8.8.3/dist/mermaid.min.js', function() {
+    mermaid.initialize({"theme":"default"});
+
+    Fluid.utils.listenDOMLoaded(function() {
+      Fluid.events.registerRefreshCallback(function() {
+        if ('mermaid' in window) {
+          mermaid.init();
+        }
+      });
+    });
+  });
+</script>
+
+
+
+
+
+
+    
+
+    
+      <a id="scroll-top-button" aria-label="TOP" href="#" role="button">
+        <i class="iconfont icon-arrowup" aria-hidden="true"></i>
+      </a>
+    
+
+    
+      <div class="modal fade" id="modalSearch" tabindex="-1" role="dialog" aria-labelledby="ModalLabel"
+     aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header text-center">
+        <h4 class="modal-title w-100 font-weight-bold">搜索</h4>
+        <button type="button" id="local-search-close" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body mx-3">
+        <div class="md-form mb-5">
+          <input type="text" id="local-search-input" class="form-control validate">
+          <label data-error="x" data-success="v" for="local-search-input">关键词</label>
+        </div>
+        <div class="list-group" id="local-search-result"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+    
+
+    
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+  
+    <div class="footer-content">
+       <a href="https://hexo.io" target="_blank" rel="nofollow noopener"><span>Hexo</span></a> <i class="iconfont icon-love"></i> <a href="https://github.com/fluid-dev/hexo-theme-fluid" target="_blank" rel="nofollow noopener"><span>Fluid</span></a> 
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+
+  <!-- Scripts -->
+  
+  <script  src="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.js" ></script>
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.css" />
+
+  <script>
+    NProgress.configure({"showSpinner":false,"trickleSpeed":100})
+    NProgress.start()
+    window.addEventListener('load', function() {
+      NProgress.done();
+    })
+  </script>
+
+
+<script  src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" ></script>
+<script  src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.min.js" ></script>
+<script  src="/js/events.js" ></script>
+<script  src="/js/plugins.js" ></script>
+
+
+
+
+
+  
+    <script  src="/js/img-lazyload.js" ></script>
+  
+
+
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/tocbot@4.12.0/dist/tocbot.min.js', function() {
+    var toc = jQuery('#toc');
+    if (toc.length === 0 || !window.tocbot) { return; }
+    var boardCtn = jQuery('#board-ctn');
+    var boardTop = boardCtn.offset().top;
+
+    window.tocbot.init(Object.assign({
+      tocSelector     : '#toc-body',
+      contentSelector : '.markdown-body',
+      linkClass       : 'tocbot-link',
+      activeLinkClass : 'tocbot-active-link',
+      listClass       : 'tocbot-list',
+      isCollapsedClass: 'tocbot-is-collapsed',
+      collapsibleClass: 'tocbot-is-collapsible',
+      scrollSmooth    : true,
+      includeTitleTags: true,
+      headingsOffset  : -boardTop,
+    }, CONFIG.toc));
+    if (toc.find('.toc-list-item').length > 0) {
+      toc.css('visibility', 'visible');
+    }
+
+    Fluid.events.registerRefreshCallback(function() {
+      if ('tocbot' in window) {
+        tocbot.refresh();
+        var toc = jQuery('#toc');
+        if (toc.length === 0 || !tocbot) {
+          return;
+        }
+        if (toc.find('.toc-list-item').length > 0) {
+          toc.css('visibility', 'visible');
+        }
+      }
+    });
+  });
+</script>
+
+
+  <script src=https://cdn.jsdelivr.net/npm/clipboard@2.0.6/dist/clipboard.min.js></script>
+
+  <script>Fluid.plugins.codeWidget();</script>
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/anchor-js@4.3.0/anchor.min.js', function() {
+    window.anchors.options = {
+      placement: CONFIG.anchorjs.placement,
+      visible  : CONFIG.anchorjs.visible
+    };
+    if (CONFIG.anchorjs.icon) {
+      window.anchors.options.icon = CONFIG.anchorjs.icon;
+    }
+    var el = (CONFIG.anchorjs.element || 'h1,h2,h3,h4,h5,h6').split(',');
+    var res = [];
+    for (var item of el) {
+      res.push('.markdown-body > ' + item.trim());
+    }
+    if (CONFIG.anchorjs.placement === 'left') {
+      window.anchors.options.class = 'anchorjs-link-left';
+    }
+    window.anchors.add(res.join(', '));
+
+    Fluid.events.registerRefreshCallback(function() {
+      if ('anchors' in window) {
+        anchors.removeAll();
+        var el = (CONFIG.anchorjs.element || 'h1,h2,h3,h4,h5,h6').split(',');
+        var res = [];
+        for (var item of el) {
+          res.push('.markdown-body > ' + item.trim());
+        }
+        if (CONFIG.anchorjs.placement === 'left') {
+          anchors.options.class = 'anchorjs-link-left';
+        }
+        anchors.add(res.join(', '));
+      }
+    });
+  });
+</script>
+
+
+  
+<script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.js', function() {
+    Fluid.plugins.fancyBox();
+  });
+</script>
+
+
+  <script>Fluid.plugins.imageCaption();</script>
+
+  <script  src="/js/local-search.js" ></script>
+
+
+
+
+
+<!-- 主题的启动项，将它保持在最底部 -->
+<!-- the boot of the theme, keep it at the bottom -->
+<script  src="/js/boot.js" ></script>
+
+
+  
+
+  <noscript>
+    <div class="noscript-warning">博客在允许 JavaScript 运行的环境下浏览效果更佳</div>
+  </noscript>
+</body>
+</html>
