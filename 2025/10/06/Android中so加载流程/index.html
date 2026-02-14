@@ -19,16 +19,17 @@
   <meta name="author" content="Leo-Wxy">
   <meta name="keywords" content="">
   
-    <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
+    <meta name="description" content="在 &#123;% post_link Android中的Hook-PLTHook %&#125; 和 &#123;% post_link Android中的Hook-InlineHook %&#125; 里，Hook 的生效点分别在 GOT 表项和函数入口。要真正理解 Hook 的时机、边界和稳定性，必须先搞清楚 SO 是怎么被系统加载起来的。 SO 加载流程总览一句话先记住：Java 层发起加">
 <meta property="og:type" content="article">
 <meta property="og:title" content="Android中so加载流程">
 <meta property="og:url" content="https://leo-wxy.github.io/2025/10/06/Android%E4%B8%ADso%E5%8A%A0%E8%BD%BD%E6%B5%81%E7%A8%8B/index.html">
 <meta property="og:site_name" content="Wxy的个人博客">
-<meta property="og:description" content="如果我没有见过光明，那我本可以忍受黑暗">
+<meta property="og:description" content="在 &#123;% post_link Android中的Hook-PLTHook %&#125; 和 &#123;% post_link Android中的Hook-InlineHook %&#125; 里，Hook 的生效点分别在 GOT 表项和函数入口。要真正理解 Hook 的时机、边界和稳定性，必须先搞清楚 SO 是怎么被系统加载起来的。 SO 加载流程总览一句话先记住：Java 层发起加">
 <meta property="og:locale" content="zh_CN">
 <meta property="article:published_time" content="2025-10-06T05:22:44.000Z">
-<meta property="article:modified_time" content="2025-10-06T05:22:44.272Z">
+<meta property="article:modified_time" content="2026-02-13T08:34:06.210Z">
 <meta property="article:author" content="Leo-Wxy">
+<meta property="article:tag" content="Android">
 <meta name="twitter:card" content="summary_large_image">
   
   
@@ -223,7 +224,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          0 字
+          3.5k 字
         
       </span>
     
@@ -235,7 +236,7 @@
         
         
           <!-- compatible with older versions-->
-          1 分钟
+          11 分钟
         
       </span>
     
@@ -290,7 +291,308 @@
             
               <div class="markdown-body">
                 
-                
+                <p>在 <code>&#123;% post_link Android中的Hook-PLTHook %&#125;</code> 和 <code>&#123;% post_link Android中的Hook-InlineHook %&#125;</code> 里，Hook 的生效点分别在 GOT 表项和函数入口。<br>要真正理解 Hook 的时机、边界和稳定性，必须先搞清楚 SO 是怎么被系统加载起来的。</p>
+<h1 id="SO-加载流程总览"><a href="#SO-加载流程总览" class="headerlink" title="SO 加载流程总览"></a>SO 加载流程总览</h1><p>一句话先记住：<strong>Java 层发起加载 -&gt; ART&#x2F;NativeLoader 处理 ClassLoader 与 namespace -&gt; linker 映射 + 重定位 -&gt; 执行构造函数 -&gt; 调用 JNI_OnLoad。</strong></p>
+<p>典型调用链如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><code class="hljs text">System.loadLibrary(&quot;demo&quot;)<br>  -&gt; Runtime.loadLibrary0(...)<br>  -&gt; Runtime.nativeLoad(...)<br>  -&gt; JVM_NativeLoad(...)<br>  -&gt; JavaVMExt::LoadNativeLibrary(...)<br>  -&gt; OpenNativeLibrary(...)<br>  -&gt; android_dlopen_ext(...)<br>  -&gt; linker: do_dlopen(...)<br>      -&gt; find_libraries<br>      -&gt; mmap PT_LOAD<br>      -&gt; prelink_image<br>      -&gt; link_image (relocate)<br>      -&gt; call_constructors<br>  -&gt; dlsym(&quot;JNI_OnLoad&quot;)<br>  -&gt; JNI_OnLoad(JavaVM*, ...)<br></code></pre></td></tr></table></figure>
+
+
+
+<h1 id="1-Java-层入口：System-loadLibrary"><a href="#1-Java-层入口：System-loadLibrary" class="headerlink" title="1. Java 层入口：System.loadLibrary"></a>1. Java 层入口：System.loadLibrary</h1><p>平时最常见的是：</p>
+<figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs kotlin">System.loadLibrary(<span class="hljs-string">&quot;demo&quot;</span>)<br></code></pre></td></tr></table></figure>
+
+<p>它会先把名字补全为标准库名（例如 <code>libdemo.so</code>），再进入 native 流程。</p>
+<p>这里有两个容易混淆的方法：</p>
+<ul>
+<li><code>System.loadLibrary(&quot;demo&quot;)</code>：参数为 so 库名称。系统会按 ClassLoader&#x2F;namespace 的搜索路径定位 so；常见情况下来自应用 native lib 目录，<code>android:extractNativeLibs=&quot;false&quot;</code> 且 APK 中 so 满足对齐要求时也可直接从 APK 映射加载。</li>
+<li><code>System.load(&quot;/data/.../libdemo.so&quot;)</code>：参数为 so 库在磁盘中的完整路径，可以加载自定义外部 so 库文件。</li>
+</ul>
+<p>还有使用第三方库 <a target="_blank" rel="noopener" href="https://github.com/KeepSafe/ReLinker">ReLinker</a>，有so加载成功、失败的回调，安全加载不崩溃。<strong>推荐使用</strong></p>
+<p>绝大多数场景都用 <code>loadLibrary</code>。</p>
+<h1 id="2-ART-与-NativeLoader：处理-ClassLoader-和-namespace"><a href="#2-ART-与-NativeLoader：处理-ClassLoader-和-namespace" class="headerlink" title="2. ART 与 NativeLoader：处理 ClassLoader 和 namespace"></a>2. ART 与 NativeLoader：处理 ClassLoader 和 namespace</h1><p><code>Runtime.nativeLoad</code> 之后，会进入 ART 的 <code>JavaVMExt::LoadNativeLibrary</code>。</p>
+<p>这一步不是简单地 <code>dlopen</code> 一下，而是会做几件关键的“安全与隔离”工作：</p>
+<ol>
+<li>记录并检查“库 - ClassLoader”关系，避免同一 so 被不同 ClassLoader 非法复用。</li>
+<li>基于 ClassLoader 找到对应 linker namespace（Android N 以后非常关键）。</li>
+<li>调用 <code>OpenNativeLibrary</code>，最终走到 <code>android_dlopen_ext</code>。</li>
+</ol>
+<p>可以把它理解成：<strong>ART 负责 Java 语义与隔离策略，linker 负责 ELF 技术细节。</strong></p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-comment">// https://cs.android.com/android/platform/superproject/main/+/main:art/runtime/jni/java_vm_ext.cc</span><br><span class="hljs-function"><span class="hljs-type">bool</span> <span class="hljs-title">JavaVMExt::LoadNativeLibrary</span><span class="hljs-params">(JNIEnv* env,</span></span><br><span class="hljs-params"><span class="hljs-function">                                  <span class="hljs-type">const</span> std::string&amp; path,</span></span><br><span class="hljs-params"><span class="hljs-function">                                  jobject class_loader,</span></span><br><span class="hljs-params"><span class="hljs-function">                                  jclass caller_class,</span></span><br><span class="hljs-params"><span class="hljs-function">                                  std::string* error_msg)</span> </span>&#123;<br>                                  <br>  ...<br>  <span class="hljs-type">void</span>* handle = android::<span class="hljs-built_in">OpenNativeLibrary</span>(<br>      env,<br>      runtime_-&gt;<span class="hljs-built_in">GetTargetSdkVersion</span>(),<br>      path_str,<br>      class_loader,<br>      (caller_location.<span class="hljs-built_in">empty</span>() ? <span class="hljs-literal">nullptr</span> : caller_location.<span class="hljs-built_in">c_str</span>()),<br>      library_path.<span class="hljs-built_in">get</span>(),<br>      &amp;needs_native_bridge,<br>      &amp;nativeloader_error_msg);<br>  <span class="hljs-built_in">VLOG</span>(jni) &lt;&lt; <span class="hljs-string">&quot;[Call to dlopen(\&quot;&quot;</span> &lt;&lt; path &lt;&lt; <span class="hljs-string">&quot;\&quot;, RTLD_NOW) returned &quot;</span> &lt;&lt; handle &lt;&lt; <span class="hljs-string">&quot;]&quot;</span>;<br><br>  <span class="hljs-keyword">if</span> (handle == <span class="hljs-literal">nullptr</span>) &#123;<br>    *error_msg = nativeloader_error_msg;<br>    android::<span class="hljs-built_in">NativeLoaderFreeErrorMessage</span>(nativeloader_error_msg);<br>    <span class="hljs-built_in">VLOG</span>(jni) &lt;&lt; <span class="hljs-string">&quot;dlopen(\&quot;&quot;</span> &lt;&lt; path &lt;&lt; <span class="hljs-string">&quot;\&quot;, RTLD_NOW) failed: &quot;</span> &lt;&lt; *error_msg;<br>    <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;<br>  &#125;<br>  ...                                  <br>&#125;<br></code></pre></td></tr></table></figure>
+
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-comment">// https://cs.android.com/android/platform/superproject/main/+/main:system/core/libnativeloader/native_loader.cpp</span><br><span class="hljs-function"><span class="hljs-type">void</span>* <span class="hljs-title">OpenNativeLibrary</span><span class="hljs-params">(JNIEnv* env,</span></span><br><span class="hljs-params"><span class="hljs-function">                        <span class="hljs-type">int32_t</span> target_sdk_version,</span></span><br><span class="hljs-params"><span class="hljs-function">                        <span class="hljs-type">const</span> <span class="hljs-type">char</span>* path,</span></span><br><span class="hljs-params"><span class="hljs-function">                        jobject class_loader,</span></span><br><span class="hljs-params"><span class="hljs-function">                        <span class="hljs-type">const</span> <span class="hljs-type">char</span>* caller_location,</span></span><br><span class="hljs-params"><span class="hljs-function">                        jstring library_path_j,</span></span><br><span class="hljs-params"><span class="hljs-function">                        <span class="hljs-type">bool</span>* needs_native_bridge,</span></span><br><span class="hljs-params"><span class="hljs-function">                        <span class="hljs-type">char</span>** error_msg)</span> </span>&#123;<br>  ...<br>  <span class="hljs-keyword">if</span> (caller_location != <span class="hljs-literal">nullptr</span>) &#123;<br>      std::optional&lt;NativeLoaderNamespace&gt; ns = <span class="hljs-built_in">FindApexNamespace</span>(caller_location);<br>      <span class="hljs-keyword">if</span> (ns.<span class="hljs-built_in">has_value</span>()) &#123;<br>        <span class="hljs-type">const</span> android_dlextinfo dlextinfo = &#123;<br>            .flags = ANDROID_DLEXT_USE_NAMESPACE,<br>            .library_namespace = ns.<span class="hljs-built_in">value</span>().<span class="hljs-built_in">ToRawAndroidNamespace</span>(),<br>        &#125;;<br>        <span class="hljs-type">void</span>* handle = <span class="hljs-built_in">android_dlopen_ext</span>(path, RTLD_NOW, &amp;dlextinfo);<br>        <span class="hljs-type">char</span>* dlerror_msg = handle == <span class="hljs-literal">nullptr</span> ? <span class="hljs-built_in">strdup</span>(<span class="hljs-built_in">dlerror</span>()) : <span class="hljs-literal">nullptr</span>;<br>        <span class="hljs-built_in">ALOGD</span>(<span class="hljs-string">&quot;Load %s using APEX ns %s for caller %s: %s&quot;</span>,<br>              path,<br>              ns.<span class="hljs-built_in">value</span>().<span class="hljs-built_in">name</span>().<span class="hljs-built_in">c_str</span>(),<br>              caller_location,<br>              dlerror_msg == <span class="hljs-literal">nullptr</span> ? <span class="hljs-string">&quot;ok&quot;</span> : dlerror_msg);<br>        <span class="hljs-keyword">if</span> (dlerror_msg != <span class="hljs-literal">nullptr</span>) &#123;<br>          *error_msg = dlerror_msg;<br>        &#125;<br>        <span class="hljs-keyword">return</span> handle;<br>      &#125;<br>    &#125;<br>  ...<br>&#125;<br></code></pre></td></tr></table></figure>
+
+
+
+<h2 id="2-1-重复加载与-ClassLoader-行为（dlclose-边界）"><a href="#2-1-重复加载与-ClassLoader-行为（dlclose-边界）" class="headerlink" title="2.1 重复加载与 ClassLoader 行为（dlclose 边界）"></a>2.1 重复加载与 ClassLoader 行为（dlclose 边界）</h2><p>在 Java 层，so 加载不仅取决于路径，还受到 ClassLoader 的约束。实战里可以先记下面这张 2x2 表：</p>
+<table>
+<thead>
+<tr>
+<th align="left">场景</th>
+<th align="left">结果（常见）</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">同一路径 + 同一 ClassLoader</td>
+<td align="left">复用已加载 so，不重复初始化</td>
+</tr>
+<tr>
+<td align="left">同一路径 + 不同 ClassLoader</td>
+<td align="left">常见报错：已被其他 ClassLoader 加载</td>
+</tr>
+<tr>
+<td align="left">不同路径 + 同一 ClassLoader</td>
+<td align="left">可能复用也可能分别加载，取决于 realpath 与 namespace</td>
+</tr>
+<tr>
+<td align="left">不同路径 + 不同 ClassLoader</td>
+<td align="left">可能隔离加载，但仍受 namespace 可见性限制</td>
+</tr>
+</tbody></table>
+<p>补充两点：</p>
+<ul>
+<li>C&#x2F;C++ 层 <code>dlopen/dlclose</code> 是引用计数模型；<code>dlclose</code> 计数归零才可能卸载。</li>
+<li>Java 业务代码通常不直接控制卸载，实践上一般按“进程常驻 so”去设计初始化与资源管理。</li>
+</ul>
+<h3 id="dlclose-何时会被调用（小点）"><a href="#dlclose-何时会被调用（小点）" class="headerlink" title="dlclose 何时会被调用（小点）"></a>dlclose 何时会被调用（小点）</h3><ul>
+<li>主动调用：Native 代码显式执行 <code>dlclose(handle)</code>。</li>
+<li>异常回滚：某些 <code>dlopen/android_dlopen_ext</code> 失败路径会触发内部清理。</li>
+<li>Java 场景：<code>System.loadLibrary</code> 没有公开 unload API，业务侧通常不会主动触发 <code>dlclose</code>。</li>
+<li>关键区别：调用了 <code>dlclose</code> 不等于立刻卸载，只有引用计数归零且无依赖占用时才可能真正卸载。</li>
+</ul>
+<h2 id="2-2-android-dlopen-ext-参数速查"><a href="#2-2-android-dlopen-ext-参数速查" class="headerlink" title="2.2 android_dlopen_ext 参数速查"></a>2.2 android_dlopen_ext 参数速查</h2><p><code>android_dlopen_ext</code> 在 <code>dlopen</code> 基础上增加了 <code>android_dlextinfo</code>，用于 namespace、fd 加载、预留地址等高级能力。</p>
+<table>
+<thead>
+<tr>
+<th align="left">flag</th>
+<th align="left">作用</th>
+<th align="left">常见场景</th>
+<th align="left">注意点</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><code>ANDROID_DLEXT_USE_NAMESPACE</code></td>
+<td align="left">指定 linker namespace</td>
+<td align="left">ClassLoader&#x2F;APEX 隔离加载</td>
+<td align="left">namespace 不可见会直接失败</td>
+</tr>
+<tr>
+<td align="left"><code>ANDROID_DLEXT_USE_LIBRARY_FD</code></td>
+<td align="left">从已打开 fd 加载 so</td>
+<td align="left">自定义容器或特殊打包</td>
+<td align="left">需保证 fd 指向合法 ELF</td>
+</tr>
+<tr>
+<td align="left"><code>ANDROID_DLEXT_USE_LIBRARY_FD_OFFSET</code></td>
+<td align="left">从 fd 指定偏移加载</td>
+<td align="left">APK 内偏移映射</td>
+<td align="left">offset 错误会导致 ELF 解析失败</td>
+</tr>
+<tr>
+<td align="left"><code>ANDROID_DLEXT_RESERVED_ADDRESS</code> &#x2F; <code>ANDROID_DLEXT_RESERVED_ADDRESS_HINT</code></td>
+<td align="left">指定映射地址范围</td>
+<td align="left">大库预留地址场景</td>
+<td align="left">地址冲突时可能回退或失败</td>
+</tr>
+<tr>
+<td align="left"><code>ANDROID_DLEXT_FORCE_LOAD</code></td>
+<td align="left">强制执行加载路径</td>
+<td align="left">调试&#x2F;特殊兼容场景</td>
+<td align="left">易引入重复映射风险，不建议业务滥用</td>
+</tr>
+</tbody></table>
+<h1 id="3-linker：真正把-so-装入内存"><a href="#3-linker：真正把-so-装入内存" class="headerlink" title="3. linker：真正把 so 装入内存"></a>3. linker：真正把 so 装入内存</h1><p>从 <code>android_dlopen_ext</code> 开始，流程进入 bionic linker（核心函数通常是 <code>do_dlopen</code>）。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-comment">// https://cs.android.com/android/platform/superproject/main/+/main:bionic/linker/dlfcn.cpp</span><br><br><span class="hljs-function"><span class="hljs-type">static</span> <span class="hljs-type">void</span>* <span class="hljs-title">dlopen_ext</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">char</span>* filename,</span></span><br><span class="hljs-params"><span class="hljs-function">                        <span class="hljs-type">int</span> flags,</span></span><br><span class="hljs-params"><span class="hljs-function">                        <span class="hljs-type">const</span> android_dlextinfo* extinfo,</span></span><br><span class="hljs-params"><span class="hljs-function">                        <span class="hljs-type">const</span> <span class="hljs-type">void</span>* caller_addr)</span> </span>&#123;<br>  <span class="hljs-function">ScopedPthreadMutexLocker <span class="hljs-title">locker</span><span class="hljs-params">(&amp;g_dl_mutex)</span></span>;<br>  g_linker_logger.<span class="hljs-built_in">ResetState</span>();<br>  <span class="hljs-type">void</span>* result = <span class="hljs-built_in">do_dlopen</span>(filename, flags, extinfo, caller_addr);<br>  <span class="hljs-keyword">if</span> (result == <span class="hljs-literal">nullptr</span>) &#123;<br>    __bionic_format_dlerror(<span class="hljs-string">&quot;dlopen failed&quot;</span>, <span class="hljs-built_in">linker_get_error_buffer</span>());<br>    <span class="hljs-keyword">return</span> <span class="hljs-literal">nullptr</span>;<br>  &#125;<br>  <span class="hljs-keyword">return</span> result;<br>&#125;<br><br><span class="hljs-type">void</span>* __loader_android_dlopen_ext(<span class="hljs-type">const</span> <span class="hljs-type">char</span>* filename,<br>                           <span class="hljs-type">int</span> flags,<br>                           <span class="hljs-type">const</span> android_dlextinfo* extinfo,<br>                           <span class="hljs-type">const</span> <span class="hljs-type">void</span>* caller_addr) &#123;<br>  <span class="hljs-keyword">return</span> <span class="hljs-built_in">dlopen_ext</span>(filename, flags, extinfo, caller_addr);<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-comment">// https://cs.android.com/android/platform/superproject/main/+/main:bionic/linker/linker.cpp</span><br><span class="hljs-function"><span class="hljs-type">void</span>* <span class="hljs-title">do_dlopen</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">char</span>* name, <span class="hljs-type">int</span> flags,</span></span><br><span class="hljs-params"><span class="hljs-function">                <span class="hljs-type">const</span> android_dlextinfo* extinfo,</span></span><br><span class="hljs-params"><span class="hljs-function">                <span class="hljs-type">const</span> <span class="hljs-type">void</span>* caller_addr)</span> </span>&#123;<br>                <br>  ...<br>  <span class="hljs-comment">// 去找已经加载过的SO</span><br>  <span class="hljs-type">const</span> <span class="hljs-type">char</span>* translated_name = name;<br>  <span class="hljs-keyword">if</span> (g_is_asan &amp;&amp; translated_name != <span class="hljs-literal">nullptr</span> &amp;&amp; translated_name[<span class="hljs-number">0</span>] == <span class="hljs-string">&#x27;/&#x27;</span>) &#123;<br>    <span class="hljs-type">char</span> original_path[PATH_MAX];<br>    <span class="hljs-keyword">if</span> (<span class="hljs-built_in">realpath</span>(name, original_path) != <span class="hljs-literal">nullptr</span>) &#123;<br>      translated_name_holder = std::<span class="hljs-built_in">string</span>(kAsanLibDirPrefix) + original_path;<br>      <span class="hljs-keyword">if</span> (<span class="hljs-built_in">file_exists</span>(translated_name_holder.<span class="hljs-built_in">c_str</span>())) &#123;<br>        soinfo* si = <span class="hljs-literal">nullptr</span>;<br>        <span class="hljs-keyword">if</span> (<span class="hljs-built_in">find_loaded_library_by_realpath</span>(ns, original_path, <span class="hljs-literal">true</span>, &amp;si)) &#123;<br>          <span class="hljs-built_in">DL_WARN</span>(<span class="hljs-string">&quot;linker_asan dlopen NOT translating \&quot;%s\&quot; -&gt; \&quot;%s\&quot;: library already loaded&quot;</span>, name,<br>                  translated_name_holder.<span class="hljs-built_in">c_str</span>());<br>        &#125; <span class="hljs-keyword">else</span> &#123;<br>          <span class="hljs-built_in">DL_WARN</span>(<span class="hljs-string">&quot;linker_asan dlopen translating \&quot;%s\&quot; -&gt; \&quot;%s\&quot;&quot;</span>, name, translated_name);<br>          translated_name = translated_name_holder.<span class="hljs-built_in">c_str</span>();<br>        &#125;<br>      &#125;<br>    &#125;<br>  &#125; <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (g_is_hwasan &amp;&amp; translated_name != <span class="hljs-literal">nullptr</span> &amp;&amp; translated_name[<span class="hljs-number">0</span>] == <span class="hljs-string">&#x27;/&#x27;</span>) &#123;<br>    <span class="hljs-type">char</span> original_path[PATH_MAX];<br>    <span class="hljs-keyword">if</span> (<span class="hljs-built_in">realpath</span>(name, original_path) != <span class="hljs-literal">nullptr</span>) &#123;<br>      <span class="hljs-comment">// Keep this the same as CreateHwasanPath in system/linkerconfig/modules/namespace.cc.</span><br>      <span class="hljs-function">std::string <span class="hljs-title">path</span><span class="hljs-params">(original_path)</span></span>;<br>      <span class="hljs-keyword">auto</span> slash = path.<span class="hljs-built_in">rfind</span>(<span class="hljs-string">&#x27;/&#x27;</span>);<br>      <span class="hljs-keyword">if</span> (slash != std::string::npos || slash != path.<span class="hljs-built_in">size</span>() - <span class="hljs-number">1</span>) &#123;<br>        translated_name_holder = path.<span class="hljs-built_in">substr</span>(<span class="hljs-number">0</span>, slash) + <span class="hljs-string">&quot;/hwasan&quot;</span> + path.<span class="hljs-built_in">substr</span>(slash);<br>      &#125;<br>      <span class="hljs-keyword">if</span> (!translated_name_holder.<span class="hljs-built_in">empty</span>() &amp;&amp; <span class="hljs-built_in">file_exists</span>(translated_name_holder.<span class="hljs-built_in">c_str</span>())) &#123;<br>        soinfo* si = <span class="hljs-literal">nullptr</span>;<br>        <span class="hljs-keyword">if</span> (<span class="hljs-built_in">find_loaded_library_by_realpath</span>(ns, original_path, <span class="hljs-literal">true</span>, &amp;si)) &#123;<br>          <span class="hljs-built_in">DL_WARN</span>(<span class="hljs-string">&quot;linker_hwasan dlopen NOT translating \&quot;%s\&quot; -&gt; \&quot;%s\&quot;: library already loaded&quot;</span>,<br>                  name, translated_name_holder.<span class="hljs-built_in">c_str</span>());<br>        &#125; <span class="hljs-keyword">else</span> &#123;<br>          <span class="hljs-built_in">DL_WARN</span>(<span class="hljs-string">&quot;linker_hwasan dlopen translating \&quot;%s\&quot; -&gt; \&quot;%s\&quot;&quot;</span>, name, translated_name);<br>          translated_name = translated_name_holder.<span class="hljs-built_in">c_str</span>();<br>        &#125;<br>      &#125;<br>    &#125;<br>  &#125;<br><br>  <span class="hljs-comment">// 省略其他校验与命名空间处理后，真正进入 so 查找与加载</span><br>  soinfo* si = <span class="hljs-built_in">find_library</span>(ns, translated_name, flags, extinfo, caller);<br>  <span class="hljs-keyword">if</span> (si != <span class="hljs-literal">nullptr</span>) &#123;<br>    si-&gt;<span class="hljs-built_in">call_constructors</span>();<br>    <span class="hljs-keyword">return</span> si-&gt;<span class="hljs-built_in">to_handle</span>();<br>  &#125;<br><br>  ...<br>   <br>             <br>&#125;<br><br><span class="hljs-function"><span class="hljs-type">bool</span> <span class="hljs-title">find_libraries</span><span class="hljs-params">(<span class="hljs-type">android_namespace_t</span>* ns,</span></span><br><span class="hljs-params"><span class="hljs-function">                    soinfo* start_with,</span></span><br><span class="hljs-params"><span class="hljs-function">                    <span class="hljs-type">const</span> <span class="hljs-type">char</span>* <span class="hljs-type">const</span> library_names[],</span></span><br><span class="hljs-params"><span class="hljs-function">                    <span class="hljs-type">size_t</span> library_names_count,</span></span><br><span class="hljs-params"><span class="hljs-function">                    soinfo* soinfos[],</span></span><br><span class="hljs-params"><span class="hljs-function">                    std::vector&lt;soinfo*&gt;* ld_preloads,</span></span><br><span class="hljs-params"><span class="hljs-function">                    <span class="hljs-type">size_t</span> ld_preloads_count,</span></span><br><span class="hljs-params"><span class="hljs-function">                    <span class="hljs-type">int</span> rtld_flags,</span></span><br><span class="hljs-params"><span class="hljs-function">                    <span class="hljs-type">const</span> android_dlextinfo* extinfo,</span></span><br><span class="hljs-params"><span class="hljs-function">                    <span class="hljs-type">bool</span> add_as_children,</span></span><br><span class="hljs-params"><span class="hljs-function">                    std::vector&lt;<span class="hljs-type">android_namespace_t</span>*&gt;* namespaces)</span> </span>&#123;<br>  <span class="hljs-comment">// load so</span><br>&#125;<br></code></pre></td></tr></table></figure>
+
+
+
+<h2 id="3-1-查找目标库和依赖库"><a href="#3-1-查找目标库和依赖库" class="headerlink" title="3.1 查找目标库和依赖库"></a>3.1 查找目标库和依赖库</h2><p>linker 会先定位目标 so，并递归解析 <code>DT_NEEDED</code> 依赖列表。</p>
+<ul>
+<li>找不到库：直接 <code>dlopen failed: library &quot;xxx.so&quot; not found</code></li>
+<li>能找到但架构不匹配：常见 <code>wrong ELF class</code></li>
+</ul>
+<h2 id="3-2-映射-ELF-到内存（mmap）"><a href="#3-2-映射-ELF-到内存（mmap）" class="headerlink" title="3.2 映射 ELF 到内存（mmap）"></a>3.2 映射 ELF 到内存（mmap）</h2><p>linker 会按 ELF 的 Program Header（尤其 <code>PT_LOAD</code>）把各个段映射到内存。</p>
+<ul>
+<li>代码段通常是 <code>R-X</code></li>
+<li>数据段通常是 <code>RW-</code></li>
+<li>后续可能根据 <code>RELRO</code> 再调整为只读</li>
+</ul>
+<p>到这一步，so 已经“在内存里”，但符号地址还不一定都可直接用。</p>
+<h2 id="3-3-prelink-image：解析-dynamic"><a href="#3-3-prelink-image：解析-dynamic" class="headerlink" title="3.3 prelink_image：解析 .dynamic"></a>3.3 prelink_image：解析 .dynamic</h2><p>这一步会读取 <code>PT_DYNAMIC</code> &#x2F; <code>.dynamic</code>，拿到后续链接要用的关键索引信息，例如：</p>
+<ul>
+<li><code>DT_STRTAB</code> &#x2F; <code>DT_SYMTAB</code>（字符串表、符号表）</li>
+<li><code>DT_RELA</code> &#x2F; <code>DT_REL</code> &#x2F; <code>DT_RELR</code>（重定位表）</li>
+<li><code>DT_JMPREL</code>（PLT 相关重定位）</li>
+<li><code>DT_INIT_ARRAY</code>（构造函数数组）</li>
+</ul>
+<h2 id="3-4-link-image：执行重定位（核心）"><a href="#3-4-link-image：执行重定位（核心）" class="headerlink" title="3.4 link_image：执行重定位（核心）"></a>3.4 link_image：执行重定位（核心）</h2><p>这一步是 so 加载最关键的环节：</p>
+<ul>
+<li>解析导入符号</li>
+<li>在依赖库中做符号查找</li>
+<li>把目标绝对地址写回 GOT &#x2F; DATA 等位置</li>
+</ul>
+<p>重定位完成后，代码里的外部调用才真正“指向正确地址”。</p>
+<h2 id="3-5-调用构造函数"><a href="#3-5-调用构造函数" class="headerlink" title="3.5 调用构造函数"></a>3.5 调用构造函数</h2><p>当链接完成后，linker 会执行：</p>
+<ul>
+<li><code>DT_INIT</code>（若存在）</li>
+<li><code>.init_array</code>（常见）</li>
+</ul>
+<p>并且通常会先保证依赖库构造函数先执行，再执行当前库构造函数。</p>
+<h1 id="4-JNI-OnLoad-的执行时机"><a href="#4-JNI-OnLoad-的执行时机" class="headerlink" title="4. JNI_OnLoad 的执行时机"></a>4. JNI_OnLoad 的执行时机</h1><p>很多人会把 <code>JNI_OnLoad</code> 和构造函数混在一起，实际顺序通常是：</p>
+<ol>
+<li>linker 完成加载、重定位、构造函数调用。</li>
+<li>返回到 ART 的 <code>JavaVMExt::LoadNativeLibrary</code>。</li>
+<li>ART 通过 <code>dlsym</code> 查找 <code>JNI_OnLoad</code> 并调用。</li>
+</ol>
+<p>也就是说：<strong><code>JNI_OnLoad</code> 发生在 <code>dlopen</code> 成功返回之后。</strong></p>
+<p>对应实现代码</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-comment">// https://cs.android.com/android/platform/superproject/main/+/main:art/runtime/jni/java_vm_ext.cc</span><br><span class="hljs-function"><span class="hljs-type">bool</span> <span class="hljs-title">JavaVMExt::LoadNativeLibrary</span><span class="hljs-params">(JNIEnv* env,</span></span><br><span class="hljs-params"><span class="hljs-function">                                  <span class="hljs-type">const</span> std::string&amp; path,</span></span><br><span class="hljs-params"><span class="hljs-function">                                  jobject class_loader,</span></span><br><span class="hljs-params"><span class="hljs-function">                                  jclass caller_class,</span></span><br><span class="hljs-params"><span class="hljs-function">                                  std::string* error_msg)</span> </span>&#123;<br>  ...<br>    <span class="hljs-comment">// load so</span><br>  <span class="hljs-type">void</span>* handle = android::<span class="hljs-built_in">OpenNativeLibrary</span>(<br>      env,<br>      runtime_-&gt;<span class="hljs-built_in">GetTargetSdkVersion</span>(),<br>      path_str,<br>      class_loader,<br>      (caller_location.<span class="hljs-built_in">empty</span>() ? <span class="hljs-literal">nullptr</span> : caller_location.<span class="hljs-built_in">c_str</span>()),<br>      library_path.<span class="hljs-built_in">get</span>(),<br>      &amp;needs_native_bridge,<br>      &amp;nativeloader_error_msg);<br>  <span class="hljs-built_in">VLOG</span>(jni) &lt;&lt; <span class="hljs-string">&quot;[Call to dlopen(\&quot;&quot;</span> &lt;&lt; path &lt;&lt; <span class="hljs-string">&quot;\&quot;, RTLD_NOW) returned &quot;</span> &lt;&lt; handle &lt;&lt; <span class="hljs-string">&quot;]&quot;</span>;<br>  ...<br>  <span class="hljs-type">void</span>* sym = library-&gt;<span class="hljs-built_in">FindSymbol</span>(<span class="hljs-string">&quot;JNI_OnLoad&quot;</span>, <span class="hljs-literal">nullptr</span>, android::kJNICallTypeRegular);<br>  <span class="hljs-keyword">if</span> (sym == <span class="hljs-literal">nullptr</span>) &#123;<br>    <span class="hljs-built_in">VLOG</span>(jni) &lt;&lt; <span class="hljs-string">&quot;[No JNI_OnLoad found in \&quot;&quot;</span> &lt;&lt; path &lt;&lt; <span class="hljs-string">&quot;\&quot;]&quot;</span>;<br>    was_successful = <span class="hljs-literal">true</span>;<br>  &#125; <span class="hljs-keyword">else</span> &#123;<br>    <span class="hljs-comment">// Call JNI_OnLoad.  We have to override the current class</span><br>    <span class="hljs-comment">// loader, which will always be &quot;null&quot; since the stuff at the</span><br>    <span class="hljs-comment">// top of the stack is around Runtime.loadLibrary().  (See</span><br>    <span class="hljs-comment">// the comments in the JNI FindClass function.)</span><br>    ScopedLocalRef&lt;jobject&gt; <span class="hljs-built_in">old_class_loader</span>(env, env-&gt;<span class="hljs-built_in">NewLocalRef</span>(self-&gt;<span class="hljs-built_in">GetClassLoaderOverride</span>()));<br>    self-&gt;<span class="hljs-built_in">SetClassLoaderOverride</span>(class_loader);<br><br>    <span class="hljs-built_in">VLOG</span>(jni) &lt;&lt; <span class="hljs-string">&quot;[Calling JNI_OnLoad in \&quot;&quot;</span> &lt;&lt; path &lt;&lt; <span class="hljs-string">&quot;\&quot;]&quot;</span>;<br>    <span class="hljs-keyword">using</span> JNI_OnLoadFn = <span class="hljs-built_in">int</span>(*)(JavaVM*, <span class="hljs-type">void</span>*);<br>    JNI_OnLoadFn jni_on_load = <span class="hljs-built_in">reinterpret_cast</span>&lt;JNI_OnLoadFn&gt;(sym);<br>    <span class="hljs-type">int</span> version = (*jni_on_load)(<span class="hljs-keyword">this</span>, <span class="hljs-literal">nullptr</span>);<br>    ...<br>  &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+
+
+
+
+<h2 id="4-1-JNI-OnLoad-JNI-OnUnload-边界"><a href="#4-1-JNI-OnLoad-JNI-OnUnload-边界" class="headerlink" title="4.1 JNI_OnLoad &#x2F; JNI_OnUnload 边界"></a>4.1 JNI_OnLoad &#x2F; JNI_OnUnload 边界</h2><ul>
+<li><code>JNI_OnLoad</code> 不是强制必须存在；不存在时 so 仍可加载成功。</li>
+<li>如果实现了 <code>JNI_OnLoad</code>，返回值必须是合法 JNI 版本（如 <code>JNI_VERSION_1_6</code>）。</li>
+<li><code>JNI_OnUnload</code> 在 Android App 中常常不会触发（so 往往跟随进程生命周期）。</li>
+<li>因此关键资源释放不要只依赖 <code>JNI_OnUnload</code>，要有进程退出前兜底策略。</li>
+</ul>
+<h2 id="4-2-时序验证"><a href="#4-2-时序验证" class="headerlink" title="4.2 时序验证"></a>4.2 时序验证</h2><p>可以用一组最小日志验证“constructor 在前，<code>JNI_OnLoad</code> 在后”：</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><code class="hljs c++">__attribute__((constructor))<br><span class="hljs-function"><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title">so_ctor</span><span class="hljs-params">()</span> </span>&#123;<br>  __android_log_print(ANDROID_LOG_INFO, <span class="hljs-string">&quot;SO_TRACE&quot;</span>, <span class="hljs-string">&quot;constructor&quot;</span>);<br>&#125;<br><br><span class="hljs-function">JNIEXPORT jint JNICALL <span class="hljs-title">JNI_OnLoad</span><span class="hljs-params">(JavaVM* vm, <span class="hljs-type">void</span>*)</span> </span>&#123;<br>  __android_log_print(ANDROID_LOG_INFO, <span class="hljs-string">&quot;SO_TRACE&quot;</span>, <span class="hljs-string">&quot;JNI_OnLoad&quot;</span>);<br>  <span class="hljs-keyword">return</span> JNI_VERSION_1_6;<br>&#125;<br><br><span class="hljs-function">JNIEXPORT <span class="hljs-type">void</span> JNICALL</span><br><span class="hljs-function"><span class="hljs-title">Java_com_example_demo_MainActivity_ping</span><span class="hljs-params">(JNIEnv*, jobject)</span> </span>&#123;<br>  __android_log_print(ANDROID_LOG_INFO, <span class="hljs-string">&quot;SO_TRACE&quot;</span>, <span class="hljs-string">&quot;first native call&quot;</span>);<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><code class="hljs kotlin">Log.i(<span class="hljs-string">&quot;SO_TRACE&quot;</span>, <span class="hljs-string">&quot;before loadLibrary&quot;</span>)<br>System.loadLibrary(<span class="hljs-string">&quot;demo&quot;</span>)<br>Log.i(<span class="hljs-string">&quot;SO_TRACE&quot;</span>, <span class="hljs-string">&quot;after loadLibrary&quot;</span>)<br>ping()<br></code></pre></td></tr></table></figure>
+
+<p>预期日志顺序：</p>
+<ol>
+<li><code>before loadLibrary</code></li>
+<li><code>constructor</code></li>
+<li><code>JNI_OnLoad</code></li>
+<li><code>after loadLibrary</code></li>
+<li><code>first native call</code></li>
+</ol>
+<h2 id="4-3-加载时序决定-Hook-安装窗口"><a href="#4-3-加载时序决定-Hook-安装窗口" class="headerlink" title="4.3 加载时序决定 Hook 安装窗口"></a>4.3 加载时序决定 Hook 安装窗口</h2><p>这部分和 PLT Hook &#x2F; Inline Hook 强相关：</p>
+<ul>
+<li>PLT Hook：通常在目标 so 完成重定位后安装更稳。</li>
+<li>Inline Hook：通常在目标代码段映射后、目标函数首次执行前安装。</li>
+<li>过早安装会找不到目标模块，过晚安装会错过第一次关键调用。</li>
+</ul>
+<p>推荐时序：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><code class="hljs text">System.loadLibrary(target)<br>  -&gt; linker: map + relocate + constructors<br>  -&gt; JNI_OnLoad(target)<br>System.loadLibrary(hook)<br>  -&gt; install hook<br>业务线程首次调用目标函数<br></code></pre></td></tr></table></figure>
+
+
+
+<h1 id="5-常见报错与排查"><a href="#5-常见报错与排查" class="headerlink" title="5. 常见报错与排查"></a>5. 常见报错与排查</h1><h2 id="5-1-高频报错"><a href="#5-1-高频报错" class="headerlink" title="5.1 高频报错"></a>5.1 高频报错</h2><ol>
+<li><p><code>dlopen failed: library &quot;xxx.so&quot; not found</code></p>
+<ul>
+<li>库不在搜索路径</li>
+<li>ABI 目录不匹配（如只打包了 <code>armeabi-v7a</code>，进程却是 <code>arm64-v8a</code>）</li>
+</ul>
+</li>
+<li><p><code>dlopen failed: cannot locate symbol &quot;xxx&quot;</code></p>
+<ul>
+<li>依赖库缺失</li>
+<li>符号被裁剪或版本不匹配</li>
+</ul>
+</li>
+<li><p><code>UnsatisfiedLinkError: JNI_ERR returned from JNI_OnLoad</code></p>
+<ul>
+<li><code>JNI_OnLoad</code> 返回版本非法</li>
+<li><code>RegisterNatives</code> 失败</li>
+</ul>
+</li>
+<li><p><code>dlopen failed: wrong ELF class</code></p>
+<ul>
+<li>32&#x2F;64 位混用</li>
+</ul>
+</li>
+</ol>
+<h2 id="5-2-namespace-访问失败专项"><a href="#5-2-namespace-访问失败专项" class="headerlink" title="5.2 namespace 访问失败专项"></a>5.2 namespace 访问失败专项</h2><p>Android N 以后，namespace 是 so 加载失败的高频原因。典型报错如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><code class="hljs text">java.lang.UnsatisfiedLinkError: dlopen failed: library &quot;libfoo.so&quot; needed or<br>dlopened by &quot;/data/app/.../libbar.so&quot; is not accessible for the namespace<br>&quot;classloader-namespace&quot;<br></code></pre></td></tr></table></figure>
+
+<p>常见触发原因：</p>
+<ul>
+<li>依赖 so 不在当前 ClassLoader 对应 namespace 的可见范围。</li>
+<li>误链接了非 public NDK 的系统私有 so。</li>
+<li>插件化&#x2F;动态化场景中，加载方和被加载方不在同一 namespace。</li>
+</ul>
+<p>排查建议：</p>
+<ol>
+<li>先用 <code>readelf -d</code> 看 <code>DT_NEEDED</code>，确认依赖链完整。</li>
+<li>再看 <code>adb logcat</code> 里 linker 具体拒绝的是哪个 namespace。</li>
+<li>优先改为 public NDK 依赖，统一加载路径与 ClassLoader。</li>
+</ol>
+<h2 id="5-3-常用排查命令"><a href="#5-3-常用排查命令" class="headerlink" title="5.3 常用排查命令"></a>5.3 常用排查命令</h2><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><code class="hljs bash"><span class="hljs-comment"># 看 ELF 基本信息（位数/架构）</span><br>readelf -h libdemo.so<br><br><span class="hljs-comment"># 看依赖库列表（DT_NEEDED）</span><br>readelf -d libdemo.so<br><br><span class="hljs-comment"># 看动态符号（是否有 JNI_OnLoad / 目标符号）</span><br>readelf -Ws libdemo.so<br><br><span class="hljs-comment"># 结合日志看加载错误</span><br>adb logcat | rg -i <span class="hljs-string">&quot;dlopen|linker|UnsatisfiedLinkError|JNI_OnLoad&quot;</span><br></code></pre></td></tr></table></figure>
+
+
+
+<h1 id="6-总结"><a href="#6-总结" class="headerlink" title="6. 总结"></a>6. 总结</h1><p>SO 加载可以理解为三层协作：</p>
+<ul>
+<li>Java&#x2F;ART 层：处理 <code>System.loadLibrary</code>、ClassLoader 语义和 namespace 规则。</li>
+<li>linker 层：完成 ELF 映射、依赖解析、重定位、构造函数调用。</li>
+<li>JNI 层：在 <code>dlopen</code> 成功后执行 <code>JNI_OnLoad</code> 完成 native 注册。</li>
+</ul>
+<h1 id="7-其他知识点补充（实战与原理）"><a href="#7-其他知识点补充（实战与原理）" class="headerlink" title="7. 其他知识点补充（实战与原理）"></a>7. 其他知识点补充（实战与原理）</h1><h2 id="7-1-RTLD-参数与加载策略"><a href="#7-1-RTLD-参数与加载策略" class="headerlink" title="7.1 RTLD 参数与加载策略"></a>7.1 RTLD 参数与加载策略</h2><p><code>dlopen</code> 的 flags 会直接影响符号解析时机与可见性：</p>
+<ul>
+<li><code>RTLD_NOW</code>：加载阶段完成符号解析，问题暴露更早，失败更快。</li>
+<li><code>RTLD_LAZY</code>：函数符号在首次调用时再解析，首调才可能暴露问题。</li>
+<li><code>RTLD_GLOBAL</code>：把当前 so 导出的符号加入全局可见集合，后续库可见。</li>
+<li><code>RTLD_LOCAL</code>：默认局部可见，不向后续库导出。</li>
+</ul>
+<p>在 Android Java 场景，<code>System.loadLibrary</code> 典型路径通常以 <code>RTLD_NOW</code> 方式加载；而 Native 自己调用 <code>dlopen</code> 时，flags 由业务代码决定。</p>
+<h2 id="7-2-符号解析与可见性"><a href="#7-2-符号解析与可见性" class="headerlink" title="7.2 符号解析与可见性"></a>7.2 符号解析与可见性</h2><p>加载成功不代表符号一定按预期命中。需要同时关注：</p>
+<ul>
+<li>符号是否真的导出（<code>readelf -Ws</code> 可确认）。</li>
+<li>编译可见性（如 <code>-fvisibility=hidden</code>）是否把符号隐藏了。</li>
+<li>同名符号是否存在多个版本或多个来源库，导致解析命中偏差。</li>
+</ul>
+<p>如果 so 主要给 JNI 使用，通常建议：</p>
+<ul>
+<li>对外仅导出必要 JNI 接口；</li>
+<li>其余符号尽量收敛可见性，减少冲突面。</li>
+</ul>
+<h2 id="7-3-Android-版本与-namespace-差异"><a href="#7-3-Android-版本与-namespace-差异" class="headerlink" title="7.3 Android 版本与 namespace 差异"></a>7.3 Android 版本与 namespace 差异</h2><p>SO 加载策略和 Android 版本强相关：</p>
+<ul>
+<li>Android 7.0+：引入 linker namespace，库可见性更严格。</li>
+<li>Android 8.0+（Treble）：<code>system/vendor</code> 边界更清晰，私有库访问限制更强。</li>
+<li>targetSdk 升级后：某些历史兼容路径会收紧，旧方案可能在新版本失效。</li>
+</ul>
+<p>工程上要避免依赖“刚好可用”的私有库路径，优先使用 public NDK 能力。</p>
+<h2 id="7-4-JNI-注册方式与生命周期"><a href="#7-4-JNI-注册方式与生命周期" class="headerlink" title="7.4 JNI 注册方式与生命周期"></a>7.4 JNI 注册方式与生命周期</h2><p>JNI 常见两种注册方式：</p>
+<ul>
+<li>静态注册：按命名规则导出 <code>Java_xxx_xxx</code> 函数。</li>
+<li>动态注册：在 <code>JNI_OnLoad</code> 里通过 <code>RegisterNatives</code> 绑定。</li>
+</ul>
+<p>动态注册更常用于工程化项目（函数名更可控、重构成本更低）。</p>
+<p>生命周期上要注意：</p>
+<ul>
+<li><code>JNI_OnLoad</code> 返回值必须合法（如 <code>JNI_VERSION_1_6</code>）。</li>
+<li><code>JNI_OnUnload</code> 在 App 场景通常不可靠，不要把关键释放逻辑只放这里。</li>
+</ul>
+<h2 id="7-5-ABI-与打包链路"><a href="#7-5-ABI-与打包链路" class="headerlink" title="7.5 ABI 与打包链路"></a>7.5 ABI 与打包链路</h2><p>加载失败很多时候不是代码问题，而是打包链路问题：</p>
+<ul>
+<li><code>abiFilters</code> 配置不完整，导致目标 ABI 的 so 未打包。</li>
+<li>AAB&#x2F;拆包后设备拿到的 split 不含目标 so。</li>
+<li>32&#x2F;64 位混用，触发 <code>wrong ELF class</code>。</li>
+<li><code>android:extractNativeLibs</code> 策略和包内 so 对齐不满足要求，影响加载路径。</li>
+</ul>
+<p>建议每次发版都对目标 ABI 做一次 <code>readelf -h</code> 与真机验证。</p>
+<h2 id="7-6-一条固定排障路径"><a href="#7-6-一条固定排障路径" class="headerlink" title="7.6 一条固定排障路径"></a>7.6 一条固定排障路径</h2><p>出现 native 加载问题时，建议按固定顺序处理：</p>
+<ol>
+<li>看错误原文：先抓完整 <code>UnsatisfiedLinkError</code> &#x2F; linker 日志。</li>
+<li>看 ABI：<code>readelf -h</code> 确认位数与架构。</li>
+<li>看依赖：<code>readelf -d</code> 检查 <code>DT_NEEDED</code> 是否齐全。</li>
+<li>看符号：<code>readelf -Ws</code> 确认目标符号是否存在且可见。</li>
+<li>看 namespace：根据 logcat 判断是否被 namespace 拒绝。</li>
+<li>看初始化：确认 <code>constructor</code> &#x2F; <code>JNI_OnLoad</code> 的执行顺序与返回值。</li>
+</ol>
+<p>这套顺序能覆盖大多数线上常见问题，排障效率会明显提升。</p>
+<h1 id="参考地址"><a href="#参考地址" class="headerlink" title="参考地址"></a>参考地址</h1><p><a target="_blank" rel="noopener" href="https://cs.android.com/android/platform/superproject/main/+/main:bionic/linker/">bionic linker 源码</a></p>
+<p><a target="_blank" rel="noopener" href="https://cs.android.com/android/platform/superproject/main/+/main:art/runtime/jni/java_vm_ext.cc">art JavaVMExt 源码</a></p>
+<p><a target="_blank" rel="noopener" href="https://cs.android.com/android/platform/superproject/main/+/main:system/core/libnativeloader/">libnativeloader 源码</a></p>
+<p><a target="_blank" rel="noopener" href="https://refspecs.linuxfoundation.org/elf/elf.pdf">ELF 规范</a></p>
+
                 
               </div>
             
@@ -298,6 +600,13 @@
             <div>
               <div class="post-metas my-3">
   
+  
+    <div class="post-meta">
+      <i class="iconfont icon-tags"></i>
+      
+        <a href="/tags/Android/" class="print-no-link">#Android</a>
+      
+    </div>
   
 </div>
 
