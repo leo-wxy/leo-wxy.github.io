@@ -19,12 +19,12 @@
   <meta name="author" content="Leo-Wxy">
   <meta name="keywords" content="">
   
-    <meta name="description" content="在Kotlin-协程介绍了大部分概念，现在需要针对这些概念进行详细的说明以及分析。 协程是轻量级的线程   协程概念 非抢占式或协作式的计算机并发调度的实现，程序可以主动挂起或者恢复执行， 避免在异步程序中使用大量的回调，使用阻塞的方式写出非阻塞的代码。  一种全新处理并发的方式，可以在Android平台上简化异步执行的代码。 协程主要用来解决两个问题：  处理耗时任务 保证主线程安全  在后面的">
+    <meta name="description" content="在Kotlin-协程介绍了大部分概念，现在需要针对这些概念进行详细的说明以及分析。 协程是轻量级的线程   阅读地图（按问题定位） 1. 协程是什么：概念与术语 2. 协程怎么运行：核心组件与调度 3. 协程怎么用好：构造、启动、取消 4. 协程为什么能挂起：原理实现 5. 知识点总结（可口述） 6. 参考与延伸     展开子目录（细分知识点）   协程概念 概念介绍 协程与线程的关系（易混点）">
 <meta property="og:type" content="article">
 <meta property="og:title" content="Kotlin协程原理">
 <meta property="og:url" content="https://leo-wxy.github.io/2020/09/04/Kotlin%E5%8D%8F%E7%A8%8B%E5%8E%9F%E7%90%86/index.html">
 <meta property="og:site_name" content="Wxy的个人博客">
-<meta property="og:description" content="在Kotlin-协程介绍了大部分概念，现在需要针对这些概念进行详细的说明以及分析。 协程是轻量级的线程   协程概念 非抢占式或协作式的计算机并发调度的实现，程序可以主动挂起或者恢复执行， 避免在异步程序中使用大量的回调，使用阻塞的方式写出非阻塞的代码。  一种全新处理并发的方式，可以在Android平台上简化异步执行的代码。 协程主要用来解决两个问题：  处理耗时任务 保证主线程安全  在后面的">
+<meta property="og:description" content="在Kotlin-协程介绍了大部分概念，现在需要针对这些概念进行详细的说明以及分析。 协程是轻量级的线程   阅读地图（按问题定位） 1. 协程是什么：概念与术语 2. 协程怎么运行：核心组件与调度 3. 协程怎么用好：构造、启动、取消 4. 协程为什么能挂起：原理实现 5. 知识点总结（可口述） 6. 参考与延伸     展开子目录（细分知识点）   协程概念 概念介绍 协程与线程的关系（易混点）">
 <meta property="og:locale" content="zh_CN">
 <meta property="og:image" content="https://leo-wxy.github.io/images/Job%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F.jpg">
 <meta property="og:image" content="https://leo-wxy.github.io/images/%E5%8D%8F%E7%A8%8B%E8%B0%83%E5%BA%A6%E5%99%A8%E9%97%B4%E7%9A%84%E5%B7%AE%E5%BC%82">
@@ -33,7 +33,7 @@
 <meta property="og:image" content="https://leo-wxy.github.io/images/%E5%8D%8F%E7%A8%8B%E6%8C%82%E8%B5%B7%E6%B5%81%E7%A8%8B.png">
 <meta property="og:image" content="https://leo-wxy.github.io/images/%E5%8D%8F%E7%A8%8B%E6%81%A2%E5%A4%8D%E6%B5%81%E7%A8%8B.png">
 <meta property="article:published_time" content="2020-09-04T02:15:08.000Z">
-<meta property="article:modified_time" content="2026-02-13T04:55:56.173Z">
+<meta property="article:modified_time" content="2026-02-16T12:34:15.020Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="Kotlin">
 <meta name="twitter:card" content="summary_large_image">
@@ -231,7 +231,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          7.1k 字
+          9.9k 字
         
       </span>
     
@@ -243,7 +243,7 @@
         
         
           <!-- compatible with older versions-->
-          23 分钟
+          31 分钟
         
       </span>
     
@@ -302,7 +302,53 @@
 <blockquote><p>协程是轻量级的线程</p>
 </blockquote>
 
-<h2 id="协程概念"><a href="#协程概念" class="headerlink" title="协程概念"></a>协程概念</h2><blockquote>
+<h2 id="阅读地图（按问题定位）"><a href="#阅读地图（按问题定位）" class="headerlink" title="阅读地图（按问题定位）"></a>阅读地图（按问题定位）</h2><ul>
+<li><a href="#sec-1">1. 协程是什么：概念与术语</a></li>
+<li><a href="#sec-2">2. 协程怎么运行：核心组件与调度</a></li>
+<li><a href="#sec-3">3. 协程怎么用好：构造、启动、取消</a></li>
+<li><a href="#sec-4">4. 协程为什么能挂起：原理实现</a></li>
+<li><a href="#sec-5">5. 知识点总结（可口述）</a></li>
+<li><a href="#sec-6">6. 参考与延伸</a></li>
+</ul>
+<details>
+  <summary>展开子目录（细分知识点）</summary>
+
+<ul>
+<li><a href="#sec-1-concept">协程概念</a></li>
+<li><a href="#sec-1-terms">概念介绍</a></li>
+<li><a href="#sec-1-thread-vs-coroutine">协程与线程的关系（易混点）</a></li>
+<li><a href="#sec-2-scope">协程作用域—CoroutineScope</a></li>
+<li><a href="#sec-2-context">协程上下文-CoroutineContext</a></li>
+<li><a href="#sec-2-job">协程执行任务-Job</a></li>
+<li><a href="#sec-2-dispatcher">协程调度器-CoroutineDispatcher</a></li>
+<li><a href="#sec-2-dispatcher-performance">调度器与性能（补充）</a></li>
+<li><a href="#sec-2-interceptor">协程拦截器-ContinuationInterceptor</a></li>
+<li><a href="#sec-2-exception">协程异常处理-CoroutineExceptionHandler</a></li>
+<li><a href="#sec-2-exception-deep">异常语义深水区（补充）</a></li>
+<li><a href="#sec-3-structured">结构化并发决策（补充）</a></li>
+<li><a href="#sec-3-choice">协程工具选型（launch &#x2F; async &#x2F; withContext）</a></li>
+<li><a href="#sec-3-flow">Flow 体系（Flow &#x2F; StateFlow &#x2F; SharedFlow &#x2F; Channel）</a></li>
+<li><a href="#sec-3-primitives">并发原语（Mutex &#x2F; Semaphore &#x2F; Channel &#x2F; select）</a></li>
+<li><a href="#sec-3-builder">协程构造器-CoroutineBuilder</a></li>
+<li><a href="#sec-3-start">协程启动模式-CoroutineStart</a></li>
+<li><a href="#sec-3-cancel">协程取消-Cancel</a></li>
+<li><a href="#sec-3-cancel-deep">取消语义深水区（补充）</a></li>
+<li><a href="#sec-3-android-practice">Android 使用建议（工程实践）</a></li>
+<li><a href="#sec-3-antipatterns">常见反模式与修正建议</a></li>
+<li><a href="#sec-4-dispatcher-principle">Dispatchers原理</a></li>
+<li><a href="#sec-4-start-flow">协程启动流程</a></li>
+<li><a href="#sec-4-suspend-resume">协程挂起&#x2F;恢复原理</a></li>
+<li><a href="#sec-4-concurrency">协程并发</a></li>
+<li><a href="#sec-4-test-observability">测试与可观测性（补充）</a></li>
+<li><a href="#sec-5-principle-30">协程原理速答（30秒）</a></li>
+<li><a href="#sec-5-principle-2m">协程原理展开（2分钟）</a></li>
+<li><a href="#sec-5-faq">高频追问知识点（补充）</a></li>
+</ul>
+</details>
+
+<p><a id="sec-1"></a></p>
+<h2 id="一、协程是什么（概念与术语）"><a href="#一、协程是什么（概念与术语）" class="headerlink" title="一、协程是什么（概念与术语）"></a>一、协程是什么（概念与术语）</h2><p><a id="sec-1-concept"></a></p>
+<h3 id="协程概念"><a href="#协程概念" class="headerlink" title="协程概念"></a>协程概念</h3><blockquote>
 <p><code>非抢占式或协作式</code>的计算机并发调度的实现，程序可以主动挂起或者恢复执行，</p>
 <p>避免在异步程序中使用大量的回调，<strong>使用阻塞的方式写出非阻塞的代码。</strong></p>
 </blockquote>
@@ -313,7 +359,8 @@
 <li><strong>保证主线程安全</strong></li>
 </ul>
 <p>在后面的原理介绍中，会介绍与这两个问题相关的概念。</p>
-<h2 id="概念介绍"><a href="#概念介绍" class="headerlink" title="概念介绍"></a>概念介绍</h2><blockquote>
+<p><a id="sec-1-terms"></a></p>
+<h3 id="概念介绍"><a href="#概念介绍" class="headerlink" title="概念介绍"></a>概念介绍</h3><blockquote>
 <p>在执行过程中会涉及的一些概念，在后续源码分析也会涉及。</p>
 </blockquote>
 <p><code>协程体</code></p>
@@ -324,13 +371,57 @@
 <p>一般对应<code>挂起函数</code>被调用的位置</p>
 <p><code>续体-Continuation</code></p>
 <p>挂起的协程在<code>挂起点</code>时的状态。概念上表示<code>挂起点之后的剩余应该执行的代码</code>。</p>
-<h2 id="核心类"><a href="#核心类" class="headerlink" title="核心类"></a>核心类</h2><h3 id="协程作用域—CoroutineScope"><a href="#协程作用域—CoroutineScope" class="headerlink" title="协程作用域—CoroutineScope"></a>协程作用域—CoroutineScope</h3><blockquote>
+<p><a id="sec-1-thread-vs-coroutine"></a></p>
+<h3 id="协程与线程的关系（易混点）"><a href="#协程与线程的关系（易混点）" class="headerlink" title="协程与线程的关系（易混点）"></a>协程与线程的关系（易混点）</h3><p>协程常被描述为“轻量级线程”，更准确地说：协程是运行在线程之上的任务抽象，线程仍然是最终执行载体。</p>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>线程</th>
+<th>协程</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>调度单位</td>
+<td>操作系统调度</td>
+<td>用户态（库&#x2F;运行时）调度</td>
+</tr>
+<tr>
+<td>创建与切换成本</td>
+<td>相对更高</td>
+<td>相对更低</td>
+</tr>
+<tr>
+<td>阻塞影响</td>
+<td>阻塞会占住线程</td>
+<td>挂起不会阻塞线程</td>
+</tr>
+<tr>
+<td>并发规模</td>
+<td>数量受限（线程资源）</td>
+<td>可创建大量任务（但不是无限）</td>
+</tr>
+<tr>
+<td>生命周期管理</td>
+<td>需手动管理</td>
+<td>借助<code>CoroutineScope</code>结构化管理</td>
+</tr>
+</tbody></table>
+<p>补充：</p>
+<ul>
+<li>协程“轻量”不等于“无成本”，大量协程仍会带来调度和内存开销。</li>
+<li>协程是否切线程，取决于<code>CoroutineDispatcher</code>和挂起点恢复位置。</li>
+<li>挂起函数是“让出执行权”，不是“停止线程运行”。</li>
+</ul>
+<p><a id="sec-2"></a></p>
+<h2 id="二、协程怎么运行（核心组件与调度）"><a href="#二、协程怎么运行（核心组件与调度）" class="headerlink" title="二、协程怎么运行（核心组件与调度）"></a>二、协程怎么运行（核心组件与调度）</h2><p><a id="sec-2-scope"></a></p>
+<h3 id="协程作用域—CoroutineScope"><a href="#协程作用域—CoroutineScope" class="headerlink" title="协程作用域—CoroutineScope"></a>协程作用域—CoroutineScope</h3><blockquote>
 <p>追踪每一个通过<code>launch</code>或<code>async</code>创建的协程。并且任何时候都可以通过<code>scope.cancel()</code>取消正在执行的协程。</p>
 <p>可以通过<code>CoroutineScope</code>控制协程的生命周期，当Activity&#x2F;Fragment关闭时，调用<code>cancel()</code>及时关闭。</p>
 </blockquote>
 <p><code>协程作用域</code>主要有三种：</p>
 <h4 id="阻塞协程作用域"><a href="#阻塞协程作用域" class="headerlink" title="阻塞协程作用域"></a>阻塞协程作用域</h4><p>调用<code>runBlocking()</code>的线程会被阻塞直到内部协程任务执行完毕。</p>
-<h4 id="全局协程作用域"><a href="#全局协程作用域" class="headerlink" title="全局协程作用域"></a>全局协程作用域</h4><p><code>GlobalScope</code>作用于整个应用的生命周期，并且无法被取消，在界面上使用时，就会导致内存泄漏。</p>
+<h4 id="全局协程作用域"><a href="#全局协程作用域" class="headerlink" title="全局协程作用域"></a>全局协程作用域</h4><p><code>GlobalScope</code>作用于整个应用生命周期，不会随页面生命周期自动取消。它并非“无法取消”，但如果缺少显式管理，在界面上使用时很容易导致任务泄漏或状态错乱。</p>
 <figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><br><span class="hljs-keyword">public</span> <span class="hljs-keyword">object</span> GlobalScope : CoroutineScope &#123;  <br>    <span class="hljs-comment">// 重写coroutineContext，返回一个空的协程上下文  </span><br>    <span class="hljs-keyword">override</span> <span class="hljs-keyword">val</span> coroutineContext: CoroutineContext  <br>        <span class="hljs-keyword">get</span>() = EmptyCoroutineContext  <br>&#125;  <br><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title class_">CoroutineScope</span> &#123;  <br>    <span class="hljs-comment">// 协程上下文  </span><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">val</span> coroutineContext: CoroutineContext  <br>&#125;<br></code></pre></td></tr></table></figure>
 
 
@@ -348,12 +439,13 @@
 
 
 <h6 id="viewModelScope"><a href="#viewModelScope" class="headerlink" title="viewModelScope"></a>viewModelScope</h6><blockquote>
-<p>在AndroidX中引入的<code>viewMdoelScope</code>，在ViewModel销毁时会自动取消协程任务</p>
+<p>在AndroidX中引入的<code>viewModelScope</code>，在ViewModel销毁时会自动取消协程任务</p>
 </blockquote>
 <figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-keyword">val</span> ViewModel.viewModelScope: CoroutineScope<br>        <span class="hljs-keyword">get</span>() &#123;<br>            <span class="hljs-keyword">val</span> scope: CoroutineScope? = <span class="hljs-keyword">this</span>.getTag(JOB_KEY)<br>          <span class="hljs-comment">//缓存中读取 对应scope</span><br>            <span class="hljs-keyword">if</span> (scope != <span class="hljs-literal">null</span>) &#123;<br>                <span class="hljs-keyword">return</span> scope<br>            &#125;<br>           <span class="hljs-comment">//对应了ViewModel内部的实现代码</span><br>            <span class="hljs-keyword">return</span> setTagIfAbsent(JOB_KEY,<br>                CloseableCoroutineScope(SupervisorJob() + Dispatchers.Main.immediate))<br>        &#125;<br><span class="hljs-comment">//自动取消 coroutineScope</span><br><span class="hljs-keyword">internal</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">CloseableCoroutineScope</span>(context: CoroutineContext) : Closeable, CoroutineScope &#123;<br>    <span class="hljs-keyword">override</span> <span class="hljs-keyword">val</span> coroutineContext: CoroutineContext = context<br><br>    <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">close</span><span class="hljs-params">()</span></span> &#123;<br>        coroutineContext.cancel()<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
 
 
 
+<p><a id="sec-2-context"></a></p>
 <h3 id="协程上下文-CoroutineContext"><a href="#协程上下文-CoroutineContext" class="headerlink" title="协程上下文-CoroutineContext"></a>协程上下文-CoroutineContext</h3><blockquote>
 <p>一组定义协程行为的元素，本体是一个数据结构，类似于<code>Map</code>，内部实现为<code>单链表</code></p>
 </blockquote>
@@ -378,6 +470,7 @@
 <p><code>默认值</code>：一些元素包含的默认值，例如默认<code>Dispatcher</code>就是<code>Dispatchers.Default</code></p>
 <p><code>继承的CoroutineContext</code>：父协程的<code>CoroutineContenxt</code></p>
 <p><code>参数</code>：后续子协程配置的参数，如上文所示组成部分，新添加的参数会覆盖前面的对应配置。</p>
+<p><a id="sec-2-job"></a></p>
 <h3 id="协程执行任务-Job"><a href="#协程执行任务-Job" class="headerlink" title="协程执行任务-Job"></a>协程执行任务-Job</h3><blockquote>
 <p>用于处理协程，封装了协程需要执行的代码逻辑，并且负责管理协程的生命周期。</p>
 <p>通过<code>协程构造器</code>创建的协程都会返回一个<code>Job实例</code>。</p>
@@ -393,7 +486,8 @@
 </ul>
 <p><img src="/images/Job%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F.jpg" srcset="/img/loading.gif" lazyload alt="Job生命周期"></p>
 <p><code>Job</code>内提供了<code>isActive()</code>、<code>isCancelled()</code>和<code>isCompleted()</code>等属性用于判断协程的状态。</p>
-<p><a href="#%E5%8D%8F%E7%A8%8B%E5%8F%96%E6%B6%88-Cancel">协程取消</a>会更多的分析<code>Job</code>相关。</p>
+<p><a href="#sec-3-cancel">协程取消</a>会更多的分析<code>Job</code>相关。</p>
+<p><a id="sec-2-dispatcher"></a></p>
 <h3 id="协程调度器-CoroutineDispatcher"><a href="#协程调度器-CoroutineDispatcher" class="headerlink" title="协程调度器-CoroutineDispatcher"></a>协程调度器-CoroutineDispatcher</h3><blockquote>
 <p><code>Dispatchers</code>是协程中提供的<code>线程调度器</code>，用来切换线程，指定协程运行的线程。</p>
 </blockquote>
@@ -410,11 +504,11 @@
 </blockquote>
 <figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-comment">//加载各平台下定义的MainDispatcherFactory</span><br><span class="hljs-keyword">private</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">loadMainDispatcher</span><span class="hljs-params">()</span></span>: MainCoroutineDispatcher &#123;<br>        <span class="hljs-keyword">return</span> <span class="hljs-keyword">try</span> &#123;<br>            <span class="hljs-keyword">val</span> factories = <span class="hljs-keyword">if</span> (FAST_SERVICE_LOADER_ENABLED) &#123;<br>                FastServiceLoader.loadMainDispatcherFactory()<br>            &#125; <span class="hljs-keyword">else</span> &#123;<br>                <span class="hljs-comment">// We are explicitly using the</span><br>                <span class="hljs-comment">// `ServiceLoader.load(MyClass::class.java, MyClass::class.java.classLoader).iterator()`</span><br>                <span class="hljs-comment">// form of the ServiceLoader call to enable R8 optimization when compiled on Android.</span><br>                ServiceLoader.load(<br>                        MainDispatcherFactory::<span class="hljs-keyword">class</span>.java,<br>                        MainDispatcherFactory::<span class="hljs-keyword">class</span>.java.classLoader<br>                ).iterator().asSequence().toList()<br>            &#125;<br>            <span class="hljs-meta">@Suppress(<span class="hljs-string">&quot;ConstantConditionIf&quot;</span>)</span><br>            factories.maxBy &#123; it.loadPriority &#125;?.tryCreateDispatcher(factories)<br>                ?: createMissingDispatcher()<br>        &#125; <span class="hljs-keyword">catch</span> (e: Throwable) &#123;<br>            <span class="hljs-comment">// Service loader can throw an exception as well</span><br>            createMissingDispatcher(e)<br>        &#125;<br>    &#125;<br><br>    <span class="hljs-keyword">internal</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">loadMainDispatcherFactory</span><span class="hljs-params">()</span></span>: List&lt;MainDispatcherFactory&gt; &#123;<br>        <span class="hljs-keyword">val</span> clz = MainDispatcherFactory::<span class="hljs-keyword">class</span>.java<br>        <span class="hljs-keyword">if</span> (!ANDROID_DETECTED) &#123;<br>            <span class="hljs-keyword">return</span> load(clz, clz.classLoader)<br>        &#125;<br><br>        <span class="hljs-keyword">return</span> <span class="hljs-keyword">try</span> &#123;<br>            <span class="hljs-keyword">val</span> result = ArrayList&lt;MainDispatcherFactory&gt;(<span class="hljs-number">2</span>)<br>          <span class="hljs-comment">//加载对应类名的类</span><br>            createInstanceOf(clz, <span class="hljs-string">&quot;kotlinx.coroutines.android.AndroidDispatcherFactory&quot;</span>)?.apply &#123; result.add(<span class="hljs-keyword">this</span>) &#125;<br>            createInstanceOf(clz, <span class="hljs-string">&quot;kotlinx.coroutines.test.internal.TestMainDispatcherFactory&quot;</span>)?.apply &#123; result.add(<span class="hljs-keyword">this</span>) &#125;<br>            result<br>        &#125; <span class="hljs-keyword">catch</span> (e: Throwable) &#123;<br>            <span class="hljs-comment">// Fallback to the regular SL in case of any unexpected exception</span><br>            load(clz, clz.classLoader)<br>        &#125;<br>    &#125;<br></code></pre></td></tr></table></figure>
 
-<p>按照类名去加载，Android下的名为<code>kotlinx.coroutions.android.AndroidDispatcherFactory</code>的类</p>
+<p>按照类名去加载，Android下的名为<code>kotlinx.coroutines.android.AndroidDispatcherFactory</code>的类</p>
 <figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-comment">//在Android编译完成后，可以读取到该类</span><br><span class="hljs-keyword">internal</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">AndroidDispatcherFactory</span> : <span class="hljs-type">MainDispatcherFactory</span> &#123;<br>    <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">createDispatcher</span><span class="hljs-params">(allFactories: <span class="hljs-type">List</span>&lt;<span class="hljs-type">MainDispatcherFactory</span>&gt;)</span></span> = HandlerContext(Looper.getMainLooper().asHandler(async = <span class="hljs-literal">true</span>), <span class="hljs-string">&quot;Main&quot;</span>)<br>&#125;<br><span class="hljs-keyword">internal</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">HandlerContext</span> <span class="hljs-keyword">private</span> <span class="hljs-keyword">constructor</span>(<br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> handler: Handler,<br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> name: String?,<br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> invokeImmediately: <span class="hljs-built_in">Boolean</span><br>) : HandlerDispatcher(), Delay &#123;<br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">constructor</span>(<br>        handler: Handler,<br>        name: String? = <span class="hljs-literal">null</span><br>    ) : <span class="hljs-keyword">this</span>(handler, name, <span class="hljs-literal">false</span>)<br><br>    <span class="hljs-comment">//android中需要向主looper进行提交调度</span><br>    <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">isDispatchNeeded</span><span class="hljs-params">(context: <span class="hljs-type">CoroutineContext</span>)</span></span>: <span class="hljs-built_in">Boolean</span> &#123;<br>        <span class="hljs-keyword">return</span> !invokeImmediately || Looper.myLooper() != handler.looper<br>    &#125;<br><br>    <span class="hljs-comment">//通过持有主线程looper的handler进行调度</span><br>    <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">dispatch</span><span class="hljs-params">(context: <span class="hljs-type">CoroutineContext</span>, block: <span class="hljs-type">Runnable</span>)</span></span> &#123;<br>        handler.post(block)<br>    &#125;<br>    ...<br>&#125;<br></code></pre></td></tr></table></figure>
 
 <h5 id="Dispatchers-Main-immediate"><a href="#Dispatchers-Main-immediate" class="headerlink" title="Dispatchers.Main.immediate"></a>Dispatchers.Main.immediate</h5><blockquote>
-<p>适用于<code>响应一个UI事件后从而启动一个协程时</code>，会在下一帧中去立即执行任务。</p>
+<p>适用于<code>响应UI事件后立即执行后续逻辑</code>的场景：当当前线程已经是<code>Main</code>线程时会立刻执行而不是再次分发；如果不在<code>Main</code>线程，行为与<code>Dispatchers.Main</code>一致。</p>
 </blockquote>
 <h4 id="Dispatchers-Unconfined"><a href="#Dispatchers-Unconfined" class="headerlink" title="Dispatchers.Unconfined"></a>Dispatchers.Unconfined</h4><blockquote>
 <p>非限制的调度器，在遇到第一个挂起函数前的代码运行在原线程中，执行挂起函数后，就切换线程运行。</p>
@@ -427,6 +521,17 @@
 
 
 
+<p><a id="sec-2-dispatcher-performance"></a></p>
+<h3 id="调度器与性能（补充）"><a href="#调度器与性能（补充）" class="headerlink" title="调度器与性能（补充）"></a>调度器与性能（补充）</h3><ul>
+<li><code>Dispatchers.Default</code> 与 <code>Dispatchers.IO</code> 都基于共享调度体系，IO 任务过量会影响整体调度公平性。</li>
+<li><code>withContext</code> 每次切换都存在调度开销，细粒度频繁切换会放大性能损耗。</li>
+<li>对高并发 IO 场景建议限流，避免把线程池和下游资源（DB&#x2F;网络）同时打满。</li>
+<li><code>Dispatchers.Main.immediate</code> 适合“已经在主线程且希望避免二次分发”的场景。</li>
+<li><code>Dispatchers.Unconfined</code> 更适合调试&#x2F;框架层场景，业务代码中应谨慎使用。</li>
+</ul>
+<figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-comment">// 限制并发度，避免 IO 峰值放大</span><br><span class="hljs-keyword">val</span> dbDispatcher = Dispatchers.IO.limitedParallelism(<span class="hljs-number">4</span>)<br></code></pre></td></tr></table></figure>
+
+<p><a id="sec-2-interceptor"></a></p>
 <h3 id="协程拦截器-ContinuationInterceptor"><a href="#协程拦截器-ContinuationInterceptor" class="headerlink" title="协程拦截器-ContinuationInterceptor"></a>协程拦截器-ContinuationInterceptor</h3><blockquote>
 <p><code>ContinuationInterceptor</code>是一个拦截器的接口定义，用于控制协程的执行流程。</p>
 <p>在<code>CoroutineContext</code>中，实现了<code>ContinuationInterceptor</code>接口的类，永远会处于最后一位，保证不会被其他类覆盖。</p>
@@ -435,6 +540,7 @@
 <figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-comment">// ContinuationInterceptor.kt</span><br>   <span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title class_">ContinuationInterceptor</span> : <span class="hljs-type">CoroutineContext.Element</span> &#123;  <br>     <span class="hljs-comment">// 实现CoroutineContext.Element接口，说明自身是CoroutineContext上下文集合的一个元素类型  </span><br>     <span class="hljs-comment">// 定义伴生对象Key作为集合中的索引key，可直接通过类名访问该伴生对象  </span><br>     <span class="hljs-keyword">companion</span> <span class="hljs-keyword">object</span> Key : CoroutineContext.Key&lt;ContinuationInterceptor&gt;  <br>   <br>     <span class="hljs-comment">// 传入一个Continuation对象，并返回一个新的Continuation对象  </span><br>     <span class="hljs-comment">// 在协程中，这里的传参continuation就是协程体编译后Continuation对象  </span><br>     <span class="hljs-keyword">public</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-type">&lt;T&gt;</span> <span class="hljs-title">interceptContinuation</span><span class="hljs-params">(continuation: <span class="hljs-type">Continuation</span>&lt;<span class="hljs-type">T</span>&gt;)</span></span>: Continuation&lt;T&gt;  <br>   <br>     <span class="hljs-keyword">public</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">releaseInterceptedContinuation</span><span class="hljs-params">(continuation: <span class="hljs-type">Continuation</span>&lt;*&gt;)</span></span> &#123;  <br>         <br>     ...  <br> &#125;  <br></code></pre></td></tr></table></figure>
 
 <p>其中<code>CoroutineDispatcher</code>就是基于<code>ContinuationInterceptor</code>所实现的。</p>
+<p><a id="sec-2-exception"></a></p>
 <h3 id="协程异常处理-CoroutineExceptionHandler"><a href="#协程异常处理-CoroutineExceptionHandler" class="headerlink" title="协程异常处理-CoroutineExceptionHandler"></a>协程异常处理-CoroutineExceptionHandler</h3><blockquote>
 <p><strong>所有未被捕获的异常一定会抛出，无论使用哪种Job!!!</strong></p>
 </blockquote>
@@ -466,7 +572,7 @@
 
 <p><strong><code>launch()</code>时，异常会在第一时间被抛出。</strong></p>
 <h5 id="async-await"><a href="#async-await" class="headerlink" title="async/await()"></a><code>async/await()</code></h5><p><strong>只有当<code>async()</code>作为根协程时，不会自动抛出异常，而是要等到<code>await()</code>执行时才抛出异常。</strong></p>
-<p><code>根协程</code>：<code>coroutintScope</code>或<code>supervisorScope</code>的直接子协程，或者类似<code>scope.async()</code>这种实现。</p>
+<p><code>根协程</code>：<code>coroutineScope</code>或<code>supervisorScope</code>的直接子协程，或者类似<code>scope.async()</code>这种实现。</p>
 <p>这种情况下可以通过<code>try&#123;&#125;catch&#123;&#125;</code>捕获异常</p>
 <figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-comment">//supervisorScope</span><br>coroutineScope&#123;<br>  <span class="hljs-keyword">val</span> deferred = async&#123;<br>    <span class="hljs-keyword">throw</span> NullPointerException(<span class="hljs-string">&quot;123&quot;</span>)<br>  &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
 
@@ -485,10 +591,10 @@
 <figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-keyword">val</span> exceptionHandler = CoroutineExceptionHandler &#123; coroutineContext, throwable -&gt;<br>    log(<span class="hljs-string">&quot;Throws an exception with message: <span class="hljs-subst">$&#123;throwable.message&#125;</span>&quot;</span>)<br>&#125;<br><br><span class="hljs-keyword">val</span> context = Dispatchers.Main + Job() + exceptionHandler<br><span class="hljs-keyword">val</span> scope = CoroutineScope(context)<br><br><span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">main</span><span class="hljs-params">()</span></span>&#123;<br>        scope.launch &#123;<br>            launch &#123;<br>                <span class="hljs-keyword">throw</span> NullPointerException(<span class="hljs-string">&quot;1234&quot;</span>)<br>            &#125;<br>            delay(<span class="hljs-number">1000</span>)<br>        &#125;<br>&#125;<br><br></code></pre></td></tr></table></figure>
 
 <p>此时就会捕获到<code>NPE</code>。</p>
-<p>需要<code>CoroutineExceptionHandler</code>生效需要两个条件：</p>
+<p>需要<code>CoroutineExceptionHandler</code>生效通常需要两个条件：</p>
 <ol>
-<li>异常是被自动抛出异常的协程所抛出的。(<strong>只能是 launch()，async()这种是不可以的</strong>)</li>
-<li>必须在<code>根协程</code>中，<code>coroutintScope</code>或<code>supervisorScope</code>的直接子协程，或者类似<code>scope.async()</code>这种实现。</li>
+<li>异常是<code>未被捕获</code>的异常（协程体内没有被<code>try/catch</code>处理）。</li>
+<li>异常发生在会向外抛出的协程上（典型是<code>launch</code>根协程）。<code>async</code>会把异常封装到<code>Deferred</code>，通常需要在<code>await()</code>时处理。</li>
 </ol>
 <h5 id="真·全局异常捕获"><a href="#真·全局异常捕获" class="headerlink" title="真·全局异常捕获"></a>真·全局异常捕获</h5><p>上面说到的<code>CoroutineExceptionHandler</code>只能在协程内部使用，无法兼顾其他协程的异常情况。此时就需要使用另一种方式，使用<code>ServiceLoader</code>实现全局内协程异常捕获</p>
 <p>实现这个功能需要如下几步：</p>
@@ -501,7 +607,7 @@
 </ul>
 </li>
 </ol>
-<p><strong>同样这种配置方式也只对launch()生效。</strong></p>
+<p><strong>同样，这种配置方式只处理未被捕获异常；<code>async</code>的异常仍需通过<code>await()</code>或局部<code>try/catch</code>处理。</strong></p>
 <p>这里主要应用了<strong>SPI机制</strong></p>
 <blockquote>
 <p>全称为<code>Service Provider Interface</code>，JDK内置的一种服务提供发现机制，主要源码实现在<code>java.util.ServiceLoader</code></p>
@@ -518,9 +624,9 @@
 
 
 </li>
-<li><p>如果未设置异常捕获，则会走<code>全局异常捕获流程</code>(<strong>只在<code>launch</code>创建协程下生效</strong>)</p>
+<li><p>如果未做局部异常处理，未被捕获异常会走<code>全局异常捕获流程</code>（典型是<code>launch</code>根协程）</p>
 <ul>
-<li>若设置<code>CoroutineExceptionHandler</code>则处理。<strong>必须在根协程下才可以生效</strong></li>
+<li>若设置<code>CoroutineExceptionHandler</code>则处理。<strong>通常需要在根协程（或最终汇聚到根协程的上下文）配置才可生效</strong></li>
 <li>没配置，向<code>GlobalExceptionHandler</code>进行处理，该配置是全局的，对所有协程任务生效</li>
 </ul>
 </li>
@@ -539,6 +645,183 @@
 <li><p>想要避免异常传播，就要使用<code>SupervisorJob</code>；不在意就用<code>Job</code></p>
 </li>
 </ol>
+<p><a id="sec-2-exception-deep"></a></p>
+<h3 id="异常语义深水区（补充）"><a href="#异常语义深水区（补充）" class="headerlink" title="异常语义深水区（补充）"></a>异常语义深水区（补充）</h3><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>结果</th>
+<th>处理建议</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>launch</code> 根协程未捕获异常</td>
+<td>立即向上抛出，触发父级取消链路</td>
+<td>局部<code>try/catch</code>优先，必要时配合<code>CoroutineExceptionHandler</code></td>
+</tr>
+<tr>
+<td><code>async</code> 未 <code>await()</code></td>
+<td>异常会留在 <code>Deferred</code>，调用方感知可能延后</td>
+<td>确保<code>await()</code>或在<code>async</code>内部处理异常</td>
+</tr>
+<tr>
+<td>抛出 <code>CancellationException</code></td>
+<td>视为正常取消语义，不等同业务失败</td>
+<td>清理资源后继续向外抛，避免误吞取消信号</td>
+</tr>
+<tr>
+<td><code>supervisorScope</code> 子协程异常</td>
+<td>默认不取消其他同级子协程</td>
+<td>适用于“局部失败可接受”的聚合任务</td>
+</tr>
+</tbody></table>
+<p>补充：异常处理顺序建议是“局部处理 -&gt; 作用域处理 -&gt; 全局兜底”，避免把业务异常全部压到全局处理器。</p>
+<p><a id="sec-3"></a></p>
+<h2 id="三、协程怎么用好（构造、启动与取消）"><a href="#三、协程怎么用好（构造、启动与取消）" class="headerlink" title="三、协程怎么用好（构造、启动与取消）"></a>三、协程怎么用好（构造、启动与取消）</h2><p><a id="sec-3-structured"></a></p>
+<h3 id="结构化并发决策（补充）"><a href="#结构化并发决策（补充）" class="headerlink" title="结构化并发决策（补充）"></a>结构化并发决策（补充）</h3><table>
+<thead>
+<tr>
+<th>目标</th>
+<th>推荐作用域&#x2F;模型</th>
+<th>失败行为</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>全部成功才算成功</td>
+<td><code>coroutineScope</code> + <code>async/awaitAll</code></td>
+<td>一个失败，整体快速失败</td>
+</tr>
+<tr>
+<td>允许部分失败继续执行</td>
+<td><code>supervisorScope</code> + 独立异常处理</td>
+<td>失败子任务不影响其他子任务</td>
+</tr>
+<tr>
+<td>长生命周期后台任务</td>
+<td>显式 <code>CoroutineScope(Job/SupervisorJob + Dispatcher)</code></td>
+<td>由作用域统一管理取消</td>
+</tr>
+</tbody></table>
+<p>实践要点：</p>
+<ul>
+<li>子任务必须可追踪（有作用域、有<code>Job</code>、可取消）。</li>
+<li>作用域退出前应完成“等待、取消、清理”三件事。</li>
+<li>不要在业务层随意创建新的根作用域，避免协程漂移。</li>
+</ul>
+<p><a id="sec-3-choice"></a></p>
+<h3 id="协程工具选型（launch-async-withContext）"><a href="#协程工具选型（launch-async-withContext）" class="headerlink" title="协程工具选型（launch &#x2F; async &#x2F; withContext）"></a>协程工具选型（launch &#x2F; async &#x2F; withContext）</h3><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>推荐方式</th>
+<th>原因</th>
+<th>返回值</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>只关心执行，不关心结果</td>
+<td><code>launch</code></td>
+<td>语义直接，便于通过<code>Job</code>取消</td>
+<td><code>Job</code></td>
+</tr>
+<tr>
+<td>需要并发并汇总结果</td>
+<td><code>async</code> + <code>await/awaitAll</code></td>
+<td>可并行执行并拿到结果</td>
+<td><code>Deferred&lt;T&gt;</code></td>
+</tr>
+<tr>
+<td>单段任务切线程并返回结果</td>
+<td><code>withContext</code></td>
+<td>结构清晰，避免不必要并发</td>
+<td>直接返回 <code>T</code></td>
+</tr>
+</tbody></table>
+<p>常见误区：</p>
+<ul>
+<li><code>withContext</code>不是并发模型，它是“切上下文执行一段代码”。</li>
+<li><code>async</code>不是默认更快，若没有并发需求，<code>withContext</code>更简单可控。</li>
+<li>在父协程中混用过多<code>launch</code>而不追踪<code>Job</code>，容易导致状态不可控。</li>
+</ul>
+<p>推荐写法：</p>
+<figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-comment">// 单任务切线程</span><br><span class="hljs-keyword">val</span> user = withContext(Dispatchers.IO) &#123; api.loadUser() &#125;<br><br><span class="hljs-comment">// 并发聚合</span><br><span class="hljs-keyword">val</span> result = coroutineScope &#123;<br>    <span class="hljs-keyword">val</span> a = async(Dispatchers.IO) &#123; api.a() &#125;<br>    <span class="hljs-keyword">val</span> b = async(Dispatchers.IO) &#123; api.b() &#125;<br>    awaitAll(a, b)<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p><a id="sec-3-flow"></a></p>
+<h3 id="Flow-体系（Flow-StateFlow-SharedFlow-Channel）"><a href="#Flow-体系（Flow-StateFlow-SharedFlow-Channel）" class="headerlink" title="Flow 体系（Flow &#x2F; StateFlow &#x2F; SharedFlow &#x2F; Channel）"></a>Flow 体系（Flow &#x2F; StateFlow &#x2F; SharedFlow &#x2F; Channel）</h3><table>
+<thead>
+<tr>
+<th>类型</th>
+<th>冷&#x2F;热</th>
+<th>数据语义</th>
+<th>典型用途</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>Flow&lt;T&gt;</code></td>
+<td>冷流</td>
+<td>每次收集重新执行上游</td>
+<td>请求链路、转换流水线</td>
+</tr>
+<tr>
+<td><code>StateFlow&lt;T&gt;</code></td>
+<td>热流</td>
+<td>始终持有最新状态（<code>value</code>）</td>
+<td>UI 状态驱动</td>
+</tr>
+<tr>
+<td><code>SharedFlow&lt;T&gt;</code></td>
+<td>热流</td>
+<td>广播事件，可配置<code>replay</code></td>
+<td>一次性事件、多订阅分发</td>
+</tr>
+<tr>
+<td><code>Channel&lt;T&gt;</code></td>
+<td>热通道</td>
+<td>点对点发送接收（队列）</td>
+<td>生产者-消费者模型</td>
+</tr>
+</tbody></table>
+<p>使用建议：</p>
+<ul>
+<li>状态流优先用<code>StateFlow</code>，事件流优先用<code>SharedFlow</code>。</li>
+<li>高频流场景按需使用<code>buffer</code>、<code>conflate</code>、<code>collectLatest</code>降低背压影响。</li>
+<li>UI 收集前可结合<code>distinctUntilChanged</code>减少重复渲染。</li>
+</ul>
+<figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> _state = MutableStateFlow(UiState.Loading)<br><span class="hljs-keyword">val</span> state: StateFlow&lt;UiState&gt; = _state<br><br><span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> _events = MutableSharedFlow&lt;UiEvent&gt;(extraBufferCapacity = <span class="hljs-number">1</span>)<br><span class="hljs-keyword">val</span> events: SharedFlow&lt;UiEvent&gt; = _events<br></code></pre></td></tr></table></figure>
+
+<p><a id="sec-3-primitives"></a></p>
+<h3 id="并发原语（Mutex-Semaphore-Channel-select）"><a href="#并发原语（Mutex-Semaphore-Channel-select）" class="headerlink" title="并发原语（Mutex &#x2F; Semaphore &#x2F; Channel &#x2F; select）"></a>并发原语（Mutex &#x2F; Semaphore &#x2F; Channel &#x2F; select）</h3><table>
+<thead>
+<tr>
+<th>原语</th>
+<th>作用</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>Mutex</code></td>
+<td>互斥访问共享资源</td>
+<td>保护共享可变状态</td>
+</tr>
+<tr>
+<td><code>Semaphore</code></td>
+<td>限制并发数量</td>
+<td>批量请求限流</td>
+</tr>
+<tr>
+<td><code>Channel</code></td>
+<td>协程间消息通道</td>
+<td>生产消费、任务管道</td>
+</tr>
+<tr>
+<td><code>select</code></td>
+<td>多路等待与竞速</td>
+<td>超时竞速、多个源择优</td>
+</tr>
+</tbody></table>
+<figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-keyword">val</span> mutex = Mutex()<br><span class="hljs-keyword">var</span> counter = <span class="hljs-number">0</span><br><br><span class="hljs-keyword">suspend</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">incSafely</span><span class="hljs-params">()</span></span> &#123;<br>    mutex.withLock &#123;<br>        counter++<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p><a id="sec-3-builder"></a></p>
 <h3 id="协程构造器-CoroutineBuilder"><a href="#协程构造器-CoroutineBuilder" class="headerlink" title="协程构造器-CoroutineBuilder"></a>协程构造器-CoroutineBuilder</h3><blockquote>
 <p>主要负责构造一个协程并启动它</p>
 </blockquote>
@@ -551,7 +834,7 @@
 <p>主要有三个参数：</p>
 <ul>
 <li><code>context</code>：就是前面介绍的<code>CoroutineContext</code></li>
-<li><code>start</code>：<a href="#%E5%8D%8F%E7%A8%8B%E5%90%AF%E5%8A%A8%E6%A8%A1%E5%BC%8F-CoroutineStart">协程启动模式</a></li>
+<li><code>start</code>：<a href="#sec-3-start">协程启动模式</a></li>
 <li><code>block</code>：需要执行的任务，由<code>suspend</code>修饰</li>
 </ul>
 <h5 id="newCoroutineContext"><a href="#newCoroutineContext" class="headerlink" title="newCoroutineContext"></a>newCoroutineContext</h5><blockquote>
@@ -584,11 +867,12 @@
 <p>主要是为了创建<code>Continuation</code>对象</p>
 <h6 id="intercepted"><a href="#intercepted" class="headerlink" title="intercepted"></a>intercepted</h6><figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-keyword">public</span> <span class="hljs-keyword">actual</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-type">&lt;T&gt;</span> Continuation<span class="hljs-type">&lt;T&gt;</span>.<span class="hljs-title">intercepted</span><span class="hljs-params">()</span></span>: Continuation&lt;T&gt; =<br>    (<span class="hljs-keyword">this</span> <span class="hljs-keyword">as</span>? ContinuationImpl)?.intercepted() ?: <span class="hljs-keyword">this</span><br><br><br><span class="hljs-comment">//ContinuationImpl.kt</span><br>    <span class="hljs-keyword">public</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">intercepted</span><span class="hljs-params">()</span></span>: Continuation&lt;Any?&gt; =<br>        intercepted<br>            ?: (context[ContinuationInterceptor]?.interceptContinuation(<span class="hljs-keyword">this</span>) ?: <span class="hljs-keyword">this</span>)<br>                .also &#123; intercepted = it &#125;<br></code></pre></td></tr></table></figure>
 
-<p>如果设置了<code>ContinutionInterceptor</code>，就获取并执行<code>interceptContinuation()</code>。</p>
+<p>如果设置了<code>ContinuationInterceptor</code>，就获取并执行<code>interceptContinuation()</code>。</p>
 <h6 id="resumeCancellable"><a href="#resumeCancellable" class="headerlink" title="resumeCancellable"></a>resumeCancellable</h6><figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-keyword">internal</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-type">&lt;T&gt;</span> Continuation<span class="hljs-type">&lt;T&gt;</span>.<span class="hljs-title">resumeCancellable</span><span class="hljs-params">(value: <span class="hljs-type">T</span>)</span></span> = <span class="hljs-keyword">when</span> (<span class="hljs-keyword">this</span>) &#123;<br>    <span class="hljs-keyword">is</span> DispatchedContinuation -&gt; resumeCancellable(value)<br>    <span class="hljs-keyword">else</span> -&gt; resume(value)<br>&#125;<br></code></pre></td></tr></table></figure>
 
 <p>进行线程调度或者事件拦截处理，然后协程就开始启动了。</p>
-<h4 id="async"><a href="#async" class="headerlink" title="async"></a>async</h4><h3 id="协程启动模式-CoroutineStart"><a href="#协程启动模式-CoroutineStart" class="headerlink" title="协程启动模式-CoroutineStart"></a>协程启动模式-CoroutineStart</h3><blockquote>
+<h4 id="async"><a href="#async" class="headerlink" title="async"></a>async</h4><p><a id="sec-3-start"></a></p>
+<h3 id="协程启动模式-CoroutineStart"><a href="#协程启动模式-CoroutineStart" class="headerlink" title="协程启动模式-CoroutineStart"></a>协程启动模式-CoroutineStart</h3><blockquote>
 <p>控制协程创建后的调用规则</p>
 </blockquote>
 <h4 id="CoroutineStart-DEFAULT"><a href="#CoroutineStart-DEFAULT" class="headerlink" title="CoroutineStart.DEFAULT"></a>CoroutineStart.DEFAULT</h4><blockquote>
@@ -612,6 +896,7 @@
 <p>协程创建后，立即开始调度</p>
 <p><strong>直到遇到第一个挂起点之前，都会在当前线程中执行。</strong></p>
 </blockquote>
+<p><a id="sec-3-cancel"></a></p>
 <h3 id="协程取消-Cancel"><a href="#协程取消-Cancel" class="headerlink" title="协程取消-Cancel"></a>协程取消-Cancel</h3><blockquote>
 <p>取消协程可以针对<code>CoroutineScope</code>或<code>Job</code>去执行。</p>
 </blockquote>
@@ -707,7 +992,66 @@
 <p>大部分取消协程的原因都是<strong>超出了预期的执行时间</strong>，此时就会去触发取消的操作。</p>
 </blockquote>
 <p>对挂起函数调用<code>withTimeout(XX)</code>或<code>withTimeoutOrNull(XX)</code>，唯一的区别就是后者会返回<code>null</code>而不是抛出异常。</p>
-<h2 id="原理实现"><a href="#原理实现" class="headerlink" title="原理实现"></a>原理实现</h2><h3 id="Dispatchers原理"><a href="#Dispatchers原理" class="headerlink" title="Dispatchers原理"></a>Dispatchers原理</h3><p>无论是<code>Dispatchers.Default</code>或者<code>IO</code>都是<code>CoroutineDispatcher</code>的子类。</p>
+<p><a id="sec-3-cancel-deep"></a></p>
+<h3 id="取消语义深水区（补充）"><a href="#取消语义深水区（补充）" class="headerlink" title="取消语义深水区（补充）"></a>取消语义深水区（补充）</h3><ul>
+<li>取消是<strong>协作式</strong>的：可取消挂起点或主动检查<code>isActive</code>后，协程才会及时停止。</li>
+<li><code>CancellationException</code>通常代表控制流，不建议当成普通业务异常吞掉。</li>
+<li>在<code>finally</code>中调用挂起函数时，默认仍会受取消影响，需要<code>withContext(NonCancellable)</code>兜底。</li>
+<li>使用<code>suspendCancellableCoroutine</code>对接回调时，务必实现<code>invokeOnCancellation</code>释放资源。</li>
+</ul>
+<figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-keyword">try</span> &#123;<br>    doWork()<br>&#125; <span class="hljs-keyword">finally</span> &#123;<br>    withContext(NonCancellable) &#123;<br>        closeResource()<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p><a id="sec-3-android-practice"></a></p>
+<h3 id="Android-使用建议（工程实践）"><a href="#Android-使用建议（工程实践）" class="headerlink" title="Android 使用建议（工程实践）"></a>Android 使用建议（工程实践）</h3><ul>
+<li>页面生命周期相关任务优先使用<code>viewModelScope</code>或<code>lifecycleScope</code>，避免<code>GlobalScope</code>。</li>
+<li>UI 更新统一放在<code>Dispatchers.Main</code>，IO&#x2F;网络放在<code>Dispatchers.IO</code>。</li>
+<li>对关键请求增加超时边界：<code>withTimeout</code>或<code>withTimeoutOrNull</code>。</li>
+<li>对可并发任务优先用<code>coroutineScope + async/awaitAll</code>，对“局部失败可接受”场景用<code>supervisorScope</code>。</li>
+<li>长循环或计算任务增加<code>isActive/ensureActive</code>检查，提升取消响应速度。</li>
+<li><code>Flow</code>收集优先使用<code>repeatOnLifecycle</code>，避免页面不可见时持续收集。</li>
+<li>Compose 场景区分<code>LaunchedEffect</code>与<code>rememberCoroutineScope</code>的职责边界。</li>
+</ul>
+<p>示例：</p>
+<figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><code class="hljs kotlin">viewModelScope.launch &#123;<br>    <span class="hljs-keyword">val</span> profile = withContext(Dispatchers.IO) &#123; repository.loadProfile() &#125;<br>    _uiState.value = UiState.Success(profile)<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p><a id="sec-3-antipatterns"></a></p>
+<h3 id="常见反模式与修正建议"><a href="#常见反模式与修正建议" class="headerlink" title="常见反模式与修正建议"></a>常见反模式与修正建议</h3><table>
+<thead>
+<tr>
+<th>反模式</th>
+<th>风险</th>
+<th>建议</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>页面层直接用<code>GlobalScope</code></td>
+<td>生命周期失控、任务泄漏</td>
+<td>使用<code>viewModelScope/lifecycleScope</code></td>
+</tr>
+<tr>
+<td><code>async</code>创建后不<code>await</code></td>
+<td>异常与结果丢失</td>
+<td>明确<code>await</code>或改用<code>launch</code></td>
+</tr>
+<tr>
+<td>高频小任务频繁<code>withContext</code></td>
+<td>调度开销放大</td>
+<td>合并批处理，减少切换次数</td>
+</tr>
+<tr>
+<td>吞掉<code>CancellationException</code></td>
+<td>取消链路被破坏</td>
+<td>仅清理资源后向外抛出</td>
+</tr>
+<tr>
+<td>多处随意新建根<code>CoroutineScope</code></td>
+<td>并发关系不可追踪</td>
+<td>统一作用域入口，结构化管理</td>
+</tr>
+</tbody></table>
+<p><a id="sec-4"></a></p>
+<h2 id="四、协程为什么能挂起（原理实现）"><a href="#四、协程为什么能挂起（原理实现）" class="headerlink" title="四、协程为什么能挂起（原理实现）"></a>四、协程为什么能挂起（原理实现）</h2><p><a id="sec-4-dispatcher-principle"></a></p>
+<h3 id="Dispatchers原理"><a href="#Dispatchers原理" class="headerlink" title="Dispatchers原理"></a>Dispatchers原理</h3><p>无论是<code>Dispatchers.Default</code>或者<code>IO</code>都是<code>CoroutineDispatcher</code>的子类。</p>
 <figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-keyword">public</span> <span class="hljs-keyword">abstract</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">CoroutineDispatcher</span> :<br>    <span class="hljs-type">AbstractCoroutineContextElement</span>(ContinuationInterceptor), ContinuationInterceptor &#123;<br>    <span class="hljs-comment">//线程调度，指定协程在某一线程上运行</span><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">abstract</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">dispatch</span><span class="hljs-params">(context: <span class="hljs-type">CoroutineContext</span>, block: <span class="hljs-type">Runnable</span>)</span></span>      <br>    <span class="hljs-comment">//封装 Continuation 为 DispatchedContinuation</span><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">override</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-type">&lt;T&gt;</span> <span class="hljs-title">interceptContinuation</span><span class="hljs-params">(continuation: <span class="hljs-type">Continuation</span>&lt;<span class="hljs-type">T</span>&gt;)</span></span>: Continuation&lt;T&gt; =<br>        DispatchedContinuation(<span class="hljs-keyword">this</span>, continuation)<br>    &#125;<br></code></pre></td></tr></table></figure>
 
 <p><code>CoroutineDispatacher</code>继承<code>AbstractCoroutineContextElement</code>类，还实现了<code>ContinuationInterceptor</code>接口。</p>
@@ -722,9 +1066,10 @@
 <li><code>continuation</code>：协程体类对象</li>
 </ul>
 <p>其中<code>resumeWith()</code>和<code>resumeCancellableWith()</code>负责协程的启动。</p>
-<p>&#x2F;&#x2F;TODO 先挂着</p>
+<p>补充：<code>resumeWith()</code>用于普通恢复；<code>resumeCancellableWith()</code>会在恢复前额外检查取消状态，并按可取消模式进行调度。</p>
+<p><a id="sec-4-start-flow"></a></p>
 <h3 id="协程启动流程"><a href="#协程启动流程" class="headerlink" title="协程启动流程"></a>协程启动流程</h3><ol>
-<li>通过<code>CoroutineScope.launch()</code>创建一个协程，默认启动模式为<code>ControutineStart.DEFAULT</code>，创建一个<code>StandaloneCoroutine</code>协程对象</li>
+<li>通过<code>CoroutineScope.launch()</code>创建一个协程，默认启动模式为<code>CoroutineStart.DEFAULT</code>，创建一个<code>StandaloneCoroutine</code>协程对象</li>
 <li>执行<code>StandaloneCoroutine.start()</code>实质执行到<code>AbstractCoroutine.start()</code>，继续触发到<code>CoroutineStart.invoke()</code></li>
 <li>由于默认调度器为<code>Dispatchers.Default</code>，所以执行到了<code>startCoroutineCancellable()</code></li>
 <li><code>startCoroutineCancellable()</code>内部主要有三次调用<ul>
@@ -733,8 +1078,9 @@
 <li><code>resumeCancellableWith()</code>：通过<code>Default</code>调用到<code>resumeCancellableWith()</code></li>
 </ul>
 </li>
-<li>实际调用到了<code>DispatchContinuation.resumeCancellableWith()</code>，最后执行到<code>Continuation.resumeWith()</code>执行协程任务。</li>
+<li>实际调用到了<code>DispatchedContinuation.resumeCancellableWith()</code>，最后执行到<code>Continuation.resumeWith()</code>执行协程任务。</li>
 </ol>
+<p><a id="sec-4-suspend-resume"></a></p>
 <h3 id="协程挂起-恢复原理"><a href="#协程挂起-恢复原理" class="headerlink" title="协程挂起&#x2F;恢复原理"></a>协程挂起&#x2F;恢复原理</h3><blockquote>
 <p>挂起的特点：<strong>不阻塞线程</strong>。挂起的本质<strong>切线程</strong>，并且在相应逻辑处理完毕之后，再重新切回线程。</p>
 </blockquote>
@@ -792,11 +1138,61 @@
 <p>在<code>afterCompletionInternal()</code>判断协程是否被挂起，若挂起则恢复已被挂起的协程。</p>
 <p>然后再回到执行线程上，就会继续执行<code>invokeSuspend()</code>直到执行结束。</p>
 <p><img src="/images/%E5%8D%8F%E7%A8%8B%E6%81%A2%E5%A4%8D%E6%B5%81%E7%A8%8B.png" srcset="/img/loading.gif" lazyload alt="协程恢复"></p>
-<h3 id="协程并发"><a href="#协程并发" class="headerlink" title="协程并发"></a>协程并发</h3><h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a target="_blank" rel="noopener" href="https://github.com/Kotlin/KEEP/blob/master/proposals/coroutines.md">Kotlin&#x2F;Keep</a></p>
+<p><a id="sec-4-concurrency"></a></p>
+<h3 id="协程并发"><a href="#协程并发" class="headerlink" title="协程并发"></a>协程并发</h3><p>协程并发建议优先使用<code>结构化并发</code>：在同一个作用域内启动并行任务，并在作用域退出前统一等待结果或处理异常。</p>
+<figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-keyword">suspend</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">loadAll</span><span class="hljs-params">()</span></span>: List&lt;String&gt; = coroutineScope &#123;<br>    <span class="hljs-keyword">val</span> a = async(Dispatchers.IO) &#123; requestA() &#125;<br>    <span class="hljs-keyword">val</span> b = async(Dispatchers.IO) &#123; requestB() &#125;<br>    awaitAll(a, b)<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<ul>
+<li>并发任务推荐放在<code>coroutineScope</code>中，失败会自动取消同级任务，避免悬挂任务。</li>
+<li>如果希望“一个子任务失败不影响其他子任务”，可使用<code>supervisorScope</code>。</li>
+<li>IO 并发建议配合限流（如<code>limitedParallelism</code>或<code>Semaphore</code>），避免无限并发导致线程池拥塞。</li>
+</ul>
+<p><a id="sec-4-test-observability"></a></p>
+<h3 id="测试与可观测性（补充）"><a href="#测试与可观测性（补充）" class="headerlink" title="测试与可观测性（补充）"></a>测试与可观测性（补充）</h3><ul>
+<li>单元测试推荐使用<code>runTest</code>与<code>StandardTestDispatcher</code>，通过虚拟时间驱动挂起逻辑。</li>
+<li>对延时与超时场景，使用<code>advanceTimeBy</code>&#x2F;<code>advanceUntilIdle</code>验证行为。</li>
+<li>为关键协程增加<code>CoroutineName</code>，方便日志与问题定位。</li>
+<li>调试复杂并发问题时，可结合协程调试工具或协程 dump 快照观察挂起链路。</li>
+</ul>
+<figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-meta">@Test</span><br><span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">timeout_case</span><span class="hljs-params">()</span></span> = runTest &#123;<br>    <span class="hljs-keyword">val</span> result = withTimeoutOrNull(<span class="hljs-number">1000</span>) &#123;<br>        delay(<span class="hljs-number">2000</span>)<br>        <span class="hljs-number">1</span><br>    &#125;<br>    assert(result == <span class="hljs-literal">null</span>)<br>&#125;<br></code></pre></td></tr></table></figure>
+
+
+
+<p><a id="sec-5"></a></p>
+<h2 id="五、知识点总结（可口述）"><a href="#五、知识点总结（可口述）" class="headerlink" title="五、知识点总结（可口述）"></a>五、知识点总结（可口述）</h2><p><a id="sec-5-principle-30"></a></p>
+<h3 id="协程原理速答（30秒）"><a href="#协程原理速答（30秒）" class="headerlink" title="协程原理速答（30秒）"></a>协程原理速答（30秒）</h3><p>协程原理可以概括为：<strong>编译期状态机 + 运行时调度</strong>。</p>
+<ul>
+<li><code>suspend</code>函数会被编译器转换为 CPS 形式，增加<code>Continuation</code>参数。</li>
+<li>每个挂起点会被拆成状态机的一个<code>label</code>分支。</li>
+<li>执行到挂起点返回<code>COROUTINE_SUSPENDED</code>，协程挂起但线程不阻塞。</li>
+<li>异步结果返回后，通过<code>resumeWith</code>恢复执行，并按<code>label</code>继续后续逻辑。</li>
+<li><code>CoroutineDispatcher</code>通过<code>ContinuationInterceptor</code>决定恢复在哪个线程执行。</li>
+</ul>
+<p><a id="sec-5-principle-2m"></a></p>
+<h3 id="协程原理展开（2分钟）"><a href="#协程原理展开（2分钟）" class="headerlink" title="协程原理展开（2分钟）"></a>协程原理展开（2分钟）</h3><p>可以按这条主线理解：</p>
+<ol>
+<li><strong>创建阶段</strong>：<code>launch/async</code>创建协程对象，绑定<code>CoroutineContext</code>（<code>Job + Dispatcher + ...</code>）。</li>
+<li><strong>编译转换</strong>：<code>suspend</code>函数被转成状态机，挂起点对应<code>label</code>，本质是可恢复的函数调用链。</li>
+<li><strong>启动执行</strong>：协程启动时会创建并包装<code>Continuation</code>，必要时被<code>Dispatcher</code>拦截调度。</li>
+<li><strong>挂起时机</strong>：遇到可挂起点返回<code>COROUTINE_SUSPENDED</code>，当前调用栈退出，线程可执行其他任务。</li>
+<li><strong>恢复执行</strong>：回调或结果就绪后触发<code>resumeWith</code>，状态机按上次<code>label</code>继续执行。</li>
+<li><strong>生命周期管理</strong>：<code>Job</code>树维护父子协程关系，取消是协作式，异常按层级传播（<code>SupervisorJob</code>可隔离子任务失败）。</li>
+</ol>
+<p><a id="sec-5-faq"></a></p>
+<h3 id="高频追问知识点（补充）"><a href="#高频追问知识点（补充）" class="headerlink" title="高频追问知识点（补充）"></a>高频追问知识点（补充）</h3><ul>
+<li><strong>挂起 vs 阻塞</strong>：挂起是让出执行权，不占线程；阻塞会占住线程直到完成。</li>
+<li><strong>协程为什么轻量</strong>：创建与切换主要在用户态完成，通常比线程上下文切换成本低。</li>
+<li><strong>为什么<code>async</code>异常常在<code>await()</code>暴露</strong>：异常被封装在<code>Deferred</code>中，读取结果时才抛出。</li>
+<li><strong>取消为什么不一定立刻生效</strong>：取消是协作式，需要挂起点或主动检查<code>isActive/ensureActive</code>。</li>
+<li><strong><code>Main.immediate</code>意义</strong>：已在主线程时避免二次分发，减少一跳调度延迟。</li>
+</ul>
+<p><a id="sec-6"></a></p>
+<h2 id="六、参考与延伸"><a href="#六、参考与延伸" class="headerlink" title="六、参考与延伸"></a>六、参考与延伸</h2><p><a target="_blank" rel="noopener" href="https://github.com/Kotlin/KEEP/blob/master/proposals/coroutines.md">Kotlin&#x2F;Keep</a></p>
 <p><a target="_blank" rel="noopener" href="https://juejin.cn/user/2277843822969863">Android_开发者</a></p>
 <p><a target="_blank" rel="noopener" href="https://mp.weixin.qq.com/s?__biz=MzUyMDAxMjQ3Ng==&mid=2247495170&idx=1&sn=b54e233699fd7bba0e940e2837258002&chksm=f9f279d1ce85f0c741857443332c20a82caedc24d8ea798219c2098c2d09ee58e11a6aba9296&mpshare=1&scene=23&srcid=1212Jz0IsITrVDTTTBRNCn0j&sharer_sharetime=1607751713936&sharer_shareid=65073698ab9ac2983b955fa53b4ff585%23rd">Kotlin协程原理解析</a></p>
 <p><a target="_blank" rel="noopener" href="https://juejin.cn/post/6883652600462327821#heading-10">图解协程：suspend</a></p>
 <!-- https://juejin.cn/post/6890348438873964551#heading-1 -->
+
                 
               </div>
             
