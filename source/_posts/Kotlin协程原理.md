@@ -12,7 +12,55 @@ typora-root-url: ../
 协程是轻量级的线程
 {% endblockquote %}
 
-## 协程概念
+## 阅读地图（按问题定位）
+
+- [1. 协程是什么：概念与术语](#sec-1)
+- [2. 协程怎么运行：核心组件与调度](#sec-2)
+- [3. 协程怎么用好：构造、启动、取消](#sec-3)
+- [4. 协程为什么能挂起：原理实现](#sec-4)
+- [5. 知识点总结（可口述）](#sec-5)
+- [6. 参考与延伸](#sec-6)
+
+<details>
+  <summary>展开子目录（细分知识点）</summary>
+
+  - [协程概念](#sec-1-concept)
+  - [概念介绍](#sec-1-terms)
+  - [协程与线程的关系（易混点）](#sec-1-thread-vs-coroutine)
+  - [协程作用域—CoroutineScope](#sec-2-scope)
+  - [协程上下文-CoroutineContext](#sec-2-context)
+  - [协程执行任务-Job](#sec-2-job)
+  - [协程调度器-CoroutineDispatcher](#sec-2-dispatcher)
+  - [调度器与性能（补充）](#sec-2-dispatcher-performance)
+  - [协程拦截器-ContinuationInterceptor](#sec-2-interceptor)
+  - [协程异常处理-CoroutineExceptionHandler](#sec-2-exception)
+  - [异常语义深水区（补充）](#sec-2-exception-deep)
+  - [结构化并发决策（补充）](#sec-3-structured)
+  - [协程工具选型（launch / async / withContext）](#sec-3-choice)
+  - [Flow 体系（Flow / StateFlow / SharedFlow / Channel）](#sec-3-flow)
+  - [并发原语（Mutex / Semaphore / Channel / select）](#sec-3-primitives)
+  - [协程构造器-CoroutineBuilder](#sec-3-builder)
+  - [协程启动模式-CoroutineStart](#sec-3-start)
+  - [协程取消-Cancel](#sec-3-cancel)
+  - [取消语义深水区（补充）](#sec-3-cancel-deep)
+  - [Android 使用建议（工程实践）](#sec-3-android-practice)
+  - [常见反模式与修正建议](#sec-3-antipatterns)
+  - [Dispatchers原理](#sec-4-dispatcher-principle)
+  - [协程启动流程](#sec-4-start-flow)
+  - [协程挂起/恢复原理](#sec-4-suspend-resume)
+  - [协程并发](#sec-4-concurrency)
+  - [测试与可观测性（补充）](#sec-4-test-observability)
+  - [协程原理速答（30秒）](#sec-5-principle-30)
+  - [协程原理展开（2分钟）](#sec-5-principle-2m)
+  - [高频追问知识点（补充）](#sec-5-faq)
+
+</details>
+
+<a id="sec-1"></a>
+## 一、协程是什么（概念与术语）
+
+<a id="sec-1-concept"></a>
+### 协程概念
 
 > `非抢占式或协作式`的计算机并发调度的实现，程序可以主动挂起或者恢复执行，
 >
@@ -27,7 +75,8 @@ typora-root-url: ../
 
 在后面的原理介绍中，会介绍与这两个问题相关的概念。
 
-## 概念介绍
+<a id="sec-1-terms"></a>
+### 概念介绍
 
 > 在执行过程中会涉及的一些概念，在后续源码分析也会涉及。
 
@@ -47,8 +96,29 @@ typora-root-url: ../
 
 挂起的协程在`挂起点`时的状态。概念上表示`挂起点之后的剩余应该执行的代码`。
 
-## 核心类
+<a id="sec-1-thread-vs-coroutine"></a>
+### 协程与线程的关系（易混点）
 
+协程常被描述为“轻量级线程”，更准确地说：协程是运行在线程之上的任务抽象，线程仍然是最终执行载体。
+
+| 维度 | 线程 | 协程 |
+| --- | --- | --- |
+| 调度单位 | 操作系统调度 | 用户态（库/运行时）调度 |
+| 创建与切换成本 | 相对更高 | 相对更低 |
+| 阻塞影响 | 阻塞会占住线程 | 挂起不会阻塞线程 |
+| 并发规模 | 数量受限（线程资源） | 可创建大量任务（但不是无限） |
+| 生命周期管理 | 需手动管理 | 借助`CoroutineScope`结构化管理 |
+
+补充：
+
+- 协程“轻量”不等于“无成本”，大量协程仍会带来调度和内存开销。
+- 协程是否切线程，取决于`CoroutineDispatcher`和挂起点恢复位置。
+- 挂起函数是“让出执行权”，不是“停止线程运行”。
+
+<a id="sec-2"></a>
+## 二、协程怎么运行（核心组件与调度）
+
+<a id="sec-2-scope"></a>
 ### 协程作用域—CoroutineScope
 
 > 追踪每一个通过`launch`或`async`创建的协程。并且任何时候都可以通过`scope.cancel()`取消正在执行的协程。
@@ -63,7 +133,7 @@ typora-root-url: ../
 
 #### 全局协程作用域
 
-`GlobalScope`作用于整个应用的生命周期，并且无法被取消，在界面上使用时，就会导致内存泄漏。
+`GlobalScope`作用于整个应用生命周期，不会随页面生命周期自动取消。它并非“无法取消”，但如果缺少显式管理，在界面上使用时很容易导致任务泄漏或状态错乱。
 
 ```kotlin
 
@@ -109,7 +179,7 @@ public fun MainScope(): CoroutineScope = ContextScope(SupervisorJob() + Dispatch
 
 ###### viewModelScope
 
-> 在AndroidX中引入的`viewMdoelScope`，在ViewModel销毁时会自动取消协程任务
+> 在AndroidX中引入的`viewModelScope`，在ViewModel销毁时会自动取消协程任务
 
 ```kotlin
 val ViewModel.viewModelScope: CoroutineScope
@@ -135,6 +205,7 @@ internal class CloseableCoroutineScope(context: CoroutineContext) : Closeable, C
 
 
 
+<a id="sec-2-context"></a>
 ### 协程上下文-CoroutineContext
 
 > 一组定义协程行为的元素，本体是一个数据结构，类似于`Map`，内部实现为`单链表`
@@ -204,6 +275,7 @@ val coroutineContext : CoroutineContext = Dispatchers.Main + Job() + CoroutineNa
 
 
 
+<a id="sec-2-job"></a>
 ### 协程执行任务-Job
 
 > 用于处理协程，封装了协程需要执行的代码逻辑，并且负责管理协程的生命周期。
@@ -227,10 +299,11 @@ val coroutineContext : CoroutineContext = Dispatchers.Main + Job() + CoroutineNa
 
 `Job`内提供了`isActive()`、`isCancelled()`和`isCompleted()`等属性用于判断协程的状态。
 
-[协程取消](#协程取消-Cancel)会更多的分析`Job`相关。
+[协程取消](#sec-3-cancel)会更多的分析`Job`相关。
 
 
 
+<a id="sec-2-dispatcher"></a>
 ### 协程调度器-CoroutineDispatcher
 
 > `Dispatchers`是协程中提供的`线程调度器`，用来切换线程，指定协程运行的线程。
@@ -298,7 +371,7 @@ private fun loadMainDispatcher(): MainCoroutineDispatcher {
     }
 ```
 
-按照类名去加载，Android下的名为`kotlinx.coroutions.android.AndroidDispatcherFactory`的类
+按照类名去加载，Android下的名为`kotlinx.coroutines.android.AndroidDispatcherFactory`的类
 
 ```kotlin
 //在Android编译完成后，可以读取到该类
@@ -330,7 +403,7 @@ internal class HandlerContext private constructor(
 
 ##### Dispatchers.Main.immediate
 
-> 适用于`响应一个UI事件后从而启动一个协程时`，会在下一帧中去立即执行任务。
+> 适用于`响应UI事件后立即执行后续逻辑`的场景：当当前线程已经是`Main`线程时会立刻执行而不是再次分发；如果不在`Main`线程，行为与`Dispatchers.Main`一致。
 
 
 
@@ -353,6 +426,21 @@ val myDispatcher= Executors.newSingleThreadExecutor{ r -> Thread(r, "MyThread") 
 
 
 
+<a id="sec-2-dispatcher-performance"></a>
+### 调度器与性能（补充）
+
+- `Dispatchers.Default` 与 `Dispatchers.IO` 都基于共享调度体系，IO 任务过量会影响整体调度公平性。
+- `withContext` 每次切换都存在调度开销，细粒度频繁切换会放大性能损耗。
+- 对高并发 IO 场景建议限流，避免把线程池和下游资源（DB/网络）同时打满。
+- `Dispatchers.Main.immediate` 适合“已经在主线程且希望避免二次分发”的场景。
+- `Dispatchers.Unconfined` 更适合调试/框架层场景，业务代码中应谨慎使用。
+
+```kotlin
+// 限制并发度，避免 IO 峰值放大
+val dbDispatcher = Dispatchers.IO.limitedParallelism(4)
+```
+
+<a id="sec-2-interceptor"></a>
 ### 协程拦截器-ContinuationInterceptor
 
 > `ContinuationInterceptor`是一个拦截器的接口定义，用于控制协程的执行流程。
@@ -382,6 +470,7 @@ val myDispatcher= Executors.newSingleThreadExecutor{ r -> Thread(r, "MyThread") 
 
 
 
+<a id="sec-2-exception"></a>
 ### 协程异常处理-CoroutineExceptionHandler
 
 > **所有未被捕获的异常一定会抛出，无论使用哪种Job!!!**
@@ -471,7 +560,7 @@ scope.launch {
 
 **只有当`async()`作为根协程时，不会自动抛出异常，而是要等到`await()`执行时才抛出异常。**
 
-`根协程`：`coroutintScope`或`supervisorScope`的直接子协程，或者类似`scope.async()`这种实现。
+`根协程`：`coroutineScope`或`supervisorScope`的直接子协程，或者类似`scope.async()`这种实现。
 
 这种情况下可以通过`try{}catch{}`捕获异常
 
@@ -538,10 +627,10 @@ fun main(){
 
 
 
-需要`CoroutineExceptionHandler`生效需要两个条件：
+需要`CoroutineExceptionHandler`生效通常需要两个条件：
 
-1. 异常是被自动抛出异常的协程所抛出的。(**只能是 launch()，async()这种是不可以的**)
-2. 必须在`根协程`中，`coroutintScope`或`supervisorScope`的直接子协程，或者类似`scope.async()`这种实现。
+1. 异常是`未被捕获`的异常（协程体内没有被`try/catch`处理）。
+2. 异常发生在会向外抛出的协程上（典型是`launch`根协程）。`async`会把异常封装到`Deferred`，通常需要在`await()`时处理。
 
 
 
@@ -557,7 +646,7 @@ fun main(){
    - 新建`kotlinx.coroutines.CoroutineExceptionHandler`文件
    - 文件内写入自定义的全局`CoroutineExceptionHandler`完整类名
 
-**同样这种配置方式也只对launch()生效。**
+**同样，这种配置方式只处理未被捕获异常；`async`的异常仍需通过`await()`或局部`try/catch`处理。**
 
 
 
@@ -597,10 +686,10 @@ fun main(){
 
      
 
-   - 如果未设置异常捕获，则会走`全局异常捕获流程`(**只在`launch`创建协程下生效**)
+    - 如果未做局部异常处理，未被捕获异常会走`全局异常捕获流程`（典型是`launch`根协程）
 
-     - 若设置`CoroutineExceptionHandler`则处理。**必须在根协程下才可以生效**
-     - 没配置，向`GlobalExceptionHandler`进行处理，该配置是全局的，对所有协程任务生效
+      - 若设置`CoroutineExceptionHandler`则处理。**通常需要在根协程（或最终汇聚到根协程的上下文）配置才可生效**
+      - 没配置，向`GlobalExceptionHandler`进行处理，该配置是全局的，对所有协程任务生效
 
 2. **异常传播在不同作用域的表现**
 
@@ -614,8 +703,113 @@ fun main(){
 
 4. 想要避免异常传播，就要使用`SupervisorJob`；不在意就用`Job`
 
+<a id="sec-2-exception-deep"></a>
+### 异常语义深水区（补充）
+
+| 场景 | 结果 | 处理建议 |
+| --- | --- | --- |
+| `launch` 根协程未捕获异常 | 立即向上抛出，触发父级取消链路 | 局部`try/catch`优先，必要时配合`CoroutineExceptionHandler` |
+| `async` 未 `await()` | 异常会留在 `Deferred`，调用方感知可能延后 | 确保`await()`或在`async`内部处理异常 |
+| 抛出 `CancellationException` | 视为正常取消语义，不等同业务失败 | 清理资源后继续向外抛，避免误吞取消信号 |
+| `supervisorScope` 子协程异常 | 默认不取消其他同级子协程 | 适用于“局部失败可接受”的聚合任务 |
+
+补充：异常处理顺序建议是“局部处理 -> 作用域处理 -> 全局兜底”，避免把业务异常全部压到全局处理器。
 
 
+
+<a id="sec-3"></a>
+## 三、协程怎么用好（构造、启动与取消）
+
+<a id="sec-3-structured"></a>
+### 结构化并发决策（补充）
+
+| 目标 | 推荐作用域/模型 | 失败行为 |
+| --- | --- | --- |
+| 全部成功才算成功 | `coroutineScope` + `async/awaitAll` | 一个失败，整体快速失败 |
+| 允许部分失败继续执行 | `supervisorScope` + 独立异常处理 | 失败子任务不影响其他子任务 |
+| 长生命周期后台任务 | 显式 `CoroutineScope(Job/SupervisorJob + Dispatcher)` | 由作用域统一管理取消 |
+
+实践要点：
+
+- 子任务必须可追踪（有作用域、有`Job`、可取消）。
+- 作用域退出前应完成“等待、取消、清理”三件事。
+- 不要在业务层随意创建新的根作用域，避免协程漂移。
+
+<a id="sec-3-choice"></a>
+### 协程工具选型（launch / async / withContext）
+
+| 场景 | 推荐方式 | 原因 | 返回值 |
+| --- | --- | --- | --- |
+| 只关心执行，不关心结果 | `launch` | 语义直接，便于通过`Job`取消 | `Job` |
+| 需要并发并汇总结果 | `async` + `await/awaitAll` | 可并行执行并拿到结果 | `Deferred<T>` |
+| 单段任务切线程并返回结果 | `withContext` | 结构清晰，避免不必要并发 | 直接返回 `T` |
+
+常见误区：
+
+- `withContext`不是并发模型，它是“切上下文执行一段代码”。
+- `async`不是默认更快，若没有并发需求，`withContext`更简单可控。
+- 在父协程中混用过多`launch`而不追踪`Job`，容易导致状态不可控。
+
+推荐写法：
+
+```kotlin
+// 单任务切线程
+val user = withContext(Dispatchers.IO) { api.loadUser() }
+
+// 并发聚合
+val result = coroutineScope {
+    val a = async(Dispatchers.IO) { api.a() }
+    val b = async(Dispatchers.IO) { api.b() }
+    awaitAll(a, b)
+}
+```
+
+<a id="sec-3-flow"></a>
+### Flow 体系（Flow / StateFlow / SharedFlow / Channel）
+
+| 类型 | 冷/热 | 数据语义 | 典型用途 |
+| --- | --- | --- | --- |
+| `Flow<T>` | 冷流 | 每次收集重新执行上游 | 请求链路、转换流水线 |
+| `StateFlow<T>` | 热流 | 始终持有最新状态（`value`） | UI 状态驱动 |
+| `SharedFlow<T>` | 热流 | 广播事件，可配置`replay` | 一次性事件、多订阅分发 |
+| `Channel<T>` | 热通道 | 点对点发送接收（队列） | 生产者-消费者模型 |
+
+使用建议：
+
+- 状态流优先用`StateFlow`，事件流优先用`SharedFlow`。
+- 高频流场景按需使用`buffer`、`conflate`、`collectLatest`降低背压影响。
+- UI 收集前可结合`distinctUntilChanged`减少重复渲染。
+
+```kotlin
+private val _state = MutableStateFlow(UiState.Loading)
+val state: StateFlow<UiState> = _state
+
+private val _events = MutableSharedFlow<UiEvent>(extraBufferCapacity = 1)
+val events: SharedFlow<UiEvent> = _events
+```
+
+<a id="sec-3-primitives"></a>
+### 并发原语（Mutex / Semaphore / Channel / select）
+
+| 原语 | 作用 | 适用场景 |
+| --- | --- | --- |
+| `Mutex` | 互斥访问共享资源 | 保护共享可变状态 |
+| `Semaphore` | 限制并发数量 | 批量请求限流 |
+| `Channel` | 协程间消息通道 | 生产消费、任务管道 |
+| `select` | 多路等待与竞速 | 超时竞速、多个源择优 |
+
+```kotlin
+val mutex = Mutex()
+var counter = 0
+
+suspend fun incSafely() {
+    mutex.withLock {
+        counter++
+    }
+}
+```
+
+<a id="sec-3-builder"></a>
 ### 协程构造器-CoroutineBuilder
 
 > 主要负责构造一个协程并启动它
@@ -644,7 +838,7 @@ public fun CoroutineScope.launch(
 主要有三个参数：
 
 - `context`：就是前面介绍的`CoroutineContext`
-- `start`：[协程启动模式](#协程启动模式-CoroutineStart)
+- `start`：[协程启动模式](#sec-3-start)
 - `block`：需要执行的任务，由`suspend`修饰
 
 
@@ -776,7 +970,7 @@ public actual fun <T> Continuation<T>.intercepted(): Continuation<T> =
                 .also { intercepted = it }
 ```
 
-如果设置了`ContinutionInterceptor`，就获取并执行`interceptContinuation()`。
+如果设置了`ContinuationInterceptor`，就获取并执行`interceptContinuation()`。
 
 
 
@@ -797,6 +991,7 @@ internal fun <T> Continuation<T>.resumeCancellable(value: T) = when (this) {
 
 
 
+<a id="sec-3-start"></a>
 ### 协程启动模式-CoroutineStart
 
 > 控制协程创建后的调用规则
@@ -837,6 +1032,7 @@ internal fun <T> Continuation<T>.resumeCancellable(value: T) = when (this) {
 
 
 
+<a id="sec-3-cancel"></a>
 ### 协程取消-Cancel
 
 > 取消协程可以针对`CoroutineScope`或`Job`去执行。
@@ -1066,10 +1262,61 @@ public suspend inline fun <T> suspendCancellableCoroutine(
 
 对挂起函数调用`withTimeout(XX)`或`withTimeoutOrNull(XX)`，唯一的区别就是后者会返回`null`而不是抛出异常。
 
+<a id="sec-3-cancel-deep"></a>
+### 取消语义深水区（补充）
+
+- 取消是**协作式**的：可取消挂起点或主动检查`isActive`后，协程才会及时停止。
+- `CancellationException`通常代表控制流，不建议当成普通业务异常吞掉。
+- 在`finally`中调用挂起函数时，默认仍会受取消影响，需要`withContext(NonCancellable)`兜底。
+- 使用`suspendCancellableCoroutine`对接回调时，务必实现`invokeOnCancellation`释放资源。
+
+```kotlin
+try {
+    doWork()
+} finally {
+    withContext(NonCancellable) {
+        closeResource()
+    }
+}
+```
+
+<a id="sec-3-android-practice"></a>
+### Android 使用建议（工程实践）
+
+- 页面生命周期相关任务优先使用`viewModelScope`或`lifecycleScope`，避免`GlobalScope`。
+- UI 更新统一放在`Dispatchers.Main`，IO/网络放在`Dispatchers.IO`。
+- 对关键请求增加超时边界：`withTimeout`或`withTimeoutOrNull`。
+- 对可并发任务优先用`coroutineScope + async/awaitAll`，对“局部失败可接受”场景用`supervisorScope`。
+- 长循环或计算任务增加`isActive/ensureActive`检查，提升取消响应速度。
+- `Flow`收集优先使用`repeatOnLifecycle`，避免页面不可见时持续收集。
+- Compose 场景区分`LaunchedEffect`与`rememberCoroutineScope`的职责边界。
+
+示例：
+
+```kotlin
+viewModelScope.launch {
+    val profile = withContext(Dispatchers.IO) { repository.loadProfile() }
+    _uiState.value = UiState.Success(profile)
+}
+```
+
+<a id="sec-3-antipatterns"></a>
+### 常见反模式与修正建议
+
+| 反模式 | 风险 | 建议 |
+| --- | --- | --- |
+| 页面层直接用`GlobalScope` | 生命周期失控、任务泄漏 | 使用`viewModelScope/lifecycleScope` |
+| `async`创建后不`await` | 异常与结果丢失 | 明确`await`或改用`launch` |
+| 高频小任务频繁`withContext` | 调度开销放大 | 合并批处理，减少切换次数 |
+| 吞掉`CancellationException` | 取消链路被破坏 | 仅清理资源后向外抛出 |
+| 多处随意新建根`CoroutineScope` | 并发关系不可追踪 | 统一作用域入口，结构化管理 |
 
 
-## 原理实现
 
+<a id="sec-4"></a>
+## 四、协程为什么能挂起（原理实现）
+
+<a id="sec-4-dispatcher-principle"></a>
 ### Dispatchers原理
 
 无论是`Dispatchers.Default`或者`IO`都是`CoroutineDispatcher`的子类。
@@ -1145,23 +1392,25 @@ internal class DispatchedContinuation<in T>(
 
 其中`resumeWith()`和`resumeCancellableWith()`负责协程的启动。
 
-//TODO 先挂着
+补充：`resumeWith()`用于普通恢复；`resumeCancellableWith()`会在恢复前额外检查取消状态，并按可取消模式进行调度。
 
 
 
+<a id="sec-4-start-flow"></a>
 ### 协程启动流程
 
-1. 通过`CoroutineScope.launch()`创建一个协程，默认启动模式为`ControutineStart.DEFAULT`，创建一个`StandaloneCoroutine`协程对象
+1. 通过`CoroutineScope.launch()`创建一个协程，默认启动模式为`CoroutineStart.DEFAULT`，创建一个`StandaloneCoroutine`协程对象
 2. 执行`StandaloneCoroutine.start()`实质执行到`AbstractCoroutine.start()`，继续触发到`CoroutineStart.invoke()`
 3. 由于默认调度器为`Dispatchers.Default`，所以执行到了`startCoroutineCancellable()`
 4. `startCoroutineCancellable()`内部主要有三次调用
    - `createCoroutineUnintercepted()`：创建一个协程体类对象
    - `intercepted`：将协程体类包装成`DispatchedContinuation`对象
    - `resumeCancellableWith()`：通过`Default`调用到`resumeCancellableWith()`
-5. 实际调用到了`DispatchContinuation.resumeCancellableWith()`，最后执行到`Continuation.resumeWith()`执行协程任务。
+5. 实际调用到了`DispatchedContinuation.resumeCancellableWith()`，最后执行到`Continuation.resumeWith()`执行协程任务。
 
 
 
+<a id="sec-4-suspend-resume"></a>
 ### 协程挂起/恢复原理
 
 > 挂起的特点：**不阻塞线程**。挂起的本质**切线程**，并且在相应逻辑处理完毕之后，再重新切回线程。
@@ -1485,11 +1734,81 @@ public suspend fun <T> withContext(
 
 ![协程恢复](/images/协程恢复流程.png)
 
+<a id="sec-4-concurrency"></a>
 ### 协程并发
 
+协程并发建议优先使用`结构化并发`：在同一个作用域内启动并行任务，并在作用域退出前统一等待结果或处理异常。
+
+```kotlin
+suspend fun loadAll(): List<String> = coroutineScope {
+    val a = async(Dispatchers.IO) { requestA() }
+    val b = async(Dispatchers.IO) { requestB() }
+    awaitAll(a, b)
+}
+```
+
+- 并发任务推荐放在`coroutineScope`中，失败会自动取消同级任务，避免悬挂任务。
+- 如果希望“一个子任务失败不影响其他子任务”，可使用`supervisorScope`。
+- IO 并发建议配合限流（如`limitedParallelism`或`Semaphore`），避免无限并发导致线程池拥塞。
+
+<a id="sec-4-test-observability"></a>
+### 测试与可观测性（补充）
+
+- 单元测试推荐使用`runTest`与`StandardTestDispatcher`，通过虚拟时间驱动挂起逻辑。
+- 对延时与超时场景，使用`advanceTimeBy`/`advanceUntilIdle`验证行为。
+- 为关键协程增加`CoroutineName`，方便日志与问题定位。
+- 调试复杂并发问题时，可结合协程调试工具或协程 dump 快照观察挂起链路。
+
+```kotlin
+@Test
+fun timeout_case() = runTest {
+    val result = withTimeoutOrNull(1000) {
+        delay(2000)
+        1
+    }
+    assert(result == null)
+}
+```
 
 
-## 参考链接
+
+<a id="sec-5"></a>
+## 五、知识点总结（可口述）
+
+<a id="sec-5-principle-30"></a>
+### 协程原理速答（30秒）
+
+协程原理可以概括为：**编译期状态机 + 运行时调度**。
+
+- `suspend`函数会被编译器转换为 CPS 形式，增加`Continuation`参数。
+- 每个挂起点会被拆成状态机的一个`label`分支。
+- 执行到挂起点返回`COROUTINE_SUSPENDED`，协程挂起但线程不阻塞。
+- 异步结果返回后，通过`resumeWith`恢复执行，并按`label`继续后续逻辑。
+- `CoroutineDispatcher`通过`ContinuationInterceptor`决定恢复在哪个线程执行。
+
+<a id="sec-5-principle-2m"></a>
+### 协程原理展开（2分钟）
+
+可以按这条主线理解：
+
+1. **创建阶段**：`launch/async`创建协程对象，绑定`CoroutineContext`（`Job + Dispatcher + ...`）。
+2. **编译转换**：`suspend`函数被转成状态机，挂起点对应`label`，本质是可恢复的函数调用链。
+3. **启动执行**：协程启动时会创建并包装`Continuation`，必要时被`Dispatcher`拦截调度。
+4. **挂起时机**：遇到可挂起点返回`COROUTINE_SUSPENDED`，当前调用栈退出，线程可执行其他任务。
+5. **恢复执行**：回调或结果就绪后触发`resumeWith`，状态机按上次`label`继续执行。
+6. **生命周期管理**：`Job`树维护父子协程关系，取消是协作式，异常按层级传播（`SupervisorJob`可隔离子任务失败）。
+
+<a id="sec-5-faq"></a>
+### 高频追问知识点（补充）
+
+- **挂起 vs 阻塞**：挂起是让出执行权，不占线程；阻塞会占住线程直到完成。
+- **协程为什么轻量**：创建与切换主要在用户态完成，通常比线程上下文切换成本低。
+- **为什么`async`异常常在`await()`暴露**：异常被封装在`Deferred`中，读取结果时才抛出。
+- **取消为什么不一定立刻生效**：取消是协作式，需要挂起点或主动检查`isActive/ensureActive`。
+- **`Main.immediate`意义**：已在主线程时避免二次分发，减少一跳调度延迟。
+
+<a id="sec-6"></a>
+## 六、参考与延伸
 
 [Kotlin/Keep](https://github.com/Kotlin/KEEP/blob/master/proposals/coroutines.md)
 
