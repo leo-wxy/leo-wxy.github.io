@@ -309,7 +309,7 @@ Messenger的工作原理：
 
 ### 4.AIDL
 
-{% post_link Binder系列-Binder%}
+{% post_link Android-Binder分析%}
 
 ### 5.ContentProvider
 
