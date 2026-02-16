@@ -1,6 +1,6 @@
 ---
-title: 重学Binder
-date: 2020-05-19 10:22:51
+title: Android-Binder分析
+date: 2026-02-16 10:30:00
 tags: Android
 top: 11
 typora-root-url: ../
@@ -139,6 +139,8 @@ Binder建立了一个虚拟设备`/dev/binder`，然后在内核空间创建了�
 
 ![Binder通信模型](/images/Binder通信模型.png)
 
+![Binder架构图](/images/IPC-Binder.jpg)
+
 ### Client
 
 > 客户端进程
@@ -161,6 +163,15 @@ Binder建立了一个虚拟设备`/dev/binder`，然后在内核空间创建了�
 - `Client`通过`Binder驱动`从`ServiceManager`获取Binder的引用。
 
 `Service Manager`就是一个进程，内部维护了一张表，维护了`名字+Binder实体的引用`。
+
+### Binder完整定义
+
+在不同语境下，`Binder`有不同含义：
+
+- 机制层：Android进程间通信机制。
+- Server层：服务端提供能力的本地Binder实体。
+- Client层：服务端实体在客户端的代理引用（由驱动转换得到）。
+- 传输层：可跨进程传输的对象能力抽象。
 
 #### 启动
 
@@ -353,6 +364,14 @@ enum binder_driver_command_protocol {
 };
 ```
 
+其中和`linkToDeath`直接相关的是三条命令：
+
+- `BC_REQUEST_DEATH_NOTIFICATION`：向驱动注册死亡通知。
+- `BC_CLEAR_DEATH_NOTIFICATION`：取消死亡通知。
+- `BC_DEAD_BINDER_DONE`：用户态处理完死亡回调后，回写完成确认。
+
+`linkToDeath`在用户态是一次API调用，在驱动侧本质是“注册一条死亡监听关系”。
+
 
 
 `binder_parse()`
@@ -451,6 +470,22 @@ enum binder_driver_return_protocol {
   BR_CLEAR_DEATH_NOTIFICATION_DONE = _IOR('r', 16, binder_uintptr_t),
   BR_FAILED_REPLY = _IO('r', 17),
 };
+```
+
+`BR_DEAD_BINDER`就是`linkToDeath`对应的关键返回信号：
+
+- 当远端Binder对象/进程失效时，驱动把`BR_DEAD_BINDER`投递给持有该引用的进程。
+- 用户态解析到该命令后，会执行已注册的死亡回调（`DeathRecipient.binderDied()`）。
+
+简化链路：
+
+```text
+linkToDeath()
+  -> BC_REQUEST_DEATH_NOTIFICATION
+remote binder dies
+  -> BR_DEAD_BINDER
+  -> binderDied()
+  -> BC_DEAD_BINDER_DONE
 ```
 
 
@@ -1260,6 +1295,12 @@ int do_add_service(struct binder_state *bs, const uint16_t *s, size_t len, uint3
 }
 ```
 
+这里的`binder_link_to_death()`说明：
+
+- ServiceManager在“服务注册”阶段就挂上死亡监听。
+- 一旦该服务进程死亡，`svcinfo_death`会被回调，ServiceManager可以及时清理`svclist`中的无效服务项。
+- 这样可以避免客户端持续拿到失效句柄，属于系统服务治理的关键机制。
+
 
 
 #### Java 注册服务
@@ -1858,6 +1899,12 @@ jobject javaObjectForIBinder(JNIEnv* env, const sp<IBinder>& val)
 
 经过`javaObjectForIBinder()`之后转换`BpBinder`对象到`BinderProxy`对象.
 
+`nativeData->mOrgue = new DeathRecipientList`用于保存Java层死亡回调列表：
+
+- App侧调用`linkToDeath`注册`DeathRecipient`，最终会挂到这个列表。
+- 远端死亡后，框架会遍历列表分发`binderDied()`。
+- 正常解绑时应`unlinkToDeath`，避免监听器泄漏和重复回调。
+
 通过`ServiceManager.getService()`最后`Client`持有的就是`BinderProxy`对象。
 
 ### Binder驱动
@@ -2301,6 +2348,8 @@ struct binder_write_read {//用在binder内部
 
 ![binder_ipc_process](/images/binder_ipc_process.jpg)
 
+![Binder通信过程](/images/Binder通信过程.png)
+
 ### Binder权限验证
 
 `进程A`通过Binder调用`进程B`，然后`进程B`又Binder调用`进程C`，此时进程C中的`IPCThreadState`存储的就是`进程A`的`PID和UID`。此时假如`进程B`想调用`进程C`，就会抛出异常`Bad call: specified package com.providers.xxx under uid 10032 but it is really 10001`。
@@ -2332,6 +2381,28 @@ Binder.restoreCallingIdentity(origId);
 `restoreCallingIdentity(id)`
 
 > 还原前面存储的初始调用者的`mCallingPid`和`mCallingUid`
+
+#### 组件级权限控制（Manifest）
+
+除调用链身份校验外，还可以通过组件权限限制可绑定方：
+
+```xml
+<!-- AndroidManifest.xml -->
+<permission
+    android:name="com.example.wxy.permission.checkBook"
+    android:protectionLevel="normal" />
+
+<uses-permission android:name="com.example.wxy.permission.checkBook" />
+
+<service
+    android:name=".service.AIDLService"
+    android:exported="true">
+    <intent-filter>
+        <action android:name="com.example.wxy" />
+        <category android:name="android.intent.category.DEFAULT" />
+    </intent-filter>
+</service>
+```
 
 
 
@@ -2515,6 +2586,22 @@ public interface BookManager extends IInterface {
 
 对应的就是`Proxy`中各个方法内部调用的`mRemote.transcat()`传递的参数。
 
+#### 代理机制补充
+
+`Client`通过`ServiceManager`拿到`Server`引用后，得到的通常不是`Server`端本地实体，而是一个代理对象（`Proxy` / `BinderProxy`）。
+
+代理对象与本地对象对外暴露的方法看起来一致，但其核心职责是：
+
+- 组装参数到`Parcel`
+- 调用`transact()`把请求交给`Binder驱动`
+- 等待并解析返回结果
+
+因此，Binder代理机制的本质是：
+
+`本地调用语义` + `跨进程传输实现` 的桥接。
+
+![Binder代理机制](/images/Binder代理机制.png)
+
 //TODO 关系图
 
 
@@ -2533,6 +2620,26 @@ public interface BookManager extends IInterface {
 - `Binder代理对象`将请求发送给`Binder驱动`
 - `Binder驱动`转发请求给Server
 - `Server`处理完请求后，返回结果到`Binder驱动`，再回到`Client`并唤醒
+
+### AIDL实战常见问题
+
+1. 可能产生ANR
+
+   - 客户端同步调用耗时服务端方法，调用线程被挂起。
+   - 在`onServiceConnected/onServiceDisconnected`中执行耗时逻辑。
+   - 服务端回调客户端listener时，客户端`binder线程池`执行耗时任务。
+
+   建议：远程调用放在非UI线程，Binder回调中避免重任务。
+
+2. AIDL解注册失败
+
+   跨进程listener经过序列化/反序列化后通常不是同一对象引用，服务端可能无法正确匹配原注册对象。
+
+   建议：使用`RemoteCallbackList`管理远程回调，并确保`beginBroadcast()`与`finishBroadcast()`成对使用。
+
+3. 性能损耗较大
+
+   高频同步IPC会带来明显开销。可通过“变更通知 + 批量拉取”降低调用频率。
 
 
 
@@ -2582,6 +2689,39 @@ interface IXX {
   oneway void xx();
 }
 ```
+
+### Binder连接池（BinderPool）
+
+当业务模块变多后，如果每个模块都创建独立`Service + AIDL`，会增加组件数量与连接治理成本。
+
+`BinderPool`的核心思路：
+
+- 统一一个远程Service作为入口。
+- 通过`queryBinder(binderCode)`按标识返回不同业务Binder。
+- 用一条连接管理多业务能力，降低重复建设成本。
+
+工作原理：
+
+{% fullimage /images/BinderPool.png,BinderPool工作原理, BinderPool工作原理%}
+
+实现步骤（简版）：
+
+- 定义各业务AIDL接口与实现。
+- 定义`IBinderPool.aidl`。
+- 实现`BinderPoolService`并在`onBind()`返回`BinderPool`。
+- 在`queryBinder()`中根据`binderCode`分发。
+- 客户端连接后按需获取目标Binder。
+
+### Binder跨进程传输大文件
+
+`Intent`和`Binder事务`都存在大小限制，大文件不建议直接走Binder事务。
+
+可选方案：
+
+- 文件共享（`FileProvider`）。
+- 分块传输。
+- 共享内存（如`ashmem`）。
+- `ContentProvider`或流式读取。
 
 
 

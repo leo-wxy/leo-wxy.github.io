@@ -141,39 +141,60 @@ class Demo(){
 }
 ```
 
-`lazy`接收初始化该值的`lambda`表达式，并返回一个`getValue()`的对象。
+`lazy`接收初始化值的`lambda`，并返回一个`Lazy<T>`类型的委托对象。
 
 #### 原理分析
 
-先分析反编译该段代码后的结果：
+先看一句话版本：`by lazy`会把属性访问交给`Lazy`委托对象，首次访问才执行初始化代码并缓存结果，后续读取直接返回缓存值。
 
-```java
-public final class Demo {
-     @NotNull
-   //生成对应参数的委托信息
-   private final Lazy sex$delegate;
+`val sex: String by lazy { "male" }`编译后大致等价于：
 
-  static final KProperty[] $$delegatedProperties = 
-    new KProperty[]{(KProperty)Reflection.property(
-    new PropertyReference1Impl(Reflection.getOrCreateKotlinClass(Bird.class), "sex", "getSex()Ljava/lang/String;"))};
+```kotlin
+private val sex$delegate: Lazy<String> = lazy { "male" }
 
-   @NotNull
-   public final String getSex() {
-      Lazy var1 = this.sex$delegate;
-      KProperty var3 = $$delegatedProperties[0];
-      boolean var4 = false;
-      //在第一次使用的时候 获取对应数据
-      return (String)var1.getValue();
-   }
+val sex: String
+    get() = sex$delegate.getValue(this, this::sex)
+```
 
-  public Demo(){
-    //执行指定的初始代码块
-     this.sex$delegate = LazyKt.lazy((Function0)null.INSTANCE);
-  }
+`Lazy`本身只定义了“取值”和“是否已初始化”两个核心能力：
+
+```kotlin
+public interface Lazy<out T> {
+    public val value: T
+    public fun isInitialized(): Boolean
+}
+
+public operator fun <T> Lazy<T>.getValue(thisRef: Any?, property: KProperty<*>): T = value
+```
+
+第一次访问`sex`时会触发`initializer`并缓存结果；之后再次访问会直接返回缓存值，不会重复执行初始化逻辑。
+
+默认情况下，`lazy`使用`LazyThreadSafetyMode.SYNCHRONIZED`保证多线程安全。其核心思路是“双重判断 + synchronized”：
+
+```kotlin
+private class SynchronizedLazyImpl<T>(initializer: () -> T) : Lazy<T> {
+    private var _value: Any? = UNINITIALIZED_VALUE
+    private var initializer: (() -> T)? = initializer
+
+    override val value: T
+        get() {
+            if (_value !== UNINITIALIZED_VALUE) return _value as T
+            return synchronized(this) {
+                if (_value === UNINITIALIZED_VALUE) {
+                    _value = initializer!!()
+                    initializer = null
+                }
+                _value as T
+            }
+        }
 }
 ```
 
-最终通过获取`lazy`函数的`getValue()`获取所需结果。
+另外还可以根据场景指定线程模式：
+
+- `SYNCHRONIZED`：默认模式，线程安全；
+- `PUBLICATION`：可能并发执行多次初始化，但只发布一个结果；
+- `NONE`：不做线程同步，性能最好，适合单线程场景（如主线程）。
 
 
 
@@ -252,17 +273,17 @@ public abstract class ObservableProperty<T>(initialValue: T) : ReadWriteProperty
 
 ### 可变属性延迟初始化
 
-> `by lazy`只对`val变量`可用，当变量为`var`时则无法使用，这时就需要用到`var value by Delegates.notNull<String>`来表示
+> `by lazy`只对`val变量`可用，当变量为`var`时则无法使用，这时可以用`var value: String by Delegates.notNull<String>()`来表示。
 
 #### 使用示例
 
 ```kotlin
 class Demo{
-  var value by Delegates.notNull<String>
+  var value: String by Delegates.notNull<String>()
   
   init{
     //延迟初始化
-    a= "init"
+    value = "init"
   }
 }
 ```
@@ -272,9 +293,84 @@ class Demo{
 #### 原理分析
 
 ```kotlin
+public fun <T : Any> notNull(): ReadWriteProperty<Any?, T> = NotNullVar()
+
+private class NotNullVar<T : Any> : ReadWriteProperty<Any?, T> {
+    private var value: T? = null
+
+    override fun getValue(thisRef: Any?, property: KProperty<*>): T {
+        return value ?: throw IllegalStateException(
+            "Property ${property.name} should be initialized before get."
+        )
+    }
+
+    override fun setValue(thisRef: Any?, property: KProperty<*>, value: T) {
+        this.value = value
+    }
+}
 
 ```
+
+`Delegates.notNull()`会返回一个`ReadWriteProperty`实现：
+
+- 初始状态下内部值为`null`；
+- 如果在赋值之前读取属性，会抛出`IllegalStateException`；
+- 一旦完成赋值，后续读写行为与普通`var`一致。
+
+它适合“对象创建后再注入数据”的场景，例如在`onCreate()`、`initData()`中初始化，再在后续逻辑里访问。
 
 
 
 ## 自定义委托
+
+> 当内置委托（`lazy`、`observable`、`notNull`）不能满足需求时，可以自定义委托，把属性的读写逻辑抽离成可复用组件。
+
+#### 使用示例
+
+```kotlin
+class PreferenceDelegate(
+    private val storage: MutableMap<String, Any?>,
+    private val defaultValue: String = ""
+) : ReadWriteProperty<Any?, String> {
+
+    override fun getValue(thisRef: Any?, property: KProperty<*>): String {
+        return storage[property.name] as? String ?: defaultValue
+    }
+
+    override fun setValue(thisRef: Any?, property: KProperty<*>, value: String) {
+        storage[property.name] = value
+    }
+}
+
+class UserSettings(storage: MutableMap<String, Any?>) {
+    var token: String by PreferenceDelegate(storage)
+    var userName: String by PreferenceDelegate(storage, "Guest")
+}
+```
+
+通过委托，业务类只保留属性声明，具体存取规则交给委托类统一处理，减少重复代码。
+
+#### 进阶：`provideDelegate`
+
+`getValue()/setValue()`是在属性读写时触发；而`provideDelegate()`可以在属性绑定阶段做约束检查：
+
+```kotlin
+class NameDelegate {
+    operator fun provideDelegate(thisRef: Any?, property: KProperty<*>): ReadWriteProperty<Any?, String> {
+        require(property.name.endsWith("Name")) {
+            "Property ${property.name} must end with Name"
+        }
+        return object : ReadWriteProperty<Any?, String> {
+            private var value: String = ""
+
+            override fun getValue(thisRef: Any?, property: KProperty<*>) = value
+
+            override fun setValue(thisRef: Any?, property: KProperty<*>, value: String) {
+                this.value = value
+            }
+        }
+    }
+}
+```
+
+这样可以在声明属性时就发现不符合约束的写法，尽早暴露问题。
