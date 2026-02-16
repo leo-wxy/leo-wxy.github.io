@@ -19,15 +19,15 @@
   <meta name="author" content="Leo-Wxy">
   <meta name="keywords" content="">
   
-    <meta name="description" content="Android 音频上层交互：知识点记录与拓展这份文档用于沉淀 Android 音频播放在上层系统交互中的核心知识点，重点关注概念、边界、时序和扩展方向。  一、基础术语与观察维度1.1 关键术语 AudioFocus：系统对音频资源的仲裁机制，用于协调多个应用的播放优先级。 Audio Route：音频输出路径（扬声器、有线耳机、蓝牙、车机等）。 Audio Session：一次播放会话的状态集">
+    <meta name="description" content="一、AudioFocus：功能与关键参数1.1 AudioFocus 的核心功能 发声仲裁：当多个 App 同时需要播放音频时，系统通过 AudioFocus 决定“谁可以发声”。 中断分级：区分长期中断、短期中断、可降音中断，不同类型触发不同动作（暂停&#x2F;降音&#x2F;恢复）。 恢复控制：焦点恢复后不等于必须自动播放，仍需结合用户意图与业务状态判定。 体验兜底：减少“界面显示播放中但无">
 <meta property="og:type" content="article">
 <meta property="og:title" content="Android音频技术攻略-上层业务交互">
 <meta property="og:url" content="https://leo-wxy.github.io/2026/02/15/Android%E9%9F%B3%E9%A2%91%E6%8A%80%E6%9C%AF%E6%94%BB%E7%95%A5-%E4%B8%8A%E5%B1%82%E4%B8%9A%E5%8A%A1%E4%BA%A4%E4%BA%92/index.html">
 <meta property="og:site_name" content="Wxy的个人博客">
-<meta property="og:description" content="Android 音频上层交互：知识点记录与拓展这份文档用于沉淀 Android 音频播放在上层系统交互中的核心知识点，重点关注概念、边界、时序和扩展方向。  一、基础术语与观察维度1.1 关键术语 AudioFocus：系统对音频资源的仲裁机制，用于协调多个应用的播放优先级。 Audio Route：音频输出路径（扬声器、有线耳机、蓝牙、车机等）。 Audio Session：一次播放会话的状态集">
+<meta property="og:description" content="一、AudioFocus：功能与关键参数1.1 AudioFocus 的核心功能 发声仲裁：当多个 App 同时需要播放音频时，系统通过 AudioFocus 决定“谁可以发声”。 中断分级：区分长期中断、短期中断、可降音中断，不同类型触发不同动作（暂停&#x2F;降音&#x2F;恢复）。 恢复控制：焦点恢复后不等于必须自动播放，仍需结合用户意图与业务状态判定。 体验兜底：减少“界面显示播放中但无">
 <meta property="og:locale" content="zh_CN">
 <meta property="article:published_time" content="2026-02-15T04:53:06.000Z">
-<meta property="article:modified_time" content="2026-02-16T04:00:21.027Z">
+<meta property="article:modified_time" content="2026-02-16T11:54:18.751Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="音视频">
 <meta name="twitter:card" content="summary_large_image">
@@ -224,7 +224,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          3k 字
+          5.3k 字
         
       </span>
     
@@ -236,7 +236,7 @@
         
         
           <!-- compatible with older versions-->
-          10 分钟
+          17 分钟
         
       </span>
     
@@ -291,322 +291,606 @@
             
               <div class="markdown-body">
                 
-                <h2 id="Android-音频上层交互：知识点记录与拓展"><a href="#Android-音频上层交互：知识点记录与拓展" class="headerlink" title="Android 音频上层交互：知识点记录与拓展"></a>Android 音频上层交互：知识点记录与拓展</h2><p>这份文档用于沉淀 Android 音频播放在上层系统交互中的核心知识点，重点关注概念、边界、时序和扩展方向。</p>
-<hr>
-<h2 id="一、基础术语与观察维度"><a href="#一、基础术语与观察维度" class="headerlink" title="一、基础术语与观察维度"></a>一、基础术语与观察维度</h2><h3 id="1-1-关键术语"><a href="#1-1-关键术语" class="headerlink" title="1.1 关键术语"></a>1.1 关键术语</h3><ul>
-<li><code>AudioFocus</code>：系统对音频资源的仲裁机制，用于协调多个应用的播放优先级。</li>
-<li><code>Audio Route</code>：音频输出路径（扬声器、有线耳机、蓝牙、车机等）。</li>
-<li><code>Audio Session</code>：一次播放会话的状态集合，包含内容、进度、播放状态和中断上下文。</li>
-<li><code>Ducking</code>：焦点临时可降音场景下，主播放器降低音量继续播放。</li>
-<li><code>Noisy</code>：耳机断开等事件导致可能外放的系统信号（<code>ACTION_AUDIO_BECOMING_NOISY</code>）。</li>
-<li><code>ForegroundService</code>：后台持续播放的系统承载组件。</li>
+                <h2 id="一、AudioFocus：功能与关键参数"><a href="#一、AudioFocus：功能与关键参数" class="headerlink" title="一、AudioFocus：功能与关键参数"></a>一、AudioFocus：功能与关键参数</h2><h3 id="1-1-AudioFocus-的核心功能"><a href="#1-1-AudioFocus-的核心功能" class="headerlink" title="1.1 AudioFocus 的核心功能"></a>1.1 AudioFocus 的核心功能</h3><ul>
+<li><strong>发声仲裁</strong>：当多个 App 同时需要播放音频时，系统通过 AudioFocus 决定“谁可以发声”。</li>
+<li><strong>中断分级</strong>：区分长期中断、短期中断、可降音中断，不同类型触发不同动作（暂停&#x2F;降音&#x2F;恢复）。</li>
+<li><strong>恢复控制</strong>：焦点恢复后不等于必须自动播放，仍需结合用户意图与业务状态判定。</li>
+<li><strong>体验兜底</strong>：减少“界面显示播放中但无声”“通话后误播”等常见问题。</li>
 </ul>
-<h3 id="1-2-上层播放闭环"><a href="#1-2-上层播放闭环" class="headerlink" title="1.2 上层播放闭环"></a>1.2 上层播放闭环</h3><ol>
-<li>用户触发播放，控制层申请焦点。</li>
-<li>焦点获取成功后启动播放，并建立会话状态。</li>
-<li>播放过程中处理路由变化、来电中断、前后台切换。</li>
-<li>中断恢复时依据用户意图和场景规则进行恢复判定。</li>
-<li>播放结束或退出时释放焦点与会话资源。</li>
-</ol>
-<h3 id="1-3-观察维度"><a href="#1-3-观察维度" class="headerlink" title="1.3 观察维度"></a>1.3 观察维度</h3><ul>
-<li><strong>行为正确性</strong>：该暂停时暂停，该降音时降音。</li>
-<li><strong>状态一致性</strong>：播放器状态、UI 状态、通知状态一致。</li>
-<li><strong>恢复可控性</strong>：恢复必须可判定、可追踪、可禁用。</li>
-<li><strong>可观测性</strong>：日志和指标能还原完整事件时间线。</li>
+<h3 id="1-2-常用-API（上层最常用）"><a href="#1-2-常用-API（上层最常用）" class="headerlink" title="1.2 常用 API（上层最常用）"></a>1.2 常用 API（上层最常用）</h3><ul>
+<li><code>AudioManager.requestAudioFocus(focusRequest)</code>：申请焦点。</li>
+<li><code>AudioManager.abandonAudioFocusRequest(focusRequest)</code>：释放焦点。</li>
+<li><code>OnAudioFocusChangeListener</code>：接收焦点变化回调，统一进入控制层处理。</li>
 </ul>
-<hr>
-<h2 id="二、音频焦点（AudioFocus）"><a href="#二、音频焦点（AudioFocus）" class="headerlink" title="二、音频焦点（AudioFocus）"></a>二、音频焦点（AudioFocus）</h2><h3 id="2-1-概念"><a href="#2-1-概念" class="headerlink" title="2.1 概念"></a>2.1 概念</h3><p><code>AudioFocus</code> 解决的是“谁可以发声”的协同问题，不是解码和渲染问题。焦点处理好坏直接影响中断体验和误播放风险。</p>
-<h3 id="2-2-关键-API-角色"><a href="#2-2-关键-API-角色" class="headerlink" title="2.2 关键 API 角色"></a>2.2 关键 API 角色</h3><ul>
-<li><code>AudioAttributes</code>：声明音频用途和内容类型，影响系统对焦点与音量策略的处理。</li>
-<li><code>AudioFocusRequest</code>：焦点申请对象，建议统一在控制层构建。</li>
-<li><code>OnAudioFocusChangeListener</code>：焦点变化入口，建议统一监听并转发到状态机。</li>
-<li><code>abandonAudioFocusRequest</code>：会话结束时释放焦点，避免资源占用和系统冲突。</li>
-</ul>
-<h3 id="2-3-常见焦点变化语义"><a href="#2-3-常见焦点变化语义" class="headerlink" title="2.3 常见焦点变化语义"></a>2.3 常见焦点变化语义</h3><table>
+<blockquote>
+<p>Android 8.0（API 26）及以上建议统一使用 <code>AudioFocusRequest</code>。</p>
+</blockquote>
+<h3 id="1-3-申请侧关键参数（你主动设置）"><a href="#1-3-申请侧关键参数（你主动设置）" class="headerlink" title="1.3 申请侧关键参数（你主动设置）"></a>1.3 申请侧关键参数（你主动设置）</h3><table>
 <thead>
 <tr>
-<th>事件</th>
-<th>语义</th>
-<th>常见动作</th>
+<th>参数</th>
+<th>作用</th>
+<th>常见取值</th>
+<th>建议</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>focusGain</code></td>
+<td>声明焦点需求强度与时长</td>
+<td><code>AUDIOFOCUS_GAIN</code> &#x2F; <code>AUDIOFOCUS_GAIN_TRANSIENT</code> &#x2F; <code>AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK</code> &#x2F; <code>AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE</code></td>
+<td>音乐&#x2F;播客常用 <code>AUDIOFOCUS_GAIN</code></td>
+</tr>
+<tr>
+<td><code>AudioAttributes.usage</code></td>
+<td>声明音频使用场景</td>
+<td><code>USAGE_MEDIA</code> &#x2F; <code>USAGE_VOICE_COMMUNICATION</code> &#x2F; <code>USAGE_ASSISTANCE_NAVIGATION_GUIDANCE</code></td>
+<td>内容播放通常用 <code>USAGE_MEDIA</code></td>
+</tr>
+<tr>
+<td><code>AudioAttributes.contentType</code></td>
+<td>声明内容类型</td>
+<td><code>CONTENT_TYPE_MUSIC</code> &#x2F; <code>CONTENT_TYPE_SPEECH</code></td>
+<td>播客、有声书可考虑 <code>SPEECH</code></td>
+</tr>
+<tr>
+<td><code>setAcceptsDelayedFocusGain</code></td>
+<td>是否接受延迟获得焦点</td>
+<td><code>true</code> &#x2F; <code>false</code></td>
+<td>允许排队等待时可设 <code>true</code></td>
+</tr>
+<tr>
+<td><code>setWillPauseWhenDucked</code></td>
+<td>可降音场景是否改为暂停</td>
+<td><code>true</code> &#x2F; <code>false</code></td>
+<td>语音内容常设 <code>true</code>，音乐常设 <code>false</code></td>
+</tr>
+</tbody></table>
+<h3 id="1-4-回调侧关键参数（系统返回）"><a href="#1-4-回调侧关键参数（系统返回）" class="headerlink" title="1.4 回调侧关键参数（系统返回）"></a>1.4 回调侧关键参数（系统返回）</h3><table>
+<thead>
+<tr>
+<th>回调值</th>
+<th>含义</th>
+<th>推荐动作</th>
 </tr>
 </thead>
 <tbody><tr>
 <td><code>AUDIOFOCUS_GAIN</code></td>
 <td>焦点恢复</td>
-<td>恢复音量，按条件恢复播放</td>
+<td>恢复音量；按“可恢复条件”决定是否恢复播放</td>
 </tr>
 <tr>
 <td><code>AUDIOFOCUS_LOSS</code></td>
 <td>长期失焦</td>
-<td>暂停或停止，通常不自动恢复</td>
+<td>暂停&#x2F;停止；通常不自动恢复</td>
 </tr>
 <tr>
 <td><code>AUDIOFOCUS_LOSS_TRANSIENT</code></td>
-<td>临时失焦</td>
+<td>短期失焦</td>
 <td>暂停并保存上下文</td>
 </tr>
 <tr>
 <td><code>AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK</code></td>
-<td>可降音继续</td>
-<td>降音继续播放</td>
+<td>可降音失焦</td>
+<td>优先降音继续，避免不必要暂停</td>
 </tr>
 </tbody></table>
-<h3 id="2-4-焦点状态流转（示意）"><a href="#2-4-焦点状态流转（示意）" class="headerlink" title="2.4 焦点状态流转（示意）"></a>2.4 焦点状态流转（示意）</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><code class="hljs text">Idle -&gt; RequestFocus -&gt; FocusGranted -&gt; Playing<br>Playing + LOSS_TRANSIENT -&gt; PausedBySystem<br>PausedBySystem + GAIN + canAutoResume -&gt; Playing<br>Playing + LOSS -&gt; PausedByFocusLoss<br>PausedByFocusLoss -&gt; (user action) -&gt; RequestFocus<br></code></pre></td></tr></table></figure>
+<h3 id="1-5-参数选择建议（业务默认）"><a href="#1-5-参数选择建议（业务默认）" class="headerlink" title="1.5 参数选择建议（业务默认）"></a>1.5 参数选择建议（业务默认）</h3><ul>
+<li>长音频&#x2F;音乐：<code>AUDIOFOCUS_GAIN + USAGE_MEDIA + CONTENT_TYPE_MUSIC</code></li>
+<li>短提示音&#x2F;播报：<code>AUDIOFOCUS_GAIN_TRANSIENT</code> 或 <code>AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK</code></li>
+<li>恢复策略始终走统一判定：<strong>用户意图 + 中断前状态 + 场景许可 + 业务拦截</strong></li>
+</ul>
+<h3 id="1-6-焦点重新获取后的播放"><a href="#1-6-焦点重新获取后的播放" class="headerlink" title="1.6 焦点重新获取后的播放"></a>1.6 焦点重新获取后的播放</h3><p>核心原则：<strong>只恢复“被系统打断前正在播放”的会话，不恢复“用户主动暂停”的会话。</strong></p>
+<p>在失焦时保存以下上下文（用于 <code>AUDIOFOCUS_GAIN</code> 判定）：</p>
+<ul>
+<li><code>wasPlayingBeforeLoss</code>：失焦前是否在播放。</li>
+<li><code>lossType</code>：失焦类型（<code>LOSS</code> &#x2F; <code>LOSS_TRANSIENT</code> &#x2F; <code>LOSS_TRANSIENT_CAN_DUCK</code>）。</li>
+<li><code>pauseReason</code>：暂停原因（焦点中断、来电、路由切换等）。</li>
+<li><code>userIntent</code>：用户当前意图（想继续播放 &#x2F; 主动暂停）。</li>
+<li><code>contentId/sessionId</code>：会话是否一致，避免误恢复到旧内容。</li>
+</ul>
+<p>恢复判定建议：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><code class="hljs text">canAutoResume =<br>  wasPlayingBeforeLoss == true<br>  &amp;&amp; lossType != AUDIOFOCUS_LOSS<br>  &amp;&amp; userIntent == WANT_PLAY<br>  &amp;&amp; sceneAllowsResume == true<br>  &amp;&amp; businessBlock == false<br>  &amp;&amp; sameSession == true<br></code></pre></td></tr></table></figure>
 
-<h3 id="2-5-知识点拓展"><a href="#2-5-知识点拓展" class="headerlink" title="2.5 知识点拓展"></a>2.5 知识点拓展</h3><ul>
-<li>自动恢复不等于总是恢复，核心是“用户意图 + 中断前状态 + 场景许可”。</li>
-<li><code>CAN_DUCK</code> 更强调连续性，常见于导航播报和语音助手插播。</li>
-<li>焦点申请失败时保持静默并更新 UI，避免出现“显示播放中但无声”。</li>
-<li>多页面应用中，焦点申请和监听应收敛到单点，避免重复回调。</li>
+<p>常见策略约定：</p>
+<ul>
+<li><code>AUDIOFOCUS_LOSS</code>：默认不自动恢复，交由用户手动播放。</li>
+<li><code>AUDIOFOCUS_LOSS_TRANSIENT</code>：满足判定条件可自动恢复。</li>
+<li><code>AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK</code>：通常不断播；收到 <code>AUDIOFOCUS_GAIN</code> 后恢复正常音量。</li>
 </ul>
-<h3 id="2-6-常见误区"><a href="#2-6-常见误区" class="headerlink" title="2.6 常见误区"></a>2.6 常见误区</h3><ul>
-<li>把 <code>GAIN</code> 当成无条件恢复信号。</li>
-<li>页面层各自维护焦点监听，导致动作重复或冲突。</li>
-<li>失焦后只改播放器不改 UI，造成状态漂移。</li>
+<h3 id="1-7-版本兼容要点（AudioFocus）"><a href="#1-7-版本兼容要点（AudioFocus）" class="headerlink" title="1.7 版本兼容要点（AudioFocus）"></a>1.7 版本兼容要点（AudioFocus）</h3><table>
+<thead>
+<tr>
+<th>能力</th>
+<th>关键版本</th>
+<th>差异说明</th>
+<th>建议</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>焦点申请 API</td>
+<td>API &lt; 26</td>
+<td>使用旧接口：<code>requestAudioFocus(listener, streamType, durationHint)</code></td>
+<td>封装一层兼容适配，避免业务层判断版本</td>
+</tr>
+<tr>
+<td>焦点申请 API</td>
+<td>API &gt;&#x3D; 26</td>
+<td>使用新接口：<code>AudioFocusRequest</code> + <code>AudioAttributes</code></td>
+<td>统一使用新接口，策略可配置性更好</td>
+</tr>
+<tr>
+<td>延迟焦点与 Duck 行为配置</td>
+<td>API &lt; 26</td>
+<td>不支持 <code>setAcceptsDelayedFocusGain</code>、<code>setWillPauseWhenDucked</code> 这类 Builder 配置</td>
+<td>通过业务层兜底逻辑处理（延迟播&#x2F;手动暂停）</td>
+</tr>
+<tr>
+<td>延迟焦点与 Duck 行为配置</td>
+<td>API &gt;&#x3D; 26</td>
+<td>支持在 <code>AudioFocusRequest.Builder</code> 中显式配置</td>
+<td>优先用系统能力表达策略，减少自定义分支</td>
+</tr>
+<tr>
+<td>焦点事件处理</td>
+<td>全版本</td>
+<td><code>GAIN/LOSS/LOSS_TRANSIENT/CAN_DUCK</code> 语义一致</td>
+<td>保持统一状态机，避免版本分叉实现</td>
+</tr>
+</tbody></table>
+<h3 id="1-8-AudioFocus-中断与恢复流程图"><a href="#1-8-AudioFocus-中断与恢复流程图" class="headerlink" title="1.8 AudioFocus 中断与恢复流程图"></a>1.8 AudioFocus 中断与恢复流程图</h3><pre><code class=" mermaid">flowchart TD
+  A[用户点击播放] --&gt; B[requestAudioFocus]
+  B --&gt; C&#123;焦点申请结果&#125;
+  C --&gt;|成功| D[开始播放]
+  C --&gt;|失败| E[保持暂停并提示用户]
+
+  D --&gt; F&#123;焦点变化回调&#125;
+  F --&gt;|AUDIOFOCUS_LOSS| G[暂停或停止\n等待用户手动恢复]
+  F --&gt;|LOSS_TRANSIENT| H[临时暂停并保存上下文]
+  F --&gt;|LOSS_TRANSIENT_CAN_DUCK| I[降低音量继续播放]
+  F --&gt;|AUDIOFOCUS_GAIN| J&#123;canAutoResume&#125;
+
+  H --&gt; J
+  I --&gt; K[恢复正常音量]
+  J --&gt;|true| L[恢复播放]
+  J --&gt;|false| M[保持暂停]
+</code></pre>
+
+<h2 id="二、音频路由（Audio-Routing）"><a href="#二、音频路由（Audio-Routing）" class="headerlink" title="二、音频路由（Audio Routing）"></a>二、音频路由（Audio Routing）</h2><h3 id="2-1-音频路由的作用"><a href="#2-1-音频路由的作用" class="headerlink" title="2.1 音频路由的作用"></a>2.1 音频路由的作用</h3><ul>
+<li>音频路由决定“声音从哪里出来”，例如扬声器、有线耳机、蓝牙耳机、车机。</li>
+<li>路由切换本身不是播放失败，但处理不当会出现“进度在走但无声”或“误外放”。</li>
+<li>上层目标是：<strong>路由变化可感知、动作可控、状态一致</strong>。</li>
 </ul>
-<hr>
-<h2 id="三、音频路由（Audio-Routing）"><a href="#三、音频路由（Audio-Routing）" class="headerlink" title="三、音频路由（Audio Routing）"></a>三、音频路由（Audio Routing）</h2><h3 id="3-1-概念"><a href="#3-1-概念" class="headerlink" title="3.1 概念"></a>3.1 概念</h3><p>路由是“声音输出设备”选择问题。路由切换并不一定是异常，但如果状态处理不完整，最常见表现是无声、误外放或状态错乱。</p>
-<h3 id="3-2-路由变化来源"><a href="#3-2-路由变化来源" class="headerlink" title="3.2 路由变化来源"></a>3.2 路由变化来源</h3><ul>
-<li>耳机断开（<code>ACTION_AUDIO_BECOMING_NOISY</code>）。</li>
-<li>蓝牙设备连接、断开、重连。</li>
-<li>系统切换输出设备（含车机场景）。</li>
-<li>用户主动切换输出设备（系统面板或外设操作）。</li>
+<h3 id="2-2-常见路由变化场景"><a href="#2-2-常见路由变化场景" class="headerlink" title="2.2 常见路由变化场景"></a>2.2 常见路由变化场景</h3><ul>
+<li>有线耳机拔出（<code>ACTION_AUDIO_BECOMING_NOISY</code>）。</li>
+<li>蓝牙设备断开后回落扬声器。</li>
+<li>蓝牙设备重连后切回蓝牙输出。</li>
+<li>用户在系统面板主动切换输出设备。</li>
 </ul>
-<h3 id="3-3-监听入口"><a href="#3-3-监听入口" class="headerlink" title="3.3 监听入口"></a>3.3 监听入口</h3><ul>
-<li><code>ACTION_AUDIO_BECOMING_NOISY</code>：高优先级安全事件。</li>
-<li><code>AudioDeviceCallback</code>：设备增删监听。</li>
-<li>蓝牙连接状态广播：辅助判断重连窗口和回落策略。</li>
+<h3 id="2-3-监听入口（上层常用）"><a href="#2-3-监听入口（上层常用）" class="headerlink" title="2.3 监听入口（上层常用）"></a>2.3 监听入口（上层常用）</h3><ul>
+<li><code>ACTION_AUDIO_BECOMING_NOISY</code>：高优先级安全信号，优先用于耳机拔出保护。</li>
+<li><code>AudioDeviceCallback</code>：监听设备增删变化（<code>onAudioDevicesAdded/Removed</code>）。</li>
+<li>蓝牙连接状态广播：辅助判断断连&#x2F;重连窗口，避免误判播放器异常。</li>
 </ul>
-<h3 id="3-4-路由切换处理时序（推荐）"><a href="#3-4-路由切换处理时序（推荐）" class="headerlink" title="3.4 路由切换处理时序（推荐）"></a>3.4 路由切换处理时序（推荐）</h3><ol>
-<li>更新当前路由状态（设备类型、触发原因、时间戳）。</li>
-<li>按策略做动作（暂停、降音、继续）。</li>
-<li>同步播放器、UI、通知、Session 状态。</li>
-<li>上报切换事件与恢复耗时。</li>
-</ol>
-<h3 id="3-5-知识点拓展"><a href="#3-5-知识点拓展" class="headerlink" title="3.5 知识点拓展"></a>3.5 知识点拓展</h3><ul>
-<li>耳机断开优先考虑“防误外放”，通常先暂停。</li>
-<li>蓝牙断开后是否回落扬声器，应由产品策略明确，不建议隐式自动外放。</li>
-<li>设备切换瞬间存在短暂静音窗口，不宜立刻判定为播放失败。</li>
-<li>对车机场景，<code>MediaSession</code> 语义完整性会直接影响可控性。</li>
+<h3 id="2-4-路由切换处理流程（推荐）"><a href="#2-4-路由切换处理流程（推荐）" class="headerlink" title="2.4 路由切换处理流程（推荐）"></a>2.4 路由切换处理流程（推荐）</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><code class="hljs text">routeChanged<br>  -&gt; refreshCurrentDevice()<br>  -&gt; decideAction(pause/continue/duck)<br>  -&gt; syncPlayerUiNotificationState()<br>  -&gt; reportRouteEventAndRecoverTime()<br></code></pre></td></tr></table></figure>
+
+<p>处理要点：</p>
+<ul>
+<li>先更新路由状态，再做动作，避免动作和状态错位。</li>
+<li>切换瞬间允许短暂静音窗口，不要立刻判定为播放失败。</li>
+<li>所有动作统一走控制层，不在页面层分散处理。</li>
 </ul>
-<h3 id="3-6-常见误区"><a href="#3-6-常见误区" class="headerlink" title="3.6 常见误区"></a>3.6 常见误区</h3><ul>
-<li>只在页面层监听路由，后台播放时漏处理。</li>
-<li>路由变化直接重建整个播放会话，导致不必要重缓冲。</li>
-<li>只切换渲染链路，不更新状态层，造成“进度走但无声”。</li>
+<h3 id="2-5-默认策略建议（音乐-App）"><a href="#2-5-默认策略建议（音乐-App）" class="headerlink" title="2.5 默认策略建议（音乐 App）"></a>2.5 默认策略建议（音乐 App）</h3><ul>
+<li>耳机拔出：立即暂停，防止误外放。</li>
+<li>蓝牙断连：若回落扬声器且处于后台，默认暂停并提示用户。</li>
+<li>蓝牙重连：不强制自动播放，走“焦点恢复判定 + 用户意图”流程。</li>
+<li>路由恢复后：校验 <code>MediaSession</code>、UI、通知栏状态与播放器状态一致。</li>
 </ul>
-<hr>
-<h2 id="四、后台播放体系（Background-Playback）"><a href="#四、后台播放体系（Background-Playback）" class="headerlink" title="四、后台播放体系（Background Playback）"></a>四、后台播放体系（Background Playback）</h2><h3 id="4-1-核心目标与组件角色"><a href="#4-1-核心目标与组件角色" class="headerlink" title="4.1 核心目标与组件角色"></a>4.1 核心目标与组件角色</h3><p>后台播放体系聚合成三个核心目标：进程存活、跨界面控制、状态一致。</p>
+<h3 id="2-6-常见问题"><a href="#2-6-常见问题" class="headerlink" title="2.6 常见问题"></a>2.6 常见问题</h3><ul>
+<li>“进度在走但无声”：多为路由状态未刷新或切换后音量&#x2F;设备状态未同步。</li>
+<li>“蓝牙断开后自动外放”：未做外放保护策略或后台策略未生效。</li>
+<li>“UI 显示播放中但实际暂停”：播放器状态与 UI 状态源不一致。</li>
+</ul>
+<h3 id="2-7-版本兼容要点（Audio-Routing）"><a href="#2-7-版本兼容要点（Audio-Routing）" class="headerlink" title="2.7 版本兼容要点（Audio Routing）"></a>2.7 版本兼容要点（Audio Routing）</h3><table>
+<thead>
+<tr>
+<th>能力</th>
+<th>关键版本</th>
+<th>差异说明</th>
+<th>建议</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>ACTION_AUDIO_BECOMING_NOISY</code></td>
+<td>API 3+</td>
+<td>经典耳机拔出广播，覆盖面最广</td>
+<td>作为路由安全兜底，务必监听</td>
+</tr>
+<tr>
+<td><code>AudioDeviceCallback</code></td>
+<td>API 23+</td>
+<td>可监听设备增删（更精细）</td>
+<td>API 23+ 用回调，低版本用广播&#x2F;状态轮询兜底</td>
+</tr>
+<tr>
+<td>蓝牙权限模型</td>
+<td>API 31+</td>
+<td>蓝牙相关访问权限更严格（如 <code>BLUETOOTH_CONNECT</code>）</td>
+<td>动态权限 + 降级处理，避免权限缺失导致路由状态不准</td>
+</tr>
+<tr>
+<td>路由切换稳定性</td>
+<td>不同厂商 ROM</td>
+<td>广播时机和设备回调一致性存在差异</td>
+<td>多信号合并判定（设备回调 + 播放状态 + 超时）</td>
+</tr>
+</tbody></table>
+<h3 id="2-8-音频路由处理流程图"><a href="#2-8-音频路由处理流程图" class="headerlink" title="2.8 音频路由处理流程图"></a>2.8 音频路由处理流程图</h3><pre><code class=" mermaid">flowchart TD
+  A[路由变化事件\nNoisy/DeviceCallback/Bluetooth] --&gt; B[刷新当前输出设备状态]
+  B --&gt; C&#123;当前场景判定&#125;
+
+  C --&gt;|耳机拔出| D[立即暂停防误外放]
+  C --&gt;|蓝牙断连回落外放| E[按策略暂停并提示]
+  C --&gt;|蓝牙重连| F[进入恢复判定]
+  C --&gt;|普通切换| G[继续播放或短暂缓冲]
+
+  D --&gt; H[同步 Player/Session/Notification/UI]
+  E --&gt; H
+  F --&gt; H
+  G --&gt; H
+
+  H --&gt; I[上报路由事件与恢复耗时]
+</code></pre>
+
+<h2 id="三、后台播放（Background-Playback）"><a href="#三、后台播放（Background-Playback）" class="headerlink" title="三、后台播放（Background Playback）"></a>三、后台播放（Background Playback）</h2><h3 id="3-1-ForegroundService"><a href="#3-1-ForegroundService" class="headerlink" title="3.1 ForegroundService"></a>3.1 ForegroundService</h3><p><code>ForegroundService</code>（前台服务）是 Android 提供的“可长期运行且用户可感知”的服务形态，典型场景就是音乐播放、导航、通话。</p>
+<h4 id="3-1-1-和普通-Service-的区别"><a href="#3-1-1-和普通-Service-的区别" class="headerlink" title="3.1.1 和普通 Service 的区别"></a>3.1.1 和普通 Service 的区别</h4><ul>
+<li>普通 <code>Service</code>：后台优先级较低，系统内存紧张时更容易被回收。</li>
+<li><code>ForegroundService</code>：必须绑定持续通知，进程优先级更高，更适合连续播放。</li>
+<li>关键认知：前台服务是“更不容易被杀”，不是“绝不会被杀”。</li>
+</ul>
+<h4 id="3-1-2-为什么音乐播放需要前台服务"><a href="#3-1-2-为什么音乐播放需要前台服务" class="headerlink" title="3.1.2 为什么音乐播放需要前台服务"></a>3.1.2 为什么音乐播放需要前台服务</h4><ul>
+<li>用户切到后台后，播放任务仍需稳定持续。</li>
+<li>需要通知栏&#x2F;锁屏提供可见、可控的播放入口。</li>
+<li>需要让系统明确这是用户正在感知的任务，避免被当成普通后台任务处理。</li>
+</ul>
+<h4 id="3-1-3-基本启动链路"><a href="#3-1-3-基本启动链路" class="headerlink" title="3.1.3 基本启动链路"></a>3.1.3 基本启动链路</h4><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><code class="hljs text">user action(play)<br>  -&gt; startForegroundService(intent)<br>  -&gt; onStartCommand()<br>  -&gt; startForeground(notificationId, notification)<br>  -&gt; keep playing in service layer<br></code></pre></td></tr></table></figure>
+
+<ul>
+<li>建议只在“用户明确触发播放”后启动前台服务。</li>
+<li>启动后应尽快调用 <code>startForeground(...)</code>，避免被系统判定为异常启动。</li>
+</ul>
+<h4 id="3-1-4-生命周期基础"><a href="#3-1-4-生命周期基础" class="headerlink" title="3.1.4 生命周期基础"></a>3.1.4 生命周期基础</h4><ul>
+<li>常见组合是 <code>start + bind</code>：页面通过 bind 控制服务，页面销毁后播放仍可继续。</li>
+<li>播放结束或用户明确停止后，调用 <code>stopForeground(...)</code> 并 <code>stopSelf()</code>。</li>
+<li>在 <code>onTaskRemoved</code> 等时机保存会话快照（内容、进度、播放态），用于异常恢复。</li>
+</ul>
+<h4 id="3-1-5-合规与实现注意点"><a href="#3-1-5-合规与实现注意点" class="headerlink" title="3.1.5 合规与实现注意点"></a>3.1.5 合规与实现注意点</h4><ul>
+<li>清单中正确声明前台服务能力与类型（音频场景通常是 <code>mediaPlayback</code>）。</li>
+<li>前台服务必须对应真实可感知任务，不要在长时间暂停时无意义常驻。</li>
+<li>通知动作（播放&#x2F;暂停&#x2F;下一首）应统一回到控制层，避免页面和服务状态分叉。</li>
+</ul>
+<h4 id="3-1-6-startService-与-startForegroundService-前后台差异"><a href="#3-1-6-startService-与-startForegroundService-前后台差异" class="headerlink" title="3.1.6 startService 与 startForegroundService 前后台差异"></a>3.1.6 <code>startService</code> 与 <code>startForegroundService</code> 前后台差异</h4><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>后台服务 <code>startService</code></th>
+<th>前台服务 <code>startForegroundService</code></th>
+<th>常见限制&#x2F;报错</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>应用处于前台</td>
+<td>可启动（API 全版本）</td>
+<td>API &lt; 26 无此方法；API &gt;&#x3D; 26 可启动</td>
+<td>若已调用 <code>startForegroundService()</code> 但未及时 <code>startForeground()</code>：<code>android.app.RemoteServiceException: Context.startForegroundService() did not then call Service.startForeground()</code>（部分系统映射为 <code>ForegroundServiceDidNotStartInTimeException</code>）</td>
+</tr>
+<tr>
+<td>应用处于后台</td>
+<td>API &lt; 26 可启动；API &gt;&#x3D; 26 受限</td>
+<td>API 26-30 通常可启动，但需及时 <code>startForeground()</code>；API &gt;&#x3D; 31 默认受限（豁免场景除外）</td>
+<td><code>java.lang.IllegalStateException: Not allowed to start service Intent ... app is in background</code>；<code>BackgroundServiceStartNotAllowedException</code>（31+）；<code>ForegroundServiceStartNotAllowedException</code>（31+）</td>
+</tr>
+</tbody></table>
+<p>异常触发场景说明：</p>
+<ul>
+<li><code>IllegalStateException</code>：Android 8+ 在应用后台直接调用 <code>startService()</code> 启动普通服务，系统会拦截并抛出该异常。</li>
+<li><code>BackgroundServiceStartNotAllowedException</code>：Android 12+ 后台启动普通服务时的更明确限制异常（机型和系统实现可能与 <code>IllegalStateException</code> 表现不同）。</li>
+<li><code>ForegroundServiceStartNotAllowedException</code>：Android 12+ 在不满足豁免条件时，从后台调用 <code>startForegroundService()</code> 会直接失败。</li>
+<li><code>RemoteServiceException</code> &#x2F; <code>ForegroundServiceDidNotStartInTimeException</code>：已调用 <code>startForegroundService()</code>，但服务未在时限内执行 <code>startForeground()</code>，触发前台化超时。</li>
+</ul>
+<p>实践建议：持续播放场景统一走 <code>startForegroundService -&gt; startForeground(最小通知) -&gt; 异步初始化</code>，避免用 <code>startService</code> 兜底后台播放。</p>
+<h4 id="3-1-7-startForeground-参数介绍"><a href="#3-1-7-startForeground-参数介绍" class="headerlink" title="3.1.7 startForeground(...) 参数介绍"></a>3.1.7 <code>startForeground(...)</code> 参数介绍</h4><p>常用方法签名：</p>
+<ul>
+<li>API 29 以下：<code>startForeground(int id, Notification notification)</code></li>
+<li>API 29 及以上：<code>startForeground(int id, Notification notification, int foregroundServiceType)</code></li>
+</ul>
+<p>参数说明：</p>
 <table>
 <thead>
 <tr>
-<th>组件</th>
-<th>核心职责</th>
+<th>参数</th>
+<th>作用</th>
 <th>关键约束</th>
+<th>音乐 App 建议</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>id</code></td>
+<td>前台通知 ID，用于更新和取消同一条通知</td>
+<td>必须是正整数且会话内保持稳定；不要频繁换 ID</td>
+<td>固定一个播放通知 ID（如 <code>1001</code>）</td>
+</tr>
+<tr>
+<td><code>notification</code></td>
+<td>系统展示的前台通知实体</td>
+<td>Android 8+ 必须有通知渠道；应包含 <code>smallIcon</code> 和基础控制动作</td>
+<td>先发最小可用通知，再异步补封面&#x2F;进度</td>
+</tr>
+<tr>
+<td><code>foregroundServiceType</code>（API 29+）</td>
+<td>声明前台服务类型，帮助系统做能力和权限校验</td>
+<td>必须与清单声明匹配；音频播放通常使用 <code>FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK</code></td>
+<td>播放场景统一使用 <code>mediaPlayback</code> 类型</td>
+</tr>
+</tbody></table>
+<p>补充说明：</p>
+<ul>
+<li>Android 14+ 对前台服务类型和权限校验更严格，类型声明与权限缺失会导致启动失败。</li>
+<li><code>startForegroundService()</code> 后应尽快调用 <code>startForeground(...)</code>，否则可能触发前台化超时异常。</li>
+<li>通知参数建议先保证“可展示、可交互”，非关键信息（封面、歌词）后置更新。</li>
+</ul>
+<h4 id="3-1-8-stopForeground-使用说明"><a href="#3-1-8-stopForeground-使用说明" class="headerlink" title="3.1.8 stopForeground(...) 使用说明"></a>3.1.8 <code>stopForeground(...)</code> 使用说明</h4><p><code>stopForeground(...)</code> 用于把服务从前台态降级，和 <code>startForeground(...)</code> 成对出现。</p>
+<p>常用方法签名：</p>
+<ul>
+<li>旧签名：<code>stopForeground(boolean removeNotification)</code></li>
+<li>新签名（推荐）：<code>stopForeground(int flags)</code></li>
+</ul>
+<p><code>flags</code> 常用取值：</p>
+<table>
+<thead>
+<tr>
+<th>flags</th>
+<th>含义</th>
+<th>典型场景</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>STOP_FOREGROUND_REMOVE</code></td>
+<td>降级前台并移除通知</td>
+<td>用户明确停止播放，服务即将结束</td>
+</tr>
+<tr>
+<td><code>STOP_FOREGROUND_DETACH</code></td>
+<td>降级前台但保留通知</td>
+<td>需要保留通知入口，等待用户后续操作</td>
+</tr>
+</tbody></table>
+<p>音乐播放场景建议：</p>
+<ul>
+<li>用户“停止播放&#x2F;退出播放”时：<code>stopForeground(STOP_FOREGROUND_REMOVE)</code>，随后 <code>stopSelf()</code>。</li>
+<li>短暂停且仍需保留控制入口时：可使用 <code>STOP_FOREGROUND_DETACH</code> 保留通知。</li>
+<li>长时间暂停不应持续占用前台态，避免合规风险和无意义常驻。</li>
+</ul>
+<p>实现注意点：</p>
+<ul>
+<li>先同步播放器与 <code>MediaSession</code> 状态，再执行 <code>stopForeground(...)</code>，避免通知残留“播放中”假状态。</li>
+<li>若多个模块共用同一通知 ID，移除通知时可能互相影响，建议播放服务使用独立通知 ID。</li>
+</ul>
+<h4 id="3-1-9-ForegroundService-启停流程图"><a href="#3-1-9-ForegroundService-启停流程图" class="headerlink" title="3.1.9 ForegroundService 启停流程图"></a>3.1.9 ForegroundService 启停流程图</h4><pre><code class=" mermaid">flowchart TD
+  A[用户触发播放] --&gt; B[startForegroundService]
+  B --&gt; C&#123;系统是否允许启动&#125;
+  C --&gt;|否| D[&quot;ForegroundServiceStartNotAllowedException&lt;br/&gt;降级为通知引导恢复&quot;]
+  C --&gt;|是| E[onStartCommand]
+
+  E --&gt; F[&quot;startForeground(minNotification)&quot;]
+  F --&gt; G&#123;是否及时前台化&#125;
+  G --&gt;|否| H[&quot;RemoteServiceException /&lt;br/&gt;ForegroundServiceDidNotStartInTimeException&quot;]
+  G --&gt;|是| I[异步初始化播放器与Session]
+  I --&gt; J[进入播放中]
+
+  J --&gt; K&#123;用户停止或会话结束&#125;
+  K --&gt;|是| L[&quot;stopForeground + stopSelf&quot;]
+  K --&gt;|否| J
+</code></pre>
+
+<h4 id="3-1-10-ForegroundService-异常处理流程图"><a href="#3-1-10-ForegroundService-异常处理流程图" class="headerlink" title="3.1.10 ForegroundService 异常处理流程图"></a>3.1.10 ForegroundService 异常处理流程图</h4><pre><code class=" mermaid">flowchart TD
+  A[尝试启动播放服务] --&gt; B[startForegroundService]
+  B --&gt; C&#123;启动结果&#125;
+
+  C --&gt;|成功| D[onStartCommand]
+  C --&gt;|ForegroundServiceStartNotAllowedException| E[&quot;后台启动受限&lt;br/&gt;记录原因并通知引导用户恢复&quot;]
+  C --&gt;|IllegalStateException| F[&quot;startService 后台受限&lt;br/&gt;终止本次启动并提示回前台&quot;]
+
+  D --&gt; G[&quot;startForeground(minNotification)&quot;]
+  G --&gt; H&#123;是否及时前台化&#125;
+  H --&gt;|是| I[继续初始化并进入播放流程]
+  H --&gt;|否| J[&quot;RemoteServiceException /&lt;br/&gt;ForegroundServiceDidNotStartInTimeException&quot;]
+
+  E --&gt; K[埋点: start_not_allowed]
+  F --&gt; L[埋点: background_start_illegal]
+  J --&gt; M[埋点: start_timeout]
+
+  K --&gt; N[&quot;提供可恢复入口&lt;br/&gt;通知按钮/回前台重试&quot;]
+  L --&gt; N
+  M --&gt; N
+</code></pre>
+
+<h3 id="3-2-Notification-MediaSession"><a href="#3-2-Notification-MediaSession" class="headerlink" title="3.2 Notification &amp; MediaSession"></a>3.2 Notification &amp; MediaSession</h3><p><code>Notification</code>、<code>MediaSession</code> 和 <code>startForeground(...)</code> 在后台播放中是同一条链路：</p>
+<ul>
+<li><code>startForeground(...)</code> 负责把服务提升为前台态，保障持续运行。</li>
+<li><code>Notification</code> 提供用户可见、可点的控制入口。</li>
+<li><code>MediaSession</code> 对系统暴露标准播放语义，承接锁屏、耳机按键、车机、蓝牙设备控制。</li>
+</ul>
+<h4 id="3-2-1-三者分工"><a href="#3-2-1-三者分工" class="headerlink" title="3.2.1 三者分工"></a>3.2.1 三者分工</h4><table>
+<thead>
+<tr>
+<th>组件</th>
+<th>主要职责</th>
+<th>关键点</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>ForegroundService</code></td>
+<td>承载后台播放生命周期</td>
+<td>通过通知保持前台态</td>
+</tr>
+<tr>
+<td><code>Notification</code></td>
+<td>展示状态与控制按钮</td>
+<td>播放&#x2F;暂停&#x2F;上一首&#x2F;下一首等动作回到控制层</td>
+</tr>
+<tr>
+<td><code>MediaSession</code></td>
+<td>向系统声明播放状态与媒体信息</td>
+<td>保证 <code>PlaybackState</code> 与真实播放器一致</td>
+</tr>
+</tbody></table>
+<h4 id="3-2-2-Notification-与-MediaSession-的绑定"><a href="#3-2-2-Notification-与-MediaSession-的绑定" class="headerlink" title="3.2.2 Notification 与 MediaSession 的绑定"></a>3.2.2 Notification 与 MediaSession 的绑定</h4><ul>
+<li>音乐场景建议使用 <code>MediaStyle</code> 通知，并绑定 <code>MediaSession</code> token。</li>
+<li>常见写法：<code>Notification.MediaStyle().setMediaSession(sessionToken)</code>。</li>
+<li>绑定后，系统可在锁屏、蓝牙外设、车机界面复用同一套媒体状态。</li>
+</ul>
+<h4 id="3-2-3-推荐交互链路"><a href="#3-2-3-推荐交互链路" class="headerlink" title="3.2.3 推荐交互链路"></a>3.2.3 推荐交互链路</h4><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><code class="hljs text">user/notification/media button action<br>  -&gt; control layer dispatch command<br>  -&gt; player state changed<br>  -&gt; update MediaSession(PlaybackState/Metadata)<br>  -&gt; refresh Notification UI<br></code></pre></td></tr></table></figure>
+
+<p>顺序建议：先更新真实播放器状态，再同步 <code>MediaSession</code> 和通知，避免“按钮状态对但实际未播放”。</p>
+<h4 id="3-2-4-一致性要求"><a href="#3-2-4-一致性要求" class="headerlink" title="3.2.4 一致性要求"></a>3.2.4 一致性要求</h4><ul>
+<li>播放器、<code>MediaSession</code>、通知栏三者状态必须同源更新。</li>
+<li><code>MediaSession</code> 的 <code>isActive</code>、<code>PlaybackState</code> 不能滞后，否则外设控制会失真。</li>
+<li>通知按钮不直接操作 UI 层，统一走 Service&#x2F;控制层，避免前后台状态分叉。</li>
+</ul>
+<h4 id="3-2-5-常见问题"><a href="#3-2-5-常见问题" class="headerlink" title="3.2.5 常见问题"></a>3.2.5 常见问题</h4><ul>
+<li>通知栏点击无效：<code>PendingIntent</code> 或命令分发链路未落到控制层。</li>
+<li>锁屏状态不更新：<code>MediaSession</code> 的 <code>PlaybackState</code>&#x2F;<code>Metadata</code> 更新不及时。</li>
+<li>蓝牙按键行为错乱：通知和 <code>MediaSession</code> 同步顺序不一致或会话被重复创建。</li>
+</ul>
+<h4 id="3-2-6-版本兼容要点（Notification-MediaSession）"><a href="#3-2-6-版本兼容要点（Notification-MediaSession）" class="headerlink" title="3.2.6 版本兼容要点（Notification &amp; MediaSession）"></a>3.2.6 版本兼容要点（Notification &amp; MediaSession）</h4><table>
+<thead>
+<tr>
+<th>能力</th>
+<th>关键版本</th>
+<th>差异说明</th>
+<th>建议</th>
 </tr>
 </thead>
 <tbody><tr>
 <td><code>MediaSession</code></td>
-<td>对系统与外设暴露播放语义</td>
-<td>状态必须和真实播放一致</td>
+<td>API 21+</td>
+<td>原生 <code>MediaSession</code> 可用</td>
+<td>统一在服务层维护单实例会话</td>
 </tr>
 <tr>
-<td><code>ForegroundService</code></td>
-<td>持续承载后台播放能力</td>
-<td>生命周期与播放会话绑定</td>
+<td><code>MediaSessionCompat</code></td>
+<td>API &lt; 21</td>
+<td>通过兼容库向低版本提供接近一致能力</td>
+<td>若需覆盖低版本，优先用 Compat 封装</td>
 </tr>
 <tr>
-<td><code>Notification</code></td>
-<td>提供通知栏与锁屏控制入口</td>
-<td>动作回调统一进入控制层</td>
+<td>通知渠道（<code>NotificationChannel</code>）</td>
+<td>API 26+</td>
+<td>前台通知必须有渠道</td>
+<td>启动时确保渠道存在，避免通知创建失败</td>
 </tr>
 <tr>
-<td>持久化快照</td>
-<td>保存会话恢复所需关键字段</td>
-<td>支持进程被杀后的恢复</td>
+<td>前台服务类型参数</td>
+<td>API 29+</td>
+<td><code>startForeground(id, notification, type)</code> 可声明 <code>mediaPlayback</code></td>
+<td>与清单声明一致，避免高版本校验失败</td>
+</tr>
+<tr>
+<td>通知权限</td>
+<td>API 33+</td>
+<td><code>POST_NOTIFICATIONS</code> 影响通知可见与交互体验</td>
+<td>提前引导授权，未授权时提供可恢复入口</td>
+</tr>
+<tr>
+<td>前台服务类型校验</td>
+<td>API 34+</td>
+<td>类型与权限校验更严格</td>
+<td>启动前检查类型、权限、触发时机是否合规</td>
 </tr>
 </tbody></table>
-<p><code>ForegroundService</code> 与普通 <code>Service</code> 的本质差异：</p>
+<h4 id="3-2-7-PlaybackState-与真实播放器同源"><a href="#3-2-7-PlaybackState-与真实播放器同源" class="headerlink" title="3.2.7 PlaybackState 与真实播放器同源"></a>3.2.7 <code>PlaybackState</code> 与真实播放器同源</h4><p>原则：<code>MediaSession</code> 是对外暴露层，不是状态源。真实状态应来自播放器状态机（或统一控制层）。</p>
 <ul>
-<li>普通 <code>Service</code> 更偏后台任务，优先级低，易被回收。</li>
-<li><code>ForegroundService</code> 必须展示持续通知，优先级更高，适合播放、导航、通话等持续且用户可感知任务。</li>
-<li>前台服务不是“不会被杀”，只是“更不容易被杀”。</li>
+<li>推荐“单向同步”：<code>player -&gt; session -&gt; notification</code>，不要让通知和 <code>MediaSession</code> 反向推导播放器状态。</li>
+<li><code>PlaybackState</code> 至少保持这几项一致：<code>state</code>、<code>position</code>、<code>playbackSpeed</code>、<code>actions</code>。</li>
+<li>暂停时 <code>playbackSpeed</code> 应为 <code>0f</code>；播放时通常为 <code>1f</code>（倍速场景按真实值）。</li>
+<li>进入 <code>BUFFERING</code>、<code>ERROR</code>、<code>ENDED</code> 等状态时要及时同步到 <code>MediaSession</code>，否则锁屏和蓝牙端状态会滞后。</li>
 </ul>
-<p>为什么 Android 提供前台服务：保证持续任务稳定性，同时让用户可感知、可管理，避免后台任务滥用系统资源。</p>
-<h3 id="4-2-启动方式与生命周期模型"><a href="#4-2-启动方式与生命周期模型" class="headerlink" title="4.2 启动方式与生命周期模型"></a>4.2 启动方式与生命周期模型</h3><p>启动方式可聚合为一张关系表：</p>
-<table>
-<thead>
-<tr>
-<th>方式</th>
-<th>主要目的</th>
-<th>生命周期特征</th>
-<th>音频场景建议</th>
-</tr>
-</thead>
-<tbody><tr>
-<td><code>startService</code></td>
-<td>启动任务</td>
-<td><code>stopSelf/stopService</code> 决定结束</td>
-<td>仅兼容或短时任务</td>
-</tr>
-<tr>
-<td><code>bindService</code></td>
-<td>建立连接</td>
-<td>全部解绑后可结束（未 start 时）</td>
-<td>页面控制、状态订阅</td>
-</tr>
-<tr>
-<td><code>startForegroundService</code></td>
-<td>启动前台态服务</td>
-<td>需尽快 <code>startForeground</code></td>
-<td>后台连续播放入口</td>
-</tr>
-</tbody></table>
-<p>音频推荐组合：<code>start + bind + MediaSession</code>。</p>
-<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><code class="hljs text">UI click play<br>  -&gt; startForegroundService()<br>  -&gt; service startForeground(notification)<br>  -&gt; bind/controller connect<br>  -&gt; command(play)<br></code></pre></td></tr></table></figure>
+<p>建议在播放器回调中统一映射：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><code class="hljs text">onPlayerStateChanged(...)<br>  -&gt; mapToPlaybackState(...)<br>  -&gt; mediaSession.setPlaybackState(...)<br></code></pre></td></tr></table></figure>
 
-<p>生命周期聚合要点：</p>
+<h4 id="3-2-8-锁屏-蓝牙按键回调统一到控制层"><a href="#3-2-8-锁屏-蓝牙按键回调统一到控制层" class="headerlink" title="3.2.8 锁屏&#x2F;蓝牙按键回调统一到控制层"></a>3.2.8 锁屏&#x2F;蓝牙按键回调统一到控制层</h4><p>锁屏按钮、蓝牙耳机按键、通知按钮、页面按钮，本质都是“播放命令输入源”，应走同一条命令链。</p>
 <ul>
-<li>页面销毁不应导致播放中断；页面只负责连接与展示。</li>
-<li><code>start + bind</code> 场景下，页面解绑不影响后台持续播放。</li>
-<li>播放结束后应移除前台态并按策略停止服务，避免无效常驻。</li>
+<li>统一入口建议：<code>PlayerCommandDispatcher</code>（或同等控制层）。</li>
+<li><code>MediaSession.Callback</code> 只做命令转发，不直接操作 UI。</li>
+<li><code>Notification</code> 的 <code>PendingIntent</code> 也只发命令，不绕过控制层直调播放器。</li>
+<li>所有命令串行执行（单线程队列&#x2F;协程 actor），避免并发下的状态抖动。</li>
 </ul>
-<h3 id="4-3-保活边界与系统约束"><a href="#4-3-保活边界与系统约束" class="headerlink" title="4.3 保活边界与系统约束"></a>4.3 保活边界与系统约束</h3><p>保活的正确目标是“提升存活率 + 被杀可恢复”，而非“绝对不被杀”。</p>
-<p>平台约束聚合：</p>
-<ul>
-<li>Android 8.0+：后台执行限制增强，后台播放通常依赖前台服务。</li>
-<li>Android 12+：后台启动前台服务限制更严格，优先从用户可感知交互触发。</li>
-<li>Android 13+：通知权限影响控制入口可见性。</li>
-<li>Android 14+：前台服务类型与权限声明要求更细。</li>
-</ul>
-<p>提高存活率的关键动作：</p>
-<ul>
-<li>用户触发播放后再启动前台服务，避免隐式后台拉起。</li>
-<li><code>startForegroundService()</code> 后尽快 <code>startForeground()</code>。</li>
-<li>正确声明 <code>mediaPlayback</code> 类型与前台服务权限。</li>
-<li>会话关键状态快照持久化（内容、进度、状态、用户意图）。</li>
-<li>长播放按需使用 <code>WakeLock/WifiLock</code>，结束后及时释放。</li>
-</ul>
-<p>典型被杀场景聚合：</p>
-<table>
-<thead>
-<tr>
-<th>场景</th>
-<th>处理原则</th>
-</tr>
-</thead>
-<tbody><tr>
-<td>系统低内存回收</td>
-<td>依赖前台服务 + 快照恢复</td>
-</tr>
-<tr>
-<td>厂商省电清理</td>
-<td>机型分层治理 + 用户可见引导</td>
-</tr>
-<tr>
-<td>最近任务划掉</td>
-<td><code>onTaskRemoved</code> 做快照与安全收尾</td>
-</tr>
-<tr>
-<td>用户强行停止应用</td>
-<td>不自动拉起，等待用户再次启动</td>
-</tr>
-</tbody></table>
-<p>合规边界：前台服务必须对应真实可感知任务；长时间暂停不应持续占用前台态。</p>
-<h3 id="4-4-服务健康探测与恢复闭环"><a href="#4-4-服务健康探测与恢复闭环" class="headerlink" title="4.4 服务健康探测与恢复闭环"></a>4.4 服务健康探测与恢复闭环</h3><p>主进程与服务之间建议维护统一健康态：<code>CONNECTED</code>、<code>DEGRADED</code>、<code>DISCONNECTED</code>、<code>RECOVERING</code>。</p>
-<p>健康探测时机聚合：</p>
-<ul>
-<li>用户点击播放&#x2F;暂停&#x2F;seek 前。</li>
-<li>App 回前台时。</li>
-<li>焦点恢复或路由切换完成后。</li>
-<li>通知栏、耳机按键触发命令时。</li>
-</ul>
-<p>连接异常信号聚合：</p>
-<ul>
-<li><code>MediaController</code> 连接中断或长时间未连上。</li>
-<li>控制命令超时无响应。</li>
-<li>状态回调长期不更新。</li>
-<li>Binder 相关回调触发（含 <code>onBindingDied</code>）。</li>
-</ul>
-<p><code>onBindingDied</code> 原则：这次 bind 关系已失效，不能继续使用，需主动重建绑定链路。</p>
-<p><code>linkToDeath</code> 原则：用于监听远端 Binder 死亡，可作为“连接异常”的强信号接入恢复闭环。</p>
-<p><code>linkToDeath</code> 原理（简化链路）：</p>
-<ol>
-<li><strong>注册阶段</strong>：客户端拿到远端 <code>IBinder</code> 后调用 <code>linkToDeath()</code>，框架会向 Binder 驱动注册死亡监听。</li>
-<li><strong>监听阶段</strong>：驱动在该 Binder 引用上维护 death 记录，持续跟踪远端对象&#x2F;进程可用性。</li>
-<li><strong>触发阶段</strong>：远端进程死亡或 Binder 对象失效时，驱动向客户端发死亡通知。</li>
-<li><strong>回调阶段</strong>：客户端 Binder 线程触发 <code>DeathRecipient.binderDied()</code>，业务层进入恢复流程。</li>
-<li><strong>重建阶段</strong>：旧 binder 失效后需重新绑定；新 binder 建立后要再次 <code>linkToDeath()</code>。</li>
-</ol>
-<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><code class="hljs text">client: linkToDeath()<br>  -&gt; binder driver: register death observer<br>remote process dies/object invalid<br>  -&gt; binder driver: dead binder notify<br>client binder thread: binderDied()<br>  -&gt; reconnect / restart / relinkToDeath<br></code></pre></td></tr></table></figure>
+<p>可收敛为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><code class="hljs text">input(UI/Notification/MediaButton/Bluetooth)<br>  -&gt; dispatch(Command)<br>  -&gt; control layer validate<br>  -&gt; player execute<br></code></pre></td></tr></table></figure>
 
-<p><code>linkToDeath</code> 原理（工程视角细化）：</p>
+<h4 id="3-2-9-通知与-MediaSession-更新顺序"><a href="#3-2-9-通知与-MediaSession-更新顺序" class="headerlink" title="3.2.9 通知与 MediaSession 更新顺序"></a>3.2.9 通知与 <code>MediaSession</code> 更新顺序</h4><p>推荐顺序：<strong>先播放器，再 <code>MediaSession</code>，最后通知</strong>。</p>
 <ul>
-<li><code>linkToDeath</code> 监听的是“远端 Binder 句柄是否死亡&#x2F;失效”，不是业务可用性轮询。</li>
-<li>注册成功后，死亡通知由 Binder 驱动主动投递，回调延迟通常低于应用层超时探测。</li>
-<li>收到 <code>binderDied()</code> 时，旧 binder 已不可用，后续 IPC 调用应视为失败。</li>
-<li>对新建立的 binder，必须重新执行 <code>linkToDeath</code>，旧订阅不会自动迁移。</li>
+<li>先执行播放器动作并确认结果（成功&#x2F;失败）。</li>
+<li>再更新 <code>MediaSession</code>（<code>PlaybackState</code>、<code>Metadata</code>），保证系统侧语义正确。</li>
+<li>最后刷新通知按钮与文案，确保用户看到的状态和系统状态一致。</li>
 </ul>
-<p>何时会触发：</p>
-<ul>
-<li>服务进程崩溃或被系统终止。</li>
-<li>Binder 对象失效（例如服务更新替换导致旧引用不可用）。</li>
-<li>跨进程连接链路异常终止。</li>
-</ul>
-<p>何时不会触发：</p>
-<ul>
-<li>同进程本地 binder 场景（通常不作为保活信号）。</li>
-<li>远端进程仍存活但线程阻塞、命令处理超时。</li>
-<li>网络抖动、焦点切换等非 Binder 死亡场景。</li>
-</ul>
-<p>实现注意点：</p>
-<ul>
-<li><code>linkToDeath</code> 调用本身可能抛 <code>RemoteException</code>，表示对端可能已死亡，应直接走恢复分支。</li>
-<li><code>binderDied()</code> 通常在 Binder 线程执行，不应在回调内做重操作，建议切到控制线程。</li>
-<li>正常断开连接时执行 <code>unlinkToDeath</code>，避免监听泄漏与重复触发。</li>
-<li>将 <code>binderDied</code> 与命令超时检测组合使用，覆盖“硬故障 + 软故障”两类问题。</li>
-</ul>
-<p>为什么它检测更精准：</p>
-<ul>
-<li>这是 Binder 驱动层的死亡通知，不依赖业务轮询或超时猜测。</li>
-<li>能快速识别“远端 binder 已不可用”这一类硬故障。</li>
-<li>但它只覆盖“死亡&#x2F;失效”，不覆盖“进程活着但线程卡死”等软故障。</li>
-</ul>
-<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><code class="hljs text">onServiceConnected(name, binder)<br>  -&gt; binder.linkToDeath(deathRecipient)<br><br>deathRecipient.binderDied()<br>  -&gt; markState(DISCONNECTED)<br>  -&gt; tryReconnect()      // 先软恢复<br>  -&gt; if reconnectFailed:<br>       restartService()  // 再硬恢复<br></code></pre></td></tr></table></figure>
+<p>原因：如果先改通知或 <code>MediaSession</code>，播放器动作失败时会出现“显示已播放但实际未播”的假状态。</p>
+<p>推荐时序：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><code class="hljs text">onCommand(play/pause/next)<br>  -&gt; player.tryExecute()<br>  -&gt; update MediaSession<br>  -&gt; update Notification<br></code></pre></td></tr></table></figure>
 
-<p>使用边界：</p>
+<p>异常分支建议：若播放器执行失败，保持 <code>MediaSession</code>&#x2F;通知在原状态，并回传失败原因（用于提示和埋点）。</p>
+<h4 id="3-2-10-MediaSession-生命周期与激活边界"><a href="#3-2-10-MediaSession-生命周期与激活边界" class="headerlink" title="3.2.10 MediaSession 生命周期与激活边界"></a>3.2.10 <code>MediaSession</code> 生命周期与激活边界</h4><p><code>MediaSession</code> 建议和播放服务同生命周期管理，避免页面反复创建造成会话抖动。</p>
 <ul>
-<li><code>linkToDeath</code> 主要用于跨进程 Binder（<code>BinderProxy</code>）场景。</li>
-<li>对本地同进程 <code>Service</code>，该机制通常不产生保活价值。</li>
-<li>触发 <code>binderDied</code> 后不建议立即无限重启，需配合防抖、熔断和次数上限。</li>
-<li>在正常断开时应 <code>unlinkToDeath</code>，避免监听器泄漏与重复回调。</li>
-<li><code>binderDied</code> 回调线程通常是 Binder 线程，不应做重操作，建议切到业务线程执行恢复。</li>
+<li>创建时机：服务初始化阶段创建单实例 <code>MediaSession</code>，并设置 <code>Callback</code>。</li>
+<li>激活时机：真正可响应媒体命令时再 <code>setActive(true)</code>（通常在播放器可用后）。</li>
+<li>失活时机：会话结束、明确退出播放或不再接收外设控制时 <code>setActive(false)</code>。</li>
+<li>释放时机：服务销毁时 <code>release()</code>，避免系统保留“僵尸会话”。</li>
+<li>约束：同一播放域尽量只保留一个活跃 Session，避免锁屏&#x2F;蓝牙控制路由不确定。</li>
 </ul>
-<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><code class="hljs text">checkServiceHealth()<br>  -&gt; healthy: send command<br>  -&gt; unhealthy:<br>       tryReconnect()<br>       if reconnectFailed:<br>         restartService()<br>         restoreSessionSnapshot()<br></code></pre></td></tr></table></figure>
+<h4 id="3-2-11-PlaybackState-深水区细节"><a href="#3-2-11-PlaybackState-深水区细节" class="headerlink" title="3.2.11 PlaybackState 深水区细节"></a>3.2.11 <code>PlaybackState</code> 深水区细节</h4><p><code>PlaybackState</code> 不仅是状态值，还影响锁屏进度、车机控制可用按钮和蓝牙外设行为。</p>
+<ul>
+<li><code>actions</code> 要和当前能力一致：不可 seek 时不要暴露 seek action，避免系统展示无效按钮。</li>
+<li><code>position</code> + <code>playbackSpeed</code> + <code>updateTime</code> 要成组更新，否则锁屏进度会漂移。</li>
+<li>缓冲态建议使用 <code>STATE_BUFFERING</code> 并同步 <code>bufferedPosition</code>，减少“卡住但显示播放中”。</li>
+<li>错误态建议带可读错误码&#x2F;文案（<code>STATE_ERROR</code> + error info），便于上层提示和埋点归因。</li>
+<li>未知进度可使用 <code>PLAYBACK_POSITION_UNKNOWN</code>，不要硬填 0 导致系统误判回到开头。</li>
+</ul>
+<h4 id="3-2-12-Metadata-与队列（Queue）更新策略"><a href="#3-2-12-Metadata-与队列（Queue）更新策略" class="headerlink" title="3.2.12 Metadata 与队列（Queue）更新策略"></a>3.2.12 <code>Metadata</code> 与队列（Queue）更新策略</h4><p><code>Metadata</code> 和 Queue 直接决定锁屏&#x2F;车机显示内容是否可信。</p>
+<ul>
+<li>最小字段建议：<code>title</code>、<code>artist</code>、<code>duration</code>，缺失会影响系统展示完整性。</li>
+<li>切歌时机：先确认播放器已切到新内容，再更新 <code>Metadata</code>，避免“歌名已变但声音未变”。</li>
+<li>封面策略：优先 URI + 异步加载，避免大 Bitmap 频繁跨进程传输导致卡顿。</li>
+<li>Queue 项应有稳定 <code>queueId</code>，不要每次刷新都重建 ID，避免系统侧丢失当前项定位。</li>
+<li>若支持上一首&#x2F;下一首，<code>actions</code> 与 Queue 可达性要一致（到边界时收敛 action）。</li>
+</ul>
+<h4 id="3-2-13-外设媒体按键的命令仲裁"><a href="#3-2-13-外设媒体按键的命令仲裁" class="headerlink" title="3.2.13 外设媒体按键的命令仲裁"></a>3.2.13 外设媒体按键的命令仲裁</h4><p>蓝牙耳机、车机、锁屏按键会出现重复触发和并发触发，需要控制层做仲裁。</p>
+<ul>
+<li>统一只处理一次有效命令（防抖&#x2F;去重），避免单击触发两次 <code>play/pause</code>。</li>
+<li>对 <code>next/previous</code> 设置短时间节流，避免连续按键触发多次切歌。</li>
+<li>命令执行前先校验当前会话可用性（Session active、播放器存活、焦点策略允许）。</li>
+<li>外设命令失败时回传失败结果，不要静默吞掉，否则用户感知为“按键失灵”。</li>
+</ul>
+<h4 id="3-2-14-多-Session-冲突与排查"><a href="#3-2-14-多-Session-冲突与排查" class="headerlink" title="3.2.14 多 Session 冲突与排查"></a>3.2.14 多 Session 冲突与排查</h4><p>多会话并存是锁屏错乱、蓝牙按键串台的高频根因。</p>
+<ul>
+<li>避免页面层各自创建 Session；统一在服务层持有单会话。</li>
+<li>切换页面或播放源时复用同一个 Session token，减少系统侧重建成本。</li>
+<li>发生控制错乱时，优先排查是否存在多个 active Session。</li>
+<li>可用 <code>adb shell dumpsys media_session</code> 查看当前活跃会话、状态和命令归属。</li>
+<li>建议日志携带：<code>sessionId</code>、<code>commandSource</code>、<code>playbackState</code>、<code>contentId</code>，便于复现链路。</li>
+</ul>
+<h4 id="3-2-15-Notification-MediaSession-同步流程图"><a href="#3-2-15-Notification-MediaSession-同步流程图" class="headerlink" title="3.2.15 Notification &amp; MediaSession 同步流程图"></a>3.2.15 Notification &amp; MediaSession 同步流程图</h4><pre><code class=" mermaid">flowchart TD
+  A[命令来源\nUI/Notification/锁屏/蓝牙] --&gt; B[统一分发 CommandDispatcher]
+  B --&gt; C[控制层校验\n会话/焦点/权限]
+  C --&gt; D[播放器执行命令]
+  D --&gt; E&#123;执行结果&#125;
 
-<p>回调区别（聚合版）：</p>
-<ul>
-<li><code>onServiceDisconnected</code>：连接断开，通常可重连。</li>
-<li><code>onBindingDied</code>：绑定失效，必须重新 bind。</li>
-<li><code>onNullBinding</code>：服务未提供可用 binder。</li>
-<li><code>binderDied</code>（<code>linkToDeath</code>）：远端 Binder 对象死亡通知，适合触发恢复流程。</li>
-</ul>
-<p>稳定性约束：重启需防抖和熔断，区分网络抖动与服务异常，避免重启风暴。</p>
-<h3 id="4-5-落地清单与观测指标"><a href="#4-5-落地清单与观测指标" class="headerlink" title="4.5 落地清单与观测指标"></a>4.5 落地清单与观测指标</h3><p>落地自查清单：</p>
-<ul>
-<li>播放入口是否统一由控制层管理。</li>
-<li>是否做到“启动即前台化”且通知可交互。</li>
-<li>是否采用 <code>start + bind</code> 并把播放器实例放在服务层。</li>
-<li>是否具备“先重连、后重启”的恢复闭环。</li>
-<li>会话结束是否正确降级前台态并释放资源。</li>
-</ul>
-<p>建议指标（聚合）：</p>
-<ul>
-<li><code>service_health_check_count</code></li>
-<li><code>service_reconnect_count</code></li>
-<li><code>service_restart_count</code></li>
-<li><code>service_restart_recover_success_rate</code></li>
-<li><code>service_restart_circuit_break_count</code></li>
-</ul>
+  E --&gt;|成功| F[更新 MediaSession\nPlaybackState/Metadata]
+  F --&gt; G[刷新 Notification]
+  G --&gt; H[同步 UI 状态]
+
+  E --&gt;|失败| I[保持原状态并上报失败]
+  I --&gt; G
+</code></pre>
 
                 
               </div>
@@ -676,9 +960,9 @@
                   <article class="post-prev col-6">
                     
                     
-                      <a href="/2026/02/15/Android%E9%9F%B3%E9%A2%91%E6%8A%80%E6%9C%AF%E6%94%BB%E7%95%A5-%E4%B8%8A%E5%B1%82%E4%B8%9A%E5%8A%A1%E4%BA%A4%E4%BA%92.backup-20260215/" title="Android音频技术攻略-上层业务交互">
+                      <a href="/2026/02/16/Android-Binder%E5%88%86%E6%9E%90/" title="Android-Binder分析">
                         <i class="iconfont icon-arrowleft"></i>
-                        <span class="hidden-mobile">Android音频技术攻略-上层业务交互</span>
+                        <span class="hidden-mobile">Android-Binder分析</span>
                         <span class="visible-mobile">上一篇</span>
                       </a>
                     
@@ -732,6 +1016,21 @@
 
   
 
+
+
+  <script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/mermaid@8.8.3/dist/mermaid.min.js', function() {
+    mermaid.initialize({"theme":"default"});
+
+    Fluid.utils.listenDOMLoaded(function() {
+      Fluid.events.registerRefreshCallback(function() {
+        if ('mermaid' in window) {
+          mermaid.init();
+        }
+      });
+    });
+  });
+</script>
 
 
 
