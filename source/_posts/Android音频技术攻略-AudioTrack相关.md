@@ -5,9 +5,14 @@ tags: 音视频
 mermaid: true
 ---
 
-## 一、AudioTrack相关
+## 导读
 
-### 1.1 AudioTrack是什么（认知聚合）
+- 本文按“定位与参数 -> 生命周期 -> 写入机制 -> API 观测 -> 故障恢复”组织，适合作为 AudioTrack 实战手册。
+- 如果只看落地，建议优先阅读 `1.2`、`2.3`、`3.3`、`5.1~5.4`。
+
+## 一、AudioTrack 定位与创建参数
+
+### 1.1 AudioTrack 是什么（定位）
 
 #### 1.1.1 基础定义
 
@@ -38,7 +43,7 @@ flowchart LR
 - `Project.md` 仅用于定位项目中的 AudioTrack 使用点。
 - 正文主线聚焦通用分析方法，不以项目源码走读为主。
 
-### 1.2 AudioTrack创建参数
+### 1.2 创建参数（从可播到可稳播）
 
 ```java
 // https://cs.android.com/android/platform/superproject/+/android-latest-release:frameworks/base/media/java/android/media/AudioTrack.java
@@ -64,7 +69,7 @@ AudioTrack track = new AudioTrack.Builder()
 
 ```
 
-#### 1.2.0 三要素与构造参数映射
+#### 参数三要素与构造映射（先看）
 
 | PCM 核心参数 | AudioTrack 对应参数 | 常见值 | 说明 |
 | --- | --- | --- | --- |
@@ -133,7 +138,7 @@ AudioTrack track = new AudioTrack.Builder()
 
 - 选择格式时同时看三件事：设备支持、上游解码输出、CPU/带宽成本。
 
-##### PCM_FLOAT 异常回退 case
+##### PCM_FLOAT 异常回退场景
 
 - 如果 `ENCODING_PCM_FLOAT` 播放出现杂音或无声，建议优先回退到 `ENCODING_PCM_16BIT` 保证可播。
 
@@ -289,7 +294,7 @@ AudioTrack track = new AudioTrack.Builder()
 
 - 如果源是多声道但设备/链路不稳定，优先下混到立体声，先保证可播和稳定性。
 
-## 二、AudioTrack播放模式与生命周期
+## 二、播放状态与生命周期管理
 
 ### 2.1 播放模式选择
 
@@ -378,7 +383,7 @@ stateDiagram-v2
 
 - 判断口诀：只想“暂时停”用 `pause`，要“切断旧流”用 `stop`，要“丢掉旧缓冲”加 `flush`。
 
-## 三、AudioTrack write机制与实战
+## 三、写入机制与渲染节拍
 
 ### 3.1 `write(...)` 常见接口
 
@@ -435,7 +440,7 @@ while (playing) {
 - 发生 `ERROR_DEAD_OBJECT` 时优先重建，不要在旧实例上无限重试。
 - `pause/stop/flush/release` 与 `write` 线程要串行化，避免并发状态竞争。
 
-### 3.6 知识点补充：`write` 参数与返回值单位
+### 3.6 `write` 参数与返回值单位
 
 - `write` 的 `offset/size` 与返回值单位，取决于你用的是哪种重载，不是所有接口都按字节计算。
 
@@ -448,7 +453,7 @@ while (playing) {
 
 - 工程上最容易出错的是把 `float[]` 的长度当字节传，或把返回值按错误单位累计 offset。
 
-### 3.7 知识点补充：`write` 调用自身阻塞
+### 3.7 `write` 阻塞诊断
 
 - 这是一个常见但容易误判的场景：数据已经拿到了，但 `write` 本身阻塞很久，导致渲染线程卡住。
 
@@ -476,7 +481,7 @@ while (playing) {
 
 - 这个方案的目标不是精确定位根因，而是先快速识别“当前卡顿更像写入阻塞”。
 
-## 四、常用AudioTrack API速查
+## 四、常用 API 与观测
 
 ### 4.1 音量相关 API（volume）
 
@@ -524,7 +529,7 @@ while (playing) {
 - 延迟排查先看“是否持续波动”，再看“是否超阈值”，避免单点值误判。
 - 统一记录 `volume/route/latency/writeCostMs`，便于复盘问题。
 
-## 五、常见问题处理
+## 五、常见问题与恢复策略
 
 ### 5.1 Underrun
 
@@ -631,3 +636,12 @@ while (playing) {
 | 持续异常 | `recreate + 参数降级`（如 `PCM_FLOAT -> PCM_16BIT`） | 先保稳定可播 |
 
 - 排查顺序建议：先确认是否“参数变化未重建”，再看 `buffer` 与 `write` 指标，最后核对路由切换时序。
+
+## 六、落地检查清单
+
+1. 参数一致：`sampleRate/channel/encoding/bufferSize` 与上游 PCM 口径一致。
+2. 生命周期可控：`play/pause/stop/flush/release` 调用顺序明确，`release` 后必重建。
+3. 写入策略稳定：短写可补齐，错误码可分级恢复，`ERROR_DEAD_OBJECT` 可自动重建。
+4. 延迟可观测：持续记录 `requested/written/writeCostMs/fillCostMs/latency`。
+5. 路由可恢复：耳机/蓝牙切换后能完成参数校验、实例重建与状态回放。
+6. 故障可回退：出现杂音/无声/阻塞时，可执行 `stop -> flush -> release -> recreate` 并必要时降级到 `PCM_16BIT`。
