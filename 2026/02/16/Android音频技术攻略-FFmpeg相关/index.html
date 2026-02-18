@@ -19,16 +19,17 @@
   <meta name="author" content="Leo-Wxy">
   <meta name="keywords" content="">
   
-    <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
+    <meta name="description" content="FFmpeg 是一个开源跨平台多媒体框架，提供音视频的解封装、编解码、转码与流媒体处理能力。  一、FFmpeg 提供的核心能力 建议按“为什么选 FFmpeg -&gt; 需要哪些能力 -&gt; 如何落地 -&gt; 代价与取舍”来梳理。 一句话结论：FFmpeg 的价值不只是“能解码”，而是“可控地稳定解码并统一输出 PCM”。  1.1 多媒体能力总览 解封装（Demux）：从 MP3&amp;">
 <meta property="og:type" content="article">
 <meta property="og:title" content="Android音频技术攻略-FFmpeg相关">
 <meta property="og:url" content="https://leo-wxy.github.io/2026/02/16/Android%E9%9F%B3%E9%A2%91%E6%8A%80%E6%9C%AF%E6%94%BB%E7%95%A5-FFmpeg%E7%9B%B8%E5%85%B3/index.html">
 <meta property="og:site_name" content="Wxy的个人博客">
-<meta property="og:description" content="如果我没有见过光明，那我本可以忍受黑暗">
+<meta property="og:description" content="FFmpeg 是一个开源跨平台多媒体框架，提供音视频的解封装、编解码、转码与流媒体处理能力。  一、FFmpeg 提供的核心能力 建议按“为什么选 FFmpeg -&gt; 需要哪些能力 -&gt; 如何落地 -&gt; 代价与取舍”来梳理。 一句话结论：FFmpeg 的价值不只是“能解码”，而是“可控地稳定解码并统一输出 PCM”。  1.1 多媒体能力总览 解封装（Demux）：从 MP3&amp;">
 <meta property="og:locale" content="zh_CN">
 <meta property="article:published_time" content="2026-02-16T12:45:02.000Z">
-<meta property="article:modified_time" content="2026-02-16T12:45:02.501Z">
+<meta property="article:modified_time" content="2026-02-18T13:34:13.278Z">
 <meta property="article:author" content="Leo-Wxy">
+<meta property="article:tag" content="音视频">
 <meta name="twitter:card" content="summary_large_image">
   
   
@@ -223,7 +224,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          0 字
+          7.7k 字
         
       </span>
     
@@ -235,7 +236,7 @@
         
         
           <!-- compatible with older versions-->
-          1 分钟
+          25 分钟
         
       </span>
     
@@ -290,7 +291,1015 @@
             
               <div class="markdown-body">
                 
-                
+                <blockquote>
+<p>FFmpeg 是一个开源跨平台多媒体框架，提供音视频的解封装、编解码、转码与流媒体处理能力。</p>
+</blockquote>
+<h2 id="一、FFmpeg-提供的核心能力"><a href="#一、FFmpeg-提供的核心能力" class="headerlink" title="一、FFmpeg 提供的核心能力"></a>一、FFmpeg 提供的核心能力</h2><ul>
+<li>建议按“为什么选 FFmpeg -&gt; 需要哪些能力 -&gt; 如何落地 -&gt; 代价与取舍”来梳理。</li>
+<li>一句话结论：FFmpeg 的价值不只是“能解码”，而是“可控地稳定解码并统一输出 PCM”。</li>
+</ul>
+<h3 id="1-1-多媒体能力总览"><a href="#1-1-多媒体能力总览" class="headerlink" title="1.1 多媒体能力总览"></a>1.1 多媒体能力总览</h3><ul>
+<li><strong>解封装（Demux）</strong>：从 MP3&#x2F;AAC&#x2F;FLAC&#x2F;MP4 等容器中拆出音视频流。</li>
+<li><strong>解码（Decode）</strong>：把压缩码流还原成原始音频&#x2F;视频帧（如 PCM&#x2F;YUV）。</li>
+<li><strong>编码（Encode）</strong>：把原始数据压缩成目标编码格式（如 AAC、Opus、H.264）。</li>
+<li><strong>转封装（Remux）</strong>：不改编码内容，仅更换容器格式。</li>
+<li><strong>转码（Transcode）</strong>：解码 + 重编码，常用于格式统一与码率压缩。</li>
+<li><strong>流媒体与协议支持</strong>：支持文件、本地流、HTTP&#x2F;HTTPS 等输入输出。</li>
+</ul>
+<p><strong>为什么播放内核优先选 FFmpeg</strong></p>
+<ul>
+<li><strong>格式覆盖更完整</strong>：AAC&#x2F;MP3&#x2F;FLAC&#x2F;Opus 等能力一致，减少“某机型可播、某机型不可播”的风险。</li>
+<li><strong>运行时行为更可控</strong>：可精细控制解码、重采样、Seek、错误恢复流程。</li>
+<li><strong>输入侧扩展更灵活</strong>：可通过 <code>AVIOContext</code> 统一接入文件、缓存、网络和加密数据源。</li>
+<li><strong>代价可管理</strong>：CPU、so 体积和接入复杂度会增加，但可通过裁剪、队列策略和降级机制控制。</li>
+</ul>
+<h3 id="1-2-当前播放内核实际需要的-FFmpeg-能力与功能"><a href="#1-2-当前播放内核实际需要的-FFmpeg-能力与功能" class="headerlink" title="1.2 当前播放内核实际需要的 FFmpeg 能力与功能"></a>1.2 当前播放内核实际需要的 FFmpeg 能力与功能</h3><table>
+<thead>
+<tr>
+<th>能力</th>
+<th>在内核里的功能</th>
+<th>关键 FFmpeg 知识点</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>自定义数据源接入</td>
+<td>统一支持文件&#x2F;网络&#x2F;加密源读取</td>
+<td><code>AVIOContext</code>、<code>read/seek</code> 回调</td>
+</tr>
+<tr>
+<td>流探测与音轨选择</td>
+<td>获取时长、采样率、声道并选中音轨</td>
+<td><code>avformat_find_stream_info</code>、<code>av_find_best_stream</code></td>
+</tr>
+<tr>
+<td>音频解码</td>
+<td>将 AAC&#x2F;MP3&#x2F;FLAC&#x2F;Opus 解码为 PCM</td>
+<td><code>avcodec_send_packet/avcodec_receive_frame</code></td>
+</tr>
+<tr>
+<td>PCM 统一输出</td>
+<td>统一采样率、声道、样本格式（含 planar -&gt; packed）</td>
+<td><code>SwrContext</code>、<code>swr_convert</code></td>
+</tr>
+<tr>
+<td>时间戳与进度计算</td>
+<td>支撑播放进度与同步基准</td>
+<td><code>PTS/time_base</code>、<code>av_q2d</code></td>
+</tr>
+<tr>
+<td>Seek&#x2F;FastSeek</td>
+<td>拖动定位与跳播后恢复解码链路</td>
+<td><code>av_seek_frame</code>、<code>AVSEEK_FLAG_BACKWARD</code>、<code>avcodec_flush_buffers</code></td>
+</tr>
+<tr>
+<td>多流并行解码</td>
+<td>支撑 Gapless&#x2F;CrossFade 等多流并发场景</td>
+<td>多实例 <code>AVFormatContext/AVCodecContext</code> 管理</td>
+</tr>
+<tr>
+<td>兼容性降级</td>
+<td>机型异常时黑名单&#x2F;软解回退</td>
+<td>解码器黑名单、错误码与恢复策略</td>
+</tr>
+<tr>
+<td>生命周期与稳定性</td>
+<td>长时间播放不泄漏、异常可恢复</td>
+<td><code>AVFormatContext/AVCodecContext/AVPacket/AVFrame</code> 释放</td>
+</tr>
+</tbody></table>
+<h3 id="1-3-这些能力在当前播放能力中的落地"><a href="#1-3-这些能力在当前播放能力中的落地" class="headerlink" title="1.3 这些能力在当前播放能力中的落地"></a>1.3 这些能力在当前播放能力中的落地</h3><table>
+<thead>
+<tr>
+<th>播放能力</th>
+<th>依赖的 FFmpeg 能力</th>
+<th>直接结果</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>多格式可播</td>
+<td>流探测 + 音频解码</td>
+<td>AAC&#x2F;MP3&#x2F;FLAC&#x2F;Opus 等都能稳定出 PCM</td>
+</tr>
+<tr>
+<td>统一渲染格式</td>
+<td>重采样&#x2F;重排</td>
+<td>不同源格式统一成设备可消费 PCM</td>
+</tr>
+<tr>
+<td>进度与定位</td>
+<td>时间戳换算 + Seek</td>
+<td>进度显示准确，拖动后能快速恢复播放</td>
+</tr>
+<tr>
+<td>复杂数据源播放</td>
+<td>自定义 IO 回调</td>
+<td>文件&#x2F;网络&#x2F;加密源可复用同一解码链路</td>
+</tr>
+<tr>
+<td>长时间稳定播放</td>
+<td>错误恢复 + 生命周期管理</td>
+<td>减少异常中断、降低内存泄漏风险</td>
+</tr>
+</tbody></table>
+<ul>
+<li>一句话总结：这些能力组合起来，才构成“能播、好播、稳播”的音频播放体验。</li>
+</ul>
+<h3 id="1-4-能力取舍"><a href="#1-4-能力取舍" class="headerlink" title="1.4 能力取舍"></a>1.4 能力取舍</h3><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>收益</th>
+<th>代价</th>
+<th>常见优化策略</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>兼容性</td>
+<td>多格式可播、跨机型行为更一致</td>
+<td>接入复杂度上升</td>
+<td>缩小能力边界，优先保留核心音频链路</td>
+</tr>
+<tr>
+<td>可控性</td>
+<td>可实现精细化 Seek&#x2F;恢复&#x2F;降级</td>
+<td>需要自建状态机与错误处理</td>
+<td>按初始化&#x2F;执行&#x2F;输出分层治理</td>
+</tr>
+<tr>
+<td>稳定性</td>
+<td>异常可恢复、长播放更稳</td>
+<td>需要严格生命周期管理</td>
+<td>统一资源释放与失败重建策略</td>
+</tr>
+<tr>
+<td>性能体积</td>
+<td>方案可持续扩展</td>
+<td>CPU 与 so 体积有成本</td>
+<td><code>--disable-everything</code> 按需裁剪</td>
+</tr>
+</tbody></table>
+<h3 id="1-5-播放链路图（FFmpeg-视角）"><a href="#1-5-播放链路图（FFmpeg-视角）" class="headerlink" title="1.5 播放链路图（FFmpeg 视角）"></a>1.5 播放链路图（FFmpeg 视角）</h3><pre><code class=" mermaid">flowchart LR
+  A[数据源: File/HTTP/自定义IO] --&gt; B[libavformat&lt;br/&gt;Demux]
+  B --&gt; C[libavcodec&lt;br/&gt;Decode]
+  C --&gt; D[libswresample&lt;br/&gt;重采样/重排]
+  D --&gt; E[PCM Buffer]
+  E --&gt; F[AudioTrack write]
+  F --&gt; G[AudioFlinger/HAL]
+  G --&gt; H[Speaker/Bluetooth/Headset]
+</code></pre>
+
+<h2 id="二、FFmpeg-在-Android-中的集成"><a href="#二、FFmpeg-在-Android-中的集成" class="headerlink" title="二、FFmpeg 在 Android 中的集成"></a>二、FFmpeg 在 Android 中的集成</h2><h3 id="2-1-集成目标"><a href="#2-1-集成目标" class="headerlink" title="2.1 集成目标"></a>2.1 集成目标</h3><ul>
+<li>在 Android 端把 FFmpeg 作为 Native 解码能力接入，向上提供稳定的 PCM 输出能力。</li>
+<li>集成时优先关注三件事：<strong>可用性、体积、兼容性</strong>。</li>
+</ul>
+<h3 id="2-2-常见集成方式"><a href="#2-2-常见集成方式" class="headerlink" title="2.2 常见集成方式"></a>2.2 常见集成方式</h3><table>
+<thead>
+<tr>
+<th>方式</th>
+<th>说明</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>预编译 so 直接接入</td>
+<td>直接引入 <code>arm64-v8a/armeabi-v7a</code> 等产物</td>
+<td>快速验证、工程改动小</td>
+</tr>
+<tr>
+<td>项目内源码编译</td>
+<td>在 CI 或本地按需编译 FFmpeg</td>
+<td>需要长期维护与裁剪</td>
+</tr>
+<tr>
+<td>第三方封装层接入</td>
+<td>通过已有播放器内核封装调用</td>
+<td>团队希望减少 FFmpeg 细节维护</td>
+</tr>
+</tbody></table>
+<h3 id="2-3-Android-集成最小组件"><a href="#2-3-Android-集成最小组件" class="headerlink" title="2.3 Android 集成最小组件"></a>2.3 Android 集成最小组件</h3><ul>
+<li>音频播放常用最小集合：<code>libavformat + libavcodec + libavutil + libswresample</code>。</li>
+<li>如果有网络流场景，需要按需启用 <code>protocol</code>（如 <code>http/https</code>）。</li>
+<li>如果只做本地音频播放，可进一步收敛到更小组件集。</li>
+</ul>
+<h3 id="2-4-编译裁剪原则（移动端重点）"><a href="#2-4-编译裁剪原则（移动端重点）" class="headerlink" title="2.4 编译裁剪原则（移动端重点）"></a>2.4 编译裁剪原则（移动端重点）</h3><ul>
+<li>建议从 <code>--disable-everything</code> 开始，再按业务格式逐项开启。</li>
+<li>只保留线上需要的 decoder&#x2F;demuxer&#x2F;parser&#x2F;protocol，避免“全家桶”配置。</li>
+<li>裁剪目标是：在功能覆盖满足业务的前提下，尽量减少 so 体积与加载耗时。</li>
+</ul>
+<h3 id="2-5-推荐-configure（按当前播放内核能力裁剪）"><a href="#2-5-推荐-configure（按当前播放内核能力裁剪）" class="headerlink" title="2.5 推荐 configure（按当前播放内核能力裁剪）"></a>2.5 推荐 configure（按当前播放内核能力裁剪）</h3><h4 id="方案-A：推荐（自定义-IO-主导，体积更小）"><a href="#方案-A：推荐（自定义-IO-主导，体积更小）" class="headerlink" title="方案 A：推荐（自定义 IO 主导，体积更小）"></a>方案 A：推荐（自定义 IO 主导，体积更小）</h4><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><code class="hljs bash">./configure \<br>  --target-os=android \<br>  --<span class="hljs-built_in">arch</span>=arm64 \<br>  --enable-cross-compile \<br>  --disable-programs \<br>  --disable-doc \<br>  --disable-debug \<br>  --enable-small \<br>  --disable-avdevice \<br>  --disable-avfilter \<br>  --disable-postproc \<br>  --disable-swscale \<br>  --disable-network \<br>  --disable-everything \<br>  --enable-avformat \<br>  --enable-avcodec \<br>  --enable-avutil \<br>  --enable-swresample \<br>  --enable-protocol=file,pipe \<br>  --enable-demuxer=mov,mp3,aac,flac,ogg,wav \<br>  --enable-decoder=aac,aac_latm,mp3,flac,opus,vorbis,pcm_s16le \<br>  --enable-parser=aac,mpegaudio,flac,opus,vorbis<br></code></pre></td></tr></table></figure>
+
+<h4 id="方案-B：需要-FFmpeg-直连-HTTP-HTTPS-时"><a href="#方案-B：需要-FFmpeg-直连-HTTP-HTTPS-时" class="headerlink" title="方案 B：需要 FFmpeg 直连 HTTP&#x2F;HTTPS 时"></a>方案 B：需要 FFmpeg 直连 HTTP&#x2F;HTTPS 时</h4><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><code class="hljs bash">./configure \<br>  ... \<br>  --enable-network \<br>  --enable-protocol=file,pipe,http,https,tcp,tls<br></code></pre></td></tr></table></figure>
+
+<ul>
+<li>若播放内核已经通过 <code>AVIOContext</code> 接管网络读取，优先用方案 A。</li>
+<li>若要让 FFmpeg 自己拉取 URL，再用方案 B，并补齐 TLS 依赖（如 OpenSSL）。</li>
+<li><code>demuxer/decoder/parser</code> 列表应与线上格式覆盖率保持一致，定期回看埋点后再增减。</li>
+</ul>
+<h3 id="2-6-与-Android-工程对接要点"><a href="#2-6-与-Android-工程对接要点" class="headerlink" title="2.6 与 Android 工程对接要点"></a>2.6 与 Android 工程对接要点</h3><ul>
+<li>通过 JNI 调用 Native 解码模块，把压缩音频输入 FFmpeg，输出 PCM 给渲染层。</li>
+<li>注意 ABI 产物对齐（<code>arm64-v8a</code> 等）与打包体积控制。</li>
+<li>数据源可通过自定义 IO 回调接入（便于支持文件、网络、加密源统一读取）。</li>
+</ul>
+<h3 id="2-7-集成验收清单"><a href="#2-7-集成验收清单" class="headerlink" title="2.7 集成验收清单"></a>2.7 集成验收清单</h3><ol>
+<li>常见格式（AAC&#x2F;MP3&#x2F;FLAC&#x2F;Opus）可稳定解码。</li>
+<li>Seek 后可继续正常出声，无明显爆音或长时间静音。</li>
+<li>so 体积与冷启动耗时满足发布目标。</li>
+<li>关键机型回归通过（含蓝牙&#x2F;耳机切换场景）。</li>
+</ol>
+<h2 id="三、FFmpeg-运行时解码流程"><a href="#三、FFmpeg-运行时解码流程" class="headerlink" title="三、FFmpeg 运行时解码流程"></a>三、FFmpeg 运行时解码流程</h2><h3 id="3-1-解码能力"><a href="#3-1-解码能力" class="headerlink" title="3.1 解码能力"></a>3.1 解码能力</h3><ul>
+<li>初始化目标是把“输入源 + 音轨 + 解码器实例”准备到可解码状态。</li>
+<li>若使用业务数据源（缓存、加密、分段下载），应先接入 <code>AVIOContext</code> 的 <code>read/seek</code> 回调，再进入开流流程。</li>
+<li>初始化阶段任一步失败，都应立即停止链路并回收资源，避免半初始化状态。</li>
+</ul>
+<p><strong>关键方法</strong></p>
+<ul>
+<li><code>avformat_open_input</code>：打开输入并创建 <code>AVFormatContext</code>。</li>
+<li><code>avformat_find_stream_info</code>：探测流信息，补全 codec 参数。</li>
+<li><code>av_find_best_stream</code>：选择目标音轨。</li>
+<li><code>avcodec_find_decoder</code> + <code>avcodec_open2</code>：匹配并打开解码器；成功后才进入可解码状态。</li>
+</ul>
+<p><strong>Format&#x2F;Codec 生命周期（与初始化对应）</strong></p>
+<table>
+<thead>
+<tr>
+<th>初始化动作</th>
+<th>运行时对象</th>
+<th>关闭&#x2F;释放动作</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>avformat_open_input</code></td>
+<td><code>AVFormatContext</code></td>
+<td><code>avformat_close_input</code>（手动 <code>avformat_alloc_context</code> 时可补 <code>avformat_free_context</code>）</td>
+<td>对应输入打开阶段，停止或切流时回收</td>
+</tr>
+<tr>
+<td><code>avcodec_alloc_context3</code> + <code>avcodec_open2</code></td>
+<td><code>AVCodecContext</code></td>
+<td><code>avcodec_close</code> + <code>avcodec_free_context</code></td>
+<td>对应解码器初始化阶段，失败与结束都需回收</td>
+</tr>
+<tr>
+<td><code>av_packet_alloc</code> &#x2F; <code>av_frame_alloc</code></td>
+<td><code>AVPacket</code> &#x2F; <code>AVFrame</code></td>
+<td>循环内 <code>av_packet_unref</code> &#x2F; <code>av_frame_unref</code>，结束时 <code>av_packet_free</code> &#x2F; <code>av_frame_free</code></td>
+<td>兼顾高频复用与最终释放</td>
+</tr>
+</tbody></table>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><code class="hljs cpp"><span class="hljs-comment">// 与初始化阶段对应的常见释放顺序</span><br><span class="hljs-built_in">avcodec_close</span>(dec_ctx);<br><span class="hljs-built_in">avcodec_free_context</span>(&amp;dec_ctx);<br><span class="hljs-built_in">avformat_close_input</span>(&amp;fmt);<br><span class="hljs-built_in">av_packet_free</span>(&amp;pkt);<br><span class="hljs-built_in">av_frame_free</span>(&amp;frame);<br></code></pre></td></tr></table></figure>
+
+<p><strong>失败处理（初始化阶段）</strong></p>
+<table>
+<thead>
+<tr>
+<th>失败点</th>
+<th>常见原因</th>
+<th>建议处理</th>
+<th>典型错误码映射</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>avformat_open_input</code> 失败</td>
+<td>数据源不可用、路径&#x2F;参数错误、IO 中断</td>
+<td>立即停止初始化并回收 context；按策略重试或切换数据源</td>
+<td><code>kAudioPlayerUnkownOpenStreamError</code> &#x2F; <code>kAudioPlayerIOError</code></td>
+</tr>
+<tr>
+<td><code>avformat_find_stream_info</code> 失败</td>
+<td>流信息不完整、文件损坏</td>
+<td>终止开流流程并上报不可播</td>
+<td><code>kAudioPlayerNoAudioStreamInfo</code></td>
+</tr>
+<tr>
+<td><code>av_find_best_stream</code> 返回负值</td>
+<td>无可用音轨</td>
+<td>终止流程并返回不支持错误</td>
+<td><code>kAudioPlayerNoAudioStreamInfo</code></td>
+</tr>
+<tr>
+<td><code>avcodec_find_decoder</code> 返回空</td>
+<td>编码不支持或被禁用</td>
+<td>尝试降级策略（如黑名单回退），否则失败返回</td>
+<td><code>kAudioPlayerUnSupportAuidoCodec</code></td>
+</tr>
+<tr>
+<td><code>avcodec_open2</code> 失败</td>
+<td>解码器参数不兼容或初始化失败</td>
+<td>清理并重建解码器；连续失败直接终止</td>
+<td><code>kAudioPlayerOpenAudioCodecError</code></td>
+</tr>
+<tr>
+<td><code>avcodec_alloc_context3</code> 失败</td>
+<td>内存不足</td>
+<td>立即失败并清理已分配资源</td>
+<td><code>kAudioPlayerErrorNoMemory</code></td>
+</tr>
+</tbody></table>
+<h3 id="3-2-执行能力"><a href="#3-2-执行能力" class="headerlink" title="3.2 执行能力"></a>3.2 执行能力</h3><ul>
+<li>解码核心是 <code>av_read_frame -&gt; avcodec_send_packet -&gt; avcodec_receive_frame</code> 的双循环。</li>
+<li>一个 <code>AVPacket</code> 可能产出多个 <code>AVFrame</code>，必须持续 <code>receive</code> 直到 <code>EAGAIN/EOF</code>。</li>
+<li><code>EAGAIN</code> 要区分方向处理：<code>send</code> 返回 <code>EAGAIN</code> 先 <code>receive</code>，<code>receive</code> 返回 <code>EAGAIN</code> 再回到 <code>send</code>。</li>
+<li>Seek 或切流后需要执行 <code>av_seek_frame</code> + <code>avcodec_flush_buffers</code>，并同步清空上层 PCM 队列。</li>
+</ul>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br></pre></td><td class="code"><pre><code class="hljs cpp">AVPacket* pkt = <span class="hljs-built_in">av_packet_alloc</span>();<br>AVFrame* frame = <span class="hljs-built_in">av_frame_alloc</span>();<br><br><span class="hljs-keyword">while</span> (<span class="hljs-built_in">av_read_frame</span>(fmt, pkt) &gt;= <span class="hljs-number">0</span>) &#123;<br>    <span class="hljs-keyword">if</span> (pkt-&gt;stream_index != aidx) &#123;<br>        <span class="hljs-built_in">av_packet_unref</span>(pkt);<br>        <span class="hljs-keyword">continue</span>;<br>    &#125;<br><br>    <span class="hljs-type">int</span> ret = <span class="hljs-number">0</span>;<br><br>    <span class="hljs-comment">// send 侧 EAGAIN: 先 receive 清掉内部输出，再重试 send 当前 packet</span><br>    <span class="hljs-keyword">while</span> ((ret = <span class="hljs-built_in">avcodec_send_packet</span>(dec_ctx, pkt)) == <span class="hljs-built_in">AVERROR</span>(EAGAIN)) &#123;<br>        <span class="hljs-keyword">while</span> ((ret = <span class="hljs-built_in">avcodec_receive_frame</span>(dec_ctx, frame)) &gt;= <span class="hljs-number">0</span>) &#123;<br>            <span class="hljs-comment">// 输出 frame，后续进入 PCM 格式统一</span><br>            <span class="hljs-built_in">av_frame_unref</span>(frame);<br>        &#125;<br>        <span class="hljs-keyword">if</span> (ret != <span class="hljs-built_in">AVERROR</span>(EAGAIN) &amp;&amp; ret != AVERROR_EOF) &#123;<br>            <span class="hljs-keyword">break</span>;<br>        &#125;<br>    &#125;<br>    <span class="hljs-built_in">av_packet_unref</span>(pkt);<br><br>    <span class="hljs-keyword">if</span> (ret &lt; <span class="hljs-number">0</span> &amp;&amp; ret != AVERROR_EOF) &#123;<br>        <span class="hljs-comment">// 当前包失败：计数、上报、必要时重建解码器</span><br>        <span class="hljs-keyword">continue</span>;<br>    &#125;<br><br>    <span class="hljs-keyword">while</span> (<span class="hljs-literal">true</span>) &#123;<br>        ret = <span class="hljs-built_in">avcodec_receive_frame</span>(dec_ctx, frame);<br>        <span class="hljs-keyword">if</span> (ret == <span class="hljs-built_in">AVERROR</span>(EAGAIN) || ret == AVERROR_EOF) <span class="hljs-keyword">break</span>;<br>        <span class="hljs-keyword">if</span> (ret &lt; <span class="hljs-number">0</span>) <span class="hljs-keyword">break</span>;<br><br>        <span class="hljs-comment">// 输出 frame，后续进入 PCM 格式统一</span><br>        <span class="hljs-built_in">av_frame_unref</span>(frame);<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p><strong>关键方法</strong></p>
+<ul>
+<li><code>av_read_frame</code>：从 demux 层读取 <code>AVPacket</code>，只处理目标音轨。</li>
+<li><code>avcodec_send_packet</code> + <code>avcodec_receive_frame</code>：推进解码状态机并产出 <code>AVFrame</code>。</li>
+<li><code>av_seek_frame</code> + <code>avcodec_flush_buffers</code>：定位后清空旧解码状态，恢复到新位置继续解码。</li>
+<li><code>avcodec_send_packet(dec_ctx, nullptr)</code>：文件结束时触发 drain，取完解码器内部残留帧。</li>
+<li><code>av_packet_unref</code> &#x2F; <code>av_frame_unref</code>：循环复用对象，避免长时间播放内存增长。</li>
+</ul>
+<p><strong>EAGAIN 双向状态机（send&#x2F;receive）</strong></p>
+<table>
+<thead>
+<tr>
+<th>当前调用</th>
+<th>返回值</th>
+<th>含义</th>
+<th>正确动作</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>avcodec_send_packet</code></td>
+<td><code>AVERROR(EAGAIN)</code></td>
+<td>解码器输出未取空</td>
+<td>先循环 <code>avcodec_receive_frame</code>，再重试 <code>send</code> 当前包</td>
+</tr>
+<tr>
+<td><code>avcodec_receive_frame</code></td>
+<td><code>AVERROR(EAGAIN)</code></td>
+<td>输入不足，暂时无帧可取</td>
+<td>回到 <code>av_read_frame + avcodec_send_packet</code></td>
+</tr>
+<tr>
+<td><code>avcodec_receive_frame</code></td>
+<td><code>AVERROR_EOF</code></td>
+<td>解码器已被 drain 完</td>
+<td>结束当前流或进入切流流程</td>
+</tr>
+</tbody></table>
+<p><strong>失败处理（执行阶段）</strong></p>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>常见失败点</th>
+<th>建议处理</th>
+<th>典型错误码映射</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>读包阶段</td>
+<td><code>av_read_frame</code> <code>&lt; 0</code> 且非 EOF</td>
+<td>短重试 + 统计失败；超过阈值中止并上报</td>
+<td><code>kAudioPlayerErrorIORead</code></td>
+</tr>
+<tr>
+<td>喂包阶段</td>
+<td><code>avcodec_send_packet</code> 非 <code>EAGAIN</code> 负值</td>
+<td>丢弃当前包并继续；连续失败则重建 <code>AVCodecContext</code></td>
+<td><code>kAudioPlayerAudioDecodeUnkown</code></td>
+</tr>
+<tr>
+<td>取帧阶段</td>
+<td><code>avcodec_receive_frame</code> 非 <code>EAGAIN/EOF</code> 负值</td>
+<td>跳过坏帧；连续失败触发降级&#x2F;重建</td>
+<td><code>kAudioPlayerAudioDecodeUnkown</code></td>
+</tr>
+<tr>
+<td>Seek 恢复</td>
+<td><code>av_seek_frame</code> 或 flush 失败</td>
+<td>回退到最近可播点；清队列后重试或上报失败</td>
+<td><code>kAudioPlayerSeekUnkownError</code></td>
+</tr>
+<tr>
+<td>Drain 结束</td>
+<td><code>send(nullptr)</code> &#x2F; <code>receive</code> 异常</td>
+<td>结束当前流并执行资源清理，避免卡死在尾包</td>
+<td><code>kAudioPlayerAudioDecodeUnkown</code></td>
+</tr>
+</tbody></table>
+<p><strong>返回码处理建议</strong></p>
+<table>
+<thead>
+<tr>
+<th>返回码</th>
+<th>语义</th>
+<th>建议动作</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>AVERROR(EAGAIN)</code></td>
+<td>当前阶段暂不可继续</td>
+<td>切换 send&#x2F;receive 方向继续推进</td>
+</tr>
+<tr>
+<td><code>AVERROR_EOF</code></td>
+<td>当前解码阶段结束</td>
+<td>进入 drain&#x2F;结束流程</td>
+</tr>
+<tr>
+<td><code>&lt; 0</code> 其他错误</td>
+<td>数据损坏&#x2F;状态异常&#x2F;参数错误</td>
+<td>计数上报并按策略重建或降级</td>
+</tr>
+</tbody></table>
+<h3 id="3-3-PCM-输出能力"><a href="#3-3-PCM-输出能力" class="headerlink" title="3.3 PCM 输出能力"></a>3.3 PCM 输出能力</h3><ul>
+<li>解码帧通常不能直接喂设备，需要统一采样率、声道布局、样本格式。</li>
+<li>输出阶段通常是 <code>swr_convert -&gt; PCM Buffer/Queue -&gt; AudioTrack.write</code>。</li>
+<li>PCM 规格统一后，渲染层可维持单一输入格式，减少设备兼容问题。</li>
+</ul>
+<p><strong>关键方法</strong></p>
+<ul>
+<li><code>swr_convert</code>：执行重采样、重排与 planar&#x2F;packed 转换，输出设备可消费的 PCM。</li>
+<li><code>SwrContext</code> 初始化参数需与目标输出格式一致，否则可能出现音调异常、速度异常或爆音。</li>
+<li><code>swr_init</code> + <code>swr_close</code> &#x2F; <code>swr_free</code>：分别对应重采样器的启动与关闭；切流、格式变更、停止时都要成对处理。</li>
+</ul>
+<p><strong>重采样关闭（与初始化对应）</strong></p>
+<ul>
+<li>初始化：<code>swr_alloc_set_opts</code> -&gt; <code>swr_init</code>。</li>
+<li>重建：先 <code>swr_close</code> + <code>swr_free</code> 释放旧实例，再按新格式重新 <code>swr_init</code>。</li>
+<li>结束：Stop&#x2F;Close&#x2F;Destroy 阶段统一执行 <code>swr_close</code> + <code>swr_free</code>，并把指针置空，避免悬挂引用。</li>
+</ul>
+<p><strong>失败处理（PCM 输出阶段）</strong></p>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>常见失败点</th>
+<th>建议处理</th>
+<th>典型错误码映射</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>重采样初始化</td>
+<td><code>swr_alloc</code>&#x2F;<code>swr_init</code> 失败</td>
+<td>释放并重建 <code>SwrContext</code>；必要时降级输出格式</td>
+<td><code>kAudioPlayerErrorSwr</code> &#x2F; <code>kAudioPlayerErrorNoMemory</code></td>
+</tr>
+<tr>
+<td>重采样执行</td>
+<td><code>swr_convert</code> 返回负值</td>
+<td>丢弃当前帧并重建重采样器；连续失败中止链路</td>
+<td><code>kAudioPlayerErrorSwr</code></td>
+</tr>
+<tr>
+<td>输出格式变更</td>
+<td>采样率&#x2F;声道&#x2F;样本格式切换</td>
+<td>标记新格式并触发设备重配，清理旧 PCM 缓冲</td>
+<td><code>kAudioPlayerAudioFormatChanged</code></td>
+</tr>
+<tr>
+<td>PCM 供给不足</td>
+<td>上游解码抖动导致队列短缺</td>
+<td>进入 buffering 或短静音填充，等待解码恢复</td>
+<td><code>kAudioPlayerBufferEmpty</code></td>
+</tr>
+</tbody></table>
+<h3 id="3-4-运行时解码链路（整体流程）"><a href="#3-4-运行时解码链路（整体流程）" class="headerlink" title="3.4 运行时解码链路（整体流程）"></a>3.4 运行时解码链路（整体流程）</h3><figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br></pre></td><td class="code"><pre><code class="hljs cpp">AVFormatContext* fmt = <span class="hljs-literal">nullptr</span>;<br>AVCodecContext* dec_ctx = <span class="hljs-literal">nullptr</span>;<br>SwrContext* swr = <span class="hljs-literal">nullptr</span>;<br><br><span class="hljs-comment">// 1) 打开输入并探测流信息</span><br><span class="hljs-type">int</span> ret = <span class="hljs-built_in">avformat_open_input</span>(&amp;fmt, url, <span class="hljs-literal">nullptr</span>, <span class="hljs-literal">nullptr</span>);<br><span class="hljs-keyword">if</span> (ret &lt; <span class="hljs-number">0</span>) <span class="hljs-keyword">return</span> ret;<br><br>ret = <span class="hljs-built_in">avformat_find_stream_info</span>(fmt, <span class="hljs-literal">nullptr</span>);<br><span class="hljs-keyword">if</span> (ret &lt; <span class="hljs-number">0</span>) <span class="hljs-keyword">return</span> ret;<br><br><span class="hljs-comment">// 2) 选择音轨并打开解码器</span><br><span class="hljs-type">int</span> aidx = <span class="hljs-built_in">av_find_best_stream</span>(fmt, AVMEDIA_TYPE_AUDIO, <span class="hljs-number">-1</span>, <span class="hljs-number">-1</span>, <span class="hljs-literal">nullptr</span>, <span class="hljs-number">0</span>);<br><span class="hljs-keyword">if</span> (aidx &lt; <span class="hljs-number">0</span>) <span class="hljs-keyword">return</span> aidx;<br><br><span class="hljs-type">const</span> AVCodec* dec = <span class="hljs-built_in">avcodec_find_decoder</span>(fmt-&gt;streams[aidx]-&gt;codecpar-&gt;codec_id);<br><span class="hljs-keyword">if</span> (!dec) <span class="hljs-keyword">return</span> AVERROR_DECODER_NOT_FOUND;<br><br>dec_ctx = <span class="hljs-built_in">avcodec_alloc_context3</span>(dec);<br><span class="hljs-keyword">if</span> (!dec_ctx) <span class="hljs-keyword">return</span> <span class="hljs-built_in">AVERROR</span>(ENOMEM);<br><br>ret = <span class="hljs-built_in">avcodec_parameters_to_context</span>(dec_ctx, fmt-&gt;streams[aidx]-&gt;codecpar);<br><span class="hljs-keyword">if</span> (ret &lt; <span class="hljs-number">0</span>) <span class="hljs-keyword">return</span> ret;<br><br>ret = <span class="hljs-built_in">avcodec_open2</span>(dec_ctx, dec, <span class="hljs-literal">nullptr</span>);<br><span class="hljs-keyword">if</span> (ret &lt; <span class="hljs-number">0</span>) <span class="hljs-keyword">return</span> ret;<br><br><span class="hljs-comment">// 3) 解码循环 + PCM 统一</span><br>AVPacket* pkt = <span class="hljs-built_in">av_packet_alloc</span>();<br>AVFrame* frame = <span class="hljs-built_in">av_frame_alloc</span>();<br><br><span class="hljs-keyword">while</span> (<span class="hljs-built_in">av_read_frame</span>(fmt, pkt) &gt;= <span class="hljs-number">0</span>) &#123;<br>    <span class="hljs-keyword">if</span> (pkt-&gt;stream_index != aidx) &#123;<br>        <span class="hljs-built_in">av_packet_unref</span>(pkt);<br>        <span class="hljs-keyword">continue</span>;<br>    &#125;<br><br>    ret = <span class="hljs-built_in">avcodec_send_packet</span>(dec_ctx, pkt);<br>    <span class="hljs-built_in">av_packet_unref</span>(pkt);<br>    <span class="hljs-keyword">if</span> (ret &lt; <span class="hljs-number">0</span>) <span class="hljs-keyword">continue</span>;<br><br>    <span class="hljs-keyword">while</span> (<span class="hljs-literal">true</span>) &#123;<br>        ret = <span class="hljs-built_in">avcodec_receive_frame</span>(dec_ctx, frame);<br>        <span class="hljs-keyword">if</span> (ret == <span class="hljs-built_in">AVERROR</span>(EAGAIN) || ret == AVERROR_EOF) <span class="hljs-keyword">break</span>;<br>        <span class="hljs-keyword">if</span> (ret &lt; <span class="hljs-number">0</span>) <span class="hljs-keyword">break</span>;<br><br>        <span class="hljs-comment">// 4) 重采样后写入 PCM 队列，再由渲染线程写 AudioTrack</span><br>        <span class="hljs-comment">// swr_convert(...)</span><br><br>        <span class="hljs-built_in">av_frame_unref</span>(frame);<br>    &#125;<br>&#125;<br><br><span class="hljs-comment">// 5) 退出时回收（与初始化阶段一一对应）</span><br><span class="hljs-built_in">swr_free</span>(&amp;swr);<br><span class="hljs-built_in">avcodec_close</span>(dec_ctx);<br><span class="hljs-built_in">avcodec_free_context</span>(&amp;dec_ctx);<br><span class="hljs-built_in">avformat_close_input</span>(&amp;fmt);<br><span class="hljs-built_in">av_packet_free</span>(&amp;pkt);<br><span class="hljs-built_in">av_frame_free</span>(&amp;frame);<br></code></pre></td></tr></table></figure>
+
+<pre><code class=" mermaid">flowchart TD
+  A[App Play/Prepare] --&gt; B[JNI 进入 Native]
+  B --&gt; C[创建 SourceIO 或 AVIOContext]
+  C --&gt; D[avformat_open_input]
+  D --&gt; E[avformat_find_stream_info]
+  E --&gt; F[av_find_best_stream]
+  F --&gt; G[avcodec_find_decoder]
+  G --&gt; H[avcodec_open2]
+
+  H --&gt; I&#123;解码循环&#125;
+  I --&gt; J[av_read_frame]
+  J --&gt; K[avcodec_send_packet]
+  K --&gt; L[avcodec_receive_frame]
+  L --&gt; M[swr_convert]
+  M --&gt; N[PCM Queue]
+  N --&gt; O[AudioTrack.write]
+  O --&gt; P[AudioFlinger/HAL]
+  P --&gt; Q[Speaker/Bluetooth/Headset]
+  L --&gt; I
+
+  R[Seek/FastSeek] --&gt; S[av_seek_frame]
+  S --&gt; T[avcodec_flush_buffers]
+  T --&gt; U[清理 PCM Queue]
+  U --&gt; I
+</code></pre>
+
+<ul>
+<li>建议链路顺序：<code>open_input -&gt; find_stream_info -&gt; find_best_stream -&gt; open2 -&gt; read/send/receive -&gt; swr_convert -&gt; queue/write</code>。</li>
+<li>Seek 链路顺序：<code>av_seek_frame -&gt; avcodec_flush_buffers -&gt; 清理 PCM 队列 -&gt; 恢复 read/send/receive</code>。</li>
+</ul>
+<h2 id="四、FFmpeg-重采样与-PCM-格式统一"><a href="#四、FFmpeg-重采样与-PCM-格式统一" class="headerlink" title="四、FFmpeg 重采样与 PCM 格式统一"></a>四、FFmpeg 重采样与 PCM 格式统一</h2><h3 id="4-1-能力目标与适用边界"><a href="#4-1-能力目标与适用边界" class="headerlink" title="4.1 能力目标与适用边界"></a>4.1 能力目标与适用边界</h3><ul>
+<li>重采样的核心目标是把解码后的多种 PCM（不同采样率&#x2F;声道&#x2F;样本格式）统一成设备可稳定消费的目标 PCM。</li>
+<li>在播放内核里，重采样不只等于“改采样率”，还包括声道重排、<code>planar -&gt; packed</code>、样本格式统一（如 <code>FLT -&gt; S16</code>）。</li>
+<li>理论上一句话：重采样是对离散信号做带限重建后按新采样时钟重新取样，其中下采样前必须先低通以避免混叠（aliasing）。</li>
+<li>当输入规格与目标输出规格完全一致时，可直接透传，避免不必要的 CPU 开销。</li>
+</ul>
+<h3 id="4-2-输入输出规格模型"><a href="#4-2-输入输出规格模型" class="headerlink" title="4.2 输入输出规格模型"></a>4.2 输入输出规格模型</h3><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>输入侧（src）</th>
+<th>输出侧（dst）</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>采样率</td>
+<td><code>src_rate</code></td>
+<td><code>dst_rate</code></td>
+<td>如 44.1k -&gt; 48k</td>
+</tr>
+<tr>
+<td>声道布局</td>
+<td><code>src_ch_layout</code></td>
+<td><code>dst_ch_layout</code></td>
+<td>如 5.1 -&gt; stereo</td>
+</tr>
+<tr>
+<td>样本格式</td>
+<td><code>src_sample_fmt</code></td>
+<td><code>dst_sample_fmt</code></td>
+<td>如 <code>FLTP -&gt; S16</code></td>
+</tr>
+</tbody></table>
+<ul>
+<li>只要以上三项任一发生变化，就需要重建 <code>SwrContext</code>。</li>
+</ul>
+<h4 id="4-2-1-Interleaved（Packed）与-Planar"><a href="#4-2-1-Interleaved（Packed）与-Planar" class="headerlink" title="4.2.1 Interleaved（Packed）与 Planar"></a>4.2.1 Interleaved（Packed）与 Planar</h4><ul>
+<li><strong>Interleaved（Packed）</strong>：多声道样本按时间点交错存储，双声道常见布局为 <code>L0 R0 L1 R1 ...</code>。</li>
+<li><strong>Planar</strong>：每个声道独立存储，双声道常见布局为 <code>L0 L1 L2 ...</code> 与 <code>R0 R1 R2 ...</code>。</li>
+<li>在播放链路里，解码输出常见 <code>Planar</code>，而设备写入侧通常更常用 <code>Interleaved</code>，因此经常需要 <code>planar -&gt; packed</code> 转换。</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>形态</th>
+<th>内存布局示例（2ch）</th>
+<th>常见 sample_fmt</th>
+<th>常见风险</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Interleaved（Packed）</td>
+<td><code>L0 R0 L1 R1 ...</code></td>
+<td><code>S16</code>、<code>FLT</code></td>
+<td>声道数或帧长计算错误会导致错位</td>
+</tr>
+<tr>
+<td>Planar</td>
+<td><code>L0 L1 ...</code> + <code>R0 R1 ...</code></td>
+<td><code>S16P</code>、<code>FLTP</code></td>
+<td>误当交错数据写设备会出现杂音</td>
+</tr>
+</tbody></table>
+<ul>
+<li>实践建议：统一把输出规格定为设备可消费的 packed 格式（如 <code>S16</code> 或 <code>FLT</code>），由 <code>swr_convert</code> 负责重排与重采样。</li>
+</ul>
+<h4 id="4-2-2-多声道-Downmix（降级播放）"><a href="#4-2-2-多声道-Downmix（降级播放）" class="headerlink" title="4.2.2 多声道 Downmix（降级播放）"></a>4.2.2 多声道 Downmix（降级播放）</h4><ul>
+<li>当输入是 5.1&#x2F;7.1 等多声道，而设备或业务策略要求双声道输出时，需要执行 downmix。</li>
+<li>在 FFmpeg 链路里，downmix 本质是“声道布局转换 + 重混音（rematrix）”，通常在 <code>SwrContext</code> 中完成。</li>
+<li>常见策略是把输出布局统一为 <code>stereo</code>，再结合 <code>lfe_mix_level</code> 控制低频（LFE）混入比例。</li>
+</ul>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><code class="hljs cpp"><span class="hljs-comment">// 典型 downmix 目标：multichannel -&gt; stereo</span><br>mSwAContext = <span class="hljs-built_in">swr_alloc_set_opts</span>(<br>    <span class="hljs-literal">nullptr</span>,<br>    dst_ch_layout <span class="hljs-comment">/* stereo */</span>, dst_sample_fmt, dst_rate,<br>    src_ch_layout <span class="hljs-comment">/* 5.1/7.1 */</span>, src_sample_fmt, src_rate,<br>    <span class="hljs-number">0</span>, <span class="hljs-literal">nullptr</span><br>);<br><br><span class="hljs-comment">// 可选：控制 downmix 的低频混合比例</span><br><span class="hljs-built_in">av_opt_set_double</span>(mSwAContext, <span class="hljs-string">&quot;lfe_mix_level&quot;</span>, lfe_mix_level, <span class="hljs-number">0</span>);<br><span class="hljs-built_in">swr_init</span>(mSwAContext);<br></code></pre></td></tr></table></figure>
+
+<h3 id="4-3-初始化与重建（SwrContext）"><a href="#4-3-初始化与重建（SwrContext）" class="headerlink" title="4.3 初始化与重建（SwrContext）"></a>4.3 初始化与重建（<code>SwrContext</code>）</h3><ul>
+<li>初始化步骤：准备 src&#x2F;dst 规格 -&gt; <code>swr_alloc_set_opts</code> -&gt; <code>swr_init</code>。</li>
+<li>重建时机：切歌、Seek、设备规格变化、解码输出规格突变。</li>
+<li>重建原则：先释放旧 context，再按新规格创建，避免上下文污染。</li>
+</ul>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><code class="hljs cpp">SwrContext* swr = <span class="hljs-built_in">swr_alloc_set_opts</span>(<br>    <span class="hljs-literal">nullptr</span>,<br>    dst_ch_layout, dst_sample_fmt, dst_rate,<br>    src_ch_layout, src_sample_fmt, src_rate,<br>    <span class="hljs-number">0</span>, <span class="hljs-literal">nullptr</span><br>);<br><span class="hljs-keyword">if</span> (!swr) <span class="hljs-keyword">return</span> kAudioPlayerErrorNoMemory;<br><br><span class="hljs-type">int</span> ret = <span class="hljs-built_in">swr_init</span>(swr);<br><span class="hljs-keyword">if</span> (ret &lt; <span class="hljs-number">0</span>) &#123;<br>    <span class="hljs-built_in">swr_free</span>(&amp;swr);<br>    <span class="hljs-keyword">return</span> kAudioPlayerErrorSwr;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<h3 id="4-4-运行时转换与缓冲估算"><a href="#4-4-运行时转换与缓冲估算" class="headerlink" title="4.4 运行时转换与缓冲估算"></a>4.4 运行时转换与缓冲估算</h3><ul>
+<li>运行时建议固定为三步：估算输出样本数 -&gt; 估算输出缓冲 -&gt; <code>swr_convert</code>。</li>
+<li><code>AV_ROUND_UP</code> 建议保留，优先保证缓冲足够，避免尾样本截断。</li>
+</ul>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><code class="hljs cpp"><span class="hljs-comment">// 1) 输出样本数估算</span><br><span class="hljs-type">int</span> out_count = (<span class="hljs-type">int</span>)<span class="hljs-built_in">av_rescale_rnd</span>(<br>    <span class="hljs-built_in">swr_get_delay</span>(swr, src_rate) + in_samples,<br>    dst_rate,<br>    src_rate,<br>    AV_ROUND_UP<br>);<br><br><span class="hljs-comment">// 2) 输出缓冲字节数估算</span><br><span class="hljs-type">int</span> out_size = <span class="hljs-built_in">av_samples_get_buffer_size</span>(<br>    <span class="hljs-literal">nullptr</span>,<br>    dst_channels,<br>    out_count,<br>    dst_sample_fmt,<br>    <span class="hljs-number">0</span><br>);<br><span class="hljs-keyword">if</span> (out_size &lt;= <span class="hljs-number">0</span>) <span class="hljs-keyword">return</span> kAudioPlayerErrorSwr;<br><br><span class="hljs-comment">// 3) 执行转换</span><br><span class="hljs-type">int</span> out_samples = <span class="hljs-built_in">swr_convert</span>(<br>    swr,<br>    out_data,<br>    out_count,<br>    (<span class="hljs-type">const</span> <span class="hljs-type">uint8_t</span>**)in_data,<br>    in_samples<br>);<br><span class="hljs-keyword">if</span> (out_samples &lt; <span class="hljs-number">0</span>) <span class="hljs-keyword">return</span> kAudioPlayerErrorSwr;<br></code></pre></td></tr></table></figure>
+
+<h3 id="4-5-格式突变处理流程"><a href="#4-5-格式突变处理流程" class="headerlink" title="4.5 格式突变处理流程"></a>4.5 格式突变处理流程</h3><ul>
+<li>突变判定：<code>sample_rate</code>、<code>channel_layout</code>、<code>sample_fmt</code> 任一变化。</li>
+<li>推荐流程：<ol>
+<li>打标记（如 <code>FLAG_BUFFER_NEW_FORMAT</code>）通知上游&#x2F;下游。</li>
+<li>释放旧 <code>SwrContext</code>。</li>
+<li>以新规格重建重采样器。</li>
+<li>必要时触发设备重配与 PCM 队列清理。</li>
+<li>重建成功后恢复写入，失败则走错误上报和降级。</li>
+</ol>
+</li>
+</ul>
+<h3 id="4-6-失败处理（重采样阶段）"><a href="#4-6-失败处理（重采样阶段）" class="headerlink" title="4.6 失败处理（重采样阶段）"></a>4.6 失败处理（重采样阶段）</h3><table>
+<thead>
+<tr>
+<th>失败点</th>
+<th>常见原因</th>
+<th>建议处理</th>
+<th>典型结果</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>swr_init</code> 失败</td>
+<td>参数不合法、context 状态异常</td>
+<td>释放并重建；必要时降级输出规格</td>
+<td>当前曲目失败或短暂静音恢复</td>
+</tr>
+<tr>
+<td><code>swr_convert</code> 失败</td>
+<td>输入帧异常、上下文污染</td>
+<td>丢弃坏帧并重建；连续失败中止链路</td>
+<td>偶发丢帧或错误回调</td>
+</tr>
+<tr>
+<td><code>out_size &lt;= 0</code></td>
+<td>缓冲估算参数异常</td>
+<td>拒绝写入并上报，避免越界</td>
+<td>保护性失败</td>
+</tr>
+<tr>
+<td>格式变化未重建</td>
+<td>流程遗漏</td>
+<td>强制触发重建与设备重配</td>
+<td>避免音调异常&#x2F;声道错位</td>
+</tr>
+</tbody></table>
+<h3 id="4-7-生命周期管理"><a href="#4-7-生命周期管理" class="headerlink" title="4.7 生命周期管理"></a>4.7 生命周期管理</h3><ul>
+<li>建议生命周期：<code>create -&gt; use -&gt; reinit(if needed) -&gt; free</code>。</li>
+<li>创建时机：Prepare 后确定输入输出规格，或业务主动修改目标规格。</li>
+<li>重建时机：切歌&#x2F;Seek&#x2F;设备切换&#x2F;解码格式变化。</li>
+<li>释放时机：Stop、Close、Destroy、以及每次重建前先释放旧 context。</li>
+</ul>
+<p><strong>管理要点</strong></p>
+<ol>
+<li><code>单点持有</code>：由解码或重采样模块统一管理 <code>SwrContext</code>。</li>
+<li><code>线程安全</code>：创建&#x2F;重建&#x2F;释放在受控线程或加锁区间执行。</li>
+<li><code>异常完备</code>：所有失败分支都保证 <code>swr_free</code> 可达。</li>
+</ol>
+<h3 id="4-8-验收清单"><a href="#4-8-验收清单" class="headerlink" title="4.8 验收清单"></a>4.8 验收清单</h3><ol>
+<li>同一设备上，44.1k&#x2F;48k&#x2F;96k 音源都能稳定输出目标 PCM。</li>
+<li><code>planar -&gt; packed</code> 与多声道 downmix 后无明显声道错位。</li>
+<li>Seek、切歌、格式切换后无长时间静音与爆音。</li>
+<li>长时播放下重采样上下文可重复重建，内存无持续增长。</li>
+</ol>
+<h3 id="4-9-目的与作用总结"><a href="#4-9-目的与作用总结" class="headerlink" title="4.9 目的与作用总结"></a>4.9 目的与作用总结</h3><ul>
+<li><strong>目的</strong>：把解码侧输出的“多种 PCM 规格”统一成设备侧稳定可消费的“单一 PCM 规格”。</li>
+<li><strong>作用 1（兼容性）</strong>：屏蔽不同音源在采样率、声道布局、样本格式上的差异，确保多格式可播。</li>
+<li><strong>作用 2（稳定性）</strong>：在 Seek、切歌、格式突变时维持播放链路连续，减少爆音、串音和无声。</li>
+<li><strong>作用 3（可维护性）</strong>：上层处理与设备输出可依赖统一格式，降低后续音效、变速、混音接入复杂度。</li>
+<li><strong>一句话</strong>：重采样与 PCM 统一层是“能播、稳播、好维护”的关键基础设施。</li>
+</ul>
+<h2 id="五、FFmpeg-稳定性与异常恢复"><a href="#五、FFmpeg-稳定性与异常恢复" class="headerlink" title="五、FFmpeg 稳定性与异常恢复"></a>五、FFmpeg 稳定性与异常恢复</h2><h3 id="5-1-目标与范围"><a href="#5-1-目标与范围" class="headerlink" title="5.1 目标与范围"></a>5.1 目标与范围</h3><ul>
+<li>本节目标是建立“可持续播放”的运行时能力：出现异常时能恢复，不能恢复时能快速失败并上报。</li>
+<li>关注范围包含：解码执行期异常、Seek&#x2F;切流恢复、上下文重建、资源回收与稳定性验收。</li>
+<li>不展开业务功能，只聚焦 FFmpeg 主链路的稳定性治理。</li>
+</ul>
+<h3 id="5-2-异常分级与处理原则"><a href="#5-2-异常分级与处理原则" class="headerlink" title="5.2 异常分级与处理原则"></a>5.2 异常分级与处理原则</h3><table>
+<thead>
+<tr>
+<th>异常级别</th>
+<th>典型返回&#x2F;现象</th>
+<th>处理原则</th>
+<th>目标</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>可恢复</td>
+<td><code>AVERROR(EAGAIN)</code>、<code>AVERROR(EBUSY)</code>、偶发 <code>AVERROR_INVALIDDATA</code></td>
+<td>切换调用方向、短重试、跳过坏帧</td>
+<td>不中断播放</td>
+</tr>
+<tr>
+<td>可重建</td>
+<td><code>AVERROR_OUTPUT_CHANGED</code>、<code>swr_convert &lt; 0</code>、解码连续失败</td>
+<td>重建 <code>SwrContext</code> 或 <code>AVCodecContext</code></td>
+<td>快速恢复可播</td>
+</tr>
+<tr>
+<td>不可恢复</td>
+<td>初始化失败、持续 <code>AVERROR(EIO)</code>、内存分配失败</td>
+<td>终止当前链路并上报错误</td>
+<td>避免卡死与脏状态</td>
+</tr>
+</tbody></table>
+<ul>
+<li>处理顺序建议：先判定级别，再执行最小恢复动作，最后再考虑重建或终止。</li>
+</ul>
+<h3 id="5-3-解码执行期恢复（EAGAIN-重试-丢帧）"><a href="#5-3-解码执行期恢复（EAGAIN-重试-丢帧）" class="headerlink" title="5.3 解码执行期恢复（EAGAIN&#x2F;重试&#x2F;丢帧）"></a>5.3 解码执行期恢复（EAGAIN&#x2F;重试&#x2F;丢帧）</h3><ul>
+<li><code>send_packet</code> 返回 <code>AVERROR(EAGAIN)</code>：先 <code>receive_frame</code> 排空，再重试当前 <code>send</code>。</li>
+<li><code>receive_frame</code> 返回 <code>AVERROR(EAGAIN)</code>：说明输入不足，回到 <code>read_frame + send_packet</code>。</li>
+<li><code>AVERROR_INVALIDDATA</code>：丢弃当前坏包&#x2F;坏帧，继续推进，不立即中断整条链路。</li>
+<li>为避免长时间空转，建议设置“连续重试阈值”，超阈值后进入重建或失败上报。</li>
+</ul>
+<h3 id="5-4-Seek-与状态恢复链路"><a href="#5-4-Seek-与状态恢复链路" class="headerlink" title="5.4 Seek 与状态恢复链路"></a>5.4 Seek 与状态恢复链路</h3><h4 id="5-4-1-Seek-能力模型"><a href="#5-4-1-Seek-能力模型" class="headerlink" title="5.4.1 Seek 能力模型"></a>5.4.1 Seek 能力模型</h4><ul>
+<li><strong>快速 Seek（FastSeek）</strong>：优先“快到达”，允许落点与目标时间存在小偏差，适合拖动预览。</li>
+<li><strong>精确 Seek（Accurate Seek）</strong>：优先“落点准确”，通常需要 Seek 后继续解码并丢弃前置样本，成本更高。</li>
+<li>能否稳定 FastSeek 取决于输入是否支持随机访问：自定义 <code>AVIOContext</code> 场景下，<code>seek</code> 回调能力是关键前提。</li>
+</ul>
+<h4 id="5-4-2-时间换算与目标点计算"><a href="#5-4-2-时间换算与目标点计算" class="headerlink" title="5.4.2 时间换算与目标点计算"></a>5.4.2 时间换算与目标点计算</h4><ul>
+<li>业务层通常以毫秒传入，需要先换算到流时间基。</li>
+<li>建议统一使用 <code>av_rescale_q</code>，避免浮点误差累计。</li>
+</ul>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><code class="hljs cpp"><span class="hljs-comment">// seek_ms -&gt; stream time_base</span><br><span class="hljs-type">int64_t</span> seek_ts = <span class="hljs-built_in">av_rescale_q</span>(<br>    seek_ms,<br>    <span class="hljs-built_in">av_make_q</span>(<span class="hljs-number">1</span>, <span class="hljs-number">1000</span>),<br>    stream-&gt;time_base<br>);<br></code></pre></td></tr></table></figure>
+
+<h4 id="5-4-3-API-与-flag-选择"><a href="#5-4-3-API-与-flag-选择" class="headerlink" title="5.4.3 API 与 flag 选择"></a>5.4.3 API 与 flag 选择</h4><ul>
+<li><code>av_seek_frame</code>：常用入口，简单直接，适合大多数文件流。</li>
+<li><code>avformat_seek_file</code>：可提供 <code>min_ts/max_ts</code> 搜索窗口，适合更可控的定位策略。</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>选项</th>
+<th>含义</th>
+<th>常见场景</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>AVSEEK_FLAG_BACKWARD</code></td>
+<td>向后回退到可解码位置</td>
+<td>优先保证成功率和可播性</td>
+</tr>
+<tr>
+<td><code>AVSEEK_FLAG_FRAME</code></td>
+<td>按帧语义定位</td>
+<td>对帧边界敏感的定位策略</td>
+</tr>
+<tr>
+<td><code>AVSEEK_FLAG_ANY</code></td>
+<td>允许非关键点定位</td>
+<td>追求更近落点，但恢复代价可能更高</td>
+</tr>
+</tbody></table>
+<h4 id="5-4-4-标准恢复顺序（推荐）"><a href="#5-4-4-标准恢复顺序（推荐）" class="headerlink" title="5.4.4 标准恢复顺序（推荐）"></a>5.4.4 标准恢复顺序（推荐）</h4><ol>
+<li>计算目标 <code>seek_ts</code>，执行 <code>av_seek_frame</code>；失败时可回退到 <code>avformat_seek_file</code>。</li>
+<li>调用 <code>avcodec_flush_buffers</code> 清理解码器内部旧状态。</li>
+<li>清理上层 <code>packet/frame/pcm</code> 队列，防止旧位置数据串入。</li>
+<li>若 Seek 后检测到格式变化，重建 <code>SwrContext</code>（<code>swr_close/swr_free -&gt; swr_init</code>）。</li>
+<li>恢复 <code>read -&gt; send -&gt; receive</code> 循环，重新建立时间戳连续性。</li>
+</ol>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><code class="hljs cpp"><span class="hljs-type">int64_t</span> seek_ts = <span class="hljs-built_in">av_rescale_q</span>(seek_ms, <span class="hljs-built_in">av_make_q</span>(<span class="hljs-number">1</span>, <span class="hljs-number">1000</span>), stream-&gt;time_base);<br><br><span class="hljs-type">int</span> ret = <span class="hljs-built_in">av_seek_frame</span>(fmt, stream_index, seek_ts, AVSEEK_FLAG_BACKWARD);<br><span class="hljs-keyword">if</span> (ret &lt; <span class="hljs-number">0</span>) &#123;<br>    ret = <span class="hljs-built_in">avformat_seek_file</span>(fmt, stream_index, INT64_MIN, seek_ts, INT64_MAX, AVSEEK_FLAG_FRAME);<br>&#125;<br><span class="hljs-keyword">if</span> (ret &lt; <span class="hljs-number">0</span>) &#123;<br>    <span class="hljs-keyword">return</span> kAudioPlayerSeekUnkownError;<br>&#125;<br><br><span class="hljs-built_in">avcodec_flush_buffers</span>(dec_ctx);<br><span class="hljs-built_in">clear_packet_queue</span>();<br><span class="hljs-built_in">clear_frame_queue</span>();<br><span class="hljs-built_in">clear_pcm_queue</span>();<br><br><span class="hljs-keyword">if</span> (need_reinit_swr) &#123;<br>    <span class="hljs-built_in">swr_close</span>(swr);<br>    <span class="hljs-built_in">swr_free</span>(&amp;swr);<br>    <span class="hljs-comment">// reinit swr with new format</span><br>&#125;<br></code></pre></td></tr></table></figure>
+
+<h4 id="5-4-5-常见场景与处理要点"><a href="#5-4-5-常见场景与处理要点" class="headerlink" title="5.4.5 常见场景与处理要点"></a>5.4.5 常见场景与处理要点</h4><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>典型问题</th>
+<th>建议动作</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>VBR（如 MP3）</td>
+<td>落点偏差较大</td>
+<td>Seek 后继续解码短窗口并丢弃前置帧，拉近目标落点</td>
+</tr>
+<tr>
+<td>AAC priming &#x2F; end padding</td>
+<td>Seek 后首段听感不准或尾段异常</td>
+<td>维护 priming&#x2F;padding 补偿策略，必要时丢弃首段样本</td>
+</tr>
+<tr>
+<td>非随机访问输入</td>
+<td><code>seek</code> 不可用或高失败率</td>
+<td>降级为近似跳播、重开链路或禁用精确 Seek</td>
+</tr>
+<tr>
+<td>Seek 后格式突变</td>
+<td>采样率&#x2F;声道&#x2F;样本格式变化</td>
+<td>标记格式变化并重建重采样器与输出链路</td>
+</tr>
+<tr>
+<td>弱网&#x2F;忙状态</td>
+<td><code>EIO/EBUSY</code> 导致恢复抖动</td>
+<td>限次重试 + 退避；超阈值后失败上报并回退</td>
+</tr>
+</tbody></table>
+<h4 id="5-4-6-Seek-验收关注点"><a href="#5-4-6-Seek-验收关注点" class="headerlink" title="5.4.6 Seek 验收关注点"></a>5.4.6 Seek 验收关注点</h4><ul>
+<li>响应时延：从发起 Seek 到恢复稳定出声的耗时。</li>
+<li>落点误差：实际播放时间与目标时间偏差。</li>
+<li>听感质量：Seek 后是否出现爆音、串音、长静音。</li>
+<li>稳定性：高频拖动场景下是否出现状态错乱或内存增长。</li>
+</ul>
+<h3 id="5-5-上下文重建与回退策略"><a href="#5-5-上下文重建与回退策略" class="headerlink" title="5.5 上下文重建与回退策略"></a>5.5 上下文重建与回退策略</h3><table>
+<thead>
+<tr>
+<th>对象</th>
+<th>触发条件</th>
+<th>重建动作</th>
+<th>失败后动作</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>SwrContext</code></td>
+<td>格式变化、<code>swr_init/swr_convert</code> 失败</td>
+<td><code>swr_close + swr_free</code> 后按新规格 <code>swr_init</code></td>
+<td>降级输出格式或中止当前曲目</td>
+</tr>
+<tr>
+<td><code>AVCodecContext</code></td>
+<td><code>send/receive</code> 连续失败或状态异常</td>
+<td><code>avcodec_close + avcodec_free_context</code> 后重新 open</td>
+<td>上报解码错误并切换回退策略</td>
+</tr>
+<tr>
+<td><code>AVFormatContext</code></td>
+<td>输入侧严重错误、流状态不可用</td>
+<td><code>avformat_close_input</code> 后重新 open&#x2F;probe</td>
+<td>上报 IO&#x2F;开流失败并停止链路</td>
+</tr>
+</tbody></table>
+<ul>
+<li>重建原则：同一时刻只重建必要对象，避免全链路“过度重建”带来的抖动。</li>
+</ul>
+<h3 id="5-6-资源回收与泄漏防护"><a href="#5-6-资源回收与泄漏防护" class="headerlink" title="5.6 资源回收与泄漏防护"></a>5.6 资源回收与泄漏防护</h3><ul>
+<li>循环内复用：<code>av_packet_unref</code>、<code>av_frame_unref</code>。</li>
+<li>退出时释放：<code>av_packet_free</code>、<code>av_frame_free</code>、<code>avcodec_close</code>、<code>avcodec_free_context</code>、<code>avformat_close_input</code>、<code>swr_free</code>。</li>
+<li>自定义 IO 场景下，<code>AVIOContext</code> 与其 buffer 也要在关闭路径中成对释放。</li>
+<li>异常路径要与正常路径同等对待，确保每个提前返回分支都可达释放逻辑。</li>
+</ul>
+<h3 id="5-7-稳定性验收指标"><a href="#5-7-稳定性验收指标" class="headerlink" title="5.7 稳定性验收指标"></a>5.7 稳定性验收指标</h3><ol>
+<li>解码错误率：<code>send/receive/read</code> 错误占比可持续低于阈值。</li>
+<li>恢复成功率：异常后自动恢复到可播状态的比例。</li>
+<li>Seek 恢复时延：Seek 到重新稳定出声的耗时。</li>
+<li>听感稳定性：Seek&#x2F;切歌后无明显爆音、串音、长静音。</li>
+<li>资源稳定性：长时播放下内存曲线平稳，无持续增长。</li>
+</ol>
+<h2 id="六、业务兼容策略与运行配置"><a href="#六、业务兼容策略与运行配置" class="headerlink" title="六、业务兼容策略与运行配置"></a>六、业务兼容策略与运行配置</h2><h3 id="6-1-解码黑名单策略（SetBlackCodecIds）"><a href="#6-1-解码黑名单策略（SetBlackCodecIds）" class="headerlink" title="6.1 解码黑名单策略（SetBlackCodecIds）"></a>6.1 解码黑名单策略（<code>SetBlackCodecIds</code>）</h3><h4 id="6-1-1-能力目标"><a href="#6-1-1-能力目标" class="headerlink" title="6.1.1 能力目标"></a>6.1.1 能力目标</h4><ul>
+<li>当某些编解码路径在特定机型&#x2F;系统版本上高概率异常时，通过黑名单快速屏蔽高风险 codec，优先保证稳定可播。</li>
+<li>黑名单策略的核心价值是“可运行时调整”，避免每次兼容问题都依赖发版修复。</li>
+</ul>
+<h4 id="6-1-2-配置入口与生效链路"><a href="#6-1-2-配置入口与生效链路" class="headerlink" title="6.1.2 配置入口与生效链路"></a>6.1.2 配置入口与生效链路</h4><ol>
+<li>业务侧下发或本地配置 codec id 列表。</li>
+<li>通过播放器接口 <code>SetBlackCodecIds</code> 注入内核。</li>
+<li>解码器初始化阶段读取目标音轨 <code>codec_id</code> 并与黑名单匹配。</li>
+<li>命中则终止该解码路径，未命中继续正常 <code>find_decoder/open2</code>。</li>
+</ol>
+<h4 id="6-1-3-命中规则与当前行为"><a href="#6-1-3-命中规则与当前行为" class="headerlink" title="6.1.3 命中规则与当前行为"></a>6.1.3 命中规则与当前行为</h4><ul>
+<li>命中判断时机：完成流选择后、<code>avcodec_find_decoder</code> 前。</li>
+<li>当前行为：命中黑名单后直接返回“不支持该编码”的错误，停止当前曲目解码初始化。</li>
+<li>这是一种“拦截式兼容策略”：优点是简单稳定，缺点是未内置自动回退链路。</li>
+</ul>
+<p><strong>可参考逻辑</strong></p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><code class="hljs cpp"><span class="hljs-comment">// initAudioCodec() 中，选中音轨后进行黑名单判定</span><br><span class="hljs-type">int</span> codec_id = (<span class="hljs-type">int</span>)mAudioStream-&gt;codecpar-&gt;codec_id;<br><span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> id : black_codec_ids_) &#123;<br>    <span class="hljs-keyword">if</span> (codec_id == id) &#123;<br>        <span class="hljs-comment">// 命中即拦截，返回不支持编码</span><br>        <span class="hljs-keyword">return</span> kAudioPlayerUnSupportAuidoCodec;<br>    &#125;<br>&#125;<br><br><span class="hljs-comment">// 未命中再继续 avcodec_find_decoder / avcodec_open2</span><br></code></pre></td></tr></table></figure>
+
+<ul>
+<li>该实现的结果是“提前失败、避免高风险路径进入运行态”，并由上层统一错误上报与后续业务处理。</li>
+</ul>
+<h4 id="6-1-4-运行配置建议"><a href="#6-1-4-运行配置建议" class="headerlink" title="6.1.4 运行配置建议"></a>6.1.4 运行配置建议</h4><table>
+<thead>
+<tr>
+<th>配置维度</th>
+<th>建议内容</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>codec 维度</td>
+<td><code>codec_id</code> 列表</td>
+<td>最小化命中范围，避免误伤</td>
+</tr>
+<tr>
+<td>平台维度</td>
+<td>Android&#x2F;iOS&#x2F;macOS 分开配置</td>
+<td>平台实现差异大，需独立治理</td>
+</tr>
+<tr>
+<td>机型维度</td>
+<td>品牌&#x2F;机型&#x2F;系统版本</td>
+<td>针对性屏蔽高风险组合</td>
+</tr>
+<tr>
+<td>版本维度</td>
+<td>配置版本号 + 生效时间</td>
+<td>便于灰度、回滚、审计</td>
+</tr>
+</tbody></table>
+<ul>
+<li>配置来源建议：<code>本地兜底配置 + 服务端动态配置</code>。</li>
+<li>配置生效建议：启动拉取、失败回退本地；播放中更新时应保证线程安全和原子切换。</li>
+</ul>
+<h4 id="6-1-5-可选增强方向"><a href="#6-1-5-可选增强方向" class="headerlink" title="6.1.5 可选增强方向"></a>6.1.5 可选增强方向</h4><ol>
+<li><strong>自动回退</strong>：命中黑名单后尝试备用解码路径，而不是直接失败。</li>
+<li><strong>观测指标</strong>：记录命中率、回退成功率、失败率和机型分布。</li>
+<li><strong>策略闭环</strong>：结合线上异常日志，定期增删黑名单项，避免长期配置膨胀。</li>
+</ol>
+<h3 id="6-2-多声道-Downmix-降级策略"><a href="#6-2-多声道-Downmix-降级策略" class="headerlink" title="6.2 多声道 Downmix 降级策略"></a>6.2 多声道 Downmix 降级策略</h3><h4 id="6-2-1-能力目标"><a href="#6-2-1-能力目标" class="headerlink" title="6.2.1 能力目标"></a>6.2.1 能力目标</h4><ul>
+<li>对多声道文件（如 5.1）提供可控降级路径，在设备能力不足或业务策略要求双声道时仍可稳定播放。</li>
+<li>降级目标是“可播优先”：牺牲部分空间感，换取更高兼容性与更低故障率。</li>
+</ul>
+<h4 id="6-2-2-运行配置与核心参数"><a href="#6-2-2-运行配置与核心参数" class="headerlink" title="6.2.2 运行配置与核心参数"></a>6.2.2 运行配置与核心参数</h4><table>
+<thead>
+<tr>
+<th>配置项</th>
+<th>作用</th>
+<th>典型取值</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>downmix_enable</code></td>
+<td>是否启用多声道降级</td>
+<td><code>true/false</code></td>
+</tr>
+<tr>
+<td><code>lfe_mix_level</code></td>
+<td>LFE（低频）混入强度</td>
+<td><code>0.0 ~ 1.0</code>（按听感调优）</td>
+</tr>
+</tbody></table>
+<ul>
+<li>建议把 downmix 配置作为运行时策略下发项，支持快速启停与参数调优。</li>
+</ul>
+<h4 id="6-2-3-当前播放内核实现参考"><a href="#6-2-3-当前播放内核实现参考" class="headerlink" title="6.2.3 当前播放内核实现参考"></a>6.2.3 当前播放内核实现参考</h4><ol>
+<li>业务侧写入 downmix 配置（启用开关 + <code>lfe_mix_level</code>）。</li>
+<li>设备层格式建议阶段，若命中策略则把 5.1 布局降为 <code>stereo</code>。</li>
+<li>播放器把设备渲染格式回传给解码流作为目标输出格式。</li>
+<li>解码器在 <code>InitSwrContext</code> 中基于 <code>src_layout -&gt; dst_layout</code> 建立 <code>SwrContext</code> 并设置 <code>lfe_mix_level</code>。</li>
+<li>运行时由 <code>swr_convert</code> 输出降级后的双声道 PCM。</li>
+</ol>
+<h4 id="6-2-4-使用边界与风险提示"><a href="#6-2-4-使用边界与风险提示" class="headerlink" title="6.2.4 使用边界与风险提示"></a>6.2.4 使用边界与风险提示</h4><ul>
+<li>Downmix 主要解决“能播”与“兼容”问题，不等价于高保真空间音频还原。</li>
+<li><code>lfe_mix_level</code> 过高可能导致低频过重，过低可能导致低频信息损失。</li>
+<li>建议在耳机、外放、蓝牙等主要设备路径分别做听感回归。</li>
+</ul>
+<h3 id="6-3-PCM-计算公式与单位换算（速查）"><a href="#6-3-PCM-计算公式与单位换算（速查）" class="headerlink" title="6.3 PCM 计算公式与单位换算（速查）"></a>6.3 PCM 计算公式与单位换算（速查）</h3><ul>
+<li><p><code>bytes_per_sample = bits_per_sample / 8</code></p>
+</li>
+<li><p><code>bytes_per_frame = channels * bytes_per_sample</code></p>
+</li>
+<li><p><code>bytes_per_second = sample_rate * bytes_per_frame</code></p>
+</li>
+<li><p><code>duration_ms(bytes) = byte_count * 1000 / bytes_per_second</code></p>
+</li>
+<li><p><code>sample_count(bytes) = byte_count / bytes_per_frame</code></p>
+</li>
+<li><p><code>duration_ms(samples) = sample_count * 1000 / sample_rate</code></p>
+</li>
+<li><p><code>frame_block</code> 常用定义：<code>frame_block = sample_bits * channel / 8</code>（每采样点跨所有声道的字节数）。</p>
+</li>
+<li><p>计算建议统一使用 <code>int64_t</code>，避免高码率长时播放时整数溢出。</p>
+</li>
+</ul>
+<p><strong>示例（48kHz &#x2F; 16bit &#x2F; 2ch）</strong></p>
+<ul>
+<li><p><code>bytes_per_sample = 16 / 8 = 2</code></p>
+</li>
+<li><p><code>bytes_per_frame = 2 * 2 = 4</code></p>
+</li>
+<li><p><code>bytes_per_second = 48000 * 4 = 192000</code></p>
+</li>
+<li><p>若 <code>byte_count = 96000</code>，则 <code>duration_ms = 96000 * 1000 / 192000 = 500ms</code></p>
+</li>
+<li><p>该口径与第 4 节 <code>4.4 运行时转换与缓冲估算</code> 中的 <code>out_count/out_size</code> 计算方式保持一致。</p>
+</li>
+</ul>
+<h3 id="6-4-Planar-Interleaved-常见错误症状对照"><a href="#6-4-Planar-Interleaved-常见错误症状对照" class="headerlink" title="6.4 Planar&#x2F;Interleaved 常见错误症状对照"></a>6.4 Planar&#x2F;Interleaved 常见错误症状对照</h3><table>
+<thead>
+<tr>
+<th>症状</th>
+<th>常见根因</th>
+<th>快速排查</th>
+<th>修复动作</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>明显杂音&#x2F;电流声</td>
+<td>把 <code>planar</code> 数据按 <code>interleaved</code> 直接写设备</td>
+<td>检查 <code>sample_fmt</code> 是否为 <code>*P</code>（如 <code>FLTP/S16P</code>）</td>
+<td>统一走 <code>swr_convert</code> 输出 packed（<code>S16/FLT</code>）</td>
+</tr>
+<tr>
+<td>声道错位&#x2F;左右声道异常</td>
+<td>声道重排顺序错误或通道数判断错误</td>
+<td>对比 <code>channel_layout</code> 与写入通道配置</td>
+<td>显式指定 <code>src_ch_layout -&gt; dst_ch_layout</code> 并做重排</td>
+</tr>
+<tr>
+<td>播放时长不准（偏长&#x2F;偏短）</td>
+<td>把 <code>bytes_per_sample</code> 当作 <code>bytes_per_frame</code> 使用</td>
+<td>核对 <code>frame_block = sample_bits * channels / 8</code></td>
+<td>所有时长换算按 <code>bytes_per_frame</code> 计算</td>
+</tr>
+<tr>
+<td>周期性爆音&#x2F;断续</td>
+<td>写入长度不是 <code>frame_block</code> 整数倍</td>
+<td>检查 <code>write_len % frame_block</code> 是否为 0</td>
+<td>对齐写入块，尾部不足部分做缓冲拼接</td>
+</tr>
+<tr>
+<td>单声道有声、另一声道接近静音</td>
+<td>planar 只拷贝了 <code>data[0]</code>，未合并其他声道平面</td>
+<td>检查多声道时是否遍历所有 <code>data[ch]</code></td>
+<td>使用 <code>swr_convert</code> 或完整平面合并逻辑</td>
+</tr>
+<tr>
+<td>音调&#x2F;速度异常</td>
+<td>采样格式或采样率解释错误（如把 <code>float</code> 当 <code>s16</code>）</td>
+<td>核对 <code>sample_rate/sample_fmt</code> 与设备输入配置</td>
+<td>统一格式后再写设备，避免隐式转换</td>
+</tr>
+</tbody></table>
+<ul>
+<li>最小自检清单：<code>sample_fmt</code>、<code>channel_layout</code>、<code>frame_block</code>、<code>write_len</code> 对齐、时长公式口径一致。</li>
+</ul>
+
                 
               </div>
             
@@ -298,6 +1307,13 @@
             <div>
               <div class="post-metas my-3">
   
+  
+    <div class="post-meta">
+      <i class="iconfont icon-tags"></i>
+      
+        <a href="/tags/%E9%9F%B3%E8%A7%86%E9%A2%91/" class="print-no-link">#音视频</a>
+      
+    </div>
   
 </div>
 
@@ -362,8 +1378,8 @@
                   <article class="post-next col-6">
                     
                     
-                      <a href="/2026/02/16/Android%E9%9F%B3%E9%A2%91%E6%8A%80%E6%9C%AF%E6%94%BB%E7%95%A5-AudioTrack%E7%9B%B8%E5%85%B3/" title="Android音频技术攻略-AudioTrack相关">
-                        <span class="hidden-mobile">Android音频技术攻略-AudioTrack相关</span>
+                      <a href="/2026/02/16/backup/Android%E9%9F%B3%E9%A2%91%E6%8A%80%E6%9C%AF%E6%94%BB%E7%95%A5-FFmpeg%E7%9B%B8%E5%85%B3-20260218/" title="Android音频技术攻略-FFmpeg相关">
+                        <span class="hidden-mobile">Android音频技术攻略-FFmpeg相关</span>
                         <span class="visible-mobile">下一篇</span>
                         <i class="iconfont icon-arrowright"></i>
                       </a>
@@ -408,6 +1424,21 @@
 
   
 
+
+
+  <script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/mermaid@8.8.3/dist/mermaid.min.js', function() {
+    mermaid.initialize({"theme":"default"});
+
+    Fluid.utils.listenDOMLoaded(function() {
+      Fluid.events.registerRefreshCallback(function() {
+        if ('mermaid' in window) {
+          mermaid.init();
+        }
+      });
+    });
+  });
+</script>
 
 
 
