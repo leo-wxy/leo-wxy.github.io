@@ -19,16 +19,17 @@
   <meta name="author" content="Leo-Wxy">
   <meta name="keywords" content="">
   
-    <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
+    <meta name="description" content="导读：边界与阅读路线 本文聚焦 AudioTrack 拿到 PCM 之后，到系统最终出声的链路。 上游解码（FFmpeg）与上层业务控制（AudioFocus&#x2F;路由策略）仅做衔接，不重复展开。 阅读建议：按优先级建议阅读顺序：全景链路 -&gt; write 行为 -&gt; AudioFlinger&#x2F;Mixer -&gt; 分支路径 -&gt; Policy&#x2F;HAL">
 <meta property="og:type" content="article">
 <meta property="og:title" content="Android音频技术攻略-整体音频链路">
 <meta property="og:url" content="https://leo-wxy.github.io/2026/02/16/Android%E9%9F%B3%E9%A2%91%E6%8A%80%E6%9C%AF%E6%94%BB%E7%95%A5-%E6%95%B4%E4%BD%93%E9%9F%B3%E9%A2%91%E9%93%BE%E8%B7%AF/index.html">
 <meta property="og:site_name" content="Wxy的个人博客">
-<meta property="og:description" content="如果我没有见过光明，那我本可以忍受黑暗">
+<meta property="og:description" content="导读：边界与阅读路线 本文聚焦 AudioTrack 拿到 PCM 之后，到系统最终出声的链路。 上游解码（FFmpeg）与上层业务控制（AudioFocus&#x2F;路由策略）仅做衔接，不重复展开。 阅读建议：按优先级建议阅读顺序：全景链路 -&gt; write 行为 -&gt; AudioFlinger&#x2F;Mixer -&gt; 分支路径 -&gt; Policy&#x2F;HAL">
 <meta property="og:locale" content="zh_CN">
 <meta property="article:published_time" content="2026-02-16T12:45:13.000Z">
-<meta property="article:modified_time" content="2026-02-16T12:45:13.888Z">
+<meta property="article:modified_time" content="2026-02-20T12:24:51.861Z">
 <meta property="article:author" content="Leo-Wxy">
+<meta property="article:tag" content="音视频">
 <meta name="twitter:card" content="summary_large_image">
   
   
@@ -223,7 +224,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          0 字
+          13k 字
         
       </span>
     
@@ -235,7 +236,7 @@
         
         
           <!-- compatible with older versions-->
-          1 分钟
+          42 分钟
         
       </span>
     
@@ -290,7 +291,2080 @@
             
               <div class="markdown-body">
                 
-                
+                <h2 id="导读：边界与阅读路线"><a href="#导读：边界与阅读路线" class="headerlink" title="导读：边界与阅读路线"></a>导读：边界与阅读路线</h2><ul>
+<li>本文聚焦 <code>AudioTrack</code> 拿到 PCM 之后，到系统最终出声的链路。</li>
+<li>上游解码（FFmpeg）与上层业务控制（AudioFocus&#x2F;路由策略）仅做衔接，不重复展开。</li>
+<li>阅读建议：按优先级建议阅读顺序：全景链路 -&gt; write 行为 -&gt; AudioFlinger&#x2F;Mixer -&gt; 分支路径 -&gt; Policy&#x2F;HAL -&gt; 排障与观测 -&gt; 时延分层（补充）。</li>
+</ul>
+<h2 id="一、全景链路：从-write-到出声"><a href="#一、全景链路：从-write-到出声" class="headerlink" title="一、全景链路：从 write 到出声"></a>一、全景链路：从 write 到出声</h2><h3 id="1-1-一张总图（主链路）"><a href="#1-1-一张总图（主链路）" class="headerlink" title="1.1 一张总图（主链路）"></a>1.1 一张总图（主链路）</h3><pre><code class=" mermaid">flowchart LR
+  A[App 渲染线程\nAudioTrack.write] --&gt; B[Framework 层\nandroid.media.AudioTrack]
+  B --&gt; C[Native 层\nlibaudioclient::AudioTrack]
+  C --&gt; D[共享缓冲\nClientProxy/ServerProxy]
+  D --&gt; E[AudioFlinger\nPlaybackThread]
+  E --&gt; F[Audio HAL\nstream_out.write]
+  F --&gt; G[Kernel Driver\nPCM RingBuffer + DMA]
+  G --&gt; H[Codec/功放/蓝牙协议栈]
+  H --&gt; I[Speaker / Headset / Bluetooth]
+
+  P[AudioPolicy] -. 设备选路与策略裁决 .-&gt; E
+  P -. 路由变化时重选路 .-&gt; F
+</code></pre>
+
+<ul>
+<li>如果只记一条主线，可以记成：<code>write -&gt; 共享缓冲 -&gt; AudioFlinger 消费 -&gt; HAL 写设备 -&gt; DMA 出声</code>。</li>
+<li>这条链路里有两条并行逻辑：<strong>数据流</strong>（PCM 往下走）和<strong>控制流</strong>（路由&#x2F;策略往下发）。</li>
+<li>数据流决定“有没有声音”，控制流决定“从哪里出来、走哪种输出路径”。</li>
+</ul>
+<h3 id="1-2-各层职责（工程视角）"><a href="#1-2-各层职责（工程视角）" class="headerlink" title="1.2 各层职责（工程视角）"></a>1.2 各层职责（工程视角）</h3><table>
+<thead>
+<tr>
+<th>层级</th>
+<th>典型组件</th>
+<th>核心职责</th>
+<th>工程速记</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>App 层</td>
+<td>播放内核渲染线程</td>
+<td>按节拍把 PCM 写入 <code>AudioTrack</code>，处理短写与错误码</td>
+<td>负责“持续喂数据”，不直接驱动硬件</td>
+</tr>
+<tr>
+<td>Framework&#x2F;Native</td>
+<td>Java <code>AudioTrack</code> + <code>libaudioclient::AudioTrack</code></td>
+<td>建链、参数校验、把数据写入共享缓冲</td>
+<td>是应用和系统音频服务的桥接层</td>
+</tr>
+<tr>
+<td>AudioFlinger</td>
+<td><code>PlaybackThread</code> &#x2F; <code>Track</code></td>
+<td>按线程周期消费轨道，做混音&#x2F;重采样&#x2F;音量处理</td>
+<td>是系统真正执行播放调度的核心</td>
+</tr>
+<tr>
+<td>AudioPolicy</td>
+<td><code>AudioPolicyService/Manager</code></td>
+<td>选择输出设备与输出 profile，处理路由变化</td>
+<td>负责“选路与裁决”，不是搬运 PCM</td>
+</tr>
+<tr>
+<td>Audio HAL</td>
+<td><code>audio_stream_out.write</code></td>
+<td>把系统音频帧送到厂商驱动&#x2F;设备链路</td>
+<td>是 Android 音频框架到硬件的标准接口</td>
+</tr>
+<tr>
+<td>Kernel&#x2F;Device</td>
+<td>ALSA 驱动、DMA、Codec、蓝牙链路</td>
+<td>完成硬件搬运与电声转换，最终发声</td>
+<td>最后一公里，决定最终听感稳定性</td>
+</tr>
+</tbody></table>
+<ul>
+<li>记忆技巧：<code>App 喂数 -&gt; Flinger 调度 -&gt; Policy 选路 -&gt; HAL 下发 -&gt; Driver 出声</code>。</li>
+<li>常见误区是把 <code>AudioPolicy</code> 当成“播放线程”；它主要做策略与设备选择，不负责逐帧混音。</li>
+</ul>
+<h3 id="1-3-关键认知"><a href="#1-3-关键认知" class="headerlink" title="1.3 关键认知"></a>1.3 关键认知</h3><p><code>write(...)</code> 返回 <code>&gt; 0</code>，只表示“本次数据成功进入上游缓冲&#x2F;链路”，不表示“此刻已经从喇叭放出”。</p>
+<p>从时间线上看，至少还会经过这几段：</p>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>发生位置</th>
+<th>为什么会产生延后</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>写入成功</td>
+<td>App -&gt; 共享缓冲</td>
+<td>只是进入待消费队列</td>
+</tr>
+<tr>
+<td>线程调度等待</td>
+<td>AudioFlinger <code>PlaybackThread</code></td>
+<td>要等到下一个 mix 周期才会消费</td>
+</tr>
+<tr>
+<td>下游缓冲排队</td>
+<td>HAL&#x2F;Driver Buffer</td>
+<td>设备侧也有自己的 ring buffer</td>
+</tr>
+<tr>
+<td>物理输出</td>
+<td>Codec&#x2F;蓝牙链路</td>
+<td>电声转换、蓝牙编码传输仍有开销</td>
+</tr>
+</tbody></table>
+<ul>
+<li>所以“进度在走但听感滞后”不一定是 bug，可能是正常的缓冲与调度结果。</li>
+<li>真正需要警惕的是：<strong>延后持续扩大</strong>（例如 <code>writeCostMs</code> 持续上升、<code>written &lt; requested</code> 高频出现）。</li>
+<li>工程上可用这个心智模型：</li>
+</ul>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs text">听到声音总延后 = App 写入排队 + Flinger 调度周期 + HAL/Driver 缓冲 + 设备输出链路耗时<br></code></pre></td></tr></table></figure>
+
+<ul>
+<li>本章结论：先把链路分层看清，再谈优化与排障，能避免 80% 的误判。</li>
+</ul>
+<h2 id="二、应用进程内：write-…-后发生什么"><a href="#二、应用进程内：write-…-后发生什么" class="headerlink" title="二、应用进程内：write(…) 后发生什么"></a>二、应用进程内：write(…) 后发生什么</h2><h3 id="2-1-参数一致性"><a href="#2-1-参数一致性" class="headerlink" title="2.1 参数一致性"></a>2.1 参数一致性</h3><p>在应用进程里，<code>AudioTrack</code> 能否稳定出声，第一前提是参数口径一致：<code>sampleRate/channel/encoding/bufferSize</code> 必须和写入 PCM 对齐。</p>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>一致性要求</th>
+<th>不一致时常见结果</th>
+<th>建议</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>sampleRate</code></td>
+<td>与 PCM 采样率一致</td>
+<td>触发重采样，增加 CPU 开销，极端时听感异常</td>
+<td>优先按源参数或设备主采样率（常见 <code>48000</code>）创建</td>
+</tr>
+<tr>
+<td><code>channel</code></td>
+<td>与 PCM 声道数&#x2F;布局一致</td>
+<td>下混&#x2F;上混、声道错位、部分机型静音</td>
+<td>明确使用 <code>MONO</code>&#x2F;<code>STEREO</code>，避免隐式转换</td>
+</tr>
+<tr>
+<td><code>encoding</code></td>
+<td>与 PCM 数据类型一致（<code>PCM_16BIT</code>&#x2F;<code>PCM_FLOAT</code>）</td>
+<td>杂音、爆音或无声</td>
+<td><code>AudioFormat</code> 与真实数据一一对应</td>
+</tr>
+<tr>
+<td><code>bufferSize</code></td>
+<td>不小于系统最小值</td>
+<td>过小易 underrun，过大增加时延</td>
+<td>通常从 <code>2 x minBuffer</code> 起调</td>
+</tr>
+</tbody></table>
+<ul>
+<li>参数一致性决定“可播”，节拍和调度决定“稳播”。</li>
+</ul>
+<h3 id="2-2-write-语义"><a href="#2-2-write-语义" class="headerlink" title="2.2 write 语义"></a>2.2 write 语义</h3><p><code>write(...)</code> 的关键不是“调了一次”，而是“能否持续、稳定地喂给下游”。</p>
+<table>
+<thead>
+<tr>
+<th>模式</th>
+<th>行为</th>
+<th>优点</th>
+<th>风险</th>
+<th>建议</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>WRITE_BLOCKING</code></td>
+<td>缓冲不足时等待可写</td>
+<td>节拍更稳、逻辑简单</td>
+<td>写线程可能长阻塞</td>
+<td>常规音乐播放优先</td>
+</tr>
+<tr>
+<td><code>WRITE_NON_BLOCKING</code></td>
+<td>立即返回，可能短写或返回 <code>0</code></td>
+<td>调度灵活、时延可控</td>
+<td>需要补写重试</td>
+<td>实时性要求高再用</td>
+</tr>
+</tbody></table>
+<table>
+<thead>
+<tr>
+<th>返回值</th>
+<th>含义</th>
+<th>处理动作</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>&gt; 0</code></td>
+<td>本次成功写入</td>
+<td>累加 offset，继续写剩余数据</td>
+</tr>
+<tr>
+<td><code>= 0</code></td>
+<td>本次未写入（非阻塞常见）</td>
+<td>短暂等待后重试</td>
+</tr>
+<tr>
+<td><code>&lt; 0</code></td>
+<td>错误码</td>
+<td>记录日志并按错误类型恢复</td>
+</tr>
+</tbody></table>
+<p>短写补写的最小模型：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><code class="hljs text">while (remain &gt; 0 &amp;&amp; playing) &#123;<br>  n = write(data, offset, remain, mode)<br>  if (n &gt; 0) &#123; offset += n; remain -= n; continue &#125;<br>  if (n == 0) &#123; sleep/retry; continue &#125;<br>  handle_error(n); break<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<ul>
+<li>注意：<code>byte[]/short[]/float[]/ByteBuffer</code> 重载的单位不同，offset 累加必须按对应单位计算。</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th><code>write</code> 重载</th>
+<th><code>offset/size</code> 单位</th>
+<th>返回值单位</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>write(byte[] ...)</code></td>
+<td>字节</td>
+<td>字节</td>
+</tr>
+<tr>
+<td><code>write(short[] ...)</code></td>
+<td><code>short</code> 采样点</td>
+<td><code>short</code> 采样点</td>
+</tr>
+<tr>
+<td><code>write(float[] ...)</code></td>
+<td><code>float</code> 采样点</td>
+<td><code>float</code> 采样点</td>
+</tr>
+<tr>
+<td><code>write(ByteBuffer, size, ...)</code></td>
+<td>字节</td>
+<td>字节</td>
+</tr>
+</tbody></table>
+<ul>
+<li>实践中最容易踩坑的是把 <code>short[]/float[]</code> 的长度按字节传入，导致短写判断和 offset 计算全部错位。</li>
+</ul>
+<h3 id="2-3-ERROR-DEAD-OBJECT-等异常恢复动作"><a href="#2-3-ERROR-DEAD-OBJECT-等异常恢复动作" class="headerlink" title="2.3 ERROR_DEAD_OBJECT 等异常恢复动作"></a>2.3 <code>ERROR_DEAD_OBJECT</code> 等异常恢复动作</h3><p><code>ERROR_DEAD_OBJECT</code> 是最关键的恢复信号之一，常见于路由切换、音频服务重建、底层句柄失效。</p>
+<table>
+<thead>
+<tr>
+<th>错误码</th>
+<th>常见原因</th>
+<th>恢复动作</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>ERROR_BAD_VALUE</code></td>
+<td>offset&#x2F;size 越界、参数非法</td>
+<td>校验入参并重试</td>
+</tr>
+<tr>
+<td><code>ERROR_INVALID_OPERATION</code></td>
+<td>状态非法、对象未初始化</td>
+<td>检查 <code>getState()/getPlayState()</code>，必要时重建</td>
+</tr>
+<tr>
+<td><code>ERROR_DEAD_OBJECT</code></td>
+<td>底层对象失效</td>
+<td>立即执行完整重建流程</td>
+</tr>
+</tbody></table>
+<p>推荐恢复流程：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs text">stop -&gt; flush -&gt; release -&gt; recreate AudioTrack -&gt; restore volume/session/state -&gt; play<br></code></pre></td></tr></table></figure>
+
+<ul>
+<li><code>ERROR_DEAD_OBJECT</code> 不建议在旧实例上无限重试；“快速重建”通常更稳。</li>
+<li>重建后要补齐上下文（音量、会话、播放态、路由相关状态），否则容易出现“重建成功但听感异常”。</li>
+</ul>
+<p>恢复后建议回放的上下文清单：</p>
+<ol>
+<li>音量状态（<code>setVolume</code> &#x2F; 业务缓存值）。</li>
+<li>播放状态（是否应自动恢复播放）。</li>
+<li>会话与效果链（<code>sessionId</code> 与音效绑定关系）。</li>
+<li>关键观测值（重建次数、错误码、耗时）用于线上排障。</li>
+</ol>
+<h2 id="三、跨进程建链：AudioFlinger-接管流"><a href="#三、跨进程建链：AudioFlinger-接管流" class="headerlink" title="三、跨进程建链：AudioFlinger 接管流"></a>三、跨进程建链：AudioFlinger 接管流</h2><h3 id="3-1-建链过程"><a href="#3-1-建链过程" class="headerlink" title="3.1 建链过程"></a>3.1 建链过程</h3><p><code>AudioTrack</code> 的跨进程建链主要发生在创建阶段，不是在每次 <code>write(...)</code> 时反复走 Binder。</p>
+<table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>发生位置</th>
+<th>关键动作</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>App 进程（Java）</td>
+<td>创建 <code>AudioTrack</code>，准备 <code>format/attributes/buffer</code></td>
+<td>进入 native 初始化</td>
+</tr>
+<tr>
+<td>2</td>
+<td>JNI&#x2F;Native 客户端</td>
+<td><code>native_setup</code> -&gt; <code>libaudioclient::AudioTrack</code></td>
+<td>准备向系统申请 Track</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Binder IPC</td>
+<td>调用 <code>IAudioFlinger::createTrack</code></td>
+<td>把请求发送到音频服务进程</td>
+</tr>
+<tr>
+<td>4</td>
+<td>AudioFlinger</td>
+<td>创建服务侧 <code>Track</code>，挂到对应 <code>PlaybackThread</code></td>
+<td>轨道被纳入系统调度</td>
+</tr>
+<tr>
+<td>5</td>
+<td>跨进程共享内存</td>
+<td>返回控制块与共享缓冲（<code>audio_track_cblk_t</code> &#x2F; buffer）</td>
+<td>App 与服务侧可高效共享数据</td>
+</tr>
+<tr>
+<td>6</td>
+<td>控制阶段</td>
+<td><code>play()</code> 激活 Track</td>
+<td>进入“可被周期消费”的状态</td>
+</tr>
+</tbody></table>
+<p>建链可以压成一行：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs text">new AudioTrack -&gt; native_setup -&gt; createTrack(Binder) -&gt; 分配共享缓冲 -&gt; 挂入 PlaybackThread -&gt; play<br></code></pre></td></tr></table></figure>
+
+<ul>
+<li>重点是“创建期 Binder 建链 + 运行期共享缓冲”，这也是音频链路跨进程仍可低开销运行的关键。</li>
+<li>运行期 <code>write(...)</code> 主要是写共享内存并推进读写指针，通常不会为每一包音频再走一次 Binder。</li>
+</ul>
+<p>跨进程链路可以拆成两条通道：</p>
+<table>
+<thead>
+<tr>
+<th>通道</th>
+<th>典型内容</th>
+<th>传输方式</th>
+<th>频率特征</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>数据通道</td>
+<td>PCM 帧数据</td>
+<td>共享缓冲（ClientProxy&#x2F;ServerProxy）</td>
+<td>高频、持续</td>
+</tr>
+<tr>
+<td>控制通道</td>
+<td><code>play/pause/stop/flush</code>、状态同步</td>
+<td>Binder IPC</td>
+<td>低频、事件驱动</td>
+</tr>
+</tbody></table>
+<h3 id="3-2-共享缓冲与消费节拍"><a href="#3-2-共享缓冲与消费节拍" class="headerlink" title="3.2 共享缓冲与消费节拍"></a>3.2 共享缓冲与消费节拍</h3><p>稳定播放阶段，<code>write(...)</code> 的主要工作是把 PCM 写进共享缓冲，并更新读写指针；AudioFlinger 线程按固定节拍消费。</p>
+<table>
+<thead>
+<tr>
+<th>环节</th>
+<th>生产端</th>
+<th>消费端</th>
+<th>节拍特征</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>写入共享缓冲</td>
+<td>App 渲染线程（ClientProxy）</td>
+<td>-</td>
+<td>由业务写入节拍决定</td>
+<td>写太快会顶满缓冲</td>
+</tr>
+<tr>
+<td>系统周期消费</td>
+<td>-</td>
+<td><code>PlaybackThread</code>（ServerProxy）</td>
+<td>由 mix 周期驱动</td>
+<td>不是“写完立刻播”</td>
+</tr>
+<tr>
+<td>下发设备</td>
+<td><code>PlaybackThread</code></td>
+<td>HAL&#x2F;Driver</td>
+<td>设备侧也有缓冲周期</td>
+<td>进一步增加可听延后</td>
+</tr>
+</tbody></table>
+<ul>
+<li>可以把它看成“生产者-消费者模型”：App 是生产者，AudioFlinger 是消费者。</li>
+<li>当生产速度长期小于消费速度时，会出现 underrun；反过来生产过快，会出现写入阻塞或短写。</li>
+<li>一个简单估算：</li>
+</ul>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs text">bufferedMs = bufferedFrames * 1000 / sampleRate<br></code></pre></td></tr></table></figure>
+
+<ul>
+<li><code>bufferedMs</code> 过低容易抖动，过高会拉大听感时延，核心是保持稳定而不是一味压小。</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>现象</th>
+<th>主要阶段</th>
+<th>典型特征</th>
+<th>优先排查</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>首帧慢</td>
+<td>建链&#x2F;开流阶段</td>
+<td>第一次播或重建后明显</td>
+<td><code>createTrack</code>、路由初始化、首次缓冲填充</td>
+</tr>
+<tr>
+<td>稳态卡顿</td>
+<td>运行阶段</td>
+<td>播放一段时间后出现抖动</td>
+<td><code>fillCostMs/writeCostMs</code>、缓冲水位、线程调度</td>
+</tr>
+</tbody></table>
+<h3 id="3-3-时延与阻塞来源"><a href="#3-3-时延与阻塞来源" class="headerlink" title="3.3 时延与阻塞来源"></a>3.3 时延与阻塞来源</h3><p>跨进程后最常见的问题不是“IPC 太慢”，而是“缓冲与调度失配”。</p>
+<table>
+<thead>
+<tr>
+<th>阻塞点</th>
+<th>典型表现</th>
+<th>快速判断</th>
+<th>常用动作</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>建链阶段 Binder&#x2F;开流</td>
+<td>首帧慢、首次播放启动慢</td>
+<td>只在创建或重建时明显</td>
+<td>预创建&#x2F;复用实例，减少频繁重建</td>
+</tr>
+<tr>
+<td>共享缓冲写满</td>
+<td><code>writeCostMs</code> 升高，阻塞写明显</td>
+<td><code>fillCostMs</code> 正常但 <code>writeCostMs</code> 高</td>
+<td>调整 chunk 与 buffer，避免过激低延迟</td>
+</tr>
+<tr>
+<td>线程调度竞争</td>
+<td>耗时抖动、偶发卡顿</td>
+<td>前后台切换或高负载时更明显</td>
+<td>收敛渲染线程重操作，减少锁竞争</td>
+</tr>
+<tr>
+<td>路由切换&#x2F;设备重配</td>
+<td>写入异常、无声或 <code>ERROR_DEAD_OBJECT</code></td>
+<td>耳机&#x2F;蓝牙切换前后集中出现</td>
+<td><code>stop -&gt; flush -&gt; release -&gt; recreate</code></td>
+</tr>
+<tr>
+<td>下游设备链路拥塞</td>
+<td>总延后持续扩大</td>
+<td>route 变化时延显著波动</td>
+<td>路由稳定后重建并回放状态</td>
+</tr>
+</tbody></table>
+<ul>
+<li>观测建议按顺序看：<code>fillCostMs -&gt; writeCostMs -&gt; requested/written -&gt; playState/route</code>。</li>
+<li>排查原则是先分层（App&#x2F;共享缓冲&#x2F;Flinger&#x2F;HAL），再定动作，避免把“下游阻塞”误判成“上游没数据”。</li>
+</ul>
+<p><code>ERROR_DEAD_OBJECT</code> 的高频触发场景可单独记住：</p>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>常见动作</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>蓝牙断连&#x2F;重连</td>
+<td>输出设备重配</td>
+<td>旧 Track 句柄失效</td>
+</tr>
+<tr>
+<td>耳机插拔</td>
+<td>route 切换</td>
+<td>写入返回异常</td>
+</tr>
+<tr>
+<td>音频服务重启</td>
+<td>服务端对象重建</td>
+<td>客户端持有句柄失效</td>
+</tr>
+</tbody></table>
+<ul>
+<li>这类异常的通用策略是快速重建而不是旧实例重试：<code>stop -&gt; flush -&gt; release -&gt; recreate</code>。</li>
+</ul>
+<h3 id="3-4-AudioFlinger-速览（对象模型-线程家族）"><a href="#3-4-AudioFlinger-速览（对象模型-线程家族）" class="headerlink" title="3.4 AudioFlinger 速览（对象模型 + 线程家族）"></a>3.4 AudioFlinger 速览（对象模型 + 线程家族）</h3><p>前面讲了“怎么建链、怎么共享缓冲”。这一小节把 AudioFlinger 相关概念收拢一下，后面第 4&#x2F;5&#x2F;7 节就只引用它，不再重复解释。</p>
+<h4 id="3-4-1-对象模型（你需要认识的几个名词）"><a href="#3-4-1-对象模型（你需要认识的几个名词）" class="headerlink" title="3.4.1 对象模型（你需要认识的几个名词）"></a>3.4.1 对象模型（你需要认识的几个名词）</h4><table>
+<thead>
+<tr>
+<th>名词</th>
+<th>所在侧</th>
+<th>作用（直观解释）</th>
+<th>典型源码位置</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>AudioFlinger</code></td>
+<td>服务端（<code>audioserver</code>）</td>
+<td>系统音频服务核心，负责创建 Track、管理输出线程</td>
+<td><code>frameworks/av/services/audioflinger/AudioFlinger.cpp</code></td>
+</tr>
+<tr>
+<td><code>PlaybackThread</code></td>
+<td>服务端</td>
+<td>播放线程基类，按周期消费 Track 并把数据写到 HAL</td>
+<td><code>frameworks/av/services/audioflinger/Threads.h</code></td>
+</tr>
+<tr>
+<td><code>Track</code></td>
+<td>服务端</td>
+<td>“服务端的音频轨道对象”，代表一条正在播放的流</td>
+<td><code>frameworks/av/services/audioflinger/Tracks.h</code></td>
+</tr>
+<tr>
+<td><code>AudioMixer</code></td>
+<td>服务端</td>
+<td>多轨混音引擎，把多路 PCM 混到同一份输出 buffer</td>
+<td><code>frameworks/av/media/libaudioprocessing/AudioMixer.cpp</code></td>
+</tr>
+<tr>
+<td><code>FastMixer</code></td>
+<td>服务端</td>
+<td>Fast 相关高优先级调度&#x2F;混音线程（用于低时延）</td>
+<td><code>frameworks/av/services/audioflinger/FastMixer.cpp</code></td>
+</tr>
+</tbody></table>
+<p>一句话把“App 写入”和“系统播放”边界说清：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs text">App 侧 AudioTrack.write -&gt; 写共享缓冲；AudioFlinger 的 PlaybackThread -&gt; 按周期读共享缓冲 -&gt; 处理后写入 HAL<br></code></pre></td></tr></table></figure>
+
+<h4 id="3-4-2-线程家族（最终会落到哪种-Thread）"><a href="#3-4-2-线程家族（最终会落到哪种-Thread）" class="headerlink" title="3.4.2 线程家族（最终会落到哪种 Thread）"></a>3.4.2 线程家族（最终会落到哪种 Thread）</h4><p>AudioFlinger 侧常见的输出线程类型（只列和本文相关的）：</p>
+<table>
+<thead>
+<tr>
+<th>Thread 类型</th>
+<th>核心特点</th>
+<th>典型场景</th>
+<th>典型源码位置</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>MixerThread</code></td>
+<td>通用混音主路径，多 Track 混音、兼容性最强</td>
+<td>普通媒体播放</td>
+<td><code>frameworks/av/services/audioflinger/Threads.cpp</code></td>
+</tr>
+<tr>
+<td><code>DirectOutputThread</code></td>
+<td>“直出”输出线程，尽量减少通用混音链路干预</td>
+<td>Direct 输出（受设备 profile&#x2F;flags 限制）</td>
+<td><code>frameworks/av/services/audioflinger/Threads.cpp</code></td>
+</tr>
+<tr>
+<td><code>OffloadThread</code></td>
+<td>压缩 offload 播放线程，强调省电与硬件协作</td>
+<td>后台长时音乐播放（硬件支持时）</td>
+<td><code>frameworks/av/services/audioflinger/Threads.cpp</code></td>
+</tr>
+</tbody></table>
+<p>要点：Fast 不是简单的“换一种 PlaybackThread 子类”，它通常是 <code>MixerThread</code> 与 <code>FastMixer</code> 协作实现低时延。</p>
+<h4 id="3-4-3-一条流的最短执行主线（便于跟源码）"><a href="#3-4-3-一条流的最短执行主线（便于跟源码）" class="headerlink" title="3.4.3 一条流的最短执行主线（便于跟源码）"></a>3.4.3 一条流的最短执行主线（便于跟源码）</h4><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><code class="hljs text">AudioFlinger::createTrack<br>  -&gt; Track attach to PlaybackThread<br>  -&gt; PlaybackThread::threadLoop (周期驱动)<br>     -&gt; MixerThread: AudioMixer.process -&gt; write to HAL<br>     -&gt; Direct/Offload: direct write to HAL (各自线程逻辑不同)<br></code></pre></td></tr></table></figure>
+
+<p>如果只记一个观测结论：<code>dumpsys media.audio_flinger</code> 里看到的线程类型，基本就对应了这条流最终走的是哪条路径。</p>
+<h2 id="四、主路径细节：MixerThread"><a href="#四、主路径细节：MixerThread" class="headerlink" title="四、主路径细节：MixerThread"></a>四、主路径细节：MixerThread</h2><h3 id="4-1-为什么它是主路径"><a href="#4-1-为什么它是主路径" class="headerlink" title="4.1 为什么它是主路径"></a>4.1 为什么它是主路径</h3><p><code>MixerThread</code> 是 AudioFlinger 的默认主路径，核心原因不是“最快”，而是“最稳、最兼容”。</p>
+<table>
+<thead>
+<tr>
+<th>选择维度</th>
+<th>MixerThread 的表现</th>
+<th>工程意义</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>多流并发</td>
+<td>原生支持把多路 Track 混到同一路输出</td>
+<td>音乐 + 提示音 + 系统音可共存</td>
+</tr>
+<tr>
+<td>格式兼容</td>
+<td>可做重采样、声道重排、音量处理</td>
+<td>上游格式不统一时也能稳定出声</td>
+</tr>
+<tr>
+<td>路由适配</td>
+<td>设备切换时可在统一线程模型下恢复</td>
+<td>耳机&#x2F;蓝牙切换更容易兜底</td>
+</tr>
+<tr>
+<td>音效链支持</td>
+<td>便于挂接系统音效&#x2F;后处理链路</td>
+<td>功能完整，业务改造成本低</td>
+</tr>
+<tr>
+<td>回退能力</td>
+<td>Fast&#x2F;Direct&#x2F;Offload 条件不满足时回落到它</td>
+<td>保证“先可播，再优化”</td>
+</tr>
+</tbody></table>
+<ul>
+<li>对通用媒体播放而言，系统通常优先保证可用性和稳定性，因此 Mixer 路径覆盖面最大。</li>
+<li>如果你没有显式满足其他路径的门槛，最终大概率都会落到 MixerThread。</li>
+</ul>
+<p>核心优势速记（可直接用于设计评审）：</p>
+<ol>
+<li>多流兼容：一条主链路承载多路声音并发，业务组合能力强。</li>
+<li>路由稳定：耳机&#x2F;蓝牙切换后更容易恢复，不易出现长时间无声。</li>
+<li>回退兜底：Fast&#x2F;Direct&#x2F;Offload 条件失配时可平滑回到 Mixer，优先保证可播。</li>
+</ol>
+<h3 id="4-2-Mixer-在做什么"><a href="#4-2-Mixer-在做什么" class="headerlink" title="4.2 Mixer 在做什么"></a>4.2 Mixer 在做什么</h3><p>MixerThread 的工作可以理解为“按周期把所有活跃轨道处理后，合成一帧设备可消费的数据”。</p>
+<p>典型周期流程：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><code class="hljs text">collect active tracks<br>  -&gt; per-track format adapt (resample/remap)<br>  -&gt; per-track volume/effect/ramp<br>  -&gt; mix into sink buffer<br>  -&gt; write to HAL<br></code></pre></td></tr></table></figure>
+
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>关键动作</th>
+<th>对体验的影响</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>轨道收集</td>
+<td>获取当前可播放的 active tracks</td>
+<td>直接决定是否有声、是否会丢轨</td>
+</tr>
+<tr>
+<td>格式适配</td>
+<td>重采样、声道映射、样本格式统一</td>
+<td>影响 CPU 开销与音质一致性</td>
+</tr>
+<tr>
+<td>增益处理</td>
+<td>Track 音量、淡入淡出、静音策略</td>
+<td>影响听感平滑度与爆音风险</td>
+</tr>
+<tr>
+<td>混音合成</td>
+<td>把多路 PCM 合并到输出缓冲</td>
+<td>轨道越多、计算越重</td>
+</tr>
+<tr>
+<td>下发设备</td>
+<td>调用 HAL <code>write</code> 输出</td>
+<td>决定本周期是否准时出帧</td>
+</tr>
+</tbody></table>
+<ul>
+<li>这也是为什么“写入线程很快”仍可能卡顿：瓶颈可能在 Mixer 周期处理或下游 <code>write</code>。</li>
+<li>工程里应把 <code>fillCostMs</code> 和 <code>writeCostMs</code> 分开看，避免把混音&#x2F;下游阻塞误判成上游供数慢。</li>
+</ul>
+<h3 id="4-3-体验特征"><a href="#4-3-体验特征" class="headerlink" title="4.3 体验特征"></a>4.3 体验特征</h3><p>Mixer 路径的体验特征可以概括为：稳定和兼容优先，时延不是最低。</p>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>Mixer 路径特征</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>稳定性</td>
+<td>高</td>
+<td>多数机型、多数路由场景都能持续播放</td>
+</tr>
+<tr>
+<td>兼容性</td>
+<td>高</td>
+<td>对格式差异和多流并发容忍度高</td>
+</tr>
+<tr>
+<td>时延</td>
+<td>中等</td>
+<td>通常高于 Fast 路径，但波动更可控</td>
+</tr>
+<tr>
+<td>功耗</td>
+<td>中等偏高</td>
+<td>由 AP 参与混音计算，轨道越多开销越高</td>
+</tr>
+<tr>
+<td>复杂度</td>
+<td>可控</td>
+<td>统一主路径便于治理与排障</td>
+</tr>
+</tbody></table>
+<p>常见边界与建议：</p>
+<ol>
+<li>如果目标是极低时延，优先评估 Fast 路径；Mixer 不应硬扛实时场景。</li>
+<li>如果目标是复杂播放能力（多流、音效、稳定切路由），Mixer 往往是更稳妥选择。</li>
+<li>当出现“偶发卡顿但非持续”时，先查线程调度和缓冲水位，再考虑是否切路径。</li>
+</ol>
+<ul>
+<li>本节结论：MixerThread 不是性能极限路径，但它是通用播放器最可靠的基线能力。</li>
+</ul>
+<h3 id="4-4-MixerThread-源码定位（只看主线程）"><a href="#4-4-MixerThread-源码定位（只看主线程）" class="headerlink" title="4.4 MixerThread 源码定位（只看主线程）"></a>4.4 MixerThread 源码定位（只看主线程）</h3><p>如果这一节只聚焦 <code>MixerThread</code>，建议先看这 4 个源码入口：</p>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>路径&#x2F;类</th>
+<th>重点关注</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>线程定义</td>
+<td><code>frameworks/av/services/audioflinger/Threads.h</code> -&gt; <code>AudioFlinger::MixerThread</code></td>
+<td>类关系、成员缓冲、线程职责</td>
+</tr>
+<tr>
+<td>线程实现</td>
+<td><code>frameworks/av/services/audioflinger/Threads.cpp</code></td>
+<td><code>threadLoop</code>、<code>prepareTracks_l</code>、<code>write</code> 下发</td>
+</tr>
+<tr>
+<td>混音引擎</td>
+<td><code>frameworks/av/media/libaudioprocessing/AudioMixer.cpp</code></td>
+<td>多轨混音、增益计算、采样格式处理</td>
+</tr>
+<tr>
+<td>轨道定义</td>
+<td><code>frameworks/av/services/audioflinger/Tracks.h</code></td>
+<td>Track 生命周期、状态机与读写协作</td>
+</tr>
+</tbody></table>
+<p>可以按这条主线跟代码：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><code class="hljs text">MixerThread::threadLoop<br>  -&gt; prepareTracks_l (收集 active tracks)<br>  -&gt; AudioMixer.process (混音到 sink buffer)<br>  -&gt; write() to HAL<br></code></pre></td></tr></table></figure>
+
+<p>运行时验证建议优先看：</p>
+<ul>
+<li><code>adb shell dumpsys media.audio_flinger</code>：确认 <code>MixerThread</code>、active tracks、线程负载和 write 行为。</li>
+</ul>
+<h2 id="五、分支路径：Fast-Direct-Offload"><a href="#五、分支路径：Fast-Direct-Offload" class="headerlink" title="五、分支路径：Fast &#x2F; Direct &#x2F; Offload"></a>五、分支路径：Fast &#x2F; Direct &#x2F; Offload</h2><p>先把概念讲直白：这不是三种“播放状态”，而是系统可能给同一条音频流选择的三种“出声通道”。</p>
+<ul>
+<li><code>Fast</code>：目标是更快出声（低时延）。</li>
+<li><code>Direct</code>：目标是少做中间处理（尽量直出）。</li>
+<li><code>Offload</code>：目标是更省电（把更多处理交给 DSP&#x2F;硬件）。</li>
+</ul>
+<h3 id="5-1-Fast-路径（你最关心“延迟”时）"><a href="#5-1-Fast-路径（你最关心“延迟”时）" class="headerlink" title="5.1 Fast 路径（你最关心“延迟”时）"></a>5.1 Fast 路径（你最关心“延迟”时）</h3><p>当你希望“点播放后更快听到声音”、或做实时互动场景时，会优先尝试 Fast。</p>
+<table>
+<thead>
+<tr>
+<th>你会看到的特征</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>起播和交互响应更快</td>
+<td>调度周期更激进</td>
+</tr>
+<tr>
+<td>对参数要求严格</td>
+<td>采样率&#x2F;声道&#x2F;格式越贴近设备越容易命中</td>
+</tr>
+<tr>
+<td>容易掉回普通路径</td>
+<td>条件不满足时自动回到 Mixer</td>
+</tr>
+</tbody></table>
+<p>常见请求方式：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">new</span> <span class="hljs-title class_">AudioTrack</span>.Builder()<br>    .setAudioAttributes(attributes)<br>    .setAudioFormat(format)<br>    .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)<br>    .build();<br></code></pre></td></tr></table></figure>
+
+<ul>
+<li>关键认知：Fast 是“尽量低时延”，不是“强制低时延”。</li>
+</ul>
+<h3 id="5-1-1-Fast：Thread-flags-与源码入口"><a href="#5-1-1-Fast：Thread-flags-与源码入口" class="headerlink" title="5.1.1 Fast：Thread&#x2F;flags 与源码入口"></a>5.1.1 Fast：Thread&#x2F;flags 与源码入口</h3><table>
+<thead>
+<tr>
+<th>关注点</th>
+<th>对应 Thread&#x2F;对象</th>
+<th>典型源码位置</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>输出线程基类</td>
+<td><code>PlaybackThread</code></td>
+<td><code>frameworks/av/services/audioflinger/Threads.cpp</code></td>
+<td>最终都要落到某种 PlaybackThread</td>
+</tr>
+<tr>
+<td>fast 相关线程</td>
+<td><code>FastMixer</code></td>
+<td><code>frameworks/av/services/audioflinger/FastMixer.cpp</code></td>
+<td>高优先级调度，主打低时延</td>
+</tr>
+<tr>
+<td>Track 侧 fast 能力</td>
+<td>fast track（概念）</td>
+<td><code>frameworks/av/services/audioflinger/Tracks.h</code></td>
+<td>是否能作为 fast track 由条件决定</td>
+</tr>
+</tbody></table>
+<p>配置项如何区分 Fast：</p>
+<table>
+<thead>
+<tr>
+<th>层级</th>
+<th>关键项</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>App 请求</td>
+<td><code>PERFORMANCE_MODE_LOW_LATENCY</code></td>
+<td>在 framework 侧映射为 <code>AudioAttributes.FLAG_LOW_LATENCY</code>，向策略层表达“低时延意图”</td>
+</tr>
+<tr>
+<td>Policy 结果</td>
+<td><code>output flags</code>（含 <code>FAST</code> 语义）</td>
+<td>只有策略&#x2F;硬件允许时，才会给到可用于 fast 的输出</td>
+</tr>
+<tr>
+<td>设备配置</td>
+<td><code>/vendor/etc/audio_policy_configuration.xml</code> 的 <code>mixPort flags</code></td>
+<td>设备侧声明是否存在支持低时延&#x2F;fast 的输出 profile</td>
+</tr>
+</tbody></table>
+<p>在 framework 侧，<code>setPerformanceMode(LOW_LATENCY)</code> 最终会改变 attributes flags（来自 <code>AudioTrack.Builder.build()</code> 的逻辑，伪代码）：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><code class="hljs text">if (performanceMode == LOW_LATENCY) &#123;<br>  attributes.flags |= FLAG_LOW_LATENCY<br>  attributes.flags &amp;= ~FLAG_DEEP_BUFFER<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>fast 的“简单实现”可以这样理解（伪代码）：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><code class="hljs text">if (output supports FAST) &#123;<br>  create/enable FastMixer thread<br>  route eligible track(s) as fast track<br>&#125; else &#123;<br>  fall back to normal MixerThread<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<h3 id="5-2-Direct-路径（你最关心“少处理”时）"><a href="#5-2-Direct-路径（你最关心“少处理”时）" class="headerlink" title="5.2 Direct 路径（你最关心“少处理”时）"></a>5.2 Direct 路径（你最关心“少处理”时）</h3><p>当你希望数据尽量不经过框架侧混音、重采样、下混等处理时，会关注 Direct。</p>
+<table>
+<thead>
+<tr>
+<th>你会看到的特征</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>中间处理更少</td>
+<td>更接近“原样输出”</td>
+</tr>
+<tr>
+<td>多流并发能力变弱</td>
+<td>常见限制是并发混音和某些音效能力</td>
+</tr>
+<tr>
+<td>是否命中很看设备</td>
+<td>依赖 policy 配置和硬件支持</td>
+</tr>
+</tbody></table>
+<p>可用性查询：</p>
+<ul>
+<li><p>API 29~32：<code>AudioTrack.isDirectPlaybackSupported(...)</code>（已废弃）。</p>
+</li>
+<li><p>API 33+：<code>AudioManager.getDirectPlaybackSupport(...)</code>（返回位标记）。</p>
+</li>
+<li><p>关键认知：查询返回“支持”只代表能力存在，不保证当前这次一定走 Direct。</p>
+</li>
+</ul>
+<h3 id="5-2-1-Direct：Thread-flags-与源码入口"><a href="#5-2-1-Direct：Thread-flags-与源码入口" class="headerlink" title="5.2.1 Direct：Thread&#x2F;flags 与源码入口"></a>5.2.1 Direct：Thread&#x2F;flags 与源码入口</h3><table>
+<thead>
+<tr>
+<th>关注点</th>
+<th>对应 Thread&#x2F;对象</th>
+<th>典型源码位置</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>direct 输出线程</td>
+<td><code>DirectOutputThread</code></td>
+<td><code>frameworks/av/services/audioflinger/Threads.cpp</code></td>
+<td>直出线程，通常不走通用 AudioMixer</td>
+</tr>
+<tr>
+<td>线程选择入口</td>
+<td><code>AudioFlinger</code> openOutput&#x2F;create thread</td>
+<td><code>frameworks/av/services/audioflinger/AudioFlinger.cpp</code></td>
+<td>根据 output flags 创建对应 Thread</td>
+</tr>
+</tbody></table>
+<p>配置项如何区分 Direct：</p>
+<table>
+<thead>
+<tr>
+<th>层级</th>
+<th>关键项</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Policy 结果</td>
+<td><code>AUDIO_OUTPUT_FLAG_DIRECT</code></td>
+<td>典型直出标志，命中后 AudioFlinger 更可能创建 Direct 线程</td>
+</tr>
+<tr>
+<td>设备配置</td>
+<td><code>mixPort/profile</code> 的 format&#x2F;rate&#x2F;channels</td>
+<td>Direct 更依赖“完全匹配”的 profile 能力</td>
+</tr>
+</tbody></table>
+<p>Direct 的“简单实现”可以这样理解（伪代码）：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><code class="hljs text">if (outputFlags has DIRECT) &#123;<br>  thread = new DirectOutputThread(...)<br>  // 单路或少路 track 直出到 HAL<br>&#125; else &#123;<br>  thread = new MixerThread(...)<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<h3 id="5-3-Offload-路径（你最关心“省电”时）"><a href="#5-3-Offload-路径（你最关心“省电”时）" class="headerlink" title="5.3 Offload 路径（你最关心“省电”时）"></a>5.3 Offload 路径（你最关心“省电”时）</h3><p>当你是“长时间后台听歌”这种场景，Offload 通常最有价值，因为 AP 可以更省电。</p>
+<table>
+<thead>
+<tr>
+<th>你会看到的特征</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>功耗更低</td>
+<td>处理更多下沉到 DSP&#x2F;专用硬件</td>
+</tr>
+<tr>
+<td>格式与路由限制更多</td>
+<td>不是所有编码&#x2F;设备都支持</td>
+</tr>
+<tr>
+<td>路由变化时容易退出</td>
+<td>蓝牙切换时常回退到 Mixer</td>
+</tr>
+</tbody></table>
+<p>典型请求方式：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">new</span> <span class="hljs-title class_">AudioTrack</span>.Builder()<br>    .setAudioAttributes(attributes)<br>    .setAudioFormat(format)<br>    .setOffloadedPlayback(<span class="hljs-literal">true</span>)<br>    .build();<br></code></pre></td></tr></table></figure>
+
+<p>使用前通常先判断：<code>AudioManager.isOffloadedPlaybackSupported(...)</code>。</p>
+<h3 id="5-3-1-Offload：Thread-flags-与源码入口"><a href="#5-3-1-Offload：Thread-flags-与源码入口" class="headerlink" title="5.3.1 Offload：Thread&#x2F;flags 与源码入口"></a>5.3.1 Offload：Thread&#x2F;flags 与源码入口</h3><table>
+<thead>
+<tr>
+<th>关注点</th>
+<th>对应 Thread&#x2F;对象</th>
+<th>典型源码位置</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>offload 输出线程</td>
+<td><code>OffloadThread</code></td>
+<td><code>frameworks/av/services/audioflinger/Threads.cpp</code></td>
+<td>压缩 offload 播放线程，常与 DSP&#x2F;硬件协作</td>
+</tr>
+<tr>
+<td>offload 事件&#x2F;状态</td>
+<td>offload 回调与状态机（概念）</td>
+<td><code>frameworks/av/services/audioflinger/Threads.cpp</code></td>
+<td>buffer&#x2F;teardown 等事件驱动行为更明显</td>
+</tr>
+</tbody></table>
+<p>配置项如何区分 Offload：</p>
+<table>
+<thead>
+<tr>
+<th>层级</th>
+<th>关键项</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>App 请求</td>
+<td><code>setOffloadedPlayback(true)</code></td>
+<td>强请求 offload；不满足条件通常创建就失败或后续回退</td>
+</tr>
+<tr>
+<td>Policy 结果</td>
+<td><code>AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD</code></td>
+<td>命中后通常创建 OffloadThread（部分实现也会同时具备 DIRECT 语义）</td>
+</tr>
+<tr>
+<td>设备配置</td>
+<td><code>mixPort flags</code> + 支持的压缩格式 profile</td>
+<td>决定 offload 能力范围（哪些编码可下沉）</td>
+</tr>
+</tbody></table>
+<p>Offload 在 framework 侧的一个关键“门槛检查”点（来自 <code>AudioTrack.Builder.build()</code> 的逻辑，伪代码）：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><code class="hljs text">if (offloadRequested) &#123;<br>  if (performanceMode == LOW_LATENCY) throw<br>  if (!direct/offload supported for this format+attributes) throw<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<h3 id="5-4-系统如何选择与回退（最重要）"><a href="#5-4-系统如何选择与回退（最重要）" class="headerlink" title="5.4 系统如何选择与回退（最重要）"></a>5.4 系统如何选择与回退（最重要）</h3><p>你可以请求路径，但最终由系统决定：AudioPolicy 先选路，AudioFlinger 再落线程，运行中还会动态变化。</p>
+<table>
+<thead>
+<tr>
+<th>你的请求</th>
+<th>系统会综合判断</th>
+<th>可能结果</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>请求 Fast</td>
+<td>参数是否匹配、当前并发、资源是否充足</td>
+<td>Fast 或回退 Mixer</td>
+</tr>
+<tr>
+<td>请求 Direct</td>
+<td>设备 profile、当前路由、直出资源可用性</td>
+<td>Direct 或回退 Mixer</td>
+</tr>
+<tr>
+<td>请求 Offload</td>
+<td>编码支持、路由状态、硬件能力、策略限制</td>
+<td>Offload 或回退 Mixer</td>
+</tr>
+</tbody></table>
+<h3 id="5-4-1-output-flags-如何决定-Thread"><a href="#5-4-1-output-flags-如何决定-Thread" class="headerlink" title="5.4.1 output flags 如何决定 Thread"></a>5.4.1 output flags 如何决定 Thread</h3><p>线程选择的核心逻辑可以压缩成一句话：<strong>AudioPolicy 产出 output flags，AudioFlinger 用 flags 决定创建哪类 Thread。</strong></p>
+<table>
+<thead>
+<tr>
+<th>output flags（示意）</th>
+<th>对应 Thread（示意）</th>
+<th>源码定位</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>COMPRESS_OFFLOAD</code></td>
+<td><code>OffloadThread</code></td>
+<td><code>frameworks/av/services/audioflinger/Threads.cpp</code></td>
+</tr>
+<tr>
+<td><code>DIRECT</code></td>
+<td><code>DirectOutputThread</code></td>
+<td><code>frameworks/av/services/audioflinger/Threads.cpp</code></td>
+</tr>
+<tr>
+<td><code>FAST</code></td>
+<td><code>FastMixer</code>（配合 PlaybackThread）</td>
+<td><code>frameworks/av/services/audioflinger/FastMixer.cpp</code></td>
+</tr>
+<tr>
+<td>其他&#x2F;默认</td>
+<td><code>MixerThread</code></td>
+<td><code>frameworks/av/services/audioflinger/Threads.cpp</code></td>
+</tr>
+</tbody></table>
+<p>可以把它记成：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs text">请求 -&gt; 系统裁决 -&gt; 实际线程 -&gt; 运行期持续检查 -&gt; 条件变化则回退<br></code></pre></td></tr></table></figure>
+
+<ul>
+<li>对单个 <code>AudioTrack</code> 来说，同一时刻只会落到一条实际输出路径。</li>
+<li>“回退”是正常系统行为，不等于播放失败。</li>
+</ul>
+<h3 id="5-5-按场景快速选"><a href="#5-5-按场景快速选" class="headerlink" title="5.5 按场景快速选"></a>5.5 按场景快速选</h3><table>
+<thead>
+<tr>
+<th>业务场景</th>
+<th>首选请求</th>
+<th>主要目标</th>
+<th>不命中时兜底</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>实时互动、音效响应</td>
+<td>Fast</td>
+<td>低时延</td>
+<td>回到 Mixer，优先保稳定</td>
+</tr>
+<tr>
+<td>高保真&#x2F;直通输出</td>
+<td>Direct</td>
+<td>少中间处理</td>
+<td>回到 Mixer，接受系统处理</td>
+</tr>
+<tr>
+<td>后台长时音乐播放</td>
+<td>Offload</td>
+<td>省电</td>
+<td>回到 Mixer，继续可播</td>
+</tr>
+<tr>
+<td>普通音乐播放</td>
+<td>Mixer（默认）</td>
+<td>兼容+稳定</td>
+<td>保持主路径</td>
+</tr>
+</tbody></table>
+<p>运行时定位建议：</p>
+<ol>
+<li><code>adb shell dumpsys media.audio_flinger</code>：看当前实际线程（Mixer&#x2F;Direct&#x2F;Offload）。</li>
+<li><code>adb shell dumpsys media.audio_policy</code>：看路由、flags 和策略变化。</li>
+<li>业务日志记录“请求路径 + 实际路径 + 回退原因”。</li>
+</ol>
+<h3 id="5-6-源码入口（速查）"><a href="#5-6-源码入口（速查）" class="headerlink" title="5.6 源码入口（速查）"></a>5.6 源码入口（速查）</h3><table>
+<thead>
+<tr>
+<th>关注点</th>
+<th>路径&#x2F;类</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>请求入口</td>
+<td><code>frameworks/base/media/java/android/media/AudioTrack.java</code>（<code>setPerformanceMode</code>、<code>setOffloadedPlayback</code>）</td>
+</tr>
+<tr>
+<td>能力查询</td>
+<td><code>frameworks/base/media/java/android/media/AudioManager.java</code>（<code>getDirectPlaybackSupport</code>、<code>isOffloadedPlaybackSupported</code>）</td>
+</tr>
+<tr>
+<td>策略裁决</td>
+<td><code>frameworks/av/services/audiopolicy/managerdefault/AudioPolicyManager.cpp</code></td>
+</tr>
+<tr>
+<td>线程落点</td>
+<td><code>frameworks/av/services/audioflinger/Threads.cpp</code>（<code>MixerThread/DirectOutputThread/OffloadThread</code>）</td>
+</tr>
+<tr>
+<td>配置来源</td>
+<td><code>/vendor/etc/audio_policy_configuration.xml</code></td>
+</tr>
+</tbody></table>
+<h2 id="六、策略层：AudioPolicy-选路与重选路"><a href="#六、策略层：AudioPolicy-选路与重选路" class="headerlink" title="六、策略层：AudioPolicy 选路与重选路"></a>六、策略层：AudioPolicy 选路与重选路</h2><h3 id="6-1-AudioPolicy-的职责"><a href="#6-1-AudioPolicy-的职责" class="headerlink" title="6.1 AudioPolicy 的职责"></a>6.1 AudioPolicy 的职责</h3><p>先说直白一点：<code>AudioPolicy</code> 不负责“搬 PCM”，它负责“决定这路声音该走哪条路、从哪个设备出”。</p>
+<p>更具体地说，它通常同时在“选两件事”：</p>
+<ol>
+<li>选<strong>输出设备</strong>：声音是从 <code>speaker/headset/A2DP/SCO</code> 哪个设备出。</li>
+<li>选<strong>输出能力模型</strong>：匹配哪个 output profile（<code>mixPort/profile</code>）以及输出 flags（例如 <code>LOW_LATENCY/DEEP_BUFFER/DIRECT/OFFLOAD</code>），从而影响最终落到的线程类型（Mixer&#x2F;Direct&#x2F;Offload 等）。</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>输入信息</th>
+<th>AudioPolicy 做的决策</th>
+<th>直接影响</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>AudioAttributes</code>（usage&#x2F;content）</td>
+<td>选策略分支（媒体&#x2F;通话&#x2F;提示音等）</td>
+<td>优先走哪类设备与输出策略</td>
+</tr>
+<tr>
+<td><code>AudioFormat</code>（采样率&#x2F;声道&#x2F;编码）</td>
+<td>匹配 output profile</td>
+<td>能否命中 Fast&#x2F;Direct&#x2F;Offload</td>
+</tr>
+<tr>
+<td>当前已连接设备</td>
+<td>选具体输出设备（speaker&#x2F;headset&#x2F;A2DP）</td>
+<td>实际从哪里出声</td>
+</tr>
+<tr>
+<td>系统模式与并发状态</td>
+<td>调整路由与优先级</td>
+<td>是否需要重选路或回退</td>
+</tr>
+<tr>
+<td><code>audio_policy_configuration.xml</code></td>
+<td>提供可用 mixPort&#x2F;devicePort&#x2F;route&#x2F;flags</td>
+<td>设备侧真实能力边界</td>
+</tr>
+</tbody></table>
+<p>可以把策略层理解成一个“调度中枢”：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><code class="hljs text">App 请求播放<br>  -&gt; AudioPolicyManager 匹配 profile + route + flags<br>  -&gt; AudioFlinger 按结果分配输出线程<br>  -&gt; 运行中设备变化时由 AudioPolicy 触发重选路<br></code></pre></td></tr></table></figure>
+
+<ul>
+<li>关键认知：你在 App 里设置的是“意图”，<code>AudioPolicy</code> 给出的是“当前时刻可落地方案”。</li>
+</ul>
+<h3 id="6-2-决策链：从请求到输出线程"><a href="#6-2-决策链：从请求到输出线程" class="headerlink" title="6.2 决策链：从请求到输出线程"></a>6.2 决策链：从请求到输出线程</h3><p>这一小节只聚焦“策略如何决定 output&#x2F;profile&#x2F;flags”，不重复展开第 3 节的跨进程建链细节。</p>
+<p>决策链本质是在回答一个问题：<strong>给定 <code>AudioAttributes/AudioFormat</code>，系统要把声音路由到哪个设备，并用什么输出能力模型承接它？</strong></p>
+<p>把关键节点串起来可以写成：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><code class="hljs text">AudioAttributes/AudioFormat<br>  -&gt; 策略归类（strategy/product strategy）<br>  -&gt; 候选输出设备集合（connected devices + policy rules）<br>  -&gt; 匹配输出 profile（mixPort/profile: format/rate/channels）<br>  -&gt; 决定 output flags（low latency / deep buffer / direct / offload ...）<br>  -&gt; openOutput（打开对应输出）<br>  -&gt; AudioFlinger 创建对应线程（MixerThread / DirectOutputThread / OffloadThread ...）<br></code></pre></td></tr></table></figure>
+
+<p>注意这条链路的输出不是“一个 bool”，而是一组结果：</p>
+<ul>
+<li><code>output handle</code>：后续 <code>createTrack</code> 要绑定到哪个 output。</li>
+<li><code>selected device</code>：最终从哪个设备出声。</li>
+<li><code>output profile</code>：<code>mixPort/profile</code> 匹配到的能力模型（支持的 format&#x2F;rate&#x2F;channels）。</li>
+<li><code>output flags</code>：决定 low latency &#x2F; deep buffer &#x2F; direct &#x2F; offload 等行为。</li>
+</ul>
+<p>源码执行主线（典型路径，不同版本会有命名差异）：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><code class="hljs text">AudioTrack (frameworks/base)<br>  -&gt; native_setup / libaudioclient::AudioTrack (frameworks/av)<br>    -&gt; AudioSystem::getOutputForAttr (frameworks/av)<br>      -&gt; AudioPolicyService::getOutputForAttr (frameworks/av)<br>        -&gt; AudioPolicyManager::getOutputForAttr (frameworks/av)<br>          -&gt; choose devices/profile/flags<br>          -&gt; openOutput (if needed)<br>    -&gt; IAudioFlinger::createTrack (frameworks/av)<br>      -&gt; AudioFlinger::createTrack<br>        -&gt; PlaybackThread attach (MixerThread/DirectOutputThread/OffloadThread)<br></code></pre></td></tr></table></figure>
+
+<p>源码入口（按排查顺序）：</p>
+<ol>
+<li><code>frameworks/av/services/audiopolicy/service/AudioPolicyService.cpp</code>：<code>getOutputForAttr</code> 的服务侧入口。</li>
+<li><code>frameworks/av/services/audiopolicy/managerdefault/AudioPolicyManager.cpp</code>：profile 匹配、设备选择、flags 决策的核心。</li>
+<li><code>frameworks/av/services/audioflinger/AudioFlinger.cpp</code>：<code>createTrack</code> 与 output&#x2F;thread 绑定。</li>
+<li><code>frameworks/av/services/audioflinger/Threads.cpp</code>：线程类型落点（Mixer&#x2F;Direct&#x2F;Offload）。</li>
+</ol>
+<p>如果要定位“为什么没命中某条路径”，优先看两件事：</p>
+<ol>
+<li>policy 最终给了什么 <code>output flags</code>（决定大方向）。</li>
+<li>AudioFlinger 最终建了什么线程（决定实际落地）。</li>
+</ol>
+<h3 id="6-3-路由切换"><a href="#6-3-路由切换" class="headerlink" title="6.3 路由切换"></a>6.3 路由切换</h3><p>路由切换是策略层最常见的动态行为，典型触发包括耳机插拔、蓝牙断连重连、系统面板切设备。</p>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>AudioPolicy 常见动作</th>
+<th>结果表现</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>有线耳机拔出</td>
+<td>从 headset route 切回 speaker route</td>
+<td>可能短暂静音，随后恢复外放</td>
+</tr>
+<tr>
+<td>蓝牙 A2DP 断连</td>
+<td>重新匹配本地输出设备与 profile</td>
+<td>线程&#x2F;路径可能切换，偶发回退 Mixer</td>
+</tr>
+<tr>
+<td>蓝牙 A2DP 重连</td>
+<td>再次匹配蓝牙输出能力</td>
+<td>可能重新打开输出，旧 track 句柄失效</td>
+</tr>
+<tr>
+<td>用户手动切设备</td>
+<td>强制重选 route</td>
+<td>当前播放链路重新绑定输出</td>
+</tr>
+</tbody></table>
+<p>为什么有时会“看起来在播但没声”？</p>
+<ol>
+<li>路由刚切换，链路处于短暂重配置窗口。</li>
+<li>旧输出句柄失效，<code>AudioTrack</code> 还在向旧对象写入。</li>
+<li>新设备能力与原路径不匹配，系统发生回退但上层状态没及时同步。</li>
+</ol>
+<p>工程处理建议：</p>
+<ul>
+<li>把路由变化当作“正常事件”，不是异常本身。</li>
+<li>路由变化后优先观察 <code>playState + route + write 返回值</code>。</li>
+<li>发现 <code>ERROR_DEAD_OBJECT</code> 时直接重建：<code>stop -&gt; flush -&gt; release -&gt; recreate</code>。</li>
+</ul>
+<h3 id="6-3-1-打断与恢复（AudioFocus-通话-通知）"><a href="#6-3-1-打断与恢复（AudioFocus-通话-通知）" class="headerlink" title="6.3.1 打断与恢复（AudioFocus&#x2F;通话&#x2F;通知）"></a>6.3.1 打断与恢复（AudioFocus&#x2F;通话&#x2F;通知）</h3><p>“路由切换”经常和“播放打断”同时发生：例如来电&#x2F;通话、系统语音交互、导航语音等场景，会触发 AudioFocus 变化、系统模式变化（<code>MODE_IN_CALL/MODE_IN_COMMUNICATION</code>）以及输出设备重配。</p>
+<p>推荐把策略收敛成两件事：</p>
+<ol>
+<li><strong>先响应打断</strong>（暂停&#x2F;duck&#x2F;停止），避免在通话链路里继续硬播导致音质变差。</li>
+<li><strong>再做恢复</strong>（必要时重建），避免焦点恢复但输出仍绑定旧 output。</li>
+</ol>
+<p>一个最小可用的 AudioFocus 策略表：</p>
+<table>
+<thead>
+<tr>
+<th>回调事件</th>
+<th>建议动作</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>AUDIOFOCUS_LOSS</code></td>
+<td><code>pause/stop</code> + 记录用户意图</td>
+<td>长时抢占，通常不应自动继续</td>
+</tr>
+<tr>
+<td><code>AUDIOFOCUS_LOSS_TRANSIENT</code></td>
+<td><code>pause</code></td>
+<td>来电&#x2F;短时打断，等待恢复</td>
+</tr>
+<tr>
+<td><code>AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK</code></td>
+<td><code>duck</code>（降低音量）</td>
+<td>导航&#x2F;提示音常见，避免完全打断</td>
+</tr>
+<tr>
+<td><code>AUDIOFOCUS_GAIN</code></td>
+<td>恢复音量；按“用户意图”恢复播放</td>
+<td>不要无条件自动播（要区分用户手动暂停）</td>
+</tr>
+</tbody></table>
+<p>恢复阶段的一个经验做法：</p>
+<ul>
+<li><code>AUDIOFOCUS_GAIN</code> 到来后延迟 500~1500ms 再检查 routed device（路由回切可能有窗口期）。</li>
+<li>如果 <code>write</code> 返回 <code>ERROR_DEAD_OBJECT</code> 或 routed device 明显不符合预期，优先重建 AudioTrack 触发重选路。</li>
+</ul>
+<h3 id="6-3-2-一个常见特殊-case：通话结束后仍卡在-SCO（音质变差）"><a href="#6-3-2-一个常见特殊-case：通话结束后仍卡在-SCO（音质变差）" class="headerlink" title="6.3.2 一个常见特殊 case：通话结束后仍卡在 SCO（音质变差）"></a>6.3.2 一个常见特殊 case：通话结束后仍卡在 SCO（音质变差）</h3><ul>
+<li>现象：来电&#x2F;通话结束后音乐继续播放，但输出仍是 <code>Bluetooth SCO</code>（听感发闷、带宽低），且不会自动恢复到 A2DP。</li>
+<li>常见原因：<ol>
+<li>系统通信模式未恢复（<code>MODE_IN_COMMUNICATION</code> 未回到 <code>MODE_NORMAL</code>），或仍有其他会话占用通信路由。</li>
+<li>播放流仍绑定旧 output，未触发重新选路&#x2F;重建。</li>
+</ol>
+</li>
+<li>处理建议（尽量简单且稳定）：<ol>
+<li>以 <code>AUDIOFOCUS_GAIN</code> &#x2F; 设备回调作为“通话结束恢复点”，延迟 500~1500ms 等路由稳定。</li>
+<li>播放中用 <code>AudioTrack.getRoutedDevice()</code> 判断是否仍是 <code>TYPE_BLUETOOTH_SCO</code>。</li>
+<li>若仍为 SCO，直接重建 AudioTrack 触发重新选路：<code>stop -&gt; flush -&gt; release -&gt; recreate -&gt; play</code>。</li>
+</ol>
+</li>
+</ul>
+<h3 id="6-4-请求与裁决"><a href="#6-4-请求与裁决" class="headerlink" title="6.4 请求与裁决"></a>6.4 请求与裁决</h3><p>这一节最重要的是边界清晰：<strong>代码负责请求，系统负责裁决，运行时可能改判</strong>。</p>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>App 可控制</th>
+<th>系统最终决定</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>播放意图</td>
+<td><code>AudioAttributes</code>、<code>AudioFormat</code>、<code>performanceMode/offload</code> 请求</td>
+<td>是否接受该请求</td>
+</tr>
+<tr>
+<td>输出路径</td>
+<td>只能提高命中概率</td>
+<td>实际线程是 Mixer&#x2F;Fast&#x2F;Direct&#x2F;Offload</td>
+</tr>
+<tr>
+<td>输出设备</td>
+<td>可表达偏好或触发切换</td>
+<td>结合设备可用性和策略做最终选路</td>
+</tr>
+<tr>
+<td>运行期变化</td>
+<td>监听并恢复状态</td>
+<td>资源变化时回退&#x2F;重路由</td>
+</tr>
+</tbody></table>
+<p>建议把实现做成三段式：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><code class="hljs text">1) 请求：按场景设置 attributes/format/flag<br>2) 观测：读取实际路径与实际路由（dumpsys + 日志）<br>3) 兜底：接受回退并保持可播<br></code></pre></td></tr></table></figure>
+
+<ul>
+<li>真正稳定的实现不是“强制命中某路径”，而是“命中则用，不命中也稳”。</li>
+</ul>
+<h2 id="七、HAL-到硬件：最后一公里"><a href="#七、HAL-到硬件：最后一公里" class="headerlink" title="七、HAL 到硬件：最后一公里"></a>七、HAL 到硬件：最后一公里</h2><h3 id="7-1-HAL-输出"><a href="#7-1-HAL-输出" class="headerlink" title="7.1 HAL 输出"></a>7.1 HAL 输出</h3><p>从框架视角看，<code>AudioFlinger</code> 负责把“这一周期需要播放的 PCM 帧”算出来；但真正把数据送到硬件、最终能否按节拍稳定出声，取决于 HAL 与驱动。</p>
+<p>HAL 是 Android framework 与厂商实现的分界线：</p>
+<ul>
+<li>HAL 之上（framework）是 AOSP 统一逻辑：线程调度、混音&#x2F;重采样、策略选路。</li>
+<li>HAL 之下（vendor）是设备相关逻辑：DSP、codec、功放、蓝牙、USB、以及驱动对接。</li>
+</ul>
+<p>在实现形式上，Android 历史上有 legacy C HAL（<code>audio_stream_out.write</code>），也有 HIDL&#x2F;AIDL 版本；但对上层而言都可以理解成同一件事：<strong>把一段音频帧写入输出流</strong>。</p>
+<table>
+<thead>
+<tr>
+<th>HAL 输出流的典型能力</th>
+<th>你会在上层感知到什么</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>open_output_stream</code> &#x2F; <code>close_output_stream</code></td>
+<td>路由切换时的重建、首帧慢</td>
+</tr>
+<tr>
+<td><code>set_parameters</code>（路由&#x2F;模式&#x2F;设备参数）</td>
+<td>切设备、切模式引起的短暂静音或回退</td>
+</tr>
+<tr>
+<td><code>write</code>（把帧送到设备）</td>
+<td><code>writeCostMs</code>、阻塞&#x2F;短写、是否 underrun</td>
+</tr>
+<tr>
+<td><code>get_latency</code> &#x2F; buffer 配置</td>
+<td>听感延后、视频音画同步能力</td>
+</tr>
+<tr>
+<td><code>standby</code> &#x2F; power 管理</td>
+<td>后台省电、恢复播放的启动开销</td>
+</tr>
+</tbody></table>
+<p>把调用链压成一行就是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs text">PlaybackThread (Mixer/Direct/Offload) -&gt; output.write(...) -&gt; HAL stream_out.write(...) -&gt; driver<br></code></pre></td></tr></table></figure>
+
+<p>一个非常关键的工程点：</p>
+<ul>
+<li><code>out_write</code> 可能阻塞（设备侧 buffer 满或链路拥塞时），这会在上层表现为写入耗时升高。</li>
+<li>对 Offload&#x2F;Bitstream 这类直出场景，<code>write</code> 的 payload 可能不是普通 PCM（取决于具体实现），但“写入输出流 + 下游缓冲&#x2F;节拍”这个模型仍然成立。</li>
+</ul>
+<h3 id="7-2-内核与-DMA"><a href="#7-2-内核与-DMA" class="headerlink" title="7.2 内核与 DMA"></a>7.2 内核与 DMA</h3><p>在大多数手机上，HAL 最终会落到内核音频驱动（常见是 ALSA PCM，或等价的厂商驱动）。它的核心结构可以理解为一个 ring buffer：</p>
+<ul>
+<li>写入方：HAL（或 DSP 代理）持续把音频帧写进 ring buffer。</li>
+<li>消费方：硬件 DMA 按固定节拍从 ring buffer 读走数据，送到 I2S&#x2F;TDM，再到 codec。</li>
+</ul>
+<p>一个简化示意：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><code class="hljs text">|&lt;---------------- kernel pcm ring buffer ----------------&gt;|<br>      appl_ptr (write) ---&gt; ............ ---&gt; (read) hw_ptr<br></code></pre></td></tr></table></figure>
+
+<table>
+<thead>
+<tr>
+<th>概念</th>
+<th>含义</th>
+<th>直接影响</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>period</code></td>
+<td>一次 DMA 搬运&#x2F;中断的基本单位</td>
+<td>抖动、回调频率、CPU&#x2F;IRQ 压力</td>
+</tr>
+<tr>
+<td><code>buffer</code></td>
+<td>多个 period 组成的总缓冲</td>
+<td>端到端时延、是否易 underrun</td>
+</tr>
+<tr>
+<td><code>hw_ptr</code></td>
+<td>硬件当前读到的位置</td>
+<td>真正的“播放进度”</td>
+</tr>
+<tr>
+<td><code>appl_ptr</code></td>
+<td>软件写到的位置</td>
+<td>写入阻塞与短写</td>
+</tr>
+</tbody></table>
+<p>用一个常见估算把“设备侧缓冲时延”落到数字上：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><code class="hljs text">deviceBufferMs ≈ bufferFrames * 1000 / sampleRate<br>bufferFrames ≈ periodSizeFrames * periodCount<br></code></pre></td></tr></table></figure>
+
+<p>为什么会发生卡顿&#x2F;爆音（underrun）？</p>
+<ul>
+<li>DMA 消费速度固定，如果 <code>appl_ptr</code> 推进不够快，<code>hw_ptr</code> 追上来就会 underrun。</li>
+<li>相反如果写得过快导致 buffer 满，<code>write</code> 就会阻塞（上层看到 <code>writeCostMs</code> 变大）。</li>
+</ul>
+<p>所以在“最后一公里”里，稳定性往往取决于：<strong>period&#x2F;buffer 配置 + 写入节拍是否稳定 + 下游链路是否拥塞</strong>。</p>
+<h3 id="7-3-输出设备差异"><a href="#7-3-输出设备差异" class="headerlink" title="7.3 输出设备差异"></a>7.3 输出设备差异</h3><p>同样是 <code>AudioTrack</code> 播放，最终的“出声链路”会因输出设备不同而差别很大：</p>
+<table>
+<thead>
+<tr>
+<th>输出设备</th>
+<th>典型链路</th>
+<th>时延&#x2F;音质特征</th>
+<th>工程注意点</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>扬声器&#x2F;有线耳机</td>
+<td>PCM -&gt; driver&#x2F;DMA -&gt; codec&#x2F;amp -&gt; 发声</td>
+<td>时延较低、稳定性高</td>
+<td>最常见基线链路，适合做问题对照</td>
+</tr>
+<tr>
+<td>蓝牙 A2DP</td>
+<td>PCM -&gt;（编码&#x2F;封包）-&gt; 蓝牙传输 -&gt; 设备解码发声</td>
+<td>时延更高、波动更大</td>
+<td>路由切换频繁，常伴随重建与回退</td>
+</tr>
+<tr>
+<td>蓝牙 SCO（HFP）</td>
+<td>语音链路（带宽窄）</td>
+<td>音质明显下降</td>
+<td>通话&#x2F;语音场景常见；媒体播放不应长期停留在 SCO</td>
+</tr>
+<tr>
+<td>USB&#x2F;HDMI（外设）</td>
+<td>PCM -&gt; USB&#x2F;HDMI 输出</td>
+<td>能力差异大（可能支持高规格）</td>
+<td>依赖外设能力与系统 profile 匹配</td>
+</tr>
+</tbody></table>
+<p>经验结论：</p>
+<ol>
+<li>发现“音质&#x2F;时延突然变化”，先看 routed device 是否变化（A2DP &lt;-&gt; SCO 是高频根因）。</li>
+<li>蓝牙链路比本地 codec 更容易触发重选路、回退与 <code>ERROR_DEAD_OBJECT</code>，播放器要把重建当成常态。</li>
+<li>调优一定要区分输出设备：对 speaker 优化的 buffer 配置不一定适合蓝牙。</li>
+</ol>
+<h3 id="7-4-数据单位与口径（bytes-samples-frames）"><a href="#7-4-数据单位与口径（bytes-samples-frames）" class="headerlink" title="7.4 数据单位与口径（bytes &#x2F; samples &#x2F; frames）"></a>7.4 数据单位与口径（bytes &#x2F; samples &#x2F; frames）</h3><p>音频链路里最容易“看懂了但算错”的点，就是单位混用。建议统一用 <code>frames</code> 做口径：</p>
+<ul>
+<li><code>sample</code>：单个采样点（每声道一个值）。</li>
+<li><code>frame</code>：同一时间点的所有声道采样点的集合。</li>
+<li><code>bytes</code>：实际内存&#x2F;IO 传输大小。</li>
+</ul>
+<p>把它们串起来只需要两个公式：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><code class="hljs text">frameBytes = channelCount * bytesPerSample<br>frames = bytes / frameBytes<br></code></pre></td></tr></table></figure>
+
+<p>再把它换算成时间：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs text">ms = frames * 1000 / sampleRate<br></code></pre></td></tr></table></figure>
+
+<p>举个最常见的例子（48kHz &#x2F; stereo &#x2F; PCM_16BIT）：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><code class="hljs text">bytesPerSample = 2<br>frameBytes = 2(ch) * 2 = 4 bytes<br>20ms 对应 frames = 48000 * 0.02 = 960 frames<br>20ms 对应 bytes = 960 * 4 = 3840 bytes<br></code></pre></td></tr></table></figure>
+
+<p>为什么这和第 7.2 的 <code>hw_ptr/appl_ptr</code> 有关？</p>
+<ul>
+<li>driver&#x2F;HAL 往往用“frames 的推进”表达播放进度（接近 <code>hw_ptr</code> 的语义）。</li>
+<li>App&#x2F;网络层通常统计“bytes 的写入量”，但 bytes 必须换算到 frames 才能对齐“真实播放进度”。</li>
+</ul>
+<p>实践建议：</p>
+<ol>
+<li>线上埋点尽量同时记录 <code>writtenBytes</code> 和换算后的 <code>writtenFrames</code>（以及 sampleRate&#x2F;channel&#x2F;encoding）。</li>
+<li>计算时延时优先用 <code>frames</code>，避免不同编码&#x2F;声道下换算错位。</li>
+</ol>
+<h3 id="7-5-payload-差异（PCM-Offload-Bitstream）"><a href="#7-5-payload-差异（PCM-Offload-Bitstream）" class="headerlink" title="7.5 payload 差异（PCM &#x2F; Offload &#x2F; Bitstream）"></a>7.5 payload 差异（PCM &#x2F; Offload &#x2F; Bitstream）</h3><p>虽然上层都叫 <code>write(...)</code>，但写下去的 payload 可能完全不是一回事，这直接影响“能否混音&#x2F;调音量&#x2F;时延&#x2F;功耗”。</p>
+<table>
+<thead>
+<tr>
+<th>场景&#x2F;路径</th>
+<th>写入到输出流的 payload（常见）</th>
+<th>框架侧能做的处理</th>
+<th>典型影响</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Mixer&#x2F;Fast</td>
+<td>PCM（如 16bit&#x2F;float）</td>
+<td>混音、音量、重采样、部分音效</td>
+<td>兼容性强，但 AP 计算多</td>
+</tr>
+<tr>
+<td>Direct（PCM）</td>
+<td>高规格 PCM（需 profile 完全匹配）</td>
+<td>处理受限（通常不走通用混音链）</td>
+<td>更接近“原样输出”，并发能力弱</td>
+</tr>
+<tr>
+<td>Offload</td>
+<td>压缩码流（AAC&#x2F;MP3&#x2F;FLAC 等，取决于硬件）</td>
+<td>处理受限（解码&#x2F;渲染下沉）</td>
+<td>更省电，但路由&#x2F;格式约束多</td>
+</tr>
+<tr>
+<td>Bitstream passthrough</td>
+<td>封装后的比特流（常见 IEC61937 之类封装）</td>
+<td>基本不做音量&#x2F;混音等修改</td>
+<td>依赖外设解码，时延与能力看外设</td>
+</tr>
+</tbody></table>
+<p>这也是为什么：</p>
+<ul>
+<li>同样是“播放一首歌”，走 Offload&#x2F;Bitstream 时系统可能无法像 Mixer 那样自由混音或做音量缩放。</li>
+<li>切路由&#x2F;并发变化时，Direct&#x2F;Offload 更容易触发回退到 Mixer（先保可播）。</li>
+</ul>
+<h2 id="八、排障实战：从症状到动作"><a href="#八、排障实战：从症状到动作" class="headerlink" title="八、排障实战：从症状到动作"></a>八、排障实战：从症状到动作</h2><h3 id="8-1-进度在走但无声"><a href="#8-1-进度在走但无声" class="headerlink" title="8.1 进度在走但无声"></a>8.1 进度在走但无声</h3><p>这个现象的特点是：上层 UI 的“时间在走”，但耳朵听不到声音。</p>
+<p>要避免第一时间陷入“是不是没解码&#x2F;没写入”的误区，建议按下面顺序排查（从最常见、成本最低的点开始）：</p>
+<table>
+<thead>
+<tr>
+<th>排查顺序</th>
+<th>看什么</th>
+<th>典型结论</th>
+<th>下一步动作</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1. 路由（route）</td>
+<td>当前 routed device（speaker&#x2F;A2DP&#x2F;SCO&#x2F;有线）是否符合预期</td>
+<td>走到了错误设备或卡在 SCO</td>
+<td>先等路由稳定；必要时重建 AudioTrack 触发重选路</td>
+</tr>
+<tr>
+<td>2. 状态（state）</td>
+<td><code>AudioTrack.getState/getPlayState</code> 是否正常</td>
+<td>track 未初始化&#x2F;未 play</td>
+<td>先修正状态机（play&#x2F;重建）</td>
+</tr>
+<tr>
+<td>3. 参数（format）</td>
+<td>sampleRate&#x2F;channel&#x2F;encoding 是否与 PCM 一致</td>
+<td>参数不匹配导致处理异常&#x2F;静音</td>
+<td>统一 format，避免隐式转换（见第 2.1）</td>
+</tr>
+<tr>
+<td>4. 写入（write）</td>
+<td><code>write</code> 是否持续 <code>&gt;0</code>，是否出现错误码&#x2F;短写</td>
+<td>写入失败或写入到旧句柄</td>
+<td>记录错误码；<code>ERROR_DEAD_OBJECT</code> 走重建</td>
+</tr>
+<tr>
+<td>5. 会话（policy&#x2F;focus）</td>
+<td>AudioFocus、通话模式、是否被 duck&#x2F;mute</td>
+<td>焦点丢失或模式未恢复</td>
+<td>按第 6.3.1 打断与恢复策略处理</td>
+</tr>
+</tbody></table>
+<p>一个快速“定位闭环”（建议落到日志&#x2F;埋点）：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs text">route + trackState + requested/written + writeCostMs + (errorCode)<br></code></pre></td></tr></table></figure>
+
+<p>常见根因与特征（不要求一次性全排，但要能对号入座）：</p>
+<table>
+<thead>
+<tr>
+<th>根因</th>
+<th>你通常会看到的特征</th>
+<th>常用动作</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>路由不符合预期（例如 A2DP &lt;-&gt; SCO）</td>
+<td>音质&#x2F;延迟突变，或完全无声</td>
+<td>延迟 500~1500ms 等路由稳定；仍异常则重建 AudioTrack</td>
+</tr>
+<tr>
+<td><code>ERROR_DEAD_OBJECT</code></td>
+<td><code>write</code> 直接返回错误码</td>
+<td><code>stop -&gt; flush -&gt; release -&gt; recreate</code></td>
+</tr>
+<tr>
+<td>AudioFocus 丢失&#x2F;duck</td>
+<td>来电&#x2F;导航后音量被压低或暂停逻辑不一致</td>
+<td>统一处理 focus 回调；恢复时按“用户意图”决定是否继续</td>
+</tr>
+<tr>
+<td>PCM 实际为静音</td>
+<td><code>write</code> 正常但 waveform 全 0</td>
+<td>上游检查数据源&#x2F;处理链；必要时在关键节点做 PCM 抽样校验</td>
+</tr>
+<tr>
+<td>音量&#x2F;静音策略问题</td>
+<td>系统音量&#x2F;应用音量为 0，或被静音</td>
+<td>先排查音量链（系统&#x2F;应用&#x2F;音效）</td>
+</tr>
+</tbody></table>
+<h3 id="8-2-卡顿与-underrun"><a href="#8-2-卡顿与-underrun" class="headerlink" title="8.2 卡顿与 underrun"></a>8.2 卡顿与 underrun</h3><p>卡顿&#x2F;爆音（underrun）多数不是“某个 API 调用失败”，而是播放链路没有按周期稳定出帧。</p>
+<p>一个足够用的心智模型：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><code class="hljs text">PlaybackThread 每个周期都有 deadline<br>  -&gt; 周期内算不完（fill 慢）或写不出去（write 慢）<br>  -&gt; 下一周期拿不到足够数据<br>  -&gt; underrun（听感卡顿/爆音）<br></code></pre></td></tr></table></figure>
+
+<h3 id="8-2-1-快速判断：fill-慢-vs-write-慢"><a href="#8-2-1-快速判断：fill-慢-vs-write-慢" class="headerlink" title="8.2.1 快速判断：fill 慢 vs write 慢"></a>8.2.1 快速判断：fill 慢 vs write 慢</h3><p>建议先把“瓶颈在上游还是下游”判出来，再决定动作：</p>
+<table>
+<thead>
+<tr>
+<th>现象&#x2F;指标</th>
+<th>更可能的瓶颈</th>
+<th>常见原因</th>
+<th>常用动作</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>fillCostMs</code> 高、波动大</td>
+<td>处理&#x2F;调度侧</td>
+<td>混音&#x2F;重采样&#x2F;音效负载高，或 CPU 抢占导致线程迟到</td>
+<td>减少处理量（音效&#x2F;轨道数）、减少重采样、降低回调线程负担</td>
+</tr>
+<tr>
+<td><code>writeCostMs</code> 高、阻塞明显</td>
+<td>下游链路</td>
+<td>HAL&#x2F;driver buffer 满、蓝牙链路抖动、设备重配窗口</td>
+<td>适当增大 buffer、避免过小 chunk、路由稳定后必要时重建</td>
+</tr>
+<tr>
+<td><code>written &lt; requested</code>（非阻塞）</td>
+<td>缓冲已满</td>
+<td>生产太快或下游消费慢</td>
+<td>做短暂 backoff&#x2F;重试，或改用 blocking + 合理 buffer</td>
+</tr>
+<tr>
+<td>偶发卡顿且多出现在切路由</td>
+<td>重选路&#x2F;重建</td>
+<td>output 重开导致短暂空窗或句柄失效</td>
+<td>监听路由变化，必要时 <code>release/recreate</code></td>
+</tr>
+</tbody></table>
+<p>快速定位顺序（不深入内核也够用）：</p>
+<ol>
+<li>用 <code>dumpsys media.audio_flinger</code> 确认当前线程类型（Mixer&#x2F;Direct&#x2F;Offload）以及是否出现 underrun。</li>
+<li>对照埋点&#x2F;日志里的 <code>fillCostMs</code> 和 <code>writeCostMs</code>，判断“算得慢”还是“写得慢”。</li>
+<li>结合 routed device（speaker&#x2F;A2DP&#x2F;SCO）判断是否是链路切换或蓝牙抖动引起。</li>
+</ol>
+<ul>
+<li>提醒：提高线程优先级只能缓解“抢不到 CPU”，解决不了“下游写不出去”或“链路本身不稳定”。</li>
+</ul>
+<h3 id="8-3-路由切换异常"><a href="#8-3-路由切换异常" class="headerlink" title="8.3 路由切换异常"></a>8.3 路由切换异常</h3><p>路由切换异常通常出现在：耳机插拔、蓝牙断连重连、通话开始&#x2F;结束、用户手动切设备。</p>
+<p>先记一个结论：<strong>切路由本身不是 bug，切路由后的“状态同步和恢复闭环”才是稳定性的关键。</strong></p>
+<p>建议把“切路由后的恢复”拆成 3 个阶段：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><code class="hljs text">阶段1：收到事件（route/focus/mode）<br>阶段2：等待系统重配置窗口结束（通常 500~1500ms）<br>阶段3：验证实际路径与设备；失败则重建/回退<br></code></pre></td></tr></table></figure>
+
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>你应该做什么</th>
+<th>你不应该做什么</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>阶段1：事件到达</td>
+<td>记录 route&#x2F;focus&#x2F;mode；必要时先 pause</td>
+<td>继续高频 write 硬顶（容易写到旧句柄）</td>
+</tr>
+<tr>
+<td>阶段2：等待窗口</td>
+<td>给系统一点时间重配 output&#x2F;HAL</td>
+<td>立刻连续重建（容易 thrash）</td>
+</tr>
+<tr>
+<td>阶段3：验证与恢复</td>
+<td>检查 routed device&#x2F;线程类型；异常则重建</td>
+<td>只靠“切歌”让用户自愈</td>
+</tr>
+</tbody></table>
+<p>更具体一点的“验证点”（从外到内）：</p>
+<ol>
+<li><code>AudioTrack.getRoutedDevice()</code> 是否与预期一致（尤其 A2DP&#x2F;SCO）。</li>
+<li><code>write</code> 是否开始出现错误码（<code>ERROR_DEAD_OBJECT</code>）或明显阻塞。</li>
+<li><code>dumpsys media.audio_flinger</code> 是否出现线程&#x2F;track 重建（见第 9 节）。</li>
+</ol>
+<p>如果你的播放器支持 Offload&#x2F;Direct，需要额外接受一个现实：</p>
+<ul>
+<li>路由变化时，这两类路径更容易退出并回退到 Mixer（“先保可播”）。</li>
+<li>业务上要把“请求路径”和“实际路径”分开记录，否则看起来像“能力失效”。</li>
+</ul>
+<h3 id="8-4-恢复闭环"><a href="#8-4-恢复闭环" class="headerlink" title="8.4 恢复闭环"></a>8.4 恢复闭环</h3><p>当你无法明确判断根因，或者某类异常出现频率过高时，建议有一个统一兜底的恢复闭环，确保“最终一定可播”。</p>
+<p>最小闭环（建议写成可复用函数）：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><code class="hljs text">pause feeding<br>  -&gt; stop<br>  -&gt; flush<br>  -&gt; release<br>  -&gt; recreate AudioTrack<br>  -&gt; restore volume/session/state<br>  -&gt; warm up (optional)<br>  -&gt; play &amp; resume write<br></code></pre></td></tr></table></figure>
+
+<table>
+<thead>
+<tr>
+<th>触发条件（例）</th>
+<th>建议动作</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>ERROR_DEAD_OBJECT</code></td>
+<td>直接重建</td>
+<td>最明确的“旧句柄不可用”信号</td>
+</tr>
+<tr>
+<td>routed device 不符合预期且持续 &gt; 1s</td>
+<td>延迟校验后重建</td>
+<td>给路由窗口留时间，避免抖动</td>
+</tr>
+<tr>
+<td><code>writeCostMs</code> 长期异常升高</td>
+<td>重建 + 适当增大 buffer</td>
+<td>可能是下游链路拥塞或 output 处于异常状态</td>
+</tr>
+<tr>
+<td>连续 underrun&#x2F;卡顿</td>
+<td>回退到稳定路径</td>
+<td>先保可播，再谈低时延</td>
+</tr>
+</tbody></table>
+<p>降级策略（按“破坏性从小到大”的顺序）：</p>
+<ol>
+<li>去掉 <code>LOW_LATENCY</code> 请求（让系统更容易回到 Mixer 稳定链路）。</li>
+<li>退出 Offload（用 PCM + Mixer 继续播）。</li>
+<li>编码&#x2F;采样格式降级（如 <code>PCM_FLOAT -&gt; PCM_16BIT</code>）。</li>
+<li>增大 buffer 或减少单次处理负载（音效&#x2F;轨道数）。</li>
+</ol>
+<p>实现时建议加两条保护：</p>
+<ul>
+<li><strong>重建限频</strong>：例如 3 秒内最多重建 1 次，避免在路由抖动时疯狂重建。</li>
+<li><strong>意图一致</strong>：只有在“用户希望继续播放”的前提下自动恢复（避免用户手动暂停后又被自动播起）。</li>
+</ul>
+<h2 id="九、观测与验证"><a href="#九、观测与验证" class="headerlink" title="九、观测与验证"></a>九、观测与验证</h2><h3 id="9-1-dumpsys-media-audio-flinger"><a href="#9-1-dumpsys-media-audio-flinger" class="headerlink" title="9.1 dumpsys media.audio_flinger"></a>9.1 <code>dumpsys media.audio_flinger</code></h3><p><code>dumpsys media.audio_flinger</code> 是“事实来源”：它告诉你系统里有哪些播放线程、每个线程的输出参数、活跃 Track、以及是否出现 underrun 等现象。</p>
+<p>常用命令：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs bash">adb shell dumpsys media.audio_flinger<br></code></pre></td></tr></table></figure>
+
+<p>读输出的 3 个步骤（建议按顺序来）：</p>
+<ol>
+<li><strong>先找线程类型</strong>：确认当前实际走的是 <code>MixerThread</code>、<code>DirectOutputThread</code>、<code>OffloadThread</code>，以及是否存在 <code>FastMixer</code> 相关信息。</li>
+<li><strong>再定位你的 Track</strong>：用 <code>AudioTrack.getAudioSessionId()</code>、进程 pid&#x2F;uid（或包名）去匹配 dumpsys 里的 Track 条目。</li>
+<li><strong>最后看异常信号</strong>：是否有 underrun、是否长期处于 standby、输出参数是否符合预期（sampleRate&#x2F;format&#x2F;channel）。</li>
+</ol>
+<p>常用过滤关键词（不同 Android 版本输出格式会略有差异）：</p>
+<ul>
+<li>线程：<code>MixerThread</code>、<code>DirectOutputThread</code>、<code>OffloadThread</code>、<code>FastMixer</code>、<code>Output thread</code>、<code>PlaybackThread</code></li>
+<li>参数：<code>sample rate</code>、<code>format</code>、<code>channel mask</code>、<code>frame count</code>、<code>latency</code></li>
+<li>异常：<code>underrun</code>、<code>standby</code>、<code>blocked</code>、<code>starvation</code></li>
+</ul>
+<p>几个“看到了就能下结论”的点：</p>
+<table>
+<thead>
+<tr>
+<th>你看到的现象</th>
+<th>说明</th>
+<th>常见下一步</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Track 挂在 <code>MixerThread</code></td>
+<td>走通用混音主路径</td>
+<td>正常；再结合 route&#x2F;flags 看是否是回退</td>
+</tr>
+<tr>
+<td>Track 挂在 <code>DirectOutputThread</code></td>
+<td>走 Direct 直出</td>
+<td>再确认输出参数是否与 profile 完全匹配</td>
+</tr>
+<tr>
+<td>Track 挂在 <code>OffloadThread</code></td>
+<td>走 Offload（压缩下沉）</td>
+<td>再用 <code>track.isOffloadedPlayback()</code> 交叉验证</td>
+</tr>
+<tr>
+<td>出现 underrun 相关计数&#x2F;日志</td>
+<td>消费侧拿不到连续数据</td>
+<td>回到第 8.2：先判 fill 慢还是 write 慢</td>
+</tr>
+<tr>
+<td>输出 sampleRate&#x2F;format 异常</td>
+<td>当前 output profile 变了</td>
+<td>去看 <code>dumpsys media.audio_policy</code> 的 route&#x2F;profile&#x2F;flags</td>
+</tr>
+</tbody></table>
+<p>实践建议：</p>
+<ul>
+<li>把 <code>audioSessionId</code> 打到日志里（创建时打印一次），排查时用它去定位 Track 是最快的。</li>
+<li>不要只看“请求了什么”（LOW_LATENCY&#x2F;OFFLOAD），要看 dumpsys 里“实际落到什么线程”。</li>
+</ul>
+<h3 id="9-2-dumpsys-media-audio-policy"><a href="#9-2-dumpsys-media-audio-policy" class="headerlink" title="9.2 dumpsys media.audio_policy"></a>9.2 <code>dumpsys media.audio_policy</code></h3><p><code>dumpsys media.audio_policy</code> 用来回答“为什么从这个设备出声、为什么选了这个 output&#x2F;profile&#x2F;flags”。它是策略层的事实来源。</p>
+<p>常用命令：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs bash">adb shell dumpsys media.audio_policy<br></code></pre></td></tr></table></figure>
+
+<p>你通常关心两类信息：</p>
+<ol>
+<li><strong>当前路由结果</strong>：媒体（<code>USAGE_MEDIA</code>）最终选了哪个设备（speaker&#x2F;A2DP&#x2F;SCO&#x2F;有线&#x2F;USB）。</li>
+<li><strong>profile&#x2F;flags</strong>：匹配到了哪个输出能力模型（format&#x2F;rate&#x2F;channels）以及 output flags（DIRECT&#x2F;OFFLOAD&#x2F;LOW_LATENCY&#x2F;DEEP_BUFFER 等）。</li>
+</ol>
+<p>常用过滤关键词：</p>
+<ul>
+<li>设备：<code>speaker</code>、<code>wired</code>、<code>A2DP</code>、<code>SCO</code>、<code>USB</code>、<code>HDMI</code></li>
+<li>策略：<code>strategy</code> &#x2F; <code>product strategy</code>、<code>getOutputForAttr</code></li>
+<li>能力：<code>mixPort</code>、<code>profile</code>、<code>flags</code>、<code>route</code></li>
+</ul>
+<p>如何和第 9.1 组合使用：</p>
+<table>
+<thead>
+<tr>
+<th>你想确认的问题</th>
+<th>先看 policy（9.2）</th>
+<th>再看 flinger（9.1）</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>为什么没命中 Direct&#x2F;Offload</td>
+<td>是否匹配到对应 profile&#x2F;flags</td>
+<td>实际线程是否仍是 MixerThread</td>
+</tr>
+<tr>
+<td>为什么切到 SCO&#x2F;音质变差</td>
+<td>route 是否已变成 SCO&#x2F;communication</td>
+<td>线程输出参数是否随之变化（rate&#x2F;format）</td>
+</tr>
+<tr>
+<td>路由切换后无声</td>
+<td>route 是否重选中&#x2F;输出是否重开</td>
+<td>Track 是否重建、是否出现 <code>ERROR_DEAD_OBJECT</code></td>
+</tr>
+</tbody></table>
+<h3 id="9-3-指标埋点"><a href="#9-3-指标埋点" class="headerlink" title="9.3 指标埋点"></a>9.3 指标埋点</h3><p><code>dumpsys</code> 适合线下定位；线上更可靠的是“用最少的埋点还原链路状态”。</p>
+<p>建议把埋点分成三类：创建参数、写入行为、状态事件。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>指标&#x2F;字段</th>
+<th>获取方式</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>创建参数</td>
+<td><code>sampleRate/channel/encoding/bufferSize</code></td>
+<td>记录构建参数</td>
+<td>回放时还原 format 口径，定位隐式转换</td>
+</tr>
+<tr>
+<td>创建参数</td>
+<td><code>performanceMode/offloadRequested</code></td>
+<td>Builder 参数</td>
+<td>区分“请求路径”</td>
+</tr>
+<tr>
+<td>状态验证</td>
+<td><code>routedDeviceType</code></td>
+<td><code>AudioTrack.getRoutedDevice()</code></td>
+<td>识别 A2DP&#x2F;SCO&#x2F;speaker 等切换</td>
+</tr>
+<tr>
+<td>状态验证</td>
+<td><code>isOffloadedPlayback</code></td>
+<td><code>AudioTrack.isOffloadedPlayback()</code></td>
+<td>识别 offload 是否实际命中</td>
+</tr>
+<tr>
+<td>写入行为</td>
+<td><code>requested</code> &#x2F; <code>written</code></td>
+<td><code>write</code> 入参与返回值</td>
+<td>判断短写&#x2F;阻塞、上游供数是否稳定</td>
+</tr>
+<tr>
+<td>写入行为</td>
+<td><code>writeCostMs</code></td>
+<td>计时 <code>write</code> 调用耗时</td>
+<td>判断下游拥塞（写不出去）</td>
+</tr>
+<tr>
+<td>供数行为</td>
+<td><code>fillCostMs</code></td>
+<td>计时“取&#x2F;产出 PCM”耗时</td>
+<td>判断上游处理是否跟得上（算得慢）</td>
+</tr>
+<tr>
+<td>播放质量</td>
+<td><code>underrunCount</code></td>
+<td><code>AudioTrack.getUnderrunCount()</code></td>
+<td>量化卡顿&#x2F;爆音风险</td>
+</tr>
+<tr>
+<td>时延估算</td>
+<td><code>presentedFrames/queuedMs</code></td>
+<td><code>getTimestamp</code>&#x2F;<code>getPlaybackHeadPosition</code> + 写入累计</td>
+<td>判断系统侧堆积（见第 10.1.1）</td>
+</tr>
+<tr>
+<td>事件</td>
+<td><code>audioFocusEvent</code></td>
+<td>focus 回调</td>
+<td>打断与恢复闭环（见第 6.3.1）</td>
+</tr>
+<tr>
+<td>事件</td>
+<td><code>routeChangeEvent</code></td>
+<td>设备回调&#x2F;自有监听</td>
+<td>解释“为什么突然变差&#x2F;无声&#x2F;回退”</td>
+</tr>
+<tr>
+<td>事件</td>
+<td><code>recreateCount/recreateReason</code></td>
+<td>重建逻辑记录</td>
+<td>防止 silent recover 变成无限重建</td>
+</tr>
+</tbody></table>
+<p>可选补充：</p>
+<ul>
+<li><code>AudioTrack.getMetrics()</code>：系统侧会返回一份 <code>PersistableBundle</code>，里面包含一些可用指标（不同版本&#x2F;机型字段有差异，适合调试阶段使用）。</li>
+</ul>
+<h3 id="9-4-注意事项（App-侧快速验证口径）"><a href="#9-4-注意事项（App-侧快速验证口径）" class="headerlink" title="9.4 注意事项（App 侧快速验证口径）"></a>9.4 注意事项（App 侧快速验证口径）</h3><p>这一节的核心是“口径一致”，避免拿到数据后误判：</p>
+<ol>
+<li><code>AudioTrack.getRoutedDevice()</code> 只有在 track <strong>正在播放</strong>时才可靠，不在 playing 状态可能返回 null。</li>
+<li><code>AudioTrack.getPreferredDevice()</code> 表示“偏好”，不等于“实际路由结果”；实际路由以 <code>getRoutedDevice()</code> 和 policy&#x2F;flinger 为准。</li>
+<li>App 侧很难 100% 判断“是否走 DirectOutputThread”，Direct&#x2F;Offload&#x2F;Fast 的最终落点建议以 <code>dumpsys media.audio_flinger</code> 作为事实来源。</li>
+<li><code>getPlaybackHeadPosition()</code> 可能回绕（wrap）且受 <code>flush/stop</code> 影响；线上做 <code>queuedMs</code> 估算时要做好回绕与重置处理。</li>
+<li><code>getTimestamp(...)</code> 更接近“已播放进度”，但可能返回失败或精度不稳定（依赖设备&#x2F;路由&#x2F;实现）。建议准备降级：timestamp 不可用时退回 headPosition 近似。</li>
+<li>对压缩&#x2F;Offload&#x2F;Bitstream 场景，一些 API 的“frames”语义可能退化为 bytes（例如 <code>getBufferCapacityInFrames()</code> 的注释），做换算时务必确认口径。</li>
+<li><code>getUnderrunCount()</code> 是“应用级 write buffer underrun”，并不能覆盖所有下游链路问题（例如蓝牙链路抖动、HAL 阻塞）。遇到复杂问题仍建议用 dumpsys 交叉验证。</li>
+</ol>
+<h2 id="十、时延分层：时间花在哪"><a href="#十、时延分层：时间花在哪" class="headerlink" title="十、时延分层：时间花在哪"></a>十、时延分层：时间花在哪</h2><h3 id="10-1-分层模型"><a href="#10-1-分层模型" class="headerlink" title="10.1 分层模型"></a>10.1 分层模型</h3><p>从“用户听到声音”的视角看，时延往往不是一个单点，而是多级缓冲叠加的结果。</p>
+<p>先用一张分层示意把位置感建立起来：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><code class="hljs text">App 自己的 PCM 缓冲/队列<br>  -&gt; AudioTrack 共享缓冲（Client/Server）<br>    -&gt; AudioFlinger（线程周期 + 混音/处理）<br>      -&gt; HAL stream_out.write<br>        -&gt; driver/DMA ring buffer<br>          -&gt; codec/蓝牙/外设链路<br>            -&gt; 耳朵听到<br></code></pre></td></tr></table></figure>
+
+<table>
+<thead>
+<tr>
+<th>层级</th>
+<th>这层“缓冲&#x2F;等待”是什么</th>
+<th>常见目的</th>
+<th>过大时的代价</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>App Buffer</td>
+<td>你自己缓存的 PCM（解码&#x2F;处理后还没写入 AudioTrack）</td>
+<td>抗网络抖动、跨线程解耦</td>
+<td>用户操作（暂停&#x2F;seek&#x2F;切歌）响应变慢</td>
+</tr>
+<tr>
+<td>AudioTrack Buffer</td>
+<td>App 写入后的共享缓冲水位</td>
+<td>保证 AudioFlinger 周期能取到数据</td>
+<td>听感延后增大，且 <code>write</code> 更容易阻塞</td>
+</tr>
+<tr>
+<td>AudioFlinger 周期</td>
+<td><code>PlaybackThread</code> 按周期消费并产出输出帧</td>
+<td>稳定出帧、统一处理（mix&#x2F;resample&#x2F;volume）</td>
+<td>周期越大，基础延后越大；周期越小，负载越高</td>
+</tr>
+<tr>
+<td>HAL&#x2F;Driver Buffer</td>
+<td>设备侧 ring buffer + period</td>
+<td>抗抖动、保证 DMA 连续</td>
+<td>buffer 越大，设备侧可听延后越大</td>
+</tr>
+<tr>
+<td>传输&#x2F;外设 Buffer</td>
+<td>蓝牙&#x2F;USB&#x2F;HDMI&#x2F;外设解码缓冲</td>
+<td>适配协议、纠错、同步</td>
+<td>延后通常显著（尤其 A2DP）</td>
+</tr>
+</tbody></table>
+<p>有两个实用的“总量”概念：</p>
+<ol>
+<li><strong>App 侧未写入的排队时长</strong>：你自己队列里还没写进 AudioTrack 的那部分。</li>
+<li><strong>系统侧已写入但未出声的排队时长</strong>：AudioTrack&#x2F;Flinger&#x2F;HAL&#x2F;设备链路里累计的那部分。</li>
+</ol>
+<p>二者相加，大体就是用户的听感延后。</p>
+<h4 id="10-1-1-系统侧排队时长如何估算（推荐用-frames-口径）"><a href="#10-1-1-系统侧排队时长如何估算（推荐用-frames-口径）" class="headerlink" title="10.1.1 系统侧排队时长如何估算（推荐用 frames 口径）"></a>10.1.1 系统侧排队时长如何估算（推荐用 frames 口径）</h4><p>对播放链路来说，更关键的是“写进去多少帧、已经播出多少帧”，这比单纯统计 bytes 更可靠（单位换算见第 7.4）。</p>
+<p>一种可落地的估算方式是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><code class="hljs text">queuedFrames ≈ totalWrittenFrames - presentedFrames<br>queuedMs ≈ queuedFrames * 1000 / sampleRate<br></code></pre></td></tr></table></figure>
+
+<p>其中：</p>
+<ul>
+<li><code>totalWrittenFrames</code>：App 自己累计的写入量（按 frame 计）。</li>
+<li><code>presentedFrames</code>：系统已经播放到的帧位置（可用 <code>AudioTrack.getTimestamp(...)</code> 或 <code>getPlaybackHeadPosition()</code> 近似）。</li>
+</ul>
+<p>注意：这是一种“端到端队列长度”的估算（包含 AudioTrack + Flinger + HAL&#x2F;driver 的缓冲），用于判断“当前系统里压了多少音频”非常有效。</p>
+<h3 id="10-2-首帧时延-vs-稳态时延"><a href="#10-2-首帧时延-vs-稳态时延" class="headerlink" title="10.2 首帧时延 vs 稳态时延"></a>10.2 首帧时延 vs 稳态时延</h3><p>时延通常要拆成两类看，否则很容易“优化错方向”：</p>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>定义（直观）</th>
+<th>主要由什么决定</th>
+<th>常见波动点</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>首帧时延</td>
+<td>从用户触发播放，到第一段声音真正出来</td>
+<td>建链&#x2F;开流 + 首次缓冲填充 + 设备从 standby 恢复</td>
+<td>创建输出、切路由、蓝牙握手、首次预缓冲</td>
+</tr>
+<tr>
+<td>稳态时延</td>
+<td>播放稳定后，声音相对“实时”的固定延后量</td>
+<td>各级 buffer 的目标水位 + 线程周期 + 设备侧 buffer</td>
+<td>CPU 抢占、音效负载、蓝牙链路抖动、偶发回退</td>
+</tr>
+</tbody></table>
+<p>首帧时延通常由“初始化动作 + 填充动作”构成：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><code class="hljs text">open output / createTrack / play<br>  + 填满到可播的最小水位<br>  + 设备链路从 standby 拉起<br></code></pre></td></tr></table></figure>
+
+<p>稳态时延更像是“系统在维持的水位”，它不一定越小越好：</p>
+<ul>
+<li>水位太低：更容易 underrun（卡顿）。</li>
+<li>水位太高：交互响应变慢（seek&#x2F;暂停的听感延后大）。</li>
+</ul>
+<h3 id="10-3-调优取舍"><a href="#10-3-调优取舍" class="headerlink" title="10.3 调优取舍"></a>10.3 调优取舍</h3><p>调优前先明确目标：你要的是“更快响应”，还是“更稳不断”，还是“更省电”。不同目标的最优解完全不同。</p>
+<table>
+<thead>
+<tr>
+<th>目标</th>
+<th>常见策略</th>
+<th>倾向路径</th>
+<th>代价&#x2F;风险</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>低时延（交互&#x2F;实时）</td>
+<td>减小 buffer、请求 <code>LOW_LATENCY</code>、格式贴近设备、减少处理链</td>
+<td>Fast（命中则用）&#x2F;Mixer（回退）</td>
+<td>更易 underrun、CPU 压力更大</td>
+</tr>
+<tr>
+<td>稳定（通用音乐）</td>
+<td>合理 buffer 水位、blocking 写入、避免频繁重建</td>
+<td>Mixer（主路径）</td>
+<td>时延中等、功耗中等</td>
+</tr>
+<tr>
+<td>省电（后台长播）</td>
+<td>能 offload 就 offload、减少 AP 参与</td>
+<td>Offload（支持时）</td>
+<td>格式&#x2F;路由限制多，切路由易回退</td>
+</tr>
+<tr>
+<td>蓝牙优先（A2DP）</td>
+<td>接受更高基础时延、重点做“抖动治理”</td>
+<td>多数落在 Mixer&#x2F;Direct 视实现</td>
+<td>低时延目标往往不可达</td>
+</tr>
+</tbody></table>
+<p>一个很实用的调优顺序：</p>
+<ol>
+<li>先保证不 underrun（稳定第一）。</li>
+<li>再把“系统侧排队时长（queuedMs）”压到业务可接受范围。</li>
+<li>最后再尝试命中 Fast&#x2F;Direct&#x2F;Offload 这类路径优化。</li>
+</ol>
+<h2 id="十一、落地检查清单"><a href="#十一、落地检查清单" class="headerlink" title="十一、落地检查清单"></a>十一、落地检查清单</h2><ol>
+<li>参数一致：<code>sampleRate/channel/encoding/bufferSize</code> 与 PCM 输入口径一致。</li>
+<li>路径可知：主路径与回退路径都有日志与观测点。</li>
+<li>异常可恢复：<code>ERROR_DEAD_OBJECT</code>、切路由失败等场景可自动重建。</li>
+<li>时延可拆解：首帧与稳态时延可按分层模型定位。</li>
+<li>体验可兜底：异常持续时可回退到稳定链路先保可播。</li>
+</ol>
+<h3 id="11-1-参考链接（AOSP-关键类）"><a href="#11-1-参考链接（AOSP-关键类）" class="headerlink" title="11.1 参考链接（AOSP 关键类）"></a>11.1 参考链接（AOSP 关键类）</h3><blockquote>
+<p>分支基线：<code>android-latest-release</code></p>
+</blockquote>
+<ul>
+<li><code>android.media.AudioTrack</code>：<a target="_blank" rel="noopener" href="https://cs.android.com/android/platform/superproject/+/android-latest-release:frameworks/base/media/java/android/media/AudioTrack.java">https://cs.android.com/android/platform/superproject/+/android-latest-release:frameworks/base/media/java/android/media/AudioTrack.java</a></li>
+<li><code>android.media.AudioManager</code>（Direct&#x2F;Offload 能力查询）：<a target="_blank" rel="noopener" href="https://cs.android.com/android/platform/superproject/+/android-latest-release:frameworks/base/media/java/android/media/AudioManager.java">https://cs.android.com/android/platform/superproject/+/android-latest-release:frameworks/base/media/java/android/media/AudioManager.java</a></li>
+<li><code>android::AudioTrack</code>：<a target="_blank" rel="noopener" href="https://cs.android.com/android/platform/superproject/+/android-latest-release:frameworks/av/media/libaudioclient/AudioTrack.cpp">https://cs.android.com/android/platform/superproject/+/android-latest-release:frameworks/av/media/libaudioclient/AudioTrack.cpp</a></li>
+<li><code>AudioFlinger</code>：<a target="_blank" rel="noopener" href="https://cs.android.com/android/platform/superproject/+/android-latest-release:frameworks/av/services/audioflinger/AudioFlinger.cpp">https://cs.android.com/android/platform/superproject/+/android-latest-release:frameworks/av/services/audioflinger/AudioFlinger.cpp</a></li>
+<li><code>AudioFlinger::PlaybackThread / MixerThread / DirectOutputThread / OffloadThread</code>：<a target="_blank" rel="noopener" href="https://cs.android.com/android/platform/superproject/+/android-latest-release:frameworks/av/services/audioflinger/Threads.cpp">https://cs.android.com/android/platform/superproject/+/android-latest-release:frameworks/av/services/audioflinger/Threads.cpp</a></li>
+<li><code>AudioPolicyService</code>：<a target="_blank" rel="noopener" href="https://cs.android.com/android/platform/superproject/+/android-latest-release:frameworks/av/services/audiopolicy/service/AudioPolicyService.cpp">https://cs.android.com/android/platform/superproject/+/android-latest-release:frameworks/av/services/audiopolicy/service/AudioPolicyService.cpp</a></li>
+<li><code>AudioPolicyManager</code>：<a target="_blank" rel="noopener" href="https://cs.android.com/android/platform/superproject/+/android-latest-release:frameworks/av/services/audiopolicy/managerdefault/AudioPolicyManager.cpp">https://cs.android.com/android/platform/superproject/+/android-latest-release:frameworks/av/services/audiopolicy/managerdefault/AudioPolicyManager.cpp</a></li>
+<li><code>audio_policy_configuration.xml</code>（AOSP 模板）：<a target="_blank" rel="noopener" href="https://cs.android.com/android/platform/superproject/+/android-latest-release:frameworks/av/services/audiopolicy/config/audio_policy_configuration.xml">https://cs.android.com/android/platform/superproject/+/android-latest-release:frameworks/av/services/audiopolicy/config/audio_policy_configuration.xml</a></li>
+<li><code>audio_policy_configuration.xml</code>（设备侧路径）：<code>/vendor/etc/audio_policy_configuration.xml</code></li>
+</ul>
+
                 
               </div>
             
@@ -298,6 +2372,13 @@
             <div>
               <div class="post-metas my-3">
   
+  
+    <div class="post-meta">
+      <i class="iconfont icon-tags"></i>
+      
+        <a href="/tags/%E9%9F%B3%E8%A7%86%E9%A2%91/" class="print-no-link">#音视频</a>
+      
+    </div>
   
 </div>
 
@@ -408,6 +2489,21 @@
 
   
 
+
+
+  <script>
+  Fluid.utils.createScript('https://cdn.jsdelivr.net/npm/mermaid@8.8.3/dist/mermaid.min.js', function() {
+    mermaid.initialize({"theme":"default"});
+
+    Fluid.utils.listenDOMLoaded(function() {
+      Fluid.events.registerRefreshCallback(function() {
+        if ('mermaid' in window) {
+          mermaid.init();
+        }
+      });
+    });
+  });
+</script>
 
 
 
