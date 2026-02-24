@@ -178,6 +178,62 @@ void* OpenNativeLibrary(JNIEnv* env,
 
 
 
+## 2.3 linker namespace（Android N+）补充：为什么它会影响加载与 Hook
+
+Android 7.0+ 引入 **linker namespace**，可以把它理解成动态链接器内部的“隔离容器”：
+
+- 每个 namespace 有自己的 **库搜索路径**、**可访问库规则**、以及一组“已加载 so 集合”。
+- 目的不是让开发者“方便管理”，而是做 **隔离与收敛**：限制 App 访问系统私有库、支持 Treble/APEX 分区隔离、以及让多 ClassLoader 场景更可控。
+
+### 2.3.1 `System.loadLibrary` 为什么天然绑定 namespace
+
+在 Java 场景中，`System.loadLibrary` 通常会走 ART/NativeLoader：
+
+1. NativeLoader 会把 **ClassLoader -> linker namespace** 做绑定（日志里常见 `classloader-namespace`）。
+2. 最终用 `android_dlopen_ext` 且带 `ANDROID_DLEXT_USE_NAMESPACE`，显式指定在该 namespace 内加载。
+
+所以：同名 so 是否“能加载/能找到依赖”，优先取决于 **namespace 的可见性规则**，而不是“磁盘上有没有这个文件”。
+
+### 2.3.2 一个最小规则：依赖链必须在当前 namespace 可访问
+
+当加载 `libbar.so` 时，linker 会递归解析它的 `DT_NEEDED` 依赖。
+
+- 若某个依赖库对当前 namespace **不可访问（not accessible）**，加载会直接失败。
+- 典型错误信息会把“谁需要谁”写出来：
+
+```text
+dlopen failed: library "libfoo.so" needed or dlopened by ".../libbar.so" is not accessible for the namespace "classloader-namespace"
+```
+
+这类失败常被误判成“库没打包”，但本质是“隔离规则不允许”。
+
+### 2.3.3 对 Hook/插件化的直接影响（面试高频）
+
+- **同名库多份实例**：不同 namespace/不同 realpath 下可能存在多份 `libfoo.so`。此时你以为 hook 了“libfoo.so”，但只命中其中一份实例，表现为“部分调用点生效，部分不生效”。
+- **只扫一次会漏**：如果仅在启动时用 `dl_iterate_phdr` 扫描已加载 so，插件化/动态特性在运行期通过另一个 ClassLoader/namespace 新加载的 so 很容易漏掉；工程化方案通常会监控 `dlopen/android_dlopen_ext`（以及 O+ 的 `__loader_*`）来做增量补齐（ByteHook 的 `bh_dl_monitor` 属于这一类）。
+- **排障优先级变化**：看到 `dlopen/dlsym` 结果“不符合预期”，先看 namespace（是否被隔离/是否同名多份），再谈符号/重定位是否存在。
+
+### 2.3.4 快速排查建议（可复制到排障 SOP）
+
+1. `readelf -d libxxx.so` 检查 `DT_NEEDED` 是否完整、是否误依赖系统私有库（非 public NDK）。
+2. `adb logcat` 里搜索 `linker`/`UnsatisfiedLinkError`，看具体是哪个 namespace 拒绝访问。
+3. 插件化场景优先统一加载路径与 ClassLoader，避免 host/plugin 库跨 namespace 相互依赖。
+
+### 2.3.5 面试高频：为什么给绝对路径也会失败
+
+面试里常见追问：
+
+> 明明 `/system/lib64/libxxx.so` 存在，为什么 `dlopen("/system/lib64/libxxx.so")` 还会失败？
+
+原因通常不是路径问题，而是 **App 所在 namespace 是隔离的**：
+
+- 系统会维护一份“对 App 开放的系统库白名单”（常被称为 *public NDK libraries*）。
+- 不在白名单/不在允许路径的系统私有库，即使给绝对路径也会被 linker 以 `not accessible for the namespace` 拒绝。
+
+这也是为什么工程上建议：避免依赖系统私有 so，尽量使用 public NDK 或把依赖随 App 一起打包。
+
+
+
 # 3. linker：真正把 so 装入内存
 
 从 `android_dlopen_ext` 开始，流程进入 bionic linker（核心函数通常是 `do_dlopen`）。
@@ -517,6 +573,11 @@ dlopened by "/data/app/.../libbar.so" is not accessible for the namespace
 "classloader-namespace"
 ```
 
+关键点：这类报错通常不是 “library not found”，而是 **namespace 可访问性拒绝**。
+
+- `libfoo.so` 可能确实存在于磁盘或进程中，但对当前 `classloader-namespace` 不可见/不可访问。
+- 排查时建议先回到本文 `2.3 linker namespace` 把“ClassLoader -> namespace -> android_dlopen_ext”语义对齐，再看依赖链与实际加载方。
+
 常见触发原因：
 
 - 依赖 so 不在当前 ClassLoader 对应 namespace 的可见范围。
@@ -595,6 +656,7 @@ SO 加载策略和 Android 版本强相关：
 
 - Android 7.0+：引入 linker namespace，库可见性更严格。
 - Android 8.0+（Treble）：`system/vendor` 边界更清晰，私有库访问限制更强。
+- Android 10+（APEX 模块化）：部分系统组件 so 由 APEX 提供，NativeLoader 可能基于 `caller_location` 选择 APEX namespace（见前文 `FindApexNamespace` 逻辑）。
 - targetSdk 升级后：某些历史兼容路径会收紧，旧方案可能在新版本失效。
 
 工程上要避免依赖“刚好可用”的私有库路径，优先使用 public NDK 能力。

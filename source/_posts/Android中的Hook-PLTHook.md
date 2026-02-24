@@ -631,7 +631,7 @@ PLT Hook 失败通常不是“代码没执行”，而是“调用路径不经�
 - `-Bsymbolic`：库内部对本库符号优先绑定，导致内部调用不走外部导入表。
 - 符号被优化：`inline/static/LTO` 等导致目标调用点被消除或改写。
 - 符号版本不匹配：同名符号存在版本差异，按名称匹配可能命中错误项或无法命中。
-- linker namespace 隔离：目标库不在当前命名空间可见范围内，`dlopen/dlsym` 或遍历结果与预期不一致。
+- linker namespace 隔离（Android 7+）：库可见性受 ClassLoader/namespace 限制，可能出现 `not accessible for the namespace` 或“同名库多份实例导致遍历/命中偏差”；详见 {% post_link Android中so加载流程 %}。
 - 安装时机过晚：首次调用已发生，或已被其他框架先改写。
 - 权限问题：`RELRO` 页未正确 `mprotect`，写入失败（通常伴随 `errno`）。
 
@@ -1097,7 +1097,6 @@ PLT Hook 的核心是：**通过改写导入方的 GOT 表项，将外部符号�
 # 参考地址
 
 [字节跳动开源 Android PLT hook 方案 bhook](https://juejin.cn/post/6998403957697544205?from=search-suggest)
-
 
 
 

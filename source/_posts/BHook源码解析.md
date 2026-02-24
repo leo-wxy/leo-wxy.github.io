@@ -208,6 +208,11 @@ automatic 相关关键方法：
 
 统一闭环：`post_dlopen -> bh_elf_manager_refresh -> 对新 ELF 执行 task`。
 
+补充说明（和 linker namespace 的关系）：
+
+- Java 的 `System.loadLibrary` 在 Android N+ 常通过 `android_dlopen_ext` 绑定 ClassLoader namespace；如果只监控 `dlopen`，容易漏掉这类加载路径或漏掉“另一个 namespace 里后续加载的新 so”。
+- 因此 ByteHook 会按系统版本分别 hook `dlopen/android_dlopen_ext/__loader_*`，确保增量刷新（`post_dlopen -> refresh -> 重放 task`）覆盖 namespace 场景；namespace 机制见 {% post_link Android中so加载流程 %}。
+
 
 ## Unhook 过程
 

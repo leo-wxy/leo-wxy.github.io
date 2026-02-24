@@ -611,6 +611,92 @@ ARM64 分支里用的是“间接跳转”模板：
 
 
 
+## 如何验证 Inline Hook 生效（面试/排障 Checklist）
+
+Inline Hook 的本质是“改内存里的函数入口指令”，验证时建议同时覆盖：
+
+- 入口是否真的被 patch（字节级）；
+- 控制流是否真的跳到 hook（行为级）；
+- trampoline/original 是否能回到原逻辑（闭环级）；
+- 是否可回滚（unhook）；
+- 是否 hook 到了正确模块实例（多 so/插件化）。
+
+### 1) 行为验证：hook 是否真的被执行
+
+- 安装前调用一次 `target_function`：只应看到 `target_function called ...`。
+- 安装后再调用 `target_function`：应看到 `hook_target_function called ...`，并且返回值/参数按 hook 逻辑发生变化（本文 Demo 返回 `x * 100`）。
+
+如果“日志看到 hook 执行了”但“返回值没变/行为没变”，通常意味着：hook 函数没有真正影响关键路径，或调用点并非你以为的那个函数。
+
+### 2) 字节验证：入口 prologue 是否被改写
+
+核心思路：dump `target` 入口前 `hook_len` 字节（ARM64 Demo 为 16B），对比安装前后是否变成你的跳转模板。
+
+- ARM64 远跳模板（本文 Demo）：`LDR X16, #8` + `BR X16` + `.quad hook_addr`（共 16B）。
+- 预期现象：`target` 的前 8 字节是两条跳转指令编码，后 8 字节应等于 `hook_addr`。
+
+可以在 Hook 库里临时加一个 dump 函数（排障用，线上按需开关）：
+
+```c++
+#include <dlfcn.h>
+#include <inttypes.h>
+#include <stdint.h>
+
+static void dump_bytes(const char* tag, void* addr, size_t len) {
+    auto* p = reinterpret_cast<uint8_t*>(addr);
+    char buf[512];
+    size_t off = 0;
+    off += (size_t)snprintf(buf + off, sizeof(buf) - off, "%s %p:", tag, addr);
+    for (size_t i = 0; i < len && off + 3 < sizeof(buf); i++) {
+        off += (size_t)snprintf(buf + off, sizeof(buf) - off, " %02X", p[i]);
+    }
+    __android_log_print(ANDROID_LOG_INFO, "INLINE_VERIFY", "%s", buf);
+}
+
+static void dump_dladdr(const char* tag, void* addr) {
+    Dl_info info;
+    if (dladdr(addr, &info) != 0) {
+        __android_log_print(
+            ANDROID_LOG_INFO,
+            "INLINE_VERIFY",
+            "%s addr=%p so=%s sym=%s symaddr=%p",
+            tag,
+            addr,
+            info.dli_fname ? info.dli_fname : "(null)",
+            info.dli_sname ? info.dli_sname : "(null)",
+            info.dli_saddr);
+    } else {
+        __android_log_print(ANDROID_LOG_INFO, "INLINE_VERIFY", "%s addr=%p dladdr failed", tag, addr);
+    }
+}
+
+// ARM32/Thumb 注意：函数指针 bit0=1 时，取实际代码地址需先清掉 bit0
+// void* code_addr = (void*)((uintptr_t)target & ~1u);
+```
+
+### 3) trampoline 验证：original 指针是否真的可调用
+
+- 安装成功后打印 `orig_target_function` 地址（不为 `nullptr`）。
+- 在 hook 函数里调用一次 `orig_target_function(x)`：应看到 `target_function called ...`（说明 trampoline 复制指令 + 回跳 `target+N` 生效）。
+
+补充：若 trampoline 来自 `mmap` 的匿名可执行页，`dladdr(orig_target_function)` 可能失败，这是正常现象（它不属于某个 ELF 映像）。
+
+### 4) 回滚验证：unhook 后是否恢复
+
+- 调 `inline_unhook` 后再调用 `target_function`：不应再进入 hook。
+- 再 dump 一次入口字节：应恢复为安装前备份的 `original_code`。
+
+### 5) 地址归属验证：避免 hook 到“同名多份”或错误模块
+
+在多 so/插件化场景，建议对关键地址做一次 `dladdr`：
+
+- `dump_dladdr("target", (void*)target_function)`：确认 `dli_fname` 是预期的 so 路径。
+- `dump_dladdr("hook", (void*)hook_target_function)`：确认 hook 函数也在你预期的库里。
+
+一旦发现 `dli_fname` 不符合预期，优先怀疑“拿错函数指针/同名符号/同名库多份实例”。
+
+
+
 # 要点总结
 
 ### 1. InlineHook功能简述
@@ -641,4 +727,3 @@ ARM64 分支里用的是“间接跳转”模板：
 **Q5：Inline Hook 一定比 PLT Hook 强吗？**
 
 - 覆盖范围通常更大，但风险和复杂度也更高；若目标调用可被 PLT 命中，PLT Hook 往往更稳、更易维护。
-

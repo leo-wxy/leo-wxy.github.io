@@ -2,6 +2,7 @@
 title: Android音频技术攻略-整体音频链路
 date: 2026-02-16 20:45:13
 tags: 音视频
+top: 10
 mermaid: true
 ---
 
@@ -101,8 +102,6 @@ flowchart LR
 | -------------------- | ---------------- | --------- | -------- | -------- |
 | `WRITE_BLOCKING`     | 缓冲不足时等待可写        | 节拍更稳、逻辑简单 | 写线程可能长阻塞 | 常规音乐播放优先 |
 | `WRITE_NON_BLOCKING` | 立即返回，可能短写或返回 `0` | 调度灵活、时延可控 | 需要补写重试   | 实时性要求高再用 |
-
-
 
 | 返回值   | 含义           | 处理动作              |
 | ----- | ------------ | ----------------- |
@@ -422,7 +421,7 @@ new AudioTrack.Builder()
 
 - 关键认知：Fast 是“尽量低时延”，不是“强制低时延”。
 
-### 5.1.1 Fast：Thread/flags 与源码入口
+#### 5.1.1 Fast：Thread/flags 与源码入口
 
 | 关注点 | 对应 Thread/对象 | 典型源码位置 | 说明 |
 | --- | --- | --- | --- |
@@ -475,7 +474,7 @@ if (output supports FAST) {
 
 - 关键认知：查询返回“支持”只代表能力存在，不保证当前这次一定走 Direct。
 
-### 5.2.1 Direct：Thread/flags 与源码入口
+#### 5.2.1 Direct：Thread/flags 与源码入口
 
 | 关注点 | 对应 Thread/对象 | 典型源码位置 | 说明 |
 | --- | --- | --- | --- |
@@ -522,7 +521,7 @@ new AudioTrack.Builder()
 
 使用前通常先判断：`AudioManager.isOffloadedPlaybackSupported(...)`。
 
-### 5.3.1 Offload：Thread/flags 与源码入口
+#### 5.3.1 Offload：Thread/flags 与源码入口
 
 | 关注点 | 对应 Thread/对象 | 典型源码位置 | 说明 |
 | --- | --- | --- | --- |
@@ -556,7 +555,7 @@ if (offloadRequested) {
 | 请求 Direct | 设备 profile、当前路由、直出资源可用性 | Direct 或回退 Mixer |
 | 请求 Offload | 编码支持、路由状态、硬件能力、策略限制 | Offload 或回退 Mixer |
 
-### 5.4.1 output flags 如何决定 Thread
+#### 5.4.1 output flags 如何决定 Thread
 
 线程选择的核心逻辑可以压缩成一句话：**AudioPolicy 产出 output flags，AudioFlinger 用 flags 决定创建哪类 Thread。**
 
@@ -706,7 +705,7 @@ AudioTrack (frameworks/base)
 - 路由变化后优先观察 `playState + route + write 返回值`。
 - 发现 `ERROR_DEAD_OBJECT` 时直接重建：`stop -> flush -> release -> recreate`。
 
-### 6.3.1 打断与恢复（AudioFocus/通话/通知）
+#### 6.3.1 打断与恢复（AudioFocus/通话/通知）
 
 “路由切换”经常和“播放打断”同时发生：例如来电/通话、系统语音交互、导航语音等场景，会触发 AudioFocus 变化、系统模式变化（`MODE_IN_CALL/MODE_IN_COMMUNICATION`）以及输出设备重配。
 
@@ -729,7 +728,7 @@ AudioTrack (frameworks/base)
 - `AUDIOFOCUS_GAIN` 到来后延迟 500~1500ms 再检查 routed device（路由回切可能有窗口期）。
 - 如果 `write` 返回 `ERROR_DEAD_OBJECT` 或 routed device 明显不符合预期，优先重建 AudioTrack 触发重选路。
 
-### 6.3.2 一个常见特殊 case：通话结束后仍卡在 SCO（音质变差）
+#### 6.3.2 一个常见特殊 case：通话结束后仍卡在 SCO（音质变差）
 
 - 现象：来电/通话结束后音乐继续播放，但输出仍是 `Bluetooth SCO`（听感发闷、带宽低），且不会自动恢复到 A2DP。
 - 常见原因：
@@ -845,6 +844,70 @@ bufferFrames ≈ periodSizeFrames * periodCount
 2. 蓝牙链路比本地 codec 更容易触发重选路、回退与 `ERROR_DEAD_OBJECT`，播放器要把重建当成常态。
 3. 调优一定要区分输出设备：对 speaker 优化的 buffer 配置不一定适合蓝牙。
 
+#### 7.3.1 蓝牙输出深水区：A2DP vs SCO（HFP）
+
+蓝牙耳机在系统里常见有两条完全不同的输出路径：
+
+- **A2DP**：面向媒体播放（音乐/视频），音质更好，但时延通常更高。
+- **SCO（HFP/HSP）**：面向通话/语音通信，带宽窄、音质差，但可同时承载麦克风通话。
+
+很多“突然变闷/延迟暴涨/进度在走但无声”，本质都是 **A2DP <-> SCO** 的切换或卡住。
+
+#### 快速对照表
+
+| 维度 | A2DP（媒体） | SCO（通话） |
+| --- | --- | --- |
+| 典型 routed device | `TYPE_BLUETOOTH_A2DP` | `TYPE_BLUETOOTH_SCO` |
+| 典型用途 | 音乐/视频/播客 | 通话/对讲/实时语音 |
+| 常见采样率/声道（经验） | `44.1k/48k + stereo` | `8k/16k + mono` |
+| 数据形态（概念） | PCM ->（SBC/AAC/aptX/LDAC 等）编码/封包 -> BT 传输 -> 设备解码 | 窄带语音链路（语音 profile） |
+| 听感特征 | 音质相对好，但时延/波动更明显 | 音质发闷、带宽低（常见单声道/低采样率） |
+| 典型坑 | 低时延目标往往不可达；切路由时更易抖动/回退 | 通话结束后仍卡在 SCO（见 6.3.2），导致媒体长期“闷” |
+
+#### A2DP 为什么时延更高（把原因拆成可解释的环节）
+
+相比“扬声器/有线”的 PCM 直出链路，A2DP 额外多了几段典型开销：
+
+1. **编码与封包**：需要把 PCM 编码成蓝牙可传输的媒体流（具体 codec 由系统/设备协商决定）。
+2. **传输抖动对冲**：无线链路存在抖动与重传，接收端通常会用更激进的缓冲来保证连续播放。
+3. **设备侧解码与播放缓冲**：耳机/音箱内部也会有解码与输出缓冲，进一步叠加听感延后。
+
+你可以把 A2DP 的总延后理解成：
+
+```text
+总延后 ≈ framework 缓冲 + 蓝牙编码/封包缓冲 + 传输抖动缓冲 + 设备侧解码/输出缓冲
+```
+
+所以在 A2DP 场景里：
+
+- 不要把目标只盯在 `bufferSizeInBytes`，它只能影响其中一段（framework/AudioTrack buffer）。
+- 过度追求低 buffer 很容易换来 underrun/爆音，且未必能显著降低端到端延迟。
+
+#### 工程建议：媒体播放尽量别“误入 SCO”
+
+- 媒体播放默认用 `USAGE_MEDIA + CONTENT_TYPE_MUSIC`，不要随意使用 `USAGE_VOICE_COMMUNICATION` 或 `AudioAttributes.FLAG_SCO`。
+- 通话/实时语音场景结束后，恢复阶段优先确认 routed device 是否回到 A2DP；若仍为 SCO，按 6.3.2 的建议直接重建 AudioTrack 触发重选路。
+
+#### 排障建议：蓝牙问题优先“路由/线程/写入”三件套
+
+1. **路由事实**：`AudioTrack.getRoutedDevice()` 是否为 `TYPE_BLUETOOTH_A2DP/TYPE_BLUETOOTH_SCO`。
+2. **策略事实**：`adb shell dumpsys media.audio_policy` 看 route/profile/flags（是否命中 A2DP 输出、是否因 communication 策略落到 SCO）。
+3. **执行事实**：`adb shell dumpsys media.audio_flinger` 看实际线程（Mixer/Direct/Offload）和 track 状态。
+
+可选补充（当你怀疑是“蓝牙链路本身异常/协商异常”时）：
+
+- `adb shell dumpsys bluetooth_manager`：确认 A2DP/Headset 连接状态与 profile 状态。
+- `adb shell dumpsys bluetooth_a2dp`：查看 A2DP 连接与 codec 协商信息（不同 ROM 输出字段会有差异）。
+- `adb shell dumpsys bluetooth_headset`：查看 HFP/SCO 相关音频状态（是否仍处于 audio connected）。
+
+另外一个容易忽略的点：音量是“按设备”记忆的，A2DP/SCO 可能各有一套档位。路由正确但无声时，建议结合 `dumpsys audio` 快速确认蓝牙设备下的媒体音量档位（见 8.1.1）。
+
+如果出现“切蓝牙后无声/写入异常”，优先把 `ERROR_DEAD_OBJECT` 当作常态处理：
+
+```text
+stop -> flush -> release -> recreate AudioTrack -> restore volume/session/state -> play
+```
+
 ### 7.4 数据单位与口径（bytes / samples / frames）
 
 音频链路里最容易“看懂了但算错”的点，就是单位混用。建议统一用 `frames` 做口径：
@@ -933,6 +996,53 @@ route + trackState + requested/written + writeCostMs + (errorCode)
 | PCM 实际为静音 | `write` 正常但 waveform 全 0 | 上游检查数据源/处理链；必要时在关键节点做 PCM 抽样校验 |
 | 音量/静音策略问题 | 系统音量/应用音量为 0，或被静音 | 先排查音量链（系统/应用/音效） |
 
+#### 8.1.1 音量链：系统音量 / 应用音量 / Track 音量
+
+“进度在走但无声”里，音量链问题非常常见，而且经常被误判为“解码/写入问题”。建议先把音量链拆开：
+
+```text
+最终听到的音量 = Track(应用)音量 * 系统(流/组)音量(按设备) * 系统(策略)衰减(duck/app-volume/appops) * 其他(音效/主音量)
+```
+
+只要任意一项被压到接近 0，你就会听到“无声”，但 UI/进度可能仍然正常。
+
+建议按“从外到内、从全局到局部”的顺序排：
+
+1. **先确认 routed device**：因为音量是“按设备”记忆的（speaker/有线/A2DP/SCO 各有一套音量档位）。路由错了，看音量自然也会错。
+2. **再看系统音量（流/组）是否为 0 或被 mute**：大多数媒体播放最终落在 `STREAM_MUSIC`/媒体音量组，但如果你用了非 `USAGE_MEDIA` 的 attributes（例如通知/导航/通话）就会走不同的音量组，且可能受 DND/模式影响。
+3. **最后再看系统是否对“某个 player/某个 app”做了额外衰减**：典型是 AudioFocus duck，或 OEM 的“应用音量”功能（系统级把某个 app 的 player 乘一个 volume multiplier），以及 `AppOps(OP_PLAY_AUDIO)` 直接 mute。
+
+线下最快的三个事实来源：
+
+```bash
+# 1) 看系统音量/静音（含 master/各 stream 按 device 的音量档位）
+adb shell dumpsys audio
+
+# 2) 看实际输出线程、活跃 track 以及 track 侧的 volume/最终音量（字段名随版本略变）
+adb shell dumpsys media.audio_flinger
+
+# 3) 看策略侧选路、volume group/strategy/profile（确认你到底落在哪个组/设备上）
+adb shell dumpsys media.audio_policy
+```
+
+如果你怀疑是“应用音量（系统级）导致静音”，一个很实用的判断方式是：
+
+- `dumpsys audio` 里媒体音量档位明显不是 0（且未 mute），但 `dumpsys media.audio_flinger` 里你的 Track 条目显示最终音量接近 0：更像是“player 级衰减”（duck / per-app volume / appops mute）。
+
+从 framework 的实现上看，这类“系统控制 AudioTrack 的音量”并不是修改你传给 `AudioTrack.setVolume()` 的值，而是额外乘一个系统侧的 multiplier：
+
+- `android.media.PlayerBase`：维护 `mLeftVolume/mRightVolume`（应用设置的音量）以及 `mVolMultiplier`（系统下发的倍率）。最终 `finalVol = mVolMultiplier * mLeftVolume * ...` 再下发到具体播放器（`AudioTrack`）。
+
+可补一个高价值的排查点（经常被忽略）：
+
+```bash
+# AppOps 被禁止播放音频时，现象很像“完全无声”
+adb shell cmd appops get <your.package.name> PLAY_AUDIO
+```
+
+- 如果是 `ignore/deny`，说明系统层面不允许该 app 播放音频（这时你怎么 write 都可能“进度走但无声”）。
+- 如果是 `allow`，再回到 focus/route/stream-volume 继续缩圈。
+
 ### 8.2 卡顿与 underrun
 
 卡顿/爆音（underrun）多数不是“某个 API 调用失败”，而是播放链路没有按周期稳定出帧。
@@ -946,7 +1056,7 @@ PlaybackThread 每个周期都有 deadline
   -> underrun（听感卡顿/爆音）
 ```
 
-### 8.2.1 快速判断：fill 慢 vs write 慢
+#### 8.2.1 快速判断：fill 慢 vs write 慢
 
 建议先把“瓶颈在上游还是下游”判出来，再决定动作：
 
