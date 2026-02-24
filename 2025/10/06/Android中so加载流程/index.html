@@ -28,7 +28,7 @@
 <meta property="og:locale" content="zh_CN">
 <meta property="og:image" content="https://leo-wxy.github.io/images/SO%E5%8A%A0%E8%BD%BD%E5%8E%9F%E7%90%86.png">
 <meta property="article:published_time" content="2025-10-06T05:22:44.000Z">
-<meta property="article:modified_time" content="2026-02-14T03:02:33.336Z">
+<meta property="article:modified_time" content="2026-02-22T07:24:00.119Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="Android">
 <meta name="twitter:card" content="summary_large_image">
@@ -226,7 +226,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          3.5k 字
+          4.4k 字
         
       </span>
     
@@ -238,7 +238,7 @@
         
         
           <!-- compatible with older versions-->
-          11 分钟
+          14 分钟
         
       </span>
     
@@ -403,6 +403,45 @@
 <td align="left">易引入重复映射风险，不建议业务滥用</td>
 </tr>
 </tbody></table>
+<h2 id="2-3-linker-namespace（Android-N-）补充：为什么它会影响加载与-Hook"><a href="#2-3-linker-namespace（Android-N-）补充：为什么它会影响加载与-Hook" class="headerlink" title="2.3 linker namespace（Android N+）补充：为什么它会影响加载与 Hook"></a>2.3 linker namespace（Android N+）补充：为什么它会影响加载与 Hook</h2><p>Android 7.0+ 引入 <strong>linker namespace</strong>，可以把它理解成动态链接器内部的“隔离容器”：</p>
+<ul>
+<li>每个 namespace 有自己的 <strong>库搜索路径</strong>、<strong>可访问库规则</strong>、以及一组“已加载 so 集合”。</li>
+<li>目的不是让开发者“方便管理”，而是做 <strong>隔离与收敛</strong>：限制 App 访问系统私有库、支持 Treble&#x2F;APEX 分区隔离、以及让多 ClassLoader 场景更可控。</li>
+</ul>
+<h3 id="2-3-1-System-loadLibrary-为什么天然绑定-namespace"><a href="#2-3-1-System-loadLibrary-为什么天然绑定-namespace" class="headerlink" title="2.3.1 System.loadLibrary 为什么天然绑定 namespace"></a>2.3.1 <code>System.loadLibrary</code> 为什么天然绑定 namespace</h3><p>在 Java 场景中，<code>System.loadLibrary</code> 通常会走 ART&#x2F;NativeLoader：</p>
+<ol>
+<li>NativeLoader 会把 <strong>ClassLoader -&gt; linker namespace</strong> 做绑定（日志里常见 <code>classloader-namespace</code>）。</li>
+<li>最终用 <code>android_dlopen_ext</code> 且带 <code>ANDROID_DLEXT_USE_NAMESPACE</code>，显式指定在该 namespace 内加载。</li>
+</ol>
+<p>所以：同名 so 是否“能加载&#x2F;能找到依赖”，优先取决于 <strong>namespace 的可见性规则</strong>，而不是“磁盘上有没有这个文件”。</p>
+<h3 id="2-3-2-一个最小规则：依赖链必须在当前-namespace-可访问"><a href="#2-3-2-一个最小规则：依赖链必须在当前-namespace-可访问" class="headerlink" title="2.3.2 一个最小规则：依赖链必须在当前 namespace 可访问"></a>2.3.2 一个最小规则：依赖链必须在当前 namespace 可访问</h3><p>当加载 <code>libbar.so</code> 时，linker 会递归解析它的 <code>DT_NEEDED</code> 依赖。</p>
+<ul>
+<li>若某个依赖库对当前 namespace <strong>不可访问（not accessible）</strong>，加载会直接失败。</li>
+<li>典型错误信息会把“谁需要谁”写出来：</li>
+</ul>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs text">dlopen failed: library &quot;libfoo.so&quot; needed or dlopened by &quot;.../libbar.so&quot; is not accessible for the namespace &quot;classloader-namespace&quot;<br></code></pre></td></tr></table></figure>
+
+<p>这类失败常被误判成“库没打包”，但本质是“隔离规则不允许”。</p>
+<h3 id="2-3-3-对-Hook-插件化的直接影响（面试高频）"><a href="#2-3-3-对-Hook-插件化的直接影响（面试高频）" class="headerlink" title="2.3.3 对 Hook&#x2F;插件化的直接影响（面试高频）"></a>2.3.3 对 Hook&#x2F;插件化的直接影响（面试高频）</h3><ul>
+<li><strong>同名库多份实例</strong>：不同 namespace&#x2F;不同 realpath 下可能存在多份 <code>libfoo.so</code>。此时你以为 hook 了“libfoo.so”，但只命中其中一份实例，表现为“部分调用点生效，部分不生效”。</li>
+<li><strong>只扫一次会漏</strong>：如果仅在启动时用 <code>dl_iterate_phdr</code> 扫描已加载 so，插件化&#x2F;动态特性在运行期通过另一个 ClassLoader&#x2F;namespace 新加载的 so 很容易漏掉；工程化方案通常会监控 <code>dlopen/android_dlopen_ext</code>（以及 O+ 的 <code>__loader_*</code>）来做增量补齐（ByteHook 的 <code>bh_dl_monitor</code> 属于这一类）。</li>
+<li><strong>排障优先级变化</strong>：看到 <code>dlopen/dlsym</code> 结果“不符合预期”，先看 namespace（是否被隔离&#x2F;是否同名多份），再谈符号&#x2F;重定位是否存在。</li>
+</ul>
+<h3 id="2-3-4-快速排查建议（可复制到排障-SOP）"><a href="#2-3-4-快速排查建议（可复制到排障-SOP）" class="headerlink" title="2.3.4 快速排查建议（可复制到排障 SOP）"></a>2.3.4 快速排查建议（可复制到排障 SOP）</h3><ol>
+<li><code>readelf -d libxxx.so</code> 检查 <code>DT_NEEDED</code> 是否完整、是否误依赖系统私有库（非 public NDK）。</li>
+<li><code>adb logcat</code> 里搜索 <code>linker</code>&#x2F;<code>UnsatisfiedLinkError</code>，看具体是哪个 namespace 拒绝访问。</li>
+<li>插件化场景优先统一加载路径与 ClassLoader，避免 host&#x2F;plugin 库跨 namespace 相互依赖。</li>
+</ol>
+<h3 id="2-3-5-面试高频：为什么给绝对路径也会失败"><a href="#2-3-5-面试高频：为什么给绝对路径也会失败" class="headerlink" title="2.3.5 面试高频：为什么给绝对路径也会失败"></a>2.3.5 面试高频：为什么给绝对路径也会失败</h3><p>面试里常见追问：</p>
+<blockquote>
+<p>明明 <code>/system/lib64/libxxx.so</code> 存在，为什么 <code>dlopen(&quot;/system/lib64/libxxx.so&quot;)</code> 还会失败？</p>
+</blockquote>
+<p>原因通常不是路径问题，而是 <strong>App 所在 namespace 是隔离的</strong>：</p>
+<ul>
+<li>系统会维护一份“对 App 开放的系统库白名单”（常被称为 <em>public NDK libraries</em>）。</li>
+<li>不在白名单&#x2F;不在允许路径的系统私有库，即使给绝对路径也会被 linker 以 <code>not accessible for the namespace</code> 拒绝。</li>
+</ul>
+<p>这也是为什么工程上建议：避免依赖系统私有 so，尽量使用 public NDK 或把依赖随 App 一起打包。</p>
 <h1 id="3-linker：真正把-so-装入内存"><a href="#3-linker：真正把-so-装入内存" class="headerlink" title="3. linker：真正把 so 装入内存"></a>3. linker：真正把 so 装入内存</h1><p>从 <code>android_dlopen_ext</code> 开始，流程进入 bionic linker（核心函数通常是 <code>do_dlopen</code>）。</p>
 <figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><code class="hljs c++"><span class="hljs-comment">// https://cs.android.com/android/platform/superproject/main/+/main:bionic/linker/dlfcn.cpp</span><br><br><span class="hljs-function"><span class="hljs-type">static</span> <span class="hljs-type">void</span>* <span class="hljs-title">dlopen_ext</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">char</span>* filename,</span></span><br><span class="hljs-params"><span class="hljs-function">                        <span class="hljs-type">int</span> flags,</span></span><br><span class="hljs-params"><span class="hljs-function">                        <span class="hljs-type">const</span> android_dlextinfo* extinfo,</span></span><br><span class="hljs-params"><span class="hljs-function">                        <span class="hljs-type">const</span> <span class="hljs-type">void</span>* caller_addr)</span> </span>&#123;<br>  <span class="hljs-function">ScopedPthreadMutexLocker <span class="hljs-title">locker</span><span class="hljs-params">(&amp;g_dl_mutex)</span></span>;<br>  g_linker_logger.<span class="hljs-built_in">ResetState</span>();<br>  <span class="hljs-type">void</span>* result = <span class="hljs-built_in">do_dlopen</span>(filename, flags, extinfo, caller_addr);<br>  <span class="hljs-keyword">if</span> (result == <span class="hljs-literal">nullptr</span>) &#123;<br>    __bionic_format_dlerror(<span class="hljs-string">&quot;dlopen failed&quot;</span>, <span class="hljs-built_in">linker_get_error_buffer</span>());<br>    <span class="hljs-keyword">return</span> <span class="hljs-literal">nullptr</span>;<br>  &#125;<br>  <span class="hljs-keyword">return</span> result;<br>&#125;<br><br><span class="hljs-type">void</span>* __loader_android_dlopen_ext(<span class="hljs-type">const</span> <span class="hljs-type">char</span>* filename,<br>                           <span class="hljs-type">int</span> flags,<br>                           <span class="hljs-type">const</span> android_dlextinfo* extinfo,<br>                           <span class="hljs-type">const</span> <span class="hljs-type">void</span>* caller_addr) &#123;<br>  <span class="hljs-keyword">return</span> <span class="hljs-built_in">dlopen_ext</span>(filename, flags, extinfo, caller_addr);<br>&#125;<br></code></pre></td></tr></table></figure>
 
@@ -514,6 +553,11 @@
 <h2 id="5-2-namespace-访问失败专项"><a href="#5-2-namespace-访问失败专项" class="headerlink" title="5.2 namespace 访问失败专项"></a>5.2 namespace 访问失败专项</h2><p>Android N 以后，namespace 是 so 加载失败的高频原因。典型报错如下：</p>
 <figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><code class="hljs text">java.lang.UnsatisfiedLinkError: dlopen failed: library &quot;libfoo.so&quot; needed or<br>dlopened by &quot;/data/app/.../libbar.so&quot; is not accessible for the namespace<br>&quot;classloader-namespace&quot;<br></code></pre></td></tr></table></figure>
 
+<p>关键点：这类报错通常不是 “library not found”，而是 <strong>namespace 可访问性拒绝</strong>。</p>
+<ul>
+<li><code>libfoo.so</code> 可能确实存在于磁盘或进程中，但对当前 <code>classloader-namespace</code> 不可见&#x2F;不可访问。</li>
+<li>排查时建议先回到本文 <code>2.3 linker namespace</code> 把“ClassLoader -&gt; namespace -&gt; android_dlopen_ext”语义对齐，再看依赖链与实际加载方。</li>
+</ul>
 <p>常见触发原因：</p>
 <ul>
 <li>依赖 so 不在当前 ClassLoader 对应 namespace 的可见范围。</li>
@@ -559,6 +603,7 @@
 <ul>
 <li>Android 7.0+：引入 linker namespace，库可见性更严格。</li>
 <li>Android 8.0+（Treble）：<code>system/vendor</code> 边界更清晰，私有库访问限制更强。</li>
+<li>Android 10+（APEX 模块化）：部分系统组件 so 由 APEX 提供，NativeLoader 可能基于 <code>caller_location</code> 选择 APEX namespace（见前文 <code>FindApexNamespace</code> 逻辑）。</li>
 <li>targetSdk 升级后：某些历史兼容路径会收紧，旧方案可能在新版本失效。</li>
 </ul>
 <p>工程上要避免依赖“刚好可用”的私有库路径，优先使用 public NDK 能力。</p>
