@@ -192,12 +192,31 @@ class Solution {
 题目链接：https://leetcode.cn/problems/longest-substring-without-repeating-characters/  
 类型：滑动窗口  
 难度：Medium  
-状态：TODO  
+状态：DONE  
 要点：s
 复杂度：
 
 ```java
-// TODO
+class Solution {
+    public static int lengthOfLongestSubstring(String s) {
+
+        HashMap<Character, Integer> last = new HashMap<>();
+
+        char[] arr = s.toCharArray();
+        int max = 0;
+        int left = 0;
+
+        for (int right = 0; right < arr.length; right++) {
+            char a = arr[right];
+            if (last.containsKey(a) && last.get(a) >= left) {
+                left = last.get(a) + 1;
+            }
+            last.put(a, right);
+            max = Math.max(max, right - left + 1);
+        }
+        return max;
+    }
+}
 ```
 
 <a id='lc76'></a>
@@ -218,12 +237,40 @@ class Solution {
 题目链接：https://leetcode.cn/problems/find-all-anagrams-in-a-string/  
 类型：滑动窗口  
 难度：Medium  
-状态：TODO  
+状态：DONE  
 要点：
 复杂度：
 
 ```java
-// TODO
+class Solution {
+    public List<Integer> findAnagrams(String s, String p) {
+        List<Integer> result = new ArrayList<>();
+
+        char[] sArr = s.toCharArray();
+        char[] pArr = p.toCharArray();
+
+        if (sArr.length < pArr.length) {
+            return result;
+        }
+
+        Arrays.sort(pArr);
+        String tp = new String(pArr);
+
+        int pLen = pArr.length;
+
+        for (int i = 0; i <= sArr.length - pLen; i++) {
+            String ts = s.substring(i, i + pLen);
+            char[] tsArr = ts.toCharArray();
+            Arrays.sort(tsArr);
+            String tempS = new String(tsArr);
+            if (tempS.equals(tp)) {
+                result.add(i);
+            }
+        }
+
+        return result;
+    }
+}
 ```
 
 <a id='lc11'></a>
@@ -236,7 +283,25 @@ class Solution {
 复杂度：
 
 ```java
-// TODO
+class Solution {
+    public int maxArea(int[] height) {
+        int max = 0;
+
+        int l = 0;
+        int r = height.length - 1;
+
+        while (l < r) {
+            int area = Math.min(height[l], height[r]) * (r - l);
+            max = Math.max(max, area);
+            if (height[l] <= height[r]) {
+                ++l;
+            } else {
+                --r;
+            }
+        }
+        return max;
+    }
+}
 ```
 
 <a id='lc15'></a>

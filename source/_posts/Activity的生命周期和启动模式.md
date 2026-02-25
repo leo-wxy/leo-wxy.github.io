@@ -65,6 +65,22 @@ top: 11
 
 *Activity在处于`onPause(),onStop(),onDestroy()`状态下，进程优先级较低，容易被回收，所以需要保存一些数据时，<font color = 'red'>必须在onPause中存储</font>，其他两个周期不一定能调用到。*
 
+### 生命周期状态机与回调保证（补充）
+
+从系统调度角度看，Activity生命周期并不是“每个回调都必然完整执行”。
+
+- `onCreate -> onStart -> onResume`是进入前台的标准路径。
+- `onPause`通常是离开前台的第一站，且应保持轻量。
+- `onStop/onDestroy`在进程被系统直接回收时，可能来不及回调。
+
+资源管理建议按“可丢失程度”分层：
+
+1. 前台敏感资源（动画、输入、相机预览）在`onPause`及时收敛。
+2. 可延后释放资源（监听器、缓存引用）在`onStop`处理。
+3. 最终兜底释放（大对象、线程）在`onDestroy`执行，但不要只依赖这一步。
+
+这样可以避免“只在`onDestroy`回收导致偶发泄漏”的问题。
+
 ### Activity生命周期的阶段
 
 可以分为以下3个阶段：
@@ -129,6 +145,18 @@ top: 11
 
   `onPause() -> onStop() -> onDestroy() -> onCreate() -> onStart() -> onResume()`
 
+### 特殊场景生命周期矩阵（补充）
+
+| 场景 | 典型回调 | 说明 |
+| --- | --- | --- |
+| 打开透明/对话框样式Activity | 旧页`onPause`，通常不`onStop` | 旧页仍可见但失去交互 |
+| 按 Home 键回桌面 | `onPause -> onStop` | 页面进入后台但实例仍可能存活 |
+| 最近任务切回应用 | `onRestart -> onStart -> onResume` | 取决于是否已被系统回收 |
+| 锁屏再解锁 | 通常表现为`onPause/onStop`后恢复 | 不同 ROM 可能有差异 |
+| 下拉状态栏 | 一般无生命周期变化 | 更适合用`onWindowFocusChanged`感知焦点 |
+
+说明：多窗口和分屏模式下，“可见”和“可交互”会进一步解耦，单靠一个回调判断前后台并不稳妥。
+
 ### 异常情况下的生命周期分析
 
 > Activity除了上述正常情况下执行的生命周期调度，还会有一些异常情况会导致Activity被杀死。
@@ -179,6 +207,24 @@ top: 11
 
 **系统只有在异常终止的情况下才会调用`onSaveInstanceState和onRestoreInstanceState`进行存储和恢复数据。**
 
+### 状态保存与恢复分层（补充）
+
+建议把状态分成三层处理，避免把所有数据都塞进`Bundle`：
+
+| 状态类型 | 推荐载体 | 生命周期范围 |
+| --- | --- | --- |
+| UI瞬时状态（滚动位置、选中态） | `onSaveInstanceState` | Activity重建可恢复 |
+| 页面内业务态（列表数据、加载状态） | `ViewModel` | 配置变更可保留 |
+| 关键持久数据（草稿、离线数据） | 本地持久层（DB/SP/File） | 进程重启后可恢复 |
+
+时序上，Android 9.0 前后在`onStop`与`onSaveInstanceState`先后顺序有差异，因此业务逻辑不要依赖它们的相对顺序，而应保证保存操作本身幂等。
+
+另外，`onSaveInstanceState`不适合存储大对象：
+
+- 传输成本高，恢复慢；
+- 过大可能触发事务异常；
+- 容易把“可重算数据”误当“必须保存数据”。
+
 拓展：
 
 1. 还有一些会在Activity运行过程中的触发方法，这里简单的提及一下：
@@ -188,6 +234,20 @@ top: 11
    - `onContentChanged()`：Activity 调用`setContentView()`完成后调用
 
 ## Activity的启动模式
+
+### 任务与实例模型（补充）
+
+启动模式相关问题，本质可以拆成两层：
+
+1. 实例层：这次启动是复用旧 Activity，还是新建 Activity。
+2. 任务层：这次启动是在现有 Task 中入栈，还是切到/创建另一个 Task。
+
+这两层是独立决策：
+
+- “复用实例”不一定“切换任务栈”；
+- “切换任务栈”也不一定“复用实例”。
+
+把这两个维度分开理解，很多启动模式问题会更清晰。
 
 ### Activity的任务栈
 
@@ -210,6 +270,17 @@ top: 11
 
 - 在`AndroidManifest.xml`中给对应Activity配置属性 `android:launchMode="standard | singltTop | singleTask | singleInstance"`
 - `startActivity`时添加`intent.addFlags(FLAG)`
+
+#### launchMode行为对照表（补充）
+
+| 模式 | 是否可能新建实例 | 复用条件 | 是否可能触发`onNewIntent` | 任务栈特性 |
+| --- | --- | --- | --- | --- |
+| `standard` | 总是新建 | 无 | 否 | 跟随调用方任务栈 |
+| `singleTop` | 栈顶时不新建 | 目标Activity已在栈顶 | 是 | 仍在当前任务栈内处理 |
+| `singleTask` | 已存在时不新建 | 目标Activity在任务栈中存在 | 是 | 复用目标并清理其上方实例 |
+| `singleInstance` | 已存在时不新建 | 全局仅保留该实例 | 是 | 独立任务栈，仅该实例存在 |
+
+该表用于先判断“实例复用”，再判断“任务栈变化”，比只记结论更稳妥。
 
 #### standard 标准模式(默认这个)
 
@@ -257,6 +328,21 @@ A位于栈顶，B位于栈底。如果A的启动模式为`singleTop`，再次启
 >
 > *即使设置了相同的任务栈名，也不能放在一个栈中。*
 
+#### `onNewIntent`回调语义（补充）
+
+当系统选择“复用已有实例”时，会把新的 Intent 通过`onNewIntent`分发给该实例。
+
+常见触发场景：
+
+- `singleTop`且目标位于栈顶；
+- `singleTask/singleInstance`且目标实例已存在。
+
+使用建议：
+
+1. 在`onNewIntent`里解析新参数并更新页面状态；
+2. 调用`setIntent(intent)`保持`getIntent()`与最新请求一致；
+3. 对同一参数重复到达做幂等处理，避免重复执行业务动作。
+
 #### TaskAffinity -- 栈亲和性
 
 > taskAffinity：标识了一个Activity所需要任务栈的名字，默认情况下，所有Activity所需的任务栈名字为应用的包名。我们也可以为每个Activity指定任务栈，利用`android:taskAffinity`属性标记。
@@ -270,6 +356,18 @@ A位于栈顶，B位于栈底。如果A的启动模式为`singleTop`，再次启
   > allowTaskReparenting 作用是 是否允许Activity更换从属任务。true表示可以更换，默认为false
 
   简单描述： 有两个APP，A和B，此时应用A去启动应用B中的一个Activity，并且该Activity设置`allowTaskReparenting = true`，此时这个Activity的任务栈就会位于应用A中，当去启动B时，会优先展示已被启动的Activity，由于设置了`allowTaskReparenting`该Activity的任务栈又回到了B中。
+
+#### `allowTaskReparenting`真实迁移时机（补充）
+
+这个属性并不是“启动后立刻迁移任务栈”，而是满足条件后在任务切换过程中发生重归属。
+
+可按以下顺序理解：
+
+1. Activity先被临时放入当前调用方任务栈。
+2. 当其“目标亲和任务栈”回到前台时，系统判断是否允许重归属。
+3. 条件满足则把该 Activity 从当前 Task 移动到目标 Task。
+
+因此它更像“延迟重挂载机制”，而不是一次性的启动策略。
 
   <!--？？？ allowTaskReparenting = true 且两个Activity的TaskAffinity 相同会如何-->
 
@@ -301,6 +399,24 @@ A位于栈顶，B位于栈底。如果A的启动模式为`singleTop`，再次启
 >
 > 具有这个标记的Activity不会出现在后台任务列表中
 
+#### 常用Flag组合语义（补充）
+
+- `NEW_TASK + CLEAR_TOP`
+
+  在目标任务栈中把目标 Activity 之上的实例清理后复用或重建目标实例，常用于“回到主路径页面”。
+
+- `NEW_TASK + CLEAR_TASK`
+
+  先清空目标任务栈再放入新启动页面，常用于“重置导航历史”。
+
+- `SINGLE_TOP + CLEAR_TOP`
+
+  如果目标已在栈内，优先复用并触发`onNewIntent`，同时清理其上方页面。
+
+- `NEW_TASK + EXCLUDE_FROM_RECENTS`
+
+  创建独立任务但不出现在最近任务列表，适合短期工具页或中转页。
+
 #### IntenFilter的匹配规则
 
 > 启动Activity方法分为两种：`显式调用(可以清楚指出被启动组件的信息，例如类名)`，`隐式调用(没有明确的指出组件信息，通过IntentFilter找到符合要求的组件)`。
@@ -329,6 +445,24 @@ data主要分为两部分：
 - `mimeType`：媒体类型，例如`text/plain`这类，还包括图片，视频类型
 - `URL`：地址 包含了`host(主机名)，scheme(模式)，port(端口号)，path(路径信息)`等
 
+##### data字段匹配优先级（补充）
+
+可以按“约束由强到弱”理解匹配关系：
+
+1. `scheme`是第一层门槛（如`http`、`content`）。
+2. 在`scheme`匹配后，再看`host/port/path`是否满足。
+3. `mimeType`与 URI 匹配共同决定最终是否命中。
+
+任一关键字段不满足，都可能导致隐式启动匹配失败。
+
+##### 启动前校验建议（补充）
+
+隐式启动前建议先做一次可达性校验：
+
+- 通过`resolveActivity`确认是否有可处理组件；
+- 对外部 URI 做基础合法性检查（空值、非法 scheme）；
+- 对关键业务链路准备降级页面，避免直接抛出异常。
+
 
 
 *隐式启动时，如果无法找到要启动的组件，就会抛出异常。我们就可以利用`PackageManager.resolveActivity()`或者`Intent.resolveActivity()`避免异常出现。*
@@ -351,27 +485,84 @@ data主要分为两部分：
 
   只作用于单个Activity，若设置true，用户离开后回来就会消失
 
+#### 任务栈清理属性对照（补充）
+
+| 属性 | 作用范围 | 典型效果 |
+| --- | --- | --- |
+| `alwaysRetainTaskState` | 整个 Task | 尽量保留离开前的栈状态 |
+| `clearTaskOnLaunch` | 整个 Task | 重新进入时仅保留根Activity |
+| `finishOnTaskLaunch` | 单个 Activity | 任务重回前台时该页面可被移除 |
+
+这三个属性可以叠加使用，最终行为由“Task级规则 + Activity级规则”共同决定。
+
 
 
 ### 启动模式源码分析
 
 > 关键节点在 `ActivityStarter.java`类下
 
+#### 核心判定路径（补充）
+
+启动请求进入系统后，通常会经历这几步：
+
+1. 解析 Intent 与调用参数（launchMode、flag、taskAffinity）。
+2. 判断是否可复用已有 Activity 实例。
+3. 判断是否复用现有 Task，或创建/切换到目标 Task。
+4. 若复用实例则分发`onNewIntent`，若不复用则创建新实例。
+
+也就是说，启动模式源码核心是“实例复用判定 + 任务栈归属判定”。
+
 
 
 ### standard
+
+`standard`分支最直接：默认创建新实例并压入当前任务栈。
+
+- 如果调用方不是 Activity（例如 Application Context），通常需要`NEW_TASK`补足任务栈语义。
+- 该模式下不会触发实例复用路径，因此一般不会进入`onNewIntent`。
 
 
 
 ### singleTop
 
+`singleTop`关键在“仅栈顶可复用”：
+
+- 目标 Activity 已在栈顶：复用实例并回调`onNewIntent`。
+- 目标 Activity 不在栈顶：仍会新建实例入栈。
+
+因此它只解决“重复点击栈顶页面”问题，不解决“栈内任意位置复用”。
+
 
 
 ### singleTask
 
+`singleTask`关键在“任务栈内唯一实例”：
+
+- 若目标实例已在任务栈中，系统会复用该实例并清理其上方页面。
+- 若不存在，创建新实例（可能伴随任务栈切换或新建）。
+
+它同时影响“实例复用”和“任务栈行为”，比`singleTop`影响范围更大。
+
 
 
 ### singleInstance
+
+`singleInstance`是在`singleTask`基础上的进一步约束：
+
+- 目标 Activity 独占一个任务栈；
+- 该任务栈中通常不会再放入其他页面。
+
+该模式适合强隔离页面，但会增加任务切换复杂度，使用应谨慎。
+
+## 版本差异映射（补充）
+
+该文主线基于较早版本源码。后续 Android 版本演进中，Activity/Task 调度职责有明显迁移：
+
+- Activity 与 Task 的调度职责逐步从 AMS 中拆分到 ATMS 相关链路；
+- 多窗口、分屏等场景下，“可见”与“前台可交互”的语义更细化；
+- 新版本对任务切换、后台启动限制、导出组件校验等约束更严格。
+
+阅读新版本源码时，建议先按“职责类迁移”定位入口，再对照本文的调度阶段理解流程。
 
 
 

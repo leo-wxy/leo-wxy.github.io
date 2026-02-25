@@ -68,7 +68,7 @@ typora-root-url: ../
 
 2. **消息入队**
 
-   > 工作线程通过`Handler`发送`Message`到`MessageQueue`中。消息内容一般是UI操作，通过`Handler.sendMessage(Message message)`或`Handler.post(Runable r)`发送。加入`MessageQueue`一般通过`MessageQueue.enqueueMessage(Message msg,long when)`操作。
+   > 工作线程通过`Handler`发送`Message`到`MessageQueue`中。消息内容一般是UI操作，通过`Handler.sendMessage(Message message)`或`Handler.post(Runnable r)`发送。加入`MessageQueue`一般通过`MessageQueue.enqueueMessage(Message msg,long when)`操作。
 
 3. **消息循环**
 
@@ -121,7 +121,7 @@ public static void prepare() {
     }
 
 private static void prepare(boolean quitAllowed) {
-    //判断sThreadLocal是否为null，不为空则直接跑出异常 可以保证一个线程只可以调用一次prepare方法
+    //判断sThreadLocal是否为null，不为空则直接抛出异常 可以保证一个线程只可以调用一次prepare方法
     if (sThreadLocal.get() != null) {
           throw new RuntimeException("Only one Looper may be created per thread");
        }
@@ -401,7 +401,7 @@ private boolean enqueueMessage(MessageQueue queue, Message msg, long uptimeMilli
 
 总结：
 
-- 发送消息时`Message.when`表示期望该消息被分发的时间即`SystemClock.uptimeMillis() + delayMillis`。`SystemClock.uptimeMills`代表自系统开机到调用到该方法的时间差。
+- 发送消息时`Message.when`表示期望该消息被分发的时间即`SystemClock.uptimeMillis() + delayMillis`。`SystemClock.uptimeMillis`代表自系统开机到调用该方法的时间差。
 - `Message.when`利用时间差来表达期望事件分发的时间，所以使用的是一个相对时间。
 - 使用`sendMessageDelayed()`发送消息时，该消息会立即进入`MessageQueue`中，并标记`mBlocked`为true，阻塞线程。`MessageQueue`中是按照希望被分发时间排序的，时间越小排在越前。
 
@@ -444,7 +444,7 @@ boolean enqueueMessage(Message msg, long when) {
                 //当前队列有消息，按照消息创建时间插入到队列中
                 needWake = mBlocked && p.target == null && msg.isAsynchronous();
                 Message prev;
-                //从对列头部开始遍历
+                //从队列头部开始遍历
                 for (;;) {
                     prev = p;
                     p = p.next;
@@ -474,7 +474,7 @@ boolean enqueueMessage(Message msg, long when) {
 
 - 新消息进入时，优先判定当前队列中是否有消息
   - 没有消息，则新进入消息放入队列头部
-  - 有消息，则对新消息以及原消息对列的头消息进行执行时间比较，若小于则置于队列头部
+  - 有消息，则对新消息以及原消息队列的头消息进行执行时间比较，若小于则置于队列头部
 - 消息进入消息队列后，会唤醒消息队列(`nativeWake()`)进行等待
 - 执行到`enqueueMessage()`时通过添加`synchronized`保证线程安全
 
@@ -601,7 +601,7 @@ private static void handleCallback(Message message) {
      
          @Override
          public boolean handleMessage(Message msg) {
-             return false; //可以继续执行到 handlerMesage()
+             return false; //可以继续执行到 handleMessage()
            //return true;不向下传递消息
          }
      ```
@@ -790,7 +790,7 @@ private void removeAllFutureMessagesLocked() {
     }
 ```
 
-`mAsynchronus`异步标志默认为`false`，在以下代码中使用
+`mAsynchronous`异步标志默认为`false`，在以下代码中使用
 
 ```java
     private boolean enqueueMessage(MessageQueue queue, Message msg, long uptimeMillis) {
@@ -806,11 +806,11 @@ private void removeAllFutureMessagesLocked() {
 设置消息为`异步消息`有两种方式：
 
 - `new Handler(true)`：所有发出去的消息都会`setAsynchronous(true)`**对应方法都为@hide，不推荐使用**
-- `msg.setAsynchonous(true)`：手动设置消息为异步
+- `msg.setAsynchronous(true)`：手动设置消息为异步
 
 #### 使用场景
 
-- View的刷新(`Chorgographer`发送的都是异步消息)
+- View的刷新(`Choreographer`发送的都是异步消息)
 
 
 
@@ -934,7 +934,7 @@ Message next() {
     }
 ```
 
-`Looper`通过循环调用`MessageQueue.next()`不断获取队头的`message`，执行一个再去取下一个。当`next()`获取队头消息为`同步屏障`时，就会向后遍历队列，获取`异步消息`优先执行，如果没有找到`异步消息`，就会让`next()`进入阻塞状态，主线程也会处于`空闲状态`，直到有`异步消息`进入队列，或者`移除同步屏障`。
+`Looper`通过循环调用`MessageQueue.next()`不断获取队头的`Message`，执行一个再去取下一个。当`next()`获取队头消息为`同步屏障`时，就会向后遍历队列，获取`异步消息`优先执行，如果没有找到`异步消息`，就会让`next()`进入阻塞状态，主线程也会处于`空闲状态`，直到有`异步消息`进入队列，或者`移除同步屏障`。
 
 #### 移除同步屏障
 
@@ -1031,7 +1031,7 @@ public static void main(String[] args) {
 
 ## 8. Native层分析
 
-在一个常见的面试题`为什么Looper死循环不会导致应用卡死`，一般都会回答到`内部采用epoll机制，当没有消息时就会进入休眠状态，直达新消息到来时，通过epoll唤醒主线程继续执行消息。`
+在一个常见的面试题`为什么Looper死循环不会导致应用卡死`中，一般会回答`内部采用epoll机制，当没有消息时就会进入休眠状态，直到新消息到来时，通过epoll唤醒主线程继续执行消息。`
 
 上述的回答就需要涉及到`Handler`在`Native`层的实现，包括`阻塞等待、唤醒，epoll机制`相关。
 
@@ -1142,7 +1142,9 @@ void Looper::rebuildEpollLocked() {
 
 > 总结：
 >
-> TODO
+> `nativeInit()`阶段就把`Java MessageQueue`和`NativeMessageQueue`绑定在一起，并提前准备好`epoll + eventfd`这套阻塞/唤醒基础设施。
+>
+> 后续Java层调用`nativePollOnce()`会进入阻塞等待，调用`nativeWake()`会通过`eventfd`写入触发`epoll_wait()`返回，最终实现`无消息休眠、有消息唤醒`。
 
 #### * nativePollOnce()——阻塞
 
@@ -1212,7 +1214,7 @@ int Looper::pollOnce(int timeoutMillis, int* outFd, int* outEvents, void** outDa
 
 `pollOnce()`参数说明：
 
-- `timeoutMills`：超时时间
+- `timeoutMillis`：超时时间
 - `outFd`：发生事件的文件描述符
 - `outEvents`：在当前fd发生的事件
   - `EVENT_INPUT`：可读
@@ -1365,7 +1367,7 @@ void Looper::awoken() {
 
 `pollInner()`是`pollOnce()`最关键的方法，主要执行了以下三步：
 
-1. 执行了`epoll_wait()`，等待`mEpollFd`事件发生返回或者超时返回。*mEpollFd上只要发生任何事，epoll_wait就会监听到，返回发生的事件数目(eventCount)。如果在`timeoutMills`之间没有发生事件，到达时间后就会唤醒并返回0*
+1. 执行了`epoll_wait()`，等待`mEpollFd`事件发生返回或者超时返回。*mEpollFd上只要发生任何事，epoll_wait就会监听到，返回发生的事件数目(eventCount)。如果在`timeoutMillis`之间没有发生事件，到达时间后就会唤醒并返回0*
 
 2. 遍历`eventCount(发生事件的数目)`，判断**当前是哪一个文件描述符发生了事件**
 
@@ -1374,7 +1376,7 @@ void Looper::awoken() {
 
 3. 进入`Done`代码段
 
-   - 先处理`Native Message`，通过调用`MessageEnveloper.handler`执行消息(`handleMessage`)
+   - 先处理`Native Message`，通过调用`MessageEnvelope.handler`执行消息(`handleMessage`)
    - 在处理`mResponses`，只有返回值为`POLL_CALLBACK`才需要处理消息，通过`handleEvent()`进行消息的处理
 
 4. 返回`result`
@@ -1565,7 +1567,7 @@ Java层获取消息时，调用到`MessageQueue.next()`，继续调用到`native
 
 > `epoll机制`是一种高效的**IO多路复用机制**。
 >
-> 使用`一个文件描述符管理多个文件描述符`，将用户关系的文件描述符存放到内核的一个事件表中，这样用户空间和内核空间的copy只需一次。
+> 使用`一个文件描述符管理多个文件描述符`，将用户关心的文件描述符存放到内核的一个事件表中，这样用户空间和内核空间的拷贝只需一次。
 >
 > 利用`mmap()`映射内核空间，加速了用户空间与内核空间的消息传递。
 
@@ -1614,7 +1616,7 @@ Java层获取消息时，调用到`MessageQueue.next()`，继续调用到`native
 
 
 
-> 通过`epoll_create()`创建一个`epollFd`去监听事件。通过`epoll_ctl()`注册监听哪些`fd`以及需要监听的`event`。一旦`fd`就绪，内核就会采用类似callback的机制激活`fd`。最后通过`epoll_wait()`等待通知。
+> 通过`epoll_create()`创建一个`epollFd`去监听事件。通过`epoll_ctl()`注册监听哪些`fd`以及需要监听的`event`。一旦`fd`就绪，内核就会采用类似回调的机制激活`fd`。最后通过`epoll_wait()`等待通知。
 
 ### 工作模式
 
@@ -1624,13 +1626,13 @@ Java层获取消息时，调用到`MessageQueue.next()`，继续调用到`native
 
 > 当`epoll_wait()`监听到事件时会通知到应用程序，**应用程序不需要立即处理事件**，在下次`epoll_wait()`监听到事件时，会再次通知应用程序。
 
-同时支持`block socket`和`no-block socket`。
+同时支持`blocking socket`和`non-blocking socket`。
 
 #### ET模式
 
 > 当`epoll_wait()`监听到事件时会通知到应用程序，**应用程序需要立即处理事件**，否则，在下次`epoll_wait()`监听到事件时，不会再次通知到应用程序。
 
-虽然`减少了epoll事件被重复触发的次数，因此效率要高于LT模式`。但是`必须使用no-blcok socket`。避免因为阻塞读写导致处理多个fd的任务饿死。
+虽然`减少了epoll事件被重复触发的次数，因此效率要高于LT模式`。但是`必须使用non-blocking socket`。避免因为阻塞读写导致处理多个fd的任务饿死。
 
 
 
@@ -1683,7 +1685,7 @@ Java层获取消息时，调用到`MessageQueue.next()`，继续调用到`native
 
 缺点：
 
-- 单个进程能构监视的文件描述符存在最大数量限制，一般为`1024`，在64位系统上为`2048`
+- 单个进程能够监视的文件描述符存在最大数量限制，一般为`1024`，在64位系统上为`2048`
 - 扫描时采用的是线性扫描，即**轮询**，效率较低
 - 需要维护一个存放`fd`的数据结构，导致用户空间与内核空间传递过程复制开销大
 
@@ -1775,13 +1777,13 @@ private final Handler mHandler = new Handler(){
 ```java
 //需要在静态内部类中调用外部类时，可以直接使用  `弱引用`  进行处理
 private static final class MyHandler extends Handler{
-    private final WeakReference<MyActivity> mWeakReference；
+    private final WeakReference<MyActivity> mWeakReference;
     public MyHandler(MyActivity activity){
          mWeakReference = new WeakReference<>(activity);
     }
     @Override
-    public void handlerMessage(Message msg){
-        super.handlerMessage(msg);
+    public void handleMessage(Message msg){
+        super.handleMessage(msg);
         MyActivity activity = mWeakReference.get();
     }
 }
@@ -1795,7 +1797,7 @@ private MyHandler mHandler = new MyHandler(this);
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        handler.removeCallbacksAndMessages(null);
+        mHandler.removeCallbacksAndMessages(null);
     }
 ```
 
@@ -1826,6 +1828,83 @@ private MyHandler mHandler = new MyHandler(this);
     }
 ```
 
+## 12. 知识点补全
+
+### 线程与Looper的绑定关系
+
+- `Looper`通过`ThreadLocal`与线程绑定，`Looper.myLooper()`拿到的是`当前线程`专属实例。
+- 一个线程最多只有一个`Looper`和一个`MessageQueue`，但可以创建多个`Handler`共享同一个队列。
+- 主线程`Looper`由`ActivityThread.main()`自动创建；子线程若要收发消息，通常使用`HandlerThread`而不是手写`prepare()/loop()`。
+
+### 消息时间基准与阻塞语义
+
+- `Message.when`基于`SystemClock.uptimeMillis()`，表示“期望被分发时间点”。
+- `uptimeMillis`不包含深度休眠时间，所以“延时多久执行”是以`uptime`为基准，不是自然时钟时间。
+- `MessageQueue.next()`在没有可执行消息时会走`nativePollOnce()`阻塞，属于事件驱动等待，不是CPU忙等循环。
+
+### IdleHandler触发时机
+
+`MessageQueue.IdleHandler`会在队列“暂时空闲”时被执行，常见有两种情况：
+
+1. 队列完全没有消息。
+2. 队头消息存在，但`when`还没到，当前线程会进入等待前先跑一轮`IdleHandler`。
+
+它适合做轻量级延后初始化，不适合做重任务，否则会挤占主线程时间片。
+
+### dispatchMessage优先级再确认
+
+`Handler.dispatchMessage()`的处理顺序是固定的：
+
+1. `msg.callback != null`时，执行`message.callback.run()`（`post(Runnable)`路径）。
+2. 否则如果`mCallback != null`且返回`true`，消息被拦截，不再向下分发。
+3. 最后才走`handleMessage(msg)`。
+
+因此同一个`Handler`里，`Callback`可以作为“前置拦截层”。
+
+### 同步屏障与Choreographer链路
+
+- 同步屏障消息的特征是`target == null`，它不会被分发，只用于“阻塞同步消息”。
+- `ViewRootImpl`在`scheduleTraversals()`中会配合`Choreographer`使用同步屏障，让`vsync`相关异步消息优先执行。
+- 屏障必须成对移除；如果长期不移除，普通同步消息会持续饥饿，表现为主线程任务堆积。
+
+### HandlerThread使用模型
+
+```java
+HandlerThread worker = new HandlerThread("io-worker");
+worker.start();
+
+Handler ioHandler = new Handler(worker.getLooper());
+ioHandler.post(() -> {
+    // do background work
+});
+
+// 结束时建议优先使用quitSafely，允许已到期消息先执行完
+worker.quitSafely();
+```
+
+要点：
+
+- `getLooper()`必须在`start()`后调用。
+- `quit()`会清空队列直接退出；`quitSafely()`会让已到期消息先执行，再退出。
+
+### 内存泄漏表述补充
+
+更准确的风险点是：`MessageQueue`里存在延迟消息时，`Message.target(Handler)`会间接持有外部`Activity/Fragment`，导致页面销毁后仍被引用。
+
+`sThreadLocal`是线程与`Looper`的绑定容器，但通常不是“匿名Handler泄漏”的直接根因。
+
+规避建议：
+
+- 避免在`Activity`中使用匿名非静态`Handler`长期持有页面引用。
+- 使用静态内部类 + `WeakReference`。
+- 在`onDestroy()`调用`removeCallbacksAndMessages(null)`清理未处理任务。
+
+### 版本差异速览
+
+- Android P(API 28)开始提供`Handler.createAsync(...)`，可方便创建异步`Handler`。
+- Android R(API 30)起，无参`Handler()`构造方法被标记为`@Deprecated`，建议显式传入`Looper`，避免线程绑定歧义。
+- 新版本系统更强调“显式线程归属”，写法上推荐`new Handler(Looper.getMainLooper())`或基于`HandlerThread`创建。
+
 
 
 
@@ -1840,7 +1919,7 @@ private MyHandler mHandler = new MyHandler(this);
 
 [Handler 这些知识点你都知道吗](https://juejin.im/post/6879376888360501262#heading-0)
 
-[Handelr(Native)](http://gityuan.com/2015/12/27/handler-message-native/)
+[Handler(Native)](http://gityuan.com/2015/12/27/handler-message-native/)
 
 [Android源码](https://cs.android.com/android/platform/superproject/+/android-9.0.0_r34:system/core/libutils/Looper.cpp)
 

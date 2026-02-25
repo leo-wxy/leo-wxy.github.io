@@ -9,10 +9,10 @@ top: 11
 {% fullimage /images/ActivityWindowView的联系.png,Activity&Window&View,Activity&Window&View%}
 
 ## 1. 什么是Activity,Window,View以及职能简介
-- Activity：不负责视图控制，只是控制生命周期和处理事件，真正控制视图的是Window，一个Activity包含一个Window，Window真正代表一个窗口。`Activity是一个控制器，控制视图的添加与显示以及通过回调方法来进行Window与View的交互。`
-- Window：Window是视图的承载器，内部持有一个DecorView，DecorView才是view的根布局，Window为抽象类，实际是Activity中的其子类PhoneWindow，其中有个内部类DecorView，通过创建DecorView来加载`R.layout.*`，Window通过WindowManager加载DecorView，并将DecorView和ViewRoot关联，进行视图控制与交互。
-- View：DecorView继承自FrameLayout,DecorView作为顶级View，一般其内部包含一个竖直方向的LinearLayout，里面包含ViewStub，标题栏（titleView），内容栏（contentView）。Activity通过`setContentView()`将布局文件加载进内容栏中。
-- ViewRoot：ViewRoot的实现类是ViewRootImpl，是WindowService和DecorView之间的纽带。ViewRoot不属于View节点，和View之间没有直接联系，不过实现了ViewParent接口。
+- Activity：主要负责生命周期与事件分发入口，不直接管理底层绘制。一个Activity通常对应一个`PhoneWindow`。`Activity更像控制器，通过回调与Window/View协作。`
+- Window：Window是视图承载器，抽象类，Activity中的实现通常是`PhoneWindow`。它持有`DecorView`，并负责把页面内容组织到窗口结构中。
+- View：`DecorView`继承自`FrameLayout`，作为顶级View容器，内部一般包含标题栏区域与内容栏（`android.R.id.content`）。Activity通过`setContentView()`把业务布局放入内容栏。
+- ViewRoot：实现类是`ViewRootImpl`，是`WindowManagerService`与`DecorView`在应用进程侧的桥接点。`ViewRootImpl`不属于View树节点，但实现了`ViewParent`并驱动measure/layout/draw。
 {% fullimage /images/study_plan/activity_window_view.png, alt,流程图 %}
 
 ## 2. Activity如何和Window，View关联（附源码）
@@ -70,6 +70,8 @@ Activity无法直接和View交互，需要通过Window管理
 ```
 
 Activity通过`setContentView()`加载要显示的布局，观察源码可知还是通过`Window`进行了加载操作。
+
+> 这里要区分两件事：`setContentView()`完成的是“把布局inflate进DecorView的内容区”；真正显示到屏幕还需要后续`addView -> setView -> performTraversals`链路。
 
 ### 加载View
 
@@ -138,7 +140,29 @@ Activity通过`setContentView()`调用到`PhoneWindow.setContentView()`执行Dec
 
 ### 显示View
 
-上述方法只是创建了一个`DecorView`，而没有执行显示流程。这就涉及到了`Activity的生命周期`，其中有讲到在`onResume()`才对用户可见。
+上述方法只是创建了一个`DecorView`，而没有完成真正的显示流程。接下来需要结合`Activity`生命周期与窗口添加流程来看“何时可见”。
+
+更完整的显示链路如下：
+
+`ActivityThread.handleResumeActivity() -> WindowManagerImpl.addView() -> WindowManagerGlobal.addView() -> ViewRootImpl.setView() -> requestLayout() -> performTraversals() -> draw()`
+
+这条链路里，`setContentView()`负责“装内容”，`addView/setView`负责“挂到窗口并进入绘制调度”。
+
+#### 生命周期与首帧关系
+
+- `onCreate()`：完成页面初始化与视图装载。
+- `onResume()`：进入可交互生命周期，但不等于首帧已提交到屏幕。
+- `onWindowFocusChanged(true)`：常用于感知页面真正进入前台焦点状态。
+
+因此，“可见”是一个从生命周期到渲染提交的过程，不是单点事件。
+
+#### 输入事件如何进入View树
+
+窗口建立后，输入事件大致走这条路径：
+
+`InputDispatcher -> InputChannel -> ViewRootImpl -> DecorView -> ViewGroup -> View`
+
+这也是为什么`ViewRootImpl`既出现在绘制链路，也出现在输入分发链路中。
 
 {% post_link View的工作原理 %}
 
@@ -146,16 +170,26 @@ Activity通过`setContentView()`调用到`PhoneWindow.setContentView()`执行Dec
 
 **View需要通过Window才能展示在Activity上。**
 
+### 关系速查表
+
+| 对象 | 主要职责 | 是否在View树中 | 典型关键方法 |
+| --- | --- | --- | --- |
+| Activity | 生命周期与交互入口 | 否 | `attach()`、`setContentView()` |
+| PhoneWindow | 窗口容器与页面框架 | 否 | `setContentView()`、`installDecor()` |
+| DecorView | 页面顶层View容器 | 是 | `dispatchTouchEvent()`、`draw()` |
+| ViewRootImpl | 驱动绘制与输入桥接 | 否 | `setView()`、`performTraversals()` |
+| WMS | 系统侧窗口管理 | 否（系统进程） | `addWindow()`、`relayoutWindow()` |
+
 ## 3.总结
 
-> Activity就像个控制器，不负责视图部分；
+> Activity负责生命周期与事件入口，Window负责承载与组织页面结构，DecorView是顶层View容器。
 >
-> Window像个承载器，装着内部视图；
+> `setContentView()`主要完成布局装载；真正显示依赖`WindowManagerGlobal.addView() -> ViewRootImpl.setView() -> performTraversals()`。
 >
-> DecorView就是个顶层视图，是所有View的最外层布局；
->
-> ViewRoot就是个连接器，负责沟通，是WindowManager和View之间的桥梁。
+> ViewRootImpl是应用进程侧的关键桥接层，既串起绘制流程，也串起输入分发流程。
 
 
 
-Activity包含了一个PhoneWindow，而PhoneWindow就是继承于Window的，Activity通过`setContentView`将View设置到了PhoneWindow上，而View通过WindowManager的`addView()、removeView()、updateViewLayout()`对View进行管理。Window的添加过程以及Activity的启动流程都是一次IPC的过程。Activity的启动需要通过AMS完成；Window的添加过程需要通过WindowSession完成。
+Activity包含一个`PhoneWindow`，Activity通过`setContentView()`把布局放入`PhoneWindow`的内容区域；随后由`WindowManager`体系执行`addView()/updateViewLayout()/removeView()`完成窗口层管理。
+
+从跨进程角度看：Activity启动主链路依赖`AMS`，窗口添加与更新主链路依赖`WMS`（经`IWindowSession`进行通信）。

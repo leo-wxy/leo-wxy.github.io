@@ -35,10 +35,10 @@ Service的启动过程从`ContextWrapper.startService()`开始
     }
 ```
 
-在Activity启动的时候`performLaunActivity`时，会创建上下文对象`Context`，然后在`Activity.attach()`调用了`attachBaseContext()`将得到的contenxt进行赋值。最终操作的就是`ContextImpl`。
+在Activity启动的`performLaunchActivity`阶段，会创建上下文对象`Context`，然后在`Activity.attach()`调用`attachBaseContext()`完成context赋值。最终操作的是`ContextImpl`。
 
 ```java
-// ../android/app/ContextImpl.jsvs
+// ../android/app/ContextImpl.java
     @Override
     public ComponentName startService(Intent service) {
         warnIfCallingFromSystemProcess();
@@ -65,7 +65,9 @@ Service的启动过程从`ContextWrapper.startService()`开始
     }
 ```
 
-`ActivityManager.getService()`在Activity启动过程中有介绍它是得到`IActiivtyManager`实际就是指向`AMS`的一个Binder对象，调用到的就是`AMS.startService()`
+`ActivityManager.getService()`在Activity启动过程中有介绍，它拿到的是`IActivityManager`，实际指向`AMS`的一个Binder代理对象，随后调用`AMS.startService()`。
+
+> 主链路：`ContextImpl.startServiceCommon() -> AMS.startService() -> ActiveServices.startServiceLocked() -> bringUpServiceLocked() -> realStartServiceLocked() -> ActivityThread.handleCreateService()`
 
 ```java
 // ../core/java/com/android/server/am/ActivityManagerService.java
@@ -288,7 +290,7 @@ private void handleCreateService(CreateServiceData data) {
         // If we are getting ready to gc after going to the background, well
         // we are back active so skip it.
         unscheduleGcIdler();
-        //获取LoaderApk对象 是一个Apk文件的描述器
+        //获取LoadedApk对象，是一个Apk文件的描述器
         LoadedApk packageInfo = getPackageInfoNoCheck(
                 data.info.applicationInfo, data.compatInfo);
         Service service = null;
@@ -333,13 +335,21 @@ private void handleCreateService(CreateServiceData data) {
 
 ```
 
-`handleCreateService()`执行了以下的几件事：
+`handleCreateService()`执行了以下几件事：
 
-- 通过类加载器创建`Service`实例，*Actiivty启动过程是利用了 Instrumention.newActivity() 执行相同创建实例*
+- 通过类加载器创建`Service`实例，*Activity启动过程是利用`Instrumentation.newActivity()`执行类似的实例化逻辑*
 - `makeApplication()`创建`Application`对象并调用其`onCreate`
 - 创建`ContextImpl`对象并调用`Service.attach()`建立关系
 - 最后调用`Service.onCreate()`开始创建过程，并存储至`ArrayMap<IBinder,Service>`中，在下一节会介绍这里存储数据的作用
-- 调用`onCreate()`之后，Service也已经启动了。
+- 调用`onCreate()`后，若是`startService`路径会继续走`onStartCommand()`；若是纯`bindService`路径则不会触发`onStartCommand()`。
+
+#### startId与stopSelf(startId)
+
+`startService`每到一次`onStartCommand()`，系统都会分配一个递增`startId`。这意味着：
+
+- 多次`startService`会多次回调`onStartCommand()`。
+- 任务并发时建议使用`stopSelf(startId)`，避免旧任务提前结束Service。
+- 仅调用`stopSelf()`在竞态下可能误停尚未处理完的新请求。
 
 {% fullimage /images/Service启动过程.png,Service启动过程,Service启动过程%}
 
@@ -399,10 +409,12 @@ private void handleCreateService(CreateServiceData data) {
 
 在`bindServiceCommon()`主要做了两件事情：
 
+> 主链路：`ContextImpl.bindServiceCommon() -> AMS.bindService() -> ActiveServices.bindServiceLocked() -> requestServiceBindingLocked() -> ActivityThread.handleBindService()`
+
 - `getServiceDispatcher()` 将传进来的`ServiceConnection`转化成`IServiceConnection`，通过Binder对象进行通信。使得Service的绑定支持跨进程调用。
 
   ```java
-  // ../android/app/LoaderApk.java    
+  // ../android/app/LoadedApk.java    
   public final IServiceConnection getServiceDispatcher(ServiceConnection c,
               Context context, Handler handler, int flags) {
           synchronized (mServices) {
@@ -565,9 +577,9 @@ private void handleCreateService(CreateServiceData data) {
 > 介绍几个与Service有关的对象类型：
 >
 > - ServiceRecord：描述一个Service
-> - ProcessREcord：描述一个进程的信息
+> - ProcessRecord：描述一个进程的信息
 > - ConnectionRecord：描述应用程序进程和Service建立的一次通信。
-> - AppBindRecord：维护Srvice与应用程序进程之间的关联。
+> - AppBindRecord：维护Service与应用程序进程之间的关联。
 > - IntentBindRecord：描述绑定Service的Intent
 
 `bindServiceLocked()`内部会通过`bringUpServiceLocked()`自动启动Service。然后向下走`启动Service流程`。
@@ -661,7 +673,7 @@ private void handleBindService(BindServiceData data) {
     }
 ```
 
-> `Service.onRebind()`执行条件为：使用Service的流程是，先`startService()`然后`bindService()`，在Activity退出的时候，Service并不会停止，再进入Activity重新进行`bindService()`，会触发`onRebind()`方法。**但是先前Activity退出时调用的`onUnbind()`返回为`true`，直接写死返回结果。**
+> `Service.onRebind()`执行条件为：前一次`onUnbind()`返回`true`，并且后续再次发生绑定。常见场景是先`startService()`再`bindService()`，页面退出后Service仍存活，后续页面再次`bindService()`会触发`onRebind()`。
 >
 > **当多次绑定同一个Service时，`onBind()`只会执行一次，除非Service被终止。**
 
@@ -721,12 +733,12 @@ void publishServiceLocked(ServiceRecord r, Intent intent, IBinder service) {
     }
 ```
 
-`c.conn`指向`IServiceConnection`，他是`ServiceConnection`在本地的代理对象，用于解决当前应用程序进程和Service跨进程通信的问题。
+`c.conn`指向`IServiceConnection`，它是`ServiceConnection`在本地的代理对象，用于解决当前应用程序进程和Service跨进程通信的问题。
 
-他的具体实现为`ServiceDispatcher.InnerConnection`。
+它的具体实现为`ServiceDispatcher.InnerConnection`。
 
 ```java
-// ../android/app/LoaderApk.java
+// ../android/app/LoadedApk.java
 static final class ServiceDispatcher {
  ...
         private static class InnerConnection extends IServiceConnection.Stub {
@@ -757,7 +769,7 @@ static final class ServiceDispatcher {
 }
 ```
 
-`mActivityThread`是一个Handler对象，指向的就是`ActivityThread.H`。因此可以通过调用`post()`直接发送`RunConnection`对象的内容运行在主线程中。**mActivityThread不可能为空。**
+`mActivityThread`是一个Handler对象，指向的就是`ActivityThread.H`。因此可以通过调用`post()`将`RunConnection`切换到主线程执行。
 
 ```java
 private final class RunConnection implements Runnable {
@@ -823,13 +835,15 @@ private ServiceConnection mConnection = new ServiceConnection() {
     };
 ```
 
-<!-- 为什么bindservice不会触发onStartCommanad-->
+<!-- 为什么bindService不会触发onStartCommand -->
 
 
 
 ### Service解绑过程 - unbindService()
 
 Service的解绑过程也是从`ContextWrapper`开始
+
+> 主链路：`ContextImpl.unbindService() -> AMS.unbindService() -> ActiveServices.unbindServiceLocked() -> removeConnectionLocked() -> ActivityThread.handleUnbindService()`
 
 ```java
     @Override
@@ -866,7 +880,7 @@ Service的解绑过程也是从`ContextWrapper`开始
 - `LoadedApk.forgetServiceDispatcher()`
 
   ```java
-  // ../android/app/LoaderApk.java
+  // ../android/app/LoadedApk.java
   public final IServiceConnection forgetServiceDispatcher(Context context,
               ServiceConnection c) {
           synchronized (mServices) {
@@ -910,7 +924,7 @@ Service的解绑过程也是从`ContextWrapper`开始
 - `AMS.unbindService()`
 
   ```java
-  // ../core/java/android/com/server/am/ActivityManagerService.java
+  // ../core/java/com/android/server/am/ActivityManagerService.java
       public boolean unbindService(IServiceConnection connection) {
           synchronized (this) {
               return mServices.unbindServiceLocked(connection);
@@ -923,7 +937,7 @@ Service的解绑过程也是从`ContextWrapper`开始
 调用到`ActiveServices.unbindServiceLocked()`
 
 ```java
-// ../core/java/android/com/server/am/ActiveServices.java
+// ../core/java/com/android/server/am/ActiveServices.java
  boolean unbindServiceLocked(IServiceConnection connection) {
         IBinder binder = connection.asBinder();
         if (DEBUG_SERVICE) Slog.v(TAG_SERVICE, "unbindService: conn=" + binder);
@@ -1055,7 +1069,7 @@ private void handleUnbindService(BindServiceData data) {
 当Service调用`onUnbind()`之后，还需要做一件事情，如果是靠`bindService()`并配置`flag`为`BIND_AUTO_CREATE`。那么后续还会执行到`stopService()`中的流程，即会调用到`Service.onDestroy()`。
 
 ```java
-// ../core/java/android/com/server/am/ActiveServices.java
+// ../core/java/com/android/server/am/ActiveServices.java
  void removeConnectionLocked(
 //如果是利用 BIND_AUTO_CREATE的flag就会向下调用
           if ((c.flags&Context.BIND_AUTO_CREATE) != 0) {
@@ -1110,6 +1124,8 @@ private final boolean isServiceNeededLocked(ServiceRecord r, boolean knowConn,
 
 还是由`ContextWrapper.stopService()`开始执行
 
+> 主链路：`ContextImpl.stopServiceCommon() -> AMS.stopService() -> ActiveServices.stopServiceLocked() -> bringDownServiceLocked() -> ActivityThread.handleStopService()`
+
 ```java
     @Override
     public boolean stopService(Intent name) {
@@ -1148,7 +1164,7 @@ private final boolean isServiceNeededLocked(ServiceRecord r, boolean knowConn,
 `ActivityManager.getService()`实际就是指向`ActivityManagerService`的一个Binder对象
 
 ```java
-// ../core/java/android/com/server/am/ActivityManagerService.java   
+// ../core/java/com/android/server/am/ActivityManagerService.java   
 @Override
     public int stopService(IApplicationThread caller, Intent service,
             String resolvedType, int userId) {
@@ -1269,7 +1285,7 @@ private final void bringDownServiceLocked(ServiceRecord r) {
 }
 ```
 
-`app.thread`切换到`ApplicaitonThread`继续执行流程
+`app.thread`切换到`ApplicationThread`继续执行流程
 
 ```java
 // ../android/app/ActivityThread.java
@@ -1312,8 +1328,53 @@ private void handleStopService(IBinder token) {
 
 {% fullimage /images/Service停止流程.png,Service停止流程,Service停止流程%}
 
+## 知识点补全
+
+### startService与bindService的本质差异
+
+- `startService()`关注的是“启动请求计数”（`startRequested/startId`），对应回调是`onStartCommand()`。
+- `bindService()`关注的是“连接关系计数”（`ConnectionRecord/AppBindRecord`），对应回调是`onBind()/onUnbind()`。
+- 两者可共存：同一Service既被start又被bind时，必须同时满足“无启动请求 + 无绑定连接”才会销毁。
+
+### 生命周期组合速览
+
+1. 仅`startService()`：`onCreate -> onStartCommand(可多次) -> onDestroy`
+2. 仅`bindService()`：`onCreate -> onBind -> onUnbind -> onDestroy`（最后一个连接断开后）
+3. `start + bind`：先走start链路，再走bind链路；即使全部解绑，只要未stop仍可继续存活
+
+### 为什么bind不会触发onStartCommand
+
+- `onStartCommand()`对应的是“启动请求”，由`sendServiceArgsLocked -> scheduleServiceArgs`触发。
+- 纯bind路径走的是`requestServiceBindingLocked -> scheduleBindService -> onBind`，没有`StartItem`入队。
+- 因此“bind会拉起Service进程”与“触发onStartCommand”是两件不同的事。
+
+### onRebind触发条件再确认
+
+- 前提是`onUnbind()`返回`true`，系统才会记录后续可重绑。
+- 下次有客户端重新绑定同一Service时，回调`onRebind()`而不是再次走`onBind()`。
+
+### BIND_AUTO_CREATE与销毁时机
+
+- `BIND_AUTO_CREATE`会在绑定时自动拉起Service。
+- 当最后一个自动创建连接断开时，会进入`bringDownServiceIfNeededLocked()`判定是否可销毁。
+- 若Service此前被`startService()`启动且尚未`stopService/stopSelf`，则不会仅因解绑而销毁。
+
+### 主线程约束与ANR风险
+
+- Service生命周期回调默认运行在主线程（`ActivityThread`）。
+- `onCreate/onStartCommand/onBind`中执行重任务会阻塞主线程并放大ANR风险。
+- 实践上应快速返回，把IO/CPU任务切到工作线程（线程池、协程、WorkManager等）。
+
+### 前台服务版本差异
+
+- Android 8.0(API 26)+引入`startForegroundService()`约束。
+- Service启动后需在限定时间内调用`startForeground()`，否则系统会判定异常并终止。
+- 新版本还叠加了后台启动限制，设计时应优先考虑可延迟任务与系统调度组件。
+
 ## 拓展
 
 为什么Activity退出时`bindService()`的Service会一并销毁？
 
 观察源码发现，`bindService()`也会去启动Service，但为什么没有回调到`onStartCommand()`？
+
+核心原因是：`bindService()`拉起的是“绑定链路”，会走`onBind()`；`onStartCommand()`只属于“启动链路”，只有`startService()/startForegroundService()`写入启动请求后才会触发。

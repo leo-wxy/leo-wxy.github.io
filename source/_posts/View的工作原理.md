@@ -83,7 +83,7 @@ public class PhoneWindow extends Window implements MenuBuilder.Callback {
 
 一般情况下`DecorView`会包含一个竖直方向的LinearLayout，该LinearLayout分为上下两个部分，上面是标题栏(`titlebar`)，下面是内容栏(`继承自FrameLayout 且id为content`)。因此我们设置Activity的布局方法叫做`setContentView()`，因为他们都被加进了`id为content的FrameLayout`中。
 
-我们可以利用`ViewGroup content = findViewById(R.android.id.content)`获取conetnt。使用`content.getChildAt(0)`获取设置的Activity布局。
+我们可以利用`ViewGroup content = findViewById(R.android.id.content)`获取content。使用`content.getChildAt(0)`获取设置的Activity布局。
 
 ```java
 // ../android/app/Activity.java
@@ -155,7 +155,7 @@ public void setContentView(@LayoutRes int layoutResID) {
  private void installDecor() {
         mForceDecorInstall = false;
         if (mDecor == null) {
-            //生成DecoeView
+            //生成DecorView
             mDecor = generateDecor(-1);
             ...
         } else {
@@ -252,7 +252,7 @@ public void setContentView(@LayoutRes int layoutResID) {
 // ../android/app/ActivityThread.java
 private void handleLaunchActivity(ActivityClientRecord r, Intent customIntent, String reason) {
  ...
-      //创建一个Activity 会调用到onCreate()方法 从而完成DecroView的创建
+      //创建一个Activity 会调用到onCreate()方法 从而完成DecorView的创建
       Activity a = performLaunchActivity(r, customIntent);
         if (a != null) {
             r.createdConfig = new Configuration(mConfiguration);
@@ -727,8 +727,8 @@ View createViewFromTag(View parent, String name, Context context, AttributeSet a
             }
 
             return view;
-        } 
-        ,,,
+        }
+        ...
     }
 }
       
@@ -744,7 +744,7 @@ View createViewFromTag(View parent, String name, Context context, AttributeSet a
 
    
 
-2. 应用`ContenxtThemeWrapper`为View设置主题`Theme`
+2. 应用`ContextThemeWrapper`为View设置主题`Theme`
 
 3. 使用`Factory/Factory2/mPrivateFactory`实例化`View`，相当于**拦截**
 
@@ -780,9 +780,9 @@ View createViewFromTag(View parent, String name, Context context, AttributeSet a
 
 `Factory2`相对于`Factory`在`onCreateView()`多传入了`parent`
 
-#### Factroy2
+#### Factory2
 
-设置`Factroy2`的方法
+设置`Factory2`的方法
 
 ```java
     public void setFactory2(Factory2 factory) {
@@ -1407,7 +1407,7 @@ private void performTraversals() {
     ...  
 }
 
-//在方法中生成了DecoeView的MeasureSpec 根据Window的尺寸和自身的LayoutParams
+//在方法中生成了DecorView的MeasureSpec 根据Window的尺寸和自身的LayoutParams
 private static int getRootMeasureSpec(int windowSize/*Window尺寸*/, int rootDimension) {
         int measureSpec;
         switch (rootDimension) {
@@ -1417,7 +1417,7 @@ private static int getRootMeasureSpec(int windowSize/*Window尺寸*/, int rootDi
             measureSpec = MeasureSpec.makeMeasureSpec(windowSize, MeasureSpec.EXACTLY);
             break;
         case ViewGroup.LayoutParams.WRAP_CONTENT:
-            //MeasureSpec中的specSize为窗口尺寸,specMode为aT_MOST 最大模式，最大值为窗口尺寸
+            //MeasureSpec中的specSize为窗口尺寸,specMode为AT_MOST 最大模式，最大值为窗口尺寸
             measureSpec = MeasureSpec.makeMeasureSpec(windowSize, MeasureSpec.AT_MOST);
             break;
         default:
@@ -1544,9 +1544,9 @@ public int getMinimumWidth(){
 
 结合上述流程图，简单分析View的Measure过程
 
-- 系统在绘制开始时回去调用`View.measure()`，这个类是final的们无法被重写
+- 系统在绘制开始时会调用`View.measure()`，这个方法是final的，无法被重写
 - 后续调用`View.onMeasure()`,自定义View时可以按照自己的需求对这个方法进行重写
-- `onMeasure()`中调用到`setMeasureDimension()`对View进行宽高的设置
+- `onMeasure()`中调用到`setMeasuredDimension()`对View进行宽高的设置
 - 需要使用`getDefaultSize()`去获取最终显示出的宽高
 - 在`getDefaultSize()`中需要对传进来的`MeasureSpec`进行分析处理
   - SpecMode若为`UNSPECIFIED`，则最终尺寸为传进来的`SpecSize`
@@ -1565,12 +1565,12 @@ public void onMeasure(int widthMeasureSpec,int heightMeasureSpec){
     int widthSpecSize = MeasureSpec.getSize(widthMeasureSpec);
     int heightSpecSize = MeasureSpec.getSize(heightMeasureSpec);
     
-    if(widthSpecMode = MeasureSpec.AT_MOST && heightSpecMode = MeasureSpec.AT_MOST){
-        setMeasureDimension(mWidth,mHeight);
-    }else if(widthSpecMode = MeasureSpec.AT_MOST){
-        setMeasureDimension(mWidth,heightSpecSize);
-    }else if(heightSpecMode = MeasureSpec.AT_MOST){
-        setMeasureDimension(widthSpecSize,mHeight);
+    if(widthSpecMode == MeasureSpec.AT_MOST && heightSpecMode == MeasureSpec.AT_MOST){
+        setMeasuredDimension(mWidth,mHeight);
+    }else if(widthSpecMode == MeasureSpec.AT_MOST){
+        setMeasuredDimension(mWidth,heightSpecSize);
+    }else if(heightSpecMode == MeasureSpec.AT_MOST){
+        setMeasuredDimension(widthSpecSize,mHeight);
     }
     
 }
@@ -1618,7 +1618,7 @@ protected void measureChild(View child, int parentWidthMeasureSpec,
         child.measure(childWidthMeasureSpec, childHeightMeasureSpec);
     }
 
- //子View的MEasureSpec由父View的MEasureSpec以及自身的LayoutParams共同决定
+ //子View的MeasureSpec由父View的MeasureSpec以及自身的LayoutParams共同决定
     public static int getChildMeasureSpec(int spec, int padding, int childDimension) {
         int specMode = MeasureSpec.getMode(spec);
         int specSize = MeasureSpec.getSize(spec);
@@ -1709,7 +1709,7 @@ protected void measureChild(View child, int parentWidthMeasureSpec,
 1. 在Activity启动时获取View的尺寸？
    - 在 Activity#onWindowFocusChanged 回调中获取宽高。<br>`当Activity得到焦点或失去焦点的时候，这个方法都会被频繁调用`
    - view.post(runnable)，在 runnable 中获取宽高。
-     `利用Handler通信机制，发送一个Runnable在MessageQuene中，当layout处理结束时则会发送一个消息通知UI线程，可以获取到实际宽高。`
+     `利用Handler通信机制，发送一个Runnable在MessageQueue中，当layout处理结束时会发送消息通知UI线程，可以获取到实际宽高。`
    - ViewTreeObserver 添加 OnGlobalLayoutListener，在 onGlobalLayout 回调中获取宽高。
      `监听全局View的变化事件，使用后需要注意移除OnGlobalLayoutListener 监听，以免造成内存泄露`
    - 调用 view.measure()，再通过 getMeasuredWidth 和 getMeasuredHeight 获取宽高<br>`手动对view进行measure来得到View的尺寸。`
@@ -1970,7 +1970,7 @@ private void setChildFrame(child,int l,int t,int r,int b){
 
 拓展：
 
-1. View的测量宽/高(`getMeasureWidth()/getMeasureHeight()`)与最终得到的宽/高(`getWidth()/getHeight()`)有什么区别？
+1. View的测量宽/高(`getMeasuredWidth()/getMeasuredHeight()`)与最终得到的宽/高(`getWidth()/getHeight()`)有什么区别？
 
    ![layout-getMeasureWidth() 与 getWidth()区别](/images/layout-getMeasureWidth() 与 getWidth()区别.png)
    
@@ -2005,14 +2005,14 @@ private void setChildFrame(child,int l,int t,int r,int b){
 
 | 类型                                                      | 何时赋值            | 赋值方法                                  | 使用场景                        |
 | :-------------------------------------------------------- | ------------------- | ----------------------------------------- | ------------------------------- |
-| View测量结束宽/高<br>getMeasureWidth()/getMeasureHeight() | View的`measure`过程 | `setMeasureDimension()`                   | 在`onLayout()`获取View的宽/高   |
+| View测量结束宽/高<br>getMeasuredWidth()/getMeasuredHeight() | View的`measure`过程 | `setMeasuredDimension()`                  | 在`onLayout()`获取View的宽/高   |
 | View最终宽/高<br>getWidth()/getHeight()                   | View的`layout`过程  | `layout()`对top,left,right,bottom进行操作 | `onLayout()`结束后获取最终宽/高 |
 
    **一般情况下，二者返回的数据是相同的，除非人为对View的`layout()`进行重写。**
 
    ```java
    public void layout(int l,int t,int r,int b){
-       super.layout(j,t,r+100,b+100);
+       super.layout(l,t,r+100,b+100);
    }
    ```
 
@@ -2383,7 +2383,7 @@ protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
    
    根据上述源码，默认的绘制**按照z轴从大到小的顺序**进行绘制，如果需要修改绘制顺序的话，需要执行以下两步：
    
-   1. `setChildrenDrawingEnabled(true)`打开自定义设置开关
+   1. `setChildrenDrawingOrderEnabled(true)`打开自定义设置开关
    2. 继承`ViewGroup`后，重写`getChildDrawingOrder()`方法，设置对应的绘制顺序
    
    常用的`RecyclerView`、`ViewPager`都实现了该方法，其中`RecyclerView`通过设置`ChildDrawingOrderCallback`也可以实现这个功能。
@@ -2404,7 +2404,7 @@ protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
 
 > 主要用于实现一些不规则的效果，不方便通过布局的组合方法可以直接实现，往往需要静态或者动态的显示一些不规则图形(圆形啥的)。
 >
-> 特殊形状的这种就需要重写`onDraw()`实现。**一般需要额外支持wrtap_content，并且也需要处理padding方法。**
+> 特殊形状的这种就需要重写`onDraw()`实现。**一般需要额外支持wrap_content，并且也需要处理padding方法。**
 
 #### 2.继承ViewGroup派生特殊的Layout
 
@@ -2445,7 +2445,7 @@ protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
 #### 4.View中如果有线程或动画，需要及时停止
 
 > 1. 不处理有可能造成内存泄漏，View不可见时也需要停止线程和动画
-> 2. 包含View的Activity启动时，View的`onAccachedToWindow()`会调用
+> 2. 包含View的Activity启动时，View的`onAttachedToWindow()`会调用
 > 3. 包含View的Activity退出或当前View被移除时，调用`View.onDetachedFromWindow()`时关闭线程和动画
 
 #### 5.View若有滑动冲突情况，需要处理
@@ -2935,21 +2935,21 @@ private void performTraversals() {
 
 关键在于是否持有`PFLAG_DIRTY_OPAQUE`标志，这个标志主要是在`invalidate()`打上的。
 
-> `invalidate()`通过设置`PFLAG_INVALIDATED`和`PFLAG_DRAWING_CACHE_VALID`标记，然后执行`invalidateChild()`通过层层向上调用`parent.invalidateChildInParent()`把需要重新绘制的区域传递上去，直到达到`ViewRootImpl`为止。最后调用到`invalidateRectOnScreen()`传入最终需要重新绘制的区域，开始执行绘制流程。
+> `invalidate()`会设置当前脏区与相关标记，然后执行`invalidateChild()`，通过层层向上调用`parent.invalidateChildInParent()`把需要重新绘制的区域传递上去，直到达到`ViewRootImpl`。最后调用`invalidateRectOnScreen()`传入最终脏区，开始执行绘制流程。
 >
-> **invalidate()会打上`PFLAG_DIRTY_OPAQUE`标记，只有这个标记才会执行`onDraw()`。**
+> **核心是把重绘请求上传到`ViewRootImpl`并触发下一帧`draw`，是否走`onDraw()`还受透明度、背景与具体脏区状态影响。**
 
 #### 两者区别
 
-`rquestLayout()`和`invalidate()`都可以触发整个绘制流程，但是触发`measure`、`layout`、`draw`各条件都不同
+`requestLayout()`和`invalidate()`都可以触发整个绘制流程，但是触发`measure`、`layout`、`draw`各条件都不同
 
 - `measure`过程触发：`mPrivateFlags`包含`PFLAG_FORCE_LAYOUT`
 - `layout`过程触发：`mPrivateFlags`包含`PFLAG_LAYOUT_REQUIRED(measure执行后添加)`或者`位置发生变化`
-- `draw`过程触发：`mPrivateFlags`包含`PFLAG_DIRTY_OPAQUE`
+- `draw`过程触发：存在脏区（`dirty`）或动画等需要重绘的条件
 
 `requestLayout()`主要用来设置`PFLAG_FORCE_LAYOUT`标志以及设置`mLayoutRequested=true`，会执行到`measure、layout`过程，如果位置发生变化则可能执行`draw`过程。
 
-`invalidate()`主要用来设置`PFLAG_DIRTY_OPAQUE`标志，可以在执行`performTraversal()`时，调用到`performDraw()`后到`draw()`时，可以进行绘制过程。
+`invalidate()`主要用于标记脏区并上报到`ViewRootImpl`，在下一次`performTraversal()`中进入`performDraw()`完成绘制。
 
 ![区别](/images/View重绘.png)
 
@@ -3134,11 +3134,11 @@ private int maxViewDeep(View view) {
 
 
 
-根据源码分析到，`root`与`attachToRoot`会对`infalte()`结果产生影响以及实现代码会有差异
+根据源码分析到，`root`与`attachToRoot`会对`inflate()`结果产生影响，且实现代码会有差异。
 
 | `root`与`attachToRoot`参数                    | 表现                                                         | `inflate()`返回结果        |
 | --------------------------------------------- | ------------------------------------------------------------ | -------------------------- |
-| `root == nuill && attachToRoot == false/true` | 直接显示`source`加载的结果，而且设置的`宽高属性`也会失效     | `source`加载后的`View实例` |
+| `root == null && attachToRoot == false/true`  | 直接显示`source`加载的结果，而且设置的`宽高属性`也会失效      | `source`加载后的`View实例` |
 | `root != null && attachToRoot == false`       | 直接显示`source`加载的结果，且设置的`宽高属性`保持           | `source`加载后的`View实例` |
 | `root != null && attachToRoot == true`        | 直接显示`root`并且`source`已被`add`进去且设置的`宽高属性`保持 | `root`                     |
 
@@ -3179,3 +3179,60 @@ private int maxViewDeep(View view) {
     }
 ```
 
+## 知识点补全
+
+### Traversal调度与Vsync关系
+
+- `requestLayout()`和`invalidate()`最终都会走到`scheduleTraversals()`，由`Choreographer`在下一帧调度`performTraversals()`。
+- `scheduleTraversals()`会先插入同步屏障，再通过`CALLBACK_TRAVERSAL`回调执行`doTraversal()`；执行前会移除同步屏障。
+- 这也是“频繁调用多次requestLayout/invalidate，通常合并到下一帧处理”的根本原因。
+
+### 三大流程的职责边界
+
+- `measure`：确定“要多大”（`measuredWidth/measuredHeight`）。
+- `layout`：确定“放哪里”（`left/top/right/bottom`）。
+- `draw`：确定“画什么”。
+
+`getMeasuredWidth/Height`不等于`getWidth/Height`的常见场景：父容器二次布局、动画/手动改`layout()`边界、自定义容器重新定位子View。
+
+### 自定义View测量建议
+
+直接继承`View`时，建议在`onMeasure()`里显式处理`AT_MOST`，并用系统工具方法收敛结果：
+
+```java
+@Override
+protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+    int desiredW = mWidth;
+    int desiredH = mHeight;
+
+    int measuredW = resolveSize(desiredW, widthMeasureSpec);
+    int measuredH = resolveSize(desiredH, heightMeasureSpec);
+    setMeasuredDimension(measuredW, measuredH);
+}
+```
+
+这样既能支持`wrap_content`，也能在父容器约束下保持稳定行为。
+
+### requestLayout与invalidate选择
+
+- 内容变化但尺寸不变：优先`invalidate()`（只触发draw）。
+- 尺寸或位置可能变化：用`requestLayout()`（会触发measure/layout，必要时再draw）。
+- 子线程触发重绘：使用`postInvalidate()`或切回主线程调用`invalidate()`。
+
+简单记忆：**改形状/尺寸走`requestLayout`，改像素内容走`invalidate`。**
+
+### onDraw性能实践
+
+- 避免在`onDraw()`里频繁创建对象（`Paint/Path/Rect`），改为成员变量复用。
+- 尺寸相关的计算尽量放在`onSizeChanged()`，减少每帧重复计算。
+- 大量重绘场景优先局部刷新（脏区），避免无意义全量刷新。
+
+### inflate参数实战建议
+
+- `RecyclerView.Adapter`中通常使用`inflate(layout, parent, false)`：拿到正确`LayoutParams`，但不立刻attach。
+- `Activity/Fragment`初始化根布局时，不要随意传`root = null`，否则可能丢失父容器相关布局参数语义。
+
+### 线程与生命周期补充
+
+- View树的measure/layout/draw都在主线程，`ViewRootImpl.checkThread()`会对非法线程调用直接抛异常。
+- 自定义View里若有动画、线程或回调，建议在`onAttachedToWindow()`启动，在`onDetachedFromWindow()`停止，避免泄漏和后台无效工作。

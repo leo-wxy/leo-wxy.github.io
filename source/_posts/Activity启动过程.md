@@ -15,7 +15,29 @@ Activity的启动过程分为两种：
 - **根Activity的启动过程**  -  指代根Actiivty的启动过程也可以认为是应用程序的启动过程
 - **普通Activity的启动过程**  -  除启动应用程序启动的第一个Activity之外Activity的启动过程
 
+### 术语与范围约定（补充）
+
+- 根Activity：Manifest 中声明了`MAIN + LAUNCHER`的入口 Activity。
+- 普通Activity：应用进程已经存在时，由当前前台组件触发的后续 Activity 启动。
+- 冷启动：目标进程不存在，需要从 Zygote fork 新进程并完成 Application 绑定。
+- 温启动：目标进程存在，但目标 Activity 需要重新创建。
+- 热启动：目标 Activity 已在任务栈中，主要是前后台切换后的恢复展示。
+
+本文主体源码仍以 Android 8.0 为主，文末会补充新版本中类职责迁移与关键差异。
+
 ## 根Activity启动过程
+
+
+### 根Activity启动主链路总览（补充）
+
+根Activity的启动可以抽象为 6 个阶段：
+
+1. `Launcher`通过`startActivity`发起启动请求。
+2. 请求经`Instrumentation -> IActivityManager`跨进程进入`AMS`。
+3. `AMS/ActivityStarter`完成权限校验、任务栈决策、目标进程决策。
+4. 若目标进程不存在，`AMS`通过`Zygote`创建应用进程并进入`ActivityThread.main()`。
+5. 新进程回调`attachApplication`，`AMS`通过`ApplicationThread`触发`bindApplication`。
+6. `ActivityThread`收到`LAUNCH_ACTIVITY`后执行`performLaunchActivity + handleResumeActivity`，最终完成可见。
 
 
 
@@ -190,6 +212,18 @@ public abstract class Singleton<T> {
 - 由于从Launcher启动，根Activity尚未建立，就会走到`Instrumentation.execStartActivity()`中
 - 在`Instrumentation.execStartActivity()`中，实际调用的是`ActivityManager.getService()`去继续启动Activity
 - 跟踪到`ActivityManager.getService()`实际返回的是一个`AMS`的本地代理对象`IActivityManager`，由前面学到的Binder机制中，这个代理对象是可以直接调用到`AMS`中的方法，所以`execStartActivity()`最终指向的是`AMS.startActivity()`
+
+#### `startActivity`请求参数语义（补充）
+
+从`Instrumentation.execStartActivity()`到`AMS.startActivity()`这一步，核心参数有以下作用：
+
+- `caller/whoThread`：调用方进程在系统侧的 Binder 身份（即调用者是谁）。
+- `token`：调用方 Activity 的窗口令牌，用于建立结果回传与生命周期关联。
+- `requestCode`：用于`startActivityForResult`回传链路，根Activity启动时常为`-1`。
+- `options`：承载动画、启动窗口、跨任务切换等附加参数。
+- `FLAG_ACTIVITY_NEW_TASK`：根Activity通常要求在新的任务栈语义下启动。
+
+这些参数不会直接创建 Activity 对象，而是作为`ActivityStarter`后续任务栈决策与调度的输入。
 
 ### AMS到ApplicationThread的调用过程
 
@@ -535,6 +569,16 @@ Launcher请求到AMS后，后续逻辑由AMS继续执行。继续执行的是`AM
 - 内部实现由`ActivityStack.resumeTopActivityUncheckedLocked()`实现，这里又继续调用到`resumeTopActivityInnerLocked()`
 - 后续又切换回到`ActivityStackSupervisor.startSpecificActivityLocked()`，在该方法中`获取即将启动的Activity所在应用程序进程`，已启动的话调用`realStartActivityLocked()`，未启动的话就调用`startProcessLocked()`去启动进程
 
+#### `ActivityStarter`关键决策点（补充）
+
+`ActivityStarter`在调度阶段主要做三类决策：
+
+1. 任务栈决策：是否复用现有`TaskRecord`，以及是否需要清理栈顶 Activity。
+2. 目标实例决策：是否复用现有`ActivityRecord`，还是创建新的记录对象。
+3. 进程决策：目标进程是否已存在，已存在走`realStartActivityLocked`，否则走`startProcessLocked`。
+
+换句话说，`startActivity`在 AMS 阶段的核心不是“立刻创建 Activity”，而是“先完成调度与状态机合法性”。
+
 ### AMS启动应用进程
 
 由于启动是根Activity，这时应用进程尚未启动，需要通过`AMS.startProcessLocked()`创建一个应用程序进程
@@ -590,6 +634,18 @@ Launcher请求到AMS后，后续逻辑由AMS继续执行。继续执行的是`AM
 ```
 
 调用到`Process`的静态成员函数`start()`启动一个新的应用进程，指定了该进程的入口函数为`ActivityThread.main()`；因此创建应用进程结束时，逻辑就转移到了`ActivityThread.main()`上。
+
+#### `startProcessLocked`关键参数与进程属性（补充）
+
+`startProcessLocked`除了“拉起进程”本身，还同时确定了进程运行环境：
+
+- `processName`：目标进程名（可与包名一致，也可通过`android:process`声明子进程）。
+- `uid/gid`：Linux 进程身份，决定文件权限与沙箱边界。
+- `targetSdkVersion`：影响运行时兼容行为分支。
+- `abi/instructionSet`：决定使用的指令集与 native 代码运行环境。
+- `entryPoint`：普通应用进程默认是`android.app.ActivityThread`。
+
+因此这一步不仅是“创建进程”，也是“确定进程运行画像”的关键阶段。
 
 ```java 
 Process.start() => ZygoteProcess.start() == LocalSocket连接 => ZygoteServer.runSelectLoop() => ZygoteConnection.processOneCommand() => 
@@ -862,6 +918,16 @@ private Runnable handleChildProc(Arguments parsedArgs, FileDescriptor[] descript
 
 在`AMS.attachApplicationLocked()`主要做了两步：
 
+#### `attachApplicationLocked`职责拆分（补充）
+
+这一阶段可以拆成 3 个职责块：
+
+1. 进程身份确认：根据`pid`找到`ProcessRecord`并建立死亡回调`linkToDeath`。
+2. 运行时绑定：通过`thread.bindApplication()`把应用运行时参数发送到`ActivityThread`主线程。
+3. 组件继续调度：在应用侧完成绑定后，再继续触发根Activity/Service/Broadcast等组件启动。
+
+其中第 2 步与第 3 步是“先绑定运行时，再启动组件”的顺序关系。
+
 #### `thread.bindApplication()`：绑定Application到ActivityThread上
 
 ```java
@@ -970,6 +1036,16 @@ private void handleBindApplication(AppBindData data) {
 1. 设置进程的基本参数，例如进程名，时区等，配置资源以及兼容性设计。
 2. 创建进程对应的`ContextImpl、LoaderApk以及Application`对象，并初始化`ContentProvide以及Application`。
 3. 创建`Instrumentation`监听Activity的生命周期。(**一个进程对应一个Instrumentation实例**)
+
+#### `handleBindApplication`执行顺序补全（补充）
+
+这里有一个关键顺序容易被忽略：
+
+1. 创建`ContextImpl/LoadedApk/Application`。
+2. 安装`ContentProvider`（`installContentProviders`）。
+3. 回调`Application.onCreate()`。
+
+也就是说，`ContentProvider`初始化通常先于`Application.onCreate()`，这也是很多库在 Provider 中做自动初始化的基础。
 
 #### `mStackSuperVisor.attachApplicationLocked()`：启动根Activity
 
@@ -1170,6 +1246,15 @@ private class H extends Handler {
 
 `performResumeActivity()`对应生命周期的`onResume()`，之后开始调用View的绘制，Activity的内容开始渲染到Window上面，直到我们看见绘制结果。
 
+#### 生命周期与首帧绘制关系（补充）
+
+`onResume()`不等于“首帧已经显示”。
+
+- `onResume()`表示 Activity 进入前台交互阶段。
+- 首帧可见发生在后续`Window`提交绘制、`ViewRootImpl`完成首轮`performTraversals`并被系统合成之后。
+
+因此在启动分析中要区分“生命周期完成点”和“首帧可见点”两个时刻。
+
 ```java
 private Activity performLaunchActivity(ActivityClientRecord r, Intent customIntent) {
   ...
@@ -1331,6 +1416,19 @@ private Activity performLaunchActivity(ActivityClientRecord r, Intent customInte
 > - `未启动`：请求`Zygote进程`创建应用程序进程
 > - `已启动`：`AMS`直接启动Activity
 
+### 根Activity关键数据结构（补充）
+
+启动链路里最常见的几个结构体职责如下：
+
+| 数据结构 | 所在侧 | 作用 |
+| --- | --- | --- |
+| `ProcessRecord` | System Server | 描述应用进程状态（pid、uid、组件状态、adj等） |
+| `ActivityRecord` | System Server | 描述单个 Activity 的生命周期与调度状态 |
+| `TaskRecord` | System Server | 描述任务栈（Task）及其栈内关系 |
+| `ActivityClientRecord` | App 进程 | 应用侧启动参数快照，供`ActivityThread`创建 Activity |
+
+把这四个对象串起来，就能更容易理解“系统侧调度”与“应用侧创建”的分工。
+
 ###  总结
 
 经过上述章节的描述，可以基本厘清`根Activity的启动过程`
@@ -1350,6 +1448,18 @@ private Activity performLaunchActivity(ActivityClientRecord r, Intent customInte
 > 普通Activity启动过程相比于根Activity启动过程，只保留了两步：`AMS到Application的调用过程`,`ActivityThread启动Activity过程`。
 >
 > 涉及的进程也只剩：`AMS所在进程(System Server进程)，应用程序进程`。
+
+### 普通Activity与根Activity差异矩阵（补充）
+
+| 对比项 | 根Activity启动 | 普通Activity启动（同进程） |
+| --- | --- | --- |
+| 是否需要新建进程 | 可能需要（冷启动场景） | 一般不需要 |
+| 是否执行`bindApplication` | 冷启动会执行 | 通常不执行 |
+| 是否经过 Zygote | 冷启动会经过 | 不经过 |
+| 核心跨进程链路 | Launcher -> AMS -> App | App -> AMS -> App |
+| 应用侧创建入口 | `LAUNCH_ACTIVITY` | `LAUNCH_ACTIVITY` |
+
+可以看出两者后半段（应用侧创建 Activity）高度一致，差异主要集中在前半段的“进程准备与运行时绑定”。
 
 ### 相同进程的启动过程
 
@@ -1373,6 +1483,27 @@ private Activity performLaunchActivity(ActivityClientRecord r, Intent customInte
 4. 应用进程启动完毕之后，向`AMS`发送一个启动完成的请求，`AMS`就会通知主线程`ActivityThread`去创建并绑定`Application`，绑定完成后，通知`AMS`绑定完成。`AMS`直接通过`ApplicationThread`回调到应用进程，这也是一个跨进程过程。
 5. 由于`ApplicationThread`是一个Binder对象，回调逻辑在`Binder线程池`中完成，需要通过`Handler H`切回到主线程，并发出`LAUNCH_ACTIVITY`消息，对应调用`handleLaunchActivity`。
 6. <!--App启动优化，如何检测启动耗时 -->
+
+### 版本差异映射（Android 10+）（补充）
+
+本文主线是 Android 8.0，后续版本中类职责有迁移，阅读源码时可按以下映射理解：
+
+- `AMS`中的 Activity/Task 调度职责逐步拆分到`ATMS(ActivityTaskManagerService)`。
+- 任务栈与窗口管理的协作更紧密，更多逻辑由 WindowManager 侧结构承接。
+- 启动窗口与系统过渡动画机制在新版本中不断加强，冷启动视觉链路与 8.0 有明显差异。
+
+建议阅读新版本源码时，先按“职责迁移”定位类，再回到具体方法链。
+
+### 启动链路观察点（补充）
+
+为了验证启动时序，建议固定观察以下关键点：
+
+1. 系统侧：`ActivityTaskManager/ActivityManager`相关日志中的`startActivity/attachApplication`。
+2. 应用侧：`ActivityThread`的`BIND_APPLICATION`与`LAUNCH_ACTIVITY`消息时序。
+3. 生命周期：`Application.onCreate -> Activity.onCreate/onStart/onResume`的先后。
+4. 首帧：`onResume`之后到首帧可见之间的渲染耗时区间。
+
+用同一套观察点反复验证，能更稳定地定位“慢在调度侧还是慢在应用侧”。
 
 
 

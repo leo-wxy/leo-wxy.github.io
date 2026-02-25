@@ -1198,7 +1198,7 @@ status_t InputChannel::sendMessage(const InputMessage* msg) {
 
 最终通过`InputChannel.sendMessage()`发送包装好的触摸事件
 
-> TODO
+> 这里的关键点是：`InputDispatcher`并不是直接调用App侧Java代码，而是先通过`InputChannel(socket pair)`把事件写到目标窗口对应的通道。App进程的`WindowInputEventReceiver`从通道读到事件后，再回调到`ViewRootImpl`进入Java层分发流程。
 
 
 
@@ -2542,7 +2542,7 @@ public boolean dispatchTouchEvent(MotionEvent event) {
 
 根据前几节分析得出完整的事件分发顺序：
 
-**IMS -> WindowInputREceiver(ViewRootImpl) -> DecorView -> Activity -> DecorView -> viewGroup -> View**
+**IMS -> WindowInputEventReceiver(ViewRootImpl) -> DecorView -> Activity -> DecorView -> ViewGroup -> View**
 
 
 
@@ -2644,7 +2644,7 @@ public boolean dispatchTouchEvent() {
 
 ![事件分发特殊情况](/images/事件分发特殊情况.png)
 
-##### `ACTIOIN_CANCEL`产生场景
+##### `ACTION_CANCEL`产生场景
 
 1. 子View处理了Down事件，按照设定Move与Up的事件也会交给他处理。若此时，父View拦截了事件，此时子View就会收到一个Cancel事件，并且无法接收到后续的Move与Up事件。
 
@@ -2782,6 +2782,69 @@ status_t InputConsumer::sendUnchainedFinishedSignal(uint32_t seq, bool handled) 
 ```
 
 `InputChannel.sendMessage()`之后，`InputDispatcher`线程被唤醒，回调到`handleReceiveCallback()`。执行到上面的`InputDispatcheThread`相关代码。
+
+## 知识点补全
+
+### 输入事件主链路（定位问题用）
+
+一次触摸从内核到View，大致经过以下主链路：
+
+`/dev/input -> EventHub -> InputReader -> NotifyMotionArgs -> InputDispatcher(mInboundQueue) -> InputChannel -> WindowInputEventReceiver -> ViewRootImpl -> DecorView -> Activity -> ViewGroup -> View`
+
+排查问题时可以先确认“卡在哪一段”：
+
+- Native采集阶段（EventHub/InputReader）
+- Native分发阶段（InputDispatcher + window命中）
+- App消费阶段（ViewRootImpl输入阶段链 + View树分发）
+
+### finishInputEvent与ANR关系
+
+- `ViewRootImpl.finishInputEvent()`最终会走到`InputConsumer.sendFinishedSignal()`，通知`InputDispatcher`本次事件已处理。
+- `InputDispatcher`收到finished信号后，会从`waitQueue`移除对应`DispatchEntry`并继续下一轮发送。
+- 如果App侧长期不回传finished，`waitQueue`会堆积，可能触发输入超时与ANR判定。
+
+也就是说，`finishInputEvent`是“消费闭环”的关键节点，不只是一个收尾回调。
+
+### 窗口命中规则补充
+
+- 指针类事件（触摸）优先走`findTouchedWindowTargetsLocked()`，核心依据是当前坐标命中窗口。
+- 非指针类事件（如按键）通常走`findFocusedWindowTargetsLocked()`，核心依据是焦点窗口。
+- 命中窗口后，事件以`InputTarget`形式封装偏移、缩放、pointerId集合等信息，再投递到对应`InputChannel`。
+
+### 多指触摸语义补充
+
+- `ACTION_DOWN/ACTION_UP`：表示首指按下与末指抬起，定义一段手势序列的起止。
+- `ACTION_POINTER_DOWN/ACTION_POINTER_UP`：表示非首指的按下/抬起，不会重置整段手势。
+- `actionIndex`表示“本次变化的是哪根手指”，`pointerId`用于跨事件稳定标识同一手指。
+
+处理多指时应基于`pointerId`而不是临时索引，避免索引变化导致手指错位。
+
+### ViewGroup拦截时序补充
+
+- `mFirstTouchTarget`通常在`ACTION_DOWN`阶段建立，后续`MOVE/UP`按该目标持续分发。
+- 父容器若中途改为拦截，会向子View发送`ACTION_CANCEL`，子View结束当前手势。
+- `requestDisallowInterceptTouchEvent(true)`只影响本次手势序列；下次`ACTION_DOWN`会重新开始判定。
+
+这也是滑动冲突常见解法的基础：外部拦截法（父容器）与内部拦截法（子View）本质都是在控制上述时序。
+
+### 批量输入与Vsync对齐
+
+- `onBatchedInputEventPending()`在默认模式下会走`scheduleConsumeBatchedInput()`，把输入消费挂到`Choreographer.CALLBACK_INPUT`。
+- 这样做的目标是把输入处理与帧节奏对齐，减少抖动与无效唤醒。
+- 若启用`mUnbufferedInputDispatch`，会更偏向即时分发，降低输入延迟但可能增加调度开销。
+
+### 常见误区速查
+
+- `onTouch()`返回`true`后，事件已被消费，通常不会再触发`onClick()`。
+- `View`不可点击时，`onTouchEvent()`默认可能返回`false`，事件会向父层回传。
+- `ACTION_CANCEL`不代表异常，它是分发策略变化（父拦截、窗口切换等）的正常信号。
+
+### 版本差异观察点
+
+- 新版本系统中`MotionEvent`与分发链路更强调`displayId`，多显示场景下必须关注事件所属display。
+- 高刷新率设备上，输入批处理与Vsync协同更明显，卡顿排查要同时看输入阶段与绘制阶段。
+
+建议把输入链路日志与`FrameTimeline`一起看，避免只看`View`层导致定位偏差。
 
 ## 相关示例
 

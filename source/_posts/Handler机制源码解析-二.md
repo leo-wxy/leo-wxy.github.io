@@ -27,13 +27,13 @@ class MyActivity : Activity{
         super.onCreate(savedInstanceState)
         setContentView(R.layout.act_main)
         //初始化子线程
-        mThread = Mythread()
+        mThread = MyThread()
         mThread.start()
         //需要发出的消息
         val message = Message.obtain()
         message.obj = "test"
         //初始化Handler
-        mHandler = MyHandler(this, mThread.childLooper)+
+        mHandler = MyHandler(this, mThread.childLooper)
         //发送消息
         mHandler.sendMessage(message)
     }
@@ -56,7 +56,7 @@ class MyActivity : Activity{
             super.handleMessage(msg)
             val activity: MyActivity? = mWeakRe.get()
             if (activity!=null){
-                //添加handlerMessage需要处理的逻辑
+                //添加handleMessage需要处理的逻辑
             }
         }
     }
@@ -98,7 +98,7 @@ class MyActivity : Activity{
             super.handleMessage(msg)
             val activity: MyActivity? = mWeakRe.get()
             if (activity!=null){
-                //添加handlerMessage需要处理的逻辑
+                //添加handleMessage需要处理的逻辑
             }
         }
     }
@@ -111,7 +111,7 @@ class MyActivity : Activity{
 }
 ```
 
-以上代码执行完毕后即在HandlerThread可以调用Handler对象。
+以上代码执行完毕后，即可在`HandlerThread`中使用`Handler`对象。
 
 我们需要从源码去分析为什么使用`HandlerThread`可以避免上述异常，是怎样一个机制实现的。
 
@@ -259,7 +259,7 @@ public class HandlerThread extends Thread {
      Looper.myQueue().removeIdleHandler(ForeverIdleHandler())
 ```
 
-集成上述代码即可测试IdleHandler的使用，接下来要分析源码的实现以及使用场景。
+接入上述代码即可测试`IdleHandler`的使用，接下来分析它的源码实现以及使用场景。
 
 ```java
 // 源码位置:../core/java/android/os/MessageQueue.java
@@ -311,7 +311,7 @@ public class HandlerThread extends Thread {
                     pendingIdleHandlerCount = mIdleHandlers.size();
                 }
                 if (pendingIdleHandlerCount <= 0) {
-                    // 判断当前没有空闲线程可执行 则继续堵塞
+                    // 判断当前没有空闲线程可执行 则继续阻塞
                     mBlocked = true;
                     continue;
                 }
@@ -352,9 +352,9 @@ public class HandlerThread extends Thread {
 
 > `Looper ，MessageQueue，Message，ThreadLocal，Handler `
 
-1. Looper对象有一个MessageQueue,MessgaeQueue为一个消息队列来存储Message
+1. Looper对象有一个MessageQueue，MessageQueue为一个消息队列来存储Message
 2. Message中带有一个Handler对象，从Looper中取出消息后，可以直接调用到Handler的相关方法
-3. Handler发送消息时会把自身封装进Message  `Message.ontain(Handler h ,int what,int arg1,int arg2,Object onj)`
+3. Handler发送消息时会把自身封装进Message：`Message.obtain(Handler h, int what, int arg1, int arg2, Object obj)`
 4. Handler通过获取Looper对象中的MessageQueue插入消息来发送Message
 5. Looper创建对象时会把自己保存至ThreadLocal中，并提供一个`public static Looper myLooper()`方法来返回一个Looper对象
 
@@ -368,7 +368,7 @@ public class HandlerThread extends Thread {
 
 先说明进程和线程的区别：
 
-> **进程**：每个app运行时首先会创建一个进程，该进程是由zygote fork出来的，用于承载运行app上的Activity/Service等组件。进程对于上层应用来说是完全透明的，目的是为了`让App都运行在Android Runtimr`。大多数情况下一个App运行在一个线程中，除非配置了`Android:Process`属性，或者通过native fork 进程。
+> **进程**：每个App运行时首先会创建一个进程，该进程是由zygote fork出来的，用于承载运行App上的Activity/Service等组件。进程对于上层应用来说是完全透明的，目的是为了`让App都运行在Android Runtime`。大多数情况下一个App运行在一个进程中，除非配置了`android:process`属性，或者通过native fork进程。
 >
 > **线程**：线程比较常见，每次`new Thread().start()`都会创建一个新线程。并且与当前App所在进程之间资源共享。`在CPU看来进程或线程无非是一段可执行的代码，CPU采用CFS调度算法，保证每个task尽可能公平享有CPU时间片`。
 >
@@ -376,7 +376,7 @@ public class HandlerThread extends Thread {
 
 当进入死循环时又该如何处理其他事务呢？**需要创建新的线程去处理**。
 
-主线程进入Looper的死循环后，需要处理 activity的各个生命周期的回调函数执行(`在同一个线程下，代码是按顺序执行的，如果死循环堵塞了，后续该如何执行`)。
+主线程进入Looper的死循环后，还需要处理Activity的各个生命周期回调(`在同一个线程下，代码是按顺序执行的，如果死循环阻塞了，后续该如何执行`)。
 
 ```java
 //源码地址 android/app/ActivityThread.java 
@@ -407,7 +407,7 @@ public static void main(String[] args){
 
 源码中在初始化ActivityThread时也会初始化一个`H类型的成员，它继承了Handler`。
 
-源码中调用`thread.attach(false)`时,**回去创建一个Binder进程（具体代指ApplicationThread,Binder的服务端，用于接收系统AMS发出来的事件），由Handler线程发送Message至主线程。**
+源码中调用`thread.attach(false)`时，**会创建对应的Binder通信链路（例如ApplicationThread作为Binder服务端，用于接收系统AMS发出的事件），再由Handler线程发送Message至主线程。**
 
 所以在主线程开启Looper死循环之前，就已经启动了一个Binder线程并且准备了`H 这一个Handler类`，就可以用于处理一些死循环之外的事务。`仅需通过Binder线程向H发送消息即可`。
 
@@ -415,7 +415,7 @@ public static void main(String[] args){
 
 **system_server进程即为系统进程**，里面运行了大量的系统服务，比如上图提供了`ApplicationThreadProxy以及ActivityManagerService`，这两者都基于IBinder接口，都是Binder线程。
 
-**App进程即为我们常说的应用程序**，主线程主要负责Activity等组件的生命周期以及UI绘制。每个App进程中至少会包括两个binder线程:`ApplicationThread和ActivityManagerProxy`。
+**App进程即为我们常说的应用程序**，主线程主要负责Activity等组件的生命周期以及UI绘制。每个App进程中至少会包括两个Binder线程：`ApplicationThread和ActivityManagerProxy`。
 
 **Binder用于不同进程间的通信，由一个进程的Binder客户端向另一个进程的服务端发送事务。**
 
@@ -554,7 +554,7 @@ private void performTraversals() {
 }
 ```
 
-是从`ViewRootImpl.performTraversal()`向下执行到`DecorView.dispatchAttachedToWindow()`最后执行到`View.dispatchAttachedToWindow()`
+是从`ViewRootImpl.performTraversals()`向下执行到`DecorView.dispatchAttachedToWindow()`，最后执行到`View.dispatchAttachedToWindow()`。
 
 ```java
 public ViewRootImpl(Context context, Display display) {
@@ -660,12 +660,12 @@ public class HandlerActionQueue {
 
 > `View.post()`内部自动分为两种情况：
 >
-> - 尚未执行`dispatchAttachedToWindow()`：尚未赋值`mAttachInfo`，将需要执行的任务缓存到`HandlerActionQueue`，等待``dispatchAttachedToWindow()`之后通过`ViewRootHandler`执行。
+> - 尚未执行`dispatchAttachedToWindow()`：尚未赋值`mAttachInfo`，将需要执行的任务缓存到`HandlerActionQueue`，等待`dispatchAttachedToWindow()`之后通过`ViewRootHandler`执行。
 > - 已执行`dispatchAttachedToWindow()`：已赋值`mAttachInfo`，直接调用`ViewRootHandler`执行对应任务即可。
 >
 > `ViewRootHandler`绑定的Looper为`MainLooper`，所以通过`View.post()`的操作都会在主线程执行。
 >
-> `dispatchAttachedToWindow()`是在`ViewRoootImpl.performTraversals()`中执行的。
+> `dispatchAttachedToWindow()`是在`ViewRootImpl.performTraversals()`中执行的。
 
 #### 为什么可以获取宽高
 
@@ -702,7 +702,7 @@ public class HandlerActionQueue {
         if (!mTraversalScheduled) {
             mTraversalScheduled = true;
             mTraversalBarrier = mHandler.getLooper().getQueue().postSyncBarrier();
-          //交给Chreographer在收到Vsync信号去执行 mTraversalRunnable 也就是 performTraversals()
+          //交给Choreographer在收到Vsync信号后执行mTraversalRunnable，也就是performTraversals()
             mChoreographer.postCallback(
                     Choreographer.CALLBACK_TRAVERSAL, mTraversalRunnable, null);
            ...
@@ -757,7 +757,7 @@ public class HandlerActionQueue {
                 scheduleFrameLocked(now);
             } else {
                 Message msg = mHandler.obtainMessage(MSG_DO_SCHEDULE_CALLBACK, action);
-                msg.arg1 = callbackType；
+                msg.arg1 = callbackType;
                 msg.setAsynchronous(true);//设置异步消息 把TraversalRunnable置于消息里
                 mHandler.sendMessageAtTime(msg, dueTime);
             }
@@ -765,7 +765,44 @@ public class HandlerActionQueue {
     }
 ```
 
-根据上述源码分析得到结论`TraversalRunnable`也会运行到FrameHandler上。
+根据上述源码分析可得结论：`TraversalRunnable`也会运行到`FrameHandler`上。
 
-Handler的MessageQueue是按照顺序执行的，就需要等到`performTraversals()`执行完毕后，才可以执行后续的任务(HandlerActionQueue中缓存的任务。)。
+`Handler`的`MessageQueue`是按顺序执行的，因此需要等`performTraversals()`执行完毕后，才可以执行后续任务（例如`HandlerActionQueue`中缓存的任务）。
 
+## 4. 知识点补全
+
+### HandlerThread与手写Looper的边界
+
+- 手写`Looper.prepare()` + `Looper.loop()`的问题不在于“不能用”，而在于容易出现初始化时序和退出时机管理不当。
+- `HandlerThread.getLooper()`内部用`wait()/notifyAll()`等待`mLooper`完成初始化，天然规避“先取Looper后初始化”的竞态。
+- 若使用手写Looper模型，必须额外设计“初始化完成通知 + 退出协议”，否则容易出现空指针或线程泄漏。
+
+### quit与quitSafely选择
+
+- `quit()`：立即退出，队列中的未处理消息会被移除，适合“任务已无意义”的快速收尾场景。
+- `quitSafely()`：只移除未来消息，允许已到期消息执行完，适合“希望平滑结束后台任务”的场景。
+- 生命周期结束时，除停止`HandlerThread`外，还建议同步清理`removeCallbacksAndMessages(null)`，避免页面销毁后仍有回调。
+
+### IdleHandler的执行语义
+
+- 触发条件并不只是在“队列完全为空”，当队头消息`when`尚未到达时也可能触发。
+- `queueIdle()`运行在Looper绑定线程（主线程场景最常见），因此必须保证逻辑短小且可快速返回。
+- 返回`true`会持续驻留，若逻辑较重应改为一次性任务（返回`false`）或转移到后台线程。
+
+### View.post与Handler.post的核心差异
+
+- `Handler.post()`直接向目标`Looper`入队，调用时就需要明确线程归属。
+- `View.post()`在`View`未attach时会先缓存到`HandlerActionQueue`，attach后再切到`ViewRootHandler`执行。
+- 因为`dispatchAttachedToWindow()`发生在`performTraversals()`链路中，所以`onCreate()`里调用`View.post()`常常能拿到宽高。
+
+### 观察主线程消息分发的实践建议
+
+- `Looper.setMessageLogging(Printer)`适合定位“哪类消息执行过久”，可用于卡顿初筛。
+- 线上监控不建议长期打印完整日志，建议抽样、限频并做阈值上报，避免日志本身放大主线程负担。
+- 结合`what/callback/target`维度统计，通常比只看单次耗时更容易定位高频慢消息来源。
+
+### 版本差异与写法建议
+
+- Android R(API 30)起，无参`Handler()`被标记为`@Deprecated`，建议显式传入`Looper`。
+- 需要异步消息通道时，可使用`Handler.createAsync(...)`或`Message.setAsynchronous(true)`。
+- 在新项目里，`Handler`仍适合与系统消息循环深度交互的场景；纯业务异步任务可结合协程/线程池提升可维护性。
