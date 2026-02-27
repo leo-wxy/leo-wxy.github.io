@@ -56,7 +56,7 @@
 <meta property="og:image" content="https://leo-wxy.github.io/images/epoll-%E5%85%B6%E4%BB%96%E5%A4%9A%E8%B7%AF%E5%A4%8D%E7%94%A8%E6%9C%BA%E5%88%B6.png">
 <meta property="og:image" content="https://leo-wxy.github.io/images/Handler-%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F%E5%88%86%E6%9E%90.png">
 <meta property="article:published_time" content="2018-05-14T15:13:32.000Z">
-<meta property="article:modified_time" content="2026-02-25T14:05:57.699Z">
+<meta property="article:modified_time" content="2026-02-27T00:32:56.545Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="Android">
 <meta property="article:tag" content="源码解析">
@@ -255,7 +255,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          9.5k 字
+          9.3k 字
         
       </span>
     
@@ -267,7 +267,7 @@
         
         
           <!-- compatible with older versions-->
-          30 分钟
+          29 分钟
         
       </span>
     
@@ -344,6 +344,12 @@
 </ul>
 <h3 id="MessageQueue：消息队列"><a href="#MessageQueue：消息队列" class="headerlink" title="MessageQueue：消息队列"></a>MessageQueue：消息队列</h3><p>**内部实现并不是队列，而是利用单链表去实现因为在插入和删除数据有优势。**用于存储Handler发给来的消息(<code>Message</code>)以及取出。<code>内部使用单链表实现</code></p>
 <h3 id="Looper：消息循环"><a href="#Looper：消息循环" class="headerlink" title="Looper：消息循环"></a>Looper：消息循环</h3><p>与线程绑定，不止局限于主线程，绑定的线程来处理<code>Message</code>。不断循环执行<code>Looper.loop()</code>，从<code>MessageQueue</code>中读取<code>Message</code>，按分发机制将消息分发出去给目标处理(将<code>Message</code>发到<code>Handler.dispatchMessage</code>方法去处理)。</p>
+<p>补充：</p>
+<ul>
+<li><code>Looper</code>通过<code>ThreadLocal</code>与线程绑定，<code>Looper.myLooper()</code>拿到的是当前线程专属实例。</li>
+<li>一个线程最多只有一个<code>Looper</code>和一个<code>MessageQueue</code>，但可以创建多个<code>Handler</code>共享同一个队列。</li>
+<li>主线程<code>Looper</code>由<code>ActivityThread.main()</code>自动创建；子线程若要收发消息，通常使用<code>HandlerThread</code>而不是手写<code>prepare()/loop()</code>。</li>
+</ul>
 <h2 id="3-Handler运行流程"><a href="#3-Handler运行流程" class="headerlink" title="3. Handler运行流程"></a>3. Handler运行流程</h2><p><img src="/images/Handler%E5%9F%BA%E6%9C%AC%E5%8E%9F%E7%90%86" srcset="/img/loading.gif" lazyload alt="handler运行流程"> <img src="/images/Handler-%E8%BF%90%E8%A1%8C%E6%B5%81%E7%A8%8B.png" srcset="/img/loading.gif" lazyload alt="运行流程"></p>
 <p>工作流程：<strong>异步通信准备 &#x3D;&gt; 消息入队 &#x3D;&gt; 消息循环 &#x3D;&gt; 消息处理</strong></p>
 <ol>
@@ -378,6 +384,13 @@
 <li><p>在工作线程中创建自己的消息队列时必须要调用<code>Looper.prepare()</code>,并且<strong>在一个线程中只可以调用一次</strong>，然后需要调用<code>Looper.loop()</code>,开启消息循环。</p>
 <blockquote>
 <p>在开发过程中基本不会调用上述方法，因为默认会调用主线程的Looper，然后一个线程中只能有一个Looper对象和一个MessageQueue。</p>
+</blockquote>
+</li>
+<li><p>子线程消息处理建议优先使用<code>HandlerThread</code>模型</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-type">HandlerThread</span> <span class="hljs-variable">worker</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">HandlerThread</span>(<span class="hljs-string">&quot;io-worker&quot;</span>);<br>worker.start();<br><br><span class="hljs-type">Handler</span> <span class="hljs-variable">ioHandler</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">Handler</span>(worker.getLooper());<br>ioHandler.post(() -&gt; &#123;<br>    <span class="hljs-comment">// do background work</span><br>&#125;);<br><br><span class="hljs-comment">// 结束时建议优先使用quitSafely，允许已到期消息先执行完</span><br>worker.quitSafely();<br></code></pre></td></tr></table></figure>
+
+<blockquote>
+<p>要点：<code>getLooper()</code>必须在<code>start()</code>后调用；<code>quit()</code>会清空队列直接退出，<code>quitSafely()</code>会让已到期消息先执行再退出。</p>
 </blockquote>
 </li>
 </ol>
@@ -449,8 +462,8 @@
 <p>总结：</p>
 <ul>
 <li>发送消息时<code>Message.when</code>表示期望该消息被分发的时间即<code>SystemClock.uptimeMillis() + delayMillis</code>。<code>SystemClock.uptimeMillis</code>代表自系统开机到调用该方法的时间差。</li>
-<li><code>Message.when</code>利用时间差来表达期望事件分发的时间，所以使用的是一个相对时间。</li>
-<li>使用<code>sendMessageDelayed()</code>发送消息时，该消息会立即进入<code>MessageQueue</code>中，并标记<code>mBlocked</code>为true，阻塞线程。<code>MessageQueue</code>中是按照希望被分发时间排序的，时间越小排在越前。</li>
+<li><code>uptimeMillis</code>不包含深度休眠时间，所以“延时多久执行”是以<code>uptime</code>为基准，不是自然时钟时间。</li>
+<li>使用<code>sendMessageDelayed()</code>发送消息时，消息会先进入<code>MessageQueue</code>并按<code>when</code>有序排队，不会立即执行。</li>
 </ul>
 <h3 id="6-消息入队"><a href="#6-消息入队" class="headerlink" title="6.消息入队"></a><strong>6.消息入队</strong></h3><p><img src="/images/Handler-%E6%BA%90%E7%A0%816.png" srcset="/img/loading.gif" lazyload alt="消息入队"></p>
 <p>发送消息最后调用到的是<code>MessageQueue.enqueueMessage()</code>将发送的消息加入到<code>MessageQueue</code>中</p>
@@ -474,6 +487,11 @@
 
 <p><code>nativePollOnce()</code>：在当前无消息可执行的时候，阻塞等待，直到对应消息的触发时间。</p>
 <p>有可用消息时，直接返回可用消息。</p>
+<p>补充：</p>
+<ul>
+<li><code>MessageQueue.next()</code>在没有可执行消息时会走<code>nativePollOnce()</code>阻塞，属于事件驱动等待，不是CPU忙等循环。</li>
+<li>队头消息若<code>when</code>尚未到达，会计算<code>nextPollTimeoutMillis</code>并按该超时进入等待。</li>
+</ul>
 <h3 id="8-分发消息"><a href="#8-分发消息" class="headerlink" title="8.分发消息"></a><strong>8.分发消息</strong></h3><p><img src="/images/Handler-%E6%BA%90%E7%A0%818.png" srcset="/img/loading.gif" lazyload alt="分发消息"></p>
 <blockquote>
 <p>分发消息到对应的Handler实例并根据传入的Message做对应的操作</p>
@@ -538,6 +556,11 @@
 <h4 id="添加同步屏障"><a href="#添加同步屏障" class="headerlink" title="添加同步屏障"></a>添加同步屏障</h4><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">//MessageQueue.java</span><br>    <span class="hljs-keyword">public</span> <span class="hljs-type">int</span> <span class="hljs-title function_">postSyncBarrier</span><span class="hljs-params">()</span> &#123;<br>        <span class="hljs-keyword">return</span> postSyncBarrier(SystemClock.uptimeMillis());<br>    &#125;<br><br>    <span class="hljs-keyword">private</span> <span class="hljs-type">int</span> <span class="hljs-title function_">postSyncBarrier</span><span class="hljs-params">(<span class="hljs-type">long</span> <span class="hljs-keyword">when</span>)</span> &#123;<br>        <span class="hljs-comment">// Enqueue a new sync barrier token.</span><br>        <span class="hljs-comment">// We don&#x27;t need to wake the queue because the purpose of a barrier is to stall it.</span><br>        <span class="hljs-keyword">synchronized</span> (<span class="hljs-built_in">this</span>) &#123;<br>            <span class="hljs-keyword">final</span> <span class="hljs-type">int</span> <span class="hljs-variable">token</span> <span class="hljs-operator">=</span> mNextBarrierToken++;<br>            <span class="hljs-comment">//没有赋值target，后面需要通过判断target == null，判断是否为同步屏障消息</span><br>            <span class="hljs-keyword">final</span> <span class="hljs-type">Message</span> <span class="hljs-variable">msg</span> <span class="hljs-operator">=</span> Message.obtain();<br>            msg.markInUse();<br>            msg.<span class="hljs-keyword">when</span> = <span class="hljs-keyword">when</span>;<br>            msg.arg1 = token;<br><br>            <span class="hljs-type">Message</span> <span class="hljs-variable">prev</span> <span class="hljs-operator">=</span> <span class="hljs-literal">null</span>;<br>            <span class="hljs-type">Message</span> <span class="hljs-variable">p</span> <span class="hljs-operator">=</span> mMessages;<span class="hljs-comment">//mMessages 是 队头消息</span><br>            <span class="hljs-keyword">if</span> (<span class="hljs-keyword">when</span> != <span class="hljs-number">0</span>) &#123;<br>                <span class="hljs-keyword">while</span> (p != <span class="hljs-literal">null</span> &amp;&amp; p.<span class="hljs-keyword">when</span> &lt;= <span class="hljs-keyword">when</span>) &#123;<br>                    prev = p;<br>                    p = p.next;<br>                &#125;<br>            &#125;<br>            <span class="hljs-comment">//插入同步屏障</span><br>            <span class="hljs-keyword">if</span> (prev != <span class="hljs-literal">null</span>) &#123; <span class="hljs-comment">// invariant: p == prev.next</span><br>                msg.next = p;<br>                prev.next = msg;<br>            &#125; <span class="hljs-keyword">else</span> &#123;<br>                msg.next = p;<br>                mMessages = msg;<br>            &#125;<br>            <span class="hljs-keyword">return</span> token;<span class="hljs-comment">//用来取消同步屏障</span><br>        &#125;<br>    &#125;<br></code></pre></td></tr></table></figure>
 
 <p><code>同步屏障</code>也是消息的一种，特殊之处在于<code>target==null</code>。<code>target</code>表示了<code>消息需要分发的对象</code>，而<code>同步屏障</code>不需要被分发。而且不会唤醒<code>消息队列</code>。</p>
+<p>补充：</p>
+<ul>
+<li><code>ViewRootImpl</code>在<code>scheduleTraversals()</code>中会配合<code>Choreographer</code>使用同步屏障，让<code>vsync</code>相关异步消息优先执行。</li>
+<li>屏障必须成对移除；若长期不移除，普通同步消息会持续饥饿，表现为主线程任务堆积。</li>
+</ul>
 <p>上面有说到<a href="#7-%E8%8E%B7%E5%8F%96%E6%B6%88%E6%81%AF">获取消息</a>通过<code>MessageQueue.next()</code></p>
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">//MessageQueue.java</span><br>Message <span class="hljs-title function_">next</span><span class="hljs-params">()</span> &#123;<br>        <span class="hljs-comment">// Return here if the message loop has already quit and been disposed.</span><br>        <span class="hljs-comment">// This can happen if the application tries to restart a looper after quit</span><br>        <span class="hljs-comment">// which is not supported.</span><br>        <span class="hljs-keyword">final</span> <span class="hljs-type">long</span> <span class="hljs-variable">ptr</span> <span class="hljs-operator">=</span> mPtr;<br>        <span class="hljs-keyword">if</span> (ptr == <span class="hljs-number">0</span>) &#123;<br>            <span class="hljs-keyword">return</span> <span class="hljs-literal">null</span>;<br>        &#125;<br><br>        <span class="hljs-type">int</span> <span class="hljs-variable">pendingIdleHandlerCount</span> <span class="hljs-operator">=</span> -<span class="hljs-number">1</span>; <span class="hljs-comment">// -1 only during first iteration</span><br>        <span class="hljs-type">int</span> <span class="hljs-variable">nextPollTimeoutMillis</span> <span class="hljs-operator">=</span> <span class="hljs-number">0</span>;<br>        <span class="hljs-keyword">for</span> (;;) &#123;<br>            <span class="hljs-keyword">if</span> (nextPollTimeoutMillis != <span class="hljs-number">0</span>) &#123;<br>                Binder.flushPendingCommands();<br>            &#125;<br>            <span class="hljs-comment">//唤醒队列</span><br>            nativePollOnce(ptr, nextPollTimeoutMillis);<br><br>            <span class="hljs-keyword">synchronized</span> (<span class="hljs-built_in">this</span>) &#123;<br>                <span class="hljs-comment">// Try to retrieve the next message.  Return if found.</span><br>                <span class="hljs-keyword">final</span> <span class="hljs-type">long</span> <span class="hljs-variable">now</span> <span class="hljs-operator">=</span> SystemClock.uptimeMillis();<br>                <span class="hljs-type">Message</span> <span class="hljs-variable">prevMsg</span> <span class="hljs-operator">=</span> <span class="hljs-literal">null</span>;<br>                <span class="hljs-type">Message</span> <span class="hljs-variable">msg</span> <span class="hljs-operator">=</span> mMessages;<br>                <span class="hljs-keyword">if</span> (msg != <span class="hljs-literal">null</span> &amp;&amp; msg.target == <span class="hljs-literal">null</span>) &#123;<br>                    <span class="hljs-comment">//同步屏障，找到下一个 异步消息</span><br>                    <span class="hljs-comment">// Stalled by a barrier.  Find the next asynchronous message in the queue.</span><br>                    <span class="hljs-keyword">do</span> &#123;<br>                        prevMsg = msg;<br>                        msg = msg.next;<br>                    &#125; <span class="hljs-keyword">while</span> (msg != <span class="hljs-literal">null</span> &amp;&amp; !msg.isAsynchronous());<br>                &#125;<br>                <span class="hljs-keyword">if</span> (msg != <span class="hljs-literal">null</span>) &#123;<br>                    <span class="hljs-keyword">if</span> (now &lt; msg.<span class="hljs-keyword">when</span>) &#123;<br>                        <span class="hljs-comment">// Next message is not ready.  Set a timeout to wake up when it is ready.</span><br>                        nextPollTimeoutMillis = (<span class="hljs-type">int</span>) Math.min(msg.<span class="hljs-keyword">when</span> - now, Integer.MAX_VALUE);<br>                    &#125; <span class="hljs-keyword">else</span> &#123;<br>                        <span class="hljs-comment">// Got a message.</span><br>                        mBlocked = <span class="hljs-literal">false</span>;<br>                        <span class="hljs-keyword">if</span> (prevMsg != <span class="hljs-literal">null</span>) &#123;<br>                          <span class="hljs-comment">//取出异步消息</span><br>                            prevMsg.next = msg.next;<br>                        &#125; <span class="hljs-keyword">else</span> &#123;<br>                            mMessages = msg.next;<br>                        &#125;<br>                        msg.next = <span class="hljs-literal">null</span>;<br>                        <span class="hljs-keyword">if</span> (DEBUG) Log.v(TAG, <span class="hljs-string">&quot;Returning message: &quot;</span> + msg);<br>                        msg.markInUse();<br>                        <span class="hljs-keyword">return</span> msg;<br>                    &#125;<br>                &#125; <span class="hljs-keyword">else</span> &#123;<br>                    <span class="hljs-comment">// No more messages.</span><br>                    nextPollTimeoutMillis = -<span class="hljs-number">1</span>;<br>                &#125;<br><br>                <span class="hljs-comment">// Process the quit message now that all pending messages have been handled.</span><br>                <span class="hljs-keyword">if</span> (mQuitting) &#123;<br>                    dispose();<br>                    <span class="hljs-keyword">return</span> <span class="hljs-literal">null</span>;<br>                &#125;<br>               ...<br>            &#125;<br>           ...<br>        &#125;<br>    &#125;<br></code></pre></td></tr></table></figure>
 
@@ -555,6 +578,12 @@
 <p>主线程间的消息循环模型：</p>
 </blockquote>
 <p><code>ActivityThread</code>通过<code>ApplicationThread</code>和<code>AMS(ActivityManagerService)</code>进行进程间通信，<code>AMS</code>以进程间通信的方式完成<code>ActivityThread</code>的请求后回调<code>ApplicationThread</code>中的<code>Binder()</code>，然后<code>ApplicationThread</code>向<code>ActivityThread.H</code>发送消息，<code>H</code>收到消息后会把<code>ApplicationThread</code>中的逻辑切换到<code>ActivityThread</code>中去执行，这时就切换到了主线程。</p>
+<p>补充：<code>MessageQueue.IdleHandler</code>会在队列“暂时空闲”时执行，常见触发有两种：</p>
+<ol>
+<li>队列完全没有消息。</li>
+<li>队头消息存在但<code>when</code>尚未到达，线程进入等待前会先跑一轮<code>IdleHandler</code>。</li>
+</ol>
+<p><code>IdleHandler</code>适合轻量级延后初始化，不适合重任务。</p>
 <h2 id="8-Native层分析"><a href="#8-Native层分析" class="headerlink" title="8. Native层分析"></a>8. Native层分析</h2><p>在一个常见的面试题<code>为什么Looper死循环不会导致应用卡死</code>中，一般会回答<code>内部采用epoll机制，当没有消息时就会进入休眠状态，直到新消息到来时，通过epoll唤醒主线程继续执行消息。</code></p>
 <p>上述的回答就需要涉及到<code>Handler</code>在<code>Native</code>层的实现，包括<code>阻塞等待、唤醒，epoll机制</code>相关。</p>
 <h3 id="MessageQueue的Native实现"><a href="#MessageQueue的Native实现" class="headerlink" title="MessageQueue的Native实现"></a>MessageQueue的Native实现</h3><p><code>Message(消息)</code>的处理都是位于<code>MessageQueue(消息队列)</code>中。</p>
@@ -774,7 +803,7 @@
 <p><code>select</code>和<code>poll</code>效率相对较低的原因就在于<code>需要轮询</code>。</p>
 </blockquote>
 <h2 id="10-Handler内存泄漏原因"><a href="#10-Handler内存泄漏原因" class="headerlink" title="10. Handler内存泄漏原因"></a>10. Handler内存泄漏原因</h2><blockquote>
-<p>持有类静态对象<code>sThreadLocal</code>导致无法释放。</p>
+<p>更准确地说，风险通常来自<code>MessageQueue</code>中的延迟消息持有<code>Handler</code>，<code>Handler</code>再间接持有<code>Activity/Fragment</code>引用。</p>
 </blockquote>
 <p><img src="/images/Handler-%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F%E5%88%86%E6%9E%90.png" srcset="/img/loading.gif" lazyload alt="Handler-内存泄漏分析"></p>
 <p><strong>匿名内部类默认会持有外部对象</strong></p>
@@ -791,11 +820,8 @@
 <li>方法区中 常量引用的对象</li>
 </ul>
 </blockquote>
-<p><code>handler</code>持有<code>Activity</code>的引用，</p>
-<p>当有消息尚未处理时，此时<code>Message</code>持有<code>MessageQueue</code>的引用</p>
-<p><code>MessageQueue</code>持有<code>Looper</code>的引用——<code>Looper.myLooper()</code></p>
-<p><code>Looper</code>持有<code>sThreadLocal</code>的引用——<code>sThreadLocal.get()</code></p>
-<p>综上所述，导致内存泄漏的<code>GCRoots</code>对象为<code>sThreadLocal</code>。</p>
+<p>当有延迟消息尚未处理时，<code>Message.target(Handler)</code>会让外部页面对象继续被间接引用，页面销毁后也可能无法及时回收。</p>
+<p><code>sThreadLocal</code>是线程与<code>Looper</code>的绑定容器，但通常不是“匿名Handler泄漏”的直接根因。</p>
 <p>错误的写法:</p>
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> <span class="hljs-type">Handler</span> <span class="hljs-variable">mHandler</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">Handler</span>()&#123;        <br>    <span class="hljs-meta">@Override</span><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">handleMessage</span><span class="hljs-params">(Message msg)</span> &#123;            <br>        <span class="hljs-built_in">super</span>.handleMessage(msg);<br>       &#125;<br>    &#125;;<br><br></code></pre></td></tr></table></figure>
 
@@ -815,49 +841,6 @@
 
 <h2 id="11-其他Tip"><a href="#11-其他Tip" class="headerlink" title="11. 其他Tip"></a>11. 其他Tip</h2><h3 id="Handler的同步方法-runWithScissors"><a href="#Handler的同步方法-runWithScissors" class="headerlink" title="Handler的同步方法(runWithScissors())"></a>Handler的同步方法(<code>runWithScissors()</code>)</h3><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">//Handler.java</span><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> <span class="hljs-type">boolean</span> <span class="hljs-title function_">runWithScissors</span><span class="hljs-params">(<span class="hljs-keyword">final</span> Runnable r, <span class="hljs-type">long</span> timeout)</span> &#123;<br>        <span class="hljs-keyword">if</span> (r == <span class="hljs-literal">null</span>) &#123;<br>            <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">IllegalArgumentException</span>(<span class="hljs-string">&quot;runnable must not be null&quot;</span>);<br>        &#125;<br>        <span class="hljs-keyword">if</span> (timeout &lt; <span class="hljs-number">0</span>) &#123;<br>            <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">IllegalArgumentException</span>(<span class="hljs-string">&quot;timeout must be non-negative&quot;</span>);<br>        &#125;<br><br>        <span class="hljs-keyword">if</span> (Looper.myLooper() == mLooper) &#123;<br>            r.run();<br>            <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;<br>        &#125;<br><br>      <span class="hljs-comment">//等待任务执行完毕 再返回</span><br>        <span class="hljs-type">BlockingRunnable</span> <span class="hljs-variable">br</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">BlockingRunnable</span>(r);<br>        <span class="hljs-keyword">return</span> br.postAndWait(<span class="hljs-built_in">this</span>, timeout);<br>    &#125;<br></code></pre></td></tr></table></figure>
 
-<h2 id="12-知识点补全"><a href="#12-知识点补全" class="headerlink" title="12. 知识点补全"></a>12. 知识点补全</h2><h3 id="线程与Looper的绑定关系"><a href="#线程与Looper的绑定关系" class="headerlink" title="线程与Looper的绑定关系"></a>线程与Looper的绑定关系</h3><ul>
-<li><code>Looper</code>通过<code>ThreadLocal</code>与线程绑定，<code>Looper.myLooper()</code>拿到的是<code>当前线程</code>专属实例。</li>
-<li>一个线程最多只有一个<code>Looper</code>和一个<code>MessageQueue</code>，但可以创建多个<code>Handler</code>共享同一个队列。</li>
-<li>主线程<code>Looper</code>由<code>ActivityThread.main()</code>自动创建；子线程若要收发消息，通常使用<code>HandlerThread</code>而不是手写<code>prepare()/loop()</code>。</li>
-</ul>
-<h3 id="消息时间基准与阻塞语义"><a href="#消息时间基准与阻塞语义" class="headerlink" title="消息时间基准与阻塞语义"></a>消息时间基准与阻塞语义</h3><ul>
-<li><code>Message.when</code>基于<code>SystemClock.uptimeMillis()</code>，表示“期望被分发时间点”。</li>
-<li><code>uptimeMillis</code>不包含深度休眠时间，所以“延时多久执行”是以<code>uptime</code>为基准，不是自然时钟时间。</li>
-<li><code>MessageQueue.next()</code>在没有可执行消息时会走<code>nativePollOnce()</code>阻塞，属于事件驱动等待，不是CPU忙等循环。</li>
-</ul>
-<h3 id="IdleHandler触发时机"><a href="#IdleHandler触发时机" class="headerlink" title="IdleHandler触发时机"></a>IdleHandler触发时机</h3><p><code>MessageQueue.IdleHandler</code>会在队列“暂时空闲”时被执行，常见有两种情况：</p>
-<ol>
-<li>队列完全没有消息。</li>
-<li>队头消息存在，但<code>when</code>还没到，当前线程会进入等待前先跑一轮<code>IdleHandler</code>。</li>
-</ol>
-<p>它适合做轻量级延后初始化，不适合做重任务，否则会挤占主线程时间片。</p>
-<h3 id="dispatchMessage优先级再确认"><a href="#dispatchMessage优先级再确认" class="headerlink" title="dispatchMessage优先级再确认"></a>dispatchMessage优先级再确认</h3><p><code>Handler.dispatchMessage()</code>的处理顺序是固定的：</p>
-<ol>
-<li><code>msg.callback != null</code>时，执行<code>message.callback.run()</code>（<code>post(Runnable)</code>路径）。</li>
-<li>否则如果<code>mCallback != null</code>且返回<code>true</code>，消息被拦截，不再向下分发。</li>
-<li>最后才走<code>handleMessage(msg)</code>。</li>
-</ol>
-<p>因此同一个<code>Handler</code>里，<code>Callback</code>可以作为“前置拦截层”。</p>
-<h3 id="同步屏障与Choreographer链路"><a href="#同步屏障与Choreographer链路" class="headerlink" title="同步屏障与Choreographer链路"></a>同步屏障与Choreographer链路</h3><ul>
-<li>同步屏障消息的特征是<code>target == null</code>，它不会被分发，只用于“阻塞同步消息”。</li>
-<li><code>ViewRootImpl</code>在<code>scheduleTraversals()</code>中会配合<code>Choreographer</code>使用同步屏障，让<code>vsync</code>相关异步消息优先执行。</li>
-<li>屏障必须成对移除；如果长期不移除，普通同步消息会持续饥饿，表现为主线程任务堆积。</li>
-</ul>
-<h3 id="HandlerThread使用模型"><a href="#HandlerThread使用模型" class="headerlink" title="HandlerThread使用模型"></a>HandlerThread使用模型</h3><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-type">HandlerThread</span> <span class="hljs-variable">worker</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">HandlerThread</span>(<span class="hljs-string">&quot;io-worker&quot;</span>);<br>worker.start();<br><br><span class="hljs-type">Handler</span> <span class="hljs-variable">ioHandler</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">Handler</span>(worker.getLooper());<br>ioHandler.post(() -&gt; &#123;<br>    <span class="hljs-comment">// do background work</span><br>&#125;);<br><br><span class="hljs-comment">// 结束时建议优先使用quitSafely，允许已到期消息先执行完</span><br>worker.quitSafely();<br></code></pre></td></tr></table></figure>
-
-<p>要点：</p>
-<ul>
-<li><code>getLooper()</code>必须在<code>start()</code>后调用。</li>
-<li><code>quit()</code>会清空队列直接退出；<code>quitSafely()</code>会让已到期消息先执行，再退出。</li>
-</ul>
-<h3 id="内存泄漏表述补充"><a href="#内存泄漏表述补充" class="headerlink" title="内存泄漏表述补充"></a>内存泄漏表述补充</h3><p>更准确的风险点是：<code>MessageQueue</code>里存在延迟消息时，<code>Message.target(Handler)</code>会间接持有外部<code>Activity/Fragment</code>，导致页面销毁后仍被引用。</p>
-<p><code>sThreadLocal</code>是线程与<code>Looper</code>的绑定容器，但通常不是“匿名Handler泄漏”的直接根因。</p>
-<p>规避建议：</p>
-<ul>
-<li>避免在<code>Activity</code>中使用匿名非静态<code>Handler</code>长期持有页面引用。</li>
-<li>使用静态内部类 + <code>WeakReference</code>。</li>
-<li>在<code>onDestroy()</code>调用<code>removeCallbacksAndMessages(null)</code>清理未处理任务。</li>
-</ul>
 <h3 id="版本差异速览"><a href="#版本差异速览" class="headerlink" title="版本差异速览"></a>版本差异速览</h3><ul>
 <li>Android P(API 28)开始提供<code>Handler.createAsync(...)</code>，可方便创建异步<code>Handler</code>。</li>
 <li>Android R(API 30)起，无参<code>Handler()</code>构造方法被标记为<code>@Deprecated</code>，建议显式传入<code>Looper</code>，避免线程绑定歧义。</li>
