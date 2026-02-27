@@ -314,7 +314,46 @@ class Solution {
 复杂度：
 
 ```java
-// TODO
+public List<List<Integer>> threeSum(int[] nums) {
+        List<List<Integer>> result = new ArrayList<>();
+        int n = nums.length;
+        Arrays.sort(nums);
+
+        for (int i = 0; i < n - 2; i++) {
+
+            int x = nums[i];
+
+            if (i > 0 && x == nums[i - 1]) {
+                continue;
+            }
+            if (x + nums[i + 1] + nums[i + 2] > 0) {
+                break;
+            }
+            if (x + nums[n - 1] + nums[n - 2] < 0) {
+                continue;
+            }
+
+            int left = i + 1;
+            int right = n - 1;
+
+            while (left < right) {
+                int s = x + nums[left] + nums[right];
+                if (s == 0) {
+                    if (left == i + 1 || nums[left] != nums[left - 1]) {
+                        result.add(List.of(nums[i], nums[left], nums[right]));
+                    }
+                    left++;
+                    right--;
+                } else if (s > 0) {
+                    right--;
+                } else {
+                    left++;
+                }
+            }
+        }
+
+        return result;
+    }
 ```
 
 <a id='lc75'></a>
@@ -327,7 +366,24 @@ class Solution {
 复杂度：
 
 ```java
-// TODO
+class Solution {
+    public void sortColors(int[] nums) {
+        int redHi = 0, whiteHi = 0, blueHi = 0;
+        int n = nums.length;
+        for (int i = 0; i < n; i++) {
+            if (nums[i] == 0) {
+                nums[blueHi++] = 2;
+                nums[whiteHi++] = 1;
+                nums[redHi++] = 0;
+            } else if (nums[i] == 1) {
+                nums[blueHi++] = 2;
+                nums[whiteHi++] = 1;
+            } else {
+                nums[blueHi++] = 2;
+            }
+        }
+    }
+}
 ```
 
 <a id='lc283'></a>

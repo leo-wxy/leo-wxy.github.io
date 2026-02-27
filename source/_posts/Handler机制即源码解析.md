@@ -54,6 +54,12 @@ typora-root-url: ../
 
 与线程绑定，不止局限于主线程，绑定的线程来处理`Message`。不断循环执行`Looper.loop()`，从`MessageQueue`中读取`Message`，按分发机制将消息分发出去给目标处理(将`Message`发到`Handler.dispatchMessage`方法去处理)。
 
+补充：
+
+- `Looper`通过`ThreadLocal`与线程绑定，`Looper.myLooper()`拿到的是当前线程专属实例。
+- 一个线程最多只有一个`Looper`和一个`MessageQueue`，但可以创建多个`Handler`共享同一个队列。
+- 主线程`Looper`由`ActivityThread.main()`自动创建；子线程若要收发消息，通常使用`HandlerThread`而不是手写`prepare()/loop()`。
+
 ## 3. Handler运行流程
 
 ![handler运行流程](/images/Handler基本原理) ![运行流程](/images/Handler-运行流程.png)
@@ -88,6 +94,23 @@ typora-root-url: ../
 1. 在工作线程中创建自己的消息队列时必须要调用`Looper.prepare()`,并且**在一个线程中只可以调用一次**，然后需要调用`Looper.loop()`,开启消息循环。
 
    > 在开发过程中基本不会调用上述方法，因为默认会调用主线程的Looper，然后一个线程中只能有一个Looper对象和一个MessageQueue。
+
+2. 子线程消息处理建议优先使用`HandlerThread`模型
+
+   ```java
+   HandlerThread worker = new HandlerThread("io-worker");
+   worker.start();
+
+   Handler ioHandler = new Handler(worker.getLooper());
+   ioHandler.post(() -> {
+       // do background work
+   });
+
+   // 结束时建议优先使用quitSafely，允许已到期消息先执行完
+   worker.quitSafely();
+   ```
+
+   > 要点：`getLooper()`必须在`start()`后调用；`quit()`会清空队列直接退出，`quitSafely()`会让已到期消息先执行再退出。
 
 
 ## 5. Handler源码解析
@@ -402,8 +425,8 @@ private boolean enqueueMessage(MessageQueue queue, Message msg, long uptimeMilli
 总结：
 
 - 发送消息时`Message.when`表示期望该消息被分发的时间即`SystemClock.uptimeMillis() + delayMillis`。`SystemClock.uptimeMillis`代表自系统开机到调用该方法的时间差。
-- `Message.when`利用时间差来表达期望事件分发的时间，所以使用的是一个相对时间。
-- 使用`sendMessageDelayed()`发送消息时，该消息会立即进入`MessageQueue`中，并标记`mBlocked`为true，阻塞线程。`MessageQueue`中是按照希望被分发时间排序的，时间越小排在越前。
+- `uptimeMillis`不包含深度休眠时间，所以“延时多久执行”是以`uptime`为基准，不是自然时钟时间。
+- 使用`sendMessageDelayed()`发送消息时，消息会先进入`MessageQueue`并按`when`有序排队，不会立即执行。
 
 ### **6.消息入队**
 
@@ -534,6 +557,11 @@ Message next(){
 `nativePollOnce()`：在当前无消息可执行的时候，阻塞等待，直到对应消息的触发时间。
 
 有可用消息时，直接返回可用消息。
+
+补充：
+
+- `MessageQueue.next()`在没有可执行消息时会走`nativePollOnce()`阻塞，属于事件驱动等待，不是CPU忙等循环。
+- 队头消息若`when`尚未到达，会计算`nextPollTimeoutMillis`并按该超时进入等待。
 
 
 
@@ -862,6 +890,11 @@ private void removeAllFutureMessagesLocked() {
 
 `同步屏障`也是消息的一种，特殊之处在于`target==null`。`target`表示了`消息需要分发的对象`，而`同步屏障`不需要被分发。而且不会唤醒`消息队列`。
 
+补充：
+
+- `ViewRootImpl`在`scheduleTraversals()`中会配合`Choreographer`使用同步屏障，让`vsync`相关异步消息优先执行。
+- 屏障必须成对移除；若长期不移除，普通同步消息会持续饥饿，表现为主线程任务堆积。
+
 
 
 上面有说到[获取消息](#7-获取消息)通过`MessageQueue.next()`
@@ -1022,6 +1055,13 @@ public static void main(String[] args) {
 > 主线程间的消息循环模型：
 
 `ActivityThread`通过`ApplicationThread`和`AMS(ActivityManagerService)`进行进程间通信，`AMS`以进程间通信的方式完成`ActivityThread`的请求后回调`ApplicationThread`中的`Binder()`，然后`ApplicationThread`向`ActivityThread.H`发送消息，`H`收到消息后会把`ApplicationThread`中的逻辑切换到`ActivityThread`中去执行，这时就切换到了主线程。
+
+补充：`MessageQueue.IdleHandler`会在队列“暂时空闲”时执行，常见触发有两种：
+
+1. 队列完全没有消息。
+2. 队头消息存在但`when`尚未到达，线程进入等待前会先跑一轮`IdleHandler`。
+
+`IdleHandler`适合轻量级延后初始化，不适合重任务。
 
 
 
@@ -1712,7 +1752,7 @@ Java层获取消息时，调用到`MessageQueue.next()`，继续调用到`native
 
 ## 10. Handler内存泄漏原因
 
-> 持有类静态对象`sThreadLocal`导致无法释放。
+> 更准确地说，风险通常来自`MessageQueue`中的延迟消息持有`Handler`，`Handler`再间接持有`Activity/Fragment`引用。
 
 ![Handler-内存泄漏分析](/images/Handler-内存泄漏分析.png)
 
@@ -1744,15 +1784,9 @@ class MainActivity extends Activity{
 
 
 
-`handler`持有`Activity`的引用，
+当有延迟消息尚未处理时，`Message.target(Handler)`会让外部页面对象继续被间接引用，页面销毁后也可能无法及时回收。
 
-当有消息尚未处理时，此时`Message`持有`MessageQueue`的引用
-
-`MessageQueue`持有`Looper`的引用——`Looper.myLooper()`
-
-`Looper`持有`sThreadLocal`的引用——`sThreadLocal.get()`
-
-综上所述，导致内存泄漏的`GCRoots`对象为`sThreadLocal`。
+`sThreadLocal`是线程与`Looper`的绑定容器，但通常不是“匿名Handler泄漏”的直接根因。
 
 
 
@@ -1828,88 +1862,11 @@ private MyHandler mHandler = new MyHandler(this);
     }
 ```
 
-## 12. 知识点补全
-
-### 线程与Looper的绑定关系
-
-- `Looper`通过`ThreadLocal`与线程绑定，`Looper.myLooper()`拿到的是`当前线程`专属实例。
-- 一个线程最多只有一个`Looper`和一个`MessageQueue`，但可以创建多个`Handler`共享同一个队列。
-- 主线程`Looper`由`ActivityThread.main()`自动创建；子线程若要收发消息，通常使用`HandlerThread`而不是手写`prepare()/loop()`。
-
-### 消息时间基准与阻塞语义
-
-- `Message.when`基于`SystemClock.uptimeMillis()`，表示“期望被分发时间点”。
-- `uptimeMillis`不包含深度休眠时间，所以“延时多久执行”是以`uptime`为基准，不是自然时钟时间。
-- `MessageQueue.next()`在没有可执行消息时会走`nativePollOnce()`阻塞，属于事件驱动等待，不是CPU忙等循环。
-
-### IdleHandler触发时机
-
-`MessageQueue.IdleHandler`会在队列“暂时空闲”时被执行，常见有两种情况：
-
-1. 队列完全没有消息。
-2. 队头消息存在，但`when`还没到，当前线程会进入等待前先跑一轮`IdleHandler`。
-
-它适合做轻量级延后初始化，不适合做重任务，否则会挤占主线程时间片。
-
-### dispatchMessage优先级再确认
-
-`Handler.dispatchMessage()`的处理顺序是固定的：
-
-1. `msg.callback != null`时，执行`message.callback.run()`（`post(Runnable)`路径）。
-2. 否则如果`mCallback != null`且返回`true`，消息被拦截，不再向下分发。
-3. 最后才走`handleMessage(msg)`。
-
-因此同一个`Handler`里，`Callback`可以作为“前置拦截层”。
-
-### 同步屏障与Choreographer链路
-
-- 同步屏障消息的特征是`target == null`，它不会被分发，只用于“阻塞同步消息”。
-- `ViewRootImpl`在`scheduleTraversals()`中会配合`Choreographer`使用同步屏障，让`vsync`相关异步消息优先执行。
-- 屏障必须成对移除；如果长期不移除，普通同步消息会持续饥饿，表现为主线程任务堆积。
-
-### HandlerThread使用模型
-
-```java
-HandlerThread worker = new HandlerThread("io-worker");
-worker.start();
-
-Handler ioHandler = new Handler(worker.getLooper());
-ioHandler.post(() -> {
-    // do background work
-});
-
-// 结束时建议优先使用quitSafely，允许已到期消息先执行完
-worker.quitSafely();
-```
-
-要点：
-
-- `getLooper()`必须在`start()`后调用。
-- `quit()`会清空队列直接退出；`quitSafely()`会让已到期消息先执行，再退出。
-
-### 内存泄漏表述补充
-
-更准确的风险点是：`MessageQueue`里存在延迟消息时，`Message.target(Handler)`会间接持有外部`Activity/Fragment`，导致页面销毁后仍被引用。
-
-`sThreadLocal`是线程与`Looper`的绑定容器，但通常不是“匿名Handler泄漏”的直接根因。
-
-规避建议：
-
-- 避免在`Activity`中使用匿名非静态`Handler`长期持有页面引用。
-- 使用静态内部类 + `WeakReference`。
-- 在`onDestroy()`调用`removeCallbacksAndMessages(null)`清理未处理任务。
-
 ### 版本差异速览
 
 - Android P(API 28)开始提供`Handler.createAsync(...)`，可方便创建异步`Handler`。
 - Android R(API 30)起，无参`Handler()`构造方法被标记为`@Deprecated`，建议显式传入`Looper`，避免线程绑定歧义。
 - 新版本系统更强调“显式线程归属”，写法上推荐`new Handler(Looper.getMainLooper())`或基于`HandlerThread`创建。
-
-
-
-
-
-
 
 ## 参考链接
 

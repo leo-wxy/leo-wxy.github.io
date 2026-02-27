@@ -28,6 +28,12 @@ top: 10
 
 > 一秒内屏幕刷新的次数也即显示了多少帧的图像，单位`Hz`。一般都是60Hz。*该值取决于屏幕参数*
 
+补充：一帧预算并不是固定`16.6ms`。
+
+- 60Hz设备约`16.6ms`/帧。
+- 90Hz设备约`11.1ms`/帧。
+- 120Hz设备约`8.3ms`/帧。
+
 ### 逐行扫描
 
 > 屏幕不是一次性进行画面显示，而是从左到右，从上到下的进行`逐行扫描`。
@@ -90,9 +96,9 @@ top: 10
 
 
 
-### Project Buffer(黄油计划)
+### Project Butter(黄油计划)
 
-前面提到的`VSYnc`、`双缓冲/三缓冲`都是`Project Buffer`的关键点，还有下面提到的`Choreographer`.
+前面提到的`VSync`、`双缓冲/三缓冲`都是`Project Butter`的关键点，还有下面提到的`Choreographer`。
 
 - 核心关键：**VSync**实现定时中断
 - `双缓冲/三缓冲`：一般情况下`双缓冲`足矣，当出现`jank`时，可以添加一块`Graphic Buffer`缓冲区，实现`三缓冲`
@@ -107,6 +113,11 @@ top: 10
 > Android4.1 之后加入的`Choreographer`控制`Input输入`、`Animation动画`，`Draw绘制`三个UI操作。
 >
 > 每隔16.6ms，`VSync`信号到来时，马上开始下一帧的渲染，**CPU和GPU立即开始计算把数据写入Buffer中。**
+
+同一帧内，`Choreographer`的典型回调顺序是：
+
+- `CALLBACK_INPUT -> CALLBACK_ANIMATION -> CALLBACK_TRAVERSAL -> CALLBACK_COMMIT`
+- `requestLayout()/invalidate()`最终会汇聚到`CALLBACK_TRAVERSAL`阶段执行`performTraversals()`。
 
 
 
@@ -1361,6 +1372,12 @@ void NativeDisplayEventReceiver::dispatchVsync(nsecs_t timestamp, PhysicalDispla
 
 上面讲到的都是从`SurfaceFlinger`去监听到`Vsync`信号，但是`SurfaceFlinger`的Vsync信号又是从哪里来的？
 
+补充：排查刷新卡顿时要同时看`App侧`与`SurfaceFlinger侧`。
+
+- 应用侧主要看UI线程、RenderThread是否按帧产出内容。
+- 合成侧主要看SurfaceFlinger是否按时完成合成与提交。
+- 两侧任一环节超时，都可能导致最终Jank。
+
 {% post_link Android-SurfaceFlinger解析 %}
 
 
@@ -1380,6 +1397,12 @@ void NativeDisplayEventReceiver::dispatchVsync(nsecs_t timestamp, PhysicalDispla
 ![总结](/images/View屏幕刷新-总结.png)
 
 **丢帧**：这一帧的内容延迟显示，因为只有收到`VSync信号`才会进行Buffer交换。主要原因一般都是：**布局层级较多或主线程耗时导致CPU/GPU执行时间变长，超出`16.6ms`就会导致丢帧**。
+
+常见Jank类型可以快速分为：
+
+- App Deadline Missed：应用侧（UI/RenderThread）来不及产出帧。
+- SurfaceFlinger Deadline Missed：合成侧负载过高。
+- Buffer Stuffing：生产速度超过消费速度，队列堆积导致延迟上升。
 
 一般屏幕的固定刷新率是`60Hz`，换算就是`60帧`，即每`16.6ms`切换一帧。
 
@@ -1419,6 +1442,16 @@ void NativeDisplayEventReceiver::dispatchVsync(nsecs_t timestamp, PhysicalDispla
 2. `Choreographer.CALLBACK_INPUT`使用场景？
 
    {%post_link Android-事件分发机制%}
+
+3. 什么时候用`postInvalidateOnAnimation()`？
+
+   连续动画刷新场景优先`postInvalidateOnAnimation()`，可更好对齐下一帧调度。普通一次性重绘使用`invalidate()`即可。
+
+4. 常用排查工具
+
+   - `adb shell dumpsys gfxinfo <package> framestats`：看帧耗时分布。
+   - Perfetto / System Trace：同时观察UI线程、RenderThread、SurfaceFlinger时间线。
+   - `FrameMetricsAggregator`：线上统计慢帧和卡顿比例。
 
 ## 参考链接
 

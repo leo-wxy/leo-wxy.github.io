@@ -754,6 +754,18 @@ void SurfaceFlinger::signalLayerUpdate() {
   myView.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
   ```
 
+补充：硬件加速开关有三个常见粒度。
+
+- Application级：`android:hardwareAccelerated="true"`（默认多数应用开启）。
+- Activity级：可在清单中按页面控制，适合做兼容验证。
+- View级：通过`setLayerType(LAYER_TYPE_NONE/SOFTWARE/HARDWARE)`做局部策略。
+
+`setLayerType`使用建议：
+
+- 某些`Paint`效果或机型兼容问题时，可局部切到`LAYER_TYPE_SOFTWARE`。
+- 动画频繁变化且绘制复杂时，可评估`LAYER_TYPE_HARDWARE`减少重复录制。
+- 硬件层会增加图形内存占用，不建议无差别全局开启。
+
   
 
 ### DisplayList
@@ -778,6 +790,11 @@ void SurfaceFlinger::signalLayerUpdate() {
 
 以上在使用`DisplayList`的过程都不需要执行`onDraw()`。
 
+补充：不是所有变化都会导致DisplayList重录制。
+
+- 内容变化（例如文本、路径、位图内容变化）通常需要重新录制DisplayList。
+- 仅属性变化（平移、缩放、透明度）更多是更新RenderNode属性，可能复用已有DisplayList。
+
 ![img](/images/DisplayList结构.png)
 
 ### RenderNode
@@ -787,6 +804,13 @@ void SurfaceFlinger::signalLayerUpdate() {
 **通常一个`RenderNode`对应一个`View`，包含了View自身及其子View的所有DisplayList。**
 
 其中还有一个`RootRenderNode`，里面包含着`View层次结构中所有View的DisplayList信息`。
+
+补充：RenderNode失效类型可粗分两类。
+
+- 属性失效：变换矩阵、alpha等变化，通常不需要重新执行Java层`onDraw()`。
+- 内容失效：绘制内容变化，通常需要重新录制DisplayList。
+
+这也是“属性动画常不触发完整`onDraw`”的核心原因。
 
 ### ViewRootImpl硬件绘制相关
 
@@ -1578,6 +1602,15 @@ bool OpenGLPipeline::swapBuffers(const Frame& frame, bool drew, const SkRect& sc
 
 ![RenderThread渲染过程](/images/RenderThread渲染过程.jpg)
 
+补充：硬件管线里常见高成本操作包括：
+
+- 频繁`saveLayer`（离屏缓冲）
+- 大面积半透明叠加
+- 复杂裁剪/阴影效果
+- 高频创建与销毁大纹理
+
+这些操作容易推高GPU和合成负载，导致慢帧。
+
 
 
 
@@ -1592,6 +1625,12 @@ bool OpenGLPipeline::swapBuffers(const Frame& frame, bool drew, const SkRect& sc
 | 调用背景透明TextView.setText() | 重绘脏区所有View         | TextView及每一级父View重建`DisplayList`                      | 重叠的兄弟节点不需要进行重绘，GPU会自行处理              |
 | TextView逐帧播放动画           | 每帧动画都要重绘脏区View | 第一帧需要重建`DisplayList`<br>后续只要更新对应的`DisplayList`即可 | 刷新每帧性能提升                                         |
 | 修改TextView透明度             | 重绘脏区所有View         | 直接调用`RenderNode.setAlpha()`即可                          | 只触发`DecorView.updateDisplayListIfDirty`，不再往下遍历 |
+
+补充：主线程不卡并不代表一定流畅。
+
+- UI线程负责遍历和录制DisplayList。
+- RenderThread负责渲染命令提交与GPU协作。
+- RenderThread/GPU/合成侧任一环节过载，都可能掉帧。
 
 
 
@@ -1690,6 +1729,12 @@ boolean draw(Canvas canvas, ViewGroup parent, long drawingTime) {
 - 不要为`十分轻量级的控件`启用绘制缓存。可能缓存绘制的开销 > 控件重绘开销
 - 为`很少发生内容改变的控件`启用绘制缓存。避免`invalidate()`时产生额外的缓存绘制操作
 - 当父控件需要频繁改变子控件的位置或变换时对`子控件`启用绘制缓存，避免频繁重绘子控件。通过`ViewGroup.setChildrenDrawingWithCache()`启用子控件绘制缓存。
+
+补充：局部降级策略。
+
+- 优先局部处理，不建议全局关闭硬件加速。
+- 仅对存在兼容问题的View切`LAYER_TYPE_SOFTWARE`。
+- 修复后应尽量恢复默认策略，避免长期性能损耗。
 
 
 
@@ -1884,7 +1929,7 @@ public final class DisplayListCanvas extends RecordingCanvas {
 
 ```
 
-`drawCircle()和drawRoundRect()`由`DisplayListCanvas`实现。其他的绘制方法交由`RecordingCanvas`实现。
+`drawCircle()`和`drawRoundRect()`由`DisplayListCanvas`实现。其他的绘制方法交由`RecordingCanvas`实现。
 
 ```c++
 //android_view_DisplayListCanvas.cpp
@@ -1922,6 +1967,15 @@ void RecordingCanvas::drawLines(const float* points, int floatCount, const SkPai
 
 通过`addOp()`将`DrawLine`的绘制操作缓存到`displayList`。
 
+### 调试闭环建议
+
+可按以下顺序排查：
+
+1. `Profile GPU Rendering`：先看是否存在连续慢帧。
+2. `Debug GPU Overdraw`：确认是否有明显过度绘制。
+3. `adb shell dumpsys gfxinfo <package> framestats`：定位帧耗时分布。
+4. Perfetto/System Trace：联动观察UI线程、RenderThread、SurfaceFlinger时间线。
+
 
 
 ## 参考链接
@@ -1943,4 +1997,3 @@ void RecordingCanvas::drawLines(const float* points, int floatCount, const SkPai
 [BufferQueue](https://www.jianshu.com/p/f808813880b0)
 
 <!-- https://www.jianshu.com/p/abfaea892611 ， https://blog.csdn.net/jinzhuojun/article/details/54234354 https://www.jianshu.com/p/40f660e17a73 -->
-

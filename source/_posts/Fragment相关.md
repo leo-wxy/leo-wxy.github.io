@@ -52,6 +52,11 @@ args.putString(text,Hello);
 MyFragment f = MyFragment.newInstance(args)
 ```
 
+补充建议：
+
+- 不要依赖带参构造函数传值，进程重建后系统只保证无参构造 + arguments恢复。
+- 运行期参数统一走`newInstance() + setArguments()`，可减少重建后状态丢失问题。
+
 > Fragment会被重新销毁(可能因为内存不足、手机发生了配置变化)，重新创建时会默认调用无参构造函数。
 >
 > 通过`setArguments()`传递的Bundle也会被保留下来。
@@ -97,6 +102,12 @@ ft.commit();
 `commit()`：提交事务，对Fragment进行操作后都需要`commit()`完成提交后可以生效
 
 `commitAllowingStateLoss()`：也是提交事务的一种，但是不会在其中抛出异常，只是跳过了检测`mStateSaved`是否进行了保存
+
+补充：三种提交方式的边界。
+
+- `commit()`：异步入队，绝大多数场景优先使用。
+- `commitNow()`：立即执行，不能配合`addToBackStack()`，适合初始化阶段。
+- `commitAllowingStateLoss()`：仅在可接受状态丢失的非关键场景使用，不建议常态化替代`commit()`。
 
 > 确保`commit()`在`Activity.onPostResume()`或者`FragmentActivity.onResumeFragments()`内调用，而且不要随意使用`commitAllowingStateLoss()`进行代替，不能滥用该方法。因为忽略状态丢失，Activity意外崩溃时就无法还原之前保存的数据。
 
@@ -145,11 +156,19 @@ ft.hide()
 
 `onDetach()`：Fragmen和Activity解绑时调用
 
+补充：Fragment生命周期与View生命周期需要分开看。
+
+- Fragment实例可能仍在，但View可能已在`onDestroyView()`后销毁。
+- 持有ViewBinding/控件引用时，建议在`onDestroyView()`中置空，避免泄漏。
+- 观察UI数据优先使用`viewLifecycleOwner`，避免View销毁后继续回调。
+
 
 
 其中还有一个`setRetainInstance()`当调用到该方法时，在Actiivity重新创建时可以完全不销毁`Fragment`，以便Fragment中恢复数据。调用了
 
 `setRetainInstance(true)`后，Fragment恢复时就会跳过`onCreate()`、`onDestroy()`生命周期回调，因此在使用该方法时，`onCreate()`中不要做初始化逻辑。
+
+版本建议：`setRetainInstance(true)`在新版本Fragment库中已不推荐继续使用，跨重建保留数据更建议用`ViewModel + SavedStateHandle`。
 
 > 当因为设备配置发生变化时，`FragmentManager`首先销毁队列中的fragment的视图，接着`FragmentManager`会检查`Fragment`中的`retainInstance`属性，如果为false，直接销毁Fragment实例；若设置为true，fragment的视图会被销毁，但fragment本身不会被销毁，处于短暂的保留状态。当Activity需要时会对其进行恢复。
 
@@ -260,6 +279,11 @@ public void onCreate(Bundle savedInstanceState){
 }
 ```
 
+补充：重建后`FragmentManager`会自动恢复已存在Fragment，`onCreate()`里要避免无条件`add()`。
+
+- 常用判重：`savedInstanceState == null`时才首次`add()`。
+- 或使用`findFragmentByTag()/findFragmentById()`判断是否已存在。
+
 ### Fragment懒加载
 
 > 懒加载：只在要使用时才去加载数据，而不是在初始化时就加载完毕。
@@ -309,6 +333,8 @@ public void onActivityResult(int requestCode,int resultCode,Intent data){
 
 > 要求父Activity必须覆写了`onActivityResult()`且调用了`super.onActivityResult()`。
 
+补充：`startActivityForResult/onActivityResult`在新API中逐步弱化，推荐迁移到`Activity Result API`或`FragmentResult API`。
+
 ### Fragment配合ViewPager使用
 
 一般类似资讯类、新闻类App首页都会分成多个标签，在不同的标签会有不同的内容，这个时候就需要配合ViewPager来实现内容展示，关键在于对应的fragment是否需要进行销毁。
@@ -319,3 +345,7 @@ public void onActivityResult(int requestCode,int resultCode,Intent data){
 - `FragmentStatePagerAdapter`：再切换不同fragment的时候，会把前面的fragment进行销毁，但是在系统销毁前，会存储其Fragment的Bundle，倒是需要重新创建Fragment时，可以从`onSaveInstanceState()`获取保存的数据。
 
 使用`FragmentStatePagerAdapter`比较省内存，但是销毁重建的过程也是需要时间的，如果页面较少可以使用`FragmentPageAdapter`，很多的话还是推荐`FragmentStatePagerAdapter`。
+
+补充：在`ViewPager2`场景下，通常使用`FragmentStateAdapter`并结合`setMaxLifecycle()`控制可见页生命周期。
+
+懒加载建议基于`Lifecycle`与可见状态组合判断，不依赖已废弃的可见性回调。

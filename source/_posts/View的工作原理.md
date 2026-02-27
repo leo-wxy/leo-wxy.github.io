@@ -1307,11 +1307,21 @@ private void performTraversals() {
 
 如上图所示，`performTraversals()`依次调用`performMeasure()，performLayout(),performDraw()`完成View的绘制。
 
+补充：`requestLayout()/invalidate()`最终都会汇聚到`scheduleTraversals()`，由`Choreographer`在下一帧驱动`doTraversal()`。
+
+- `scheduleTraversals()`会先插入同步屏障，再通过`CALLBACK_TRAVERSAL`执行`performTraversals()`。
+- 在`doTraversal()`开始前会移除同步屏障。
+- `mTraversalScheduled`用于合并同一帧内的重复请求，避免无意义重复遍历。
+
 
 
 ## View工作流程
 
 > 主要是指`measure(测量)`,`layout(布局)`,`draw(绘制)`三大流程。
+
+- `measure`：确定“要多大”（`measuredWidth/measuredHeight`）。
+- `layout`：确定“放哪里”（`left/top/right/bottom`）。
+- `draw`：确定“画什么”。
 
 ### measure-测量
 
@@ -1576,6 +1586,11 @@ public void onMeasure(int widthMeasureSpec,int heightMeasureSpec){
 }
 ```
 
+补充：`onMeasure()`可能被多次调用（父容器二次测量、约束变化、`requestLayout()`等）。
+
+- `onMeasure()`里建议只做尺寸计算，避免网络/线程等副作用逻辑。
+- 直接继承`View`时可优先使用`resolveSize()`收敛`AT_MOST`场景，保证`wrap_content`行为稳定。
+
 #### ViewGroup的measure过程
 
 ![measure-ViewGroup的measure过程](/images/measure-ViewGroup的measure过程.png)
@@ -1704,9 +1719,16 @@ protected void measureChild(View child, int parentWidthMeasureSpec,
 - 调用子View的`measure()`，完成子View的测量过程。
 - 合并子View的测量值，得到ViewGroup的测量值
 
+补充：自定义`ViewGroup`测量实践
+
+- 优先使用`measureChildWithMargins()`并结合`MarginLayoutParams`处理外边距。
+- `onMeasure()`结束前必须调用`setMeasuredDimension()`。
+- 对有依赖关系的子View，通常先测固定项再测依赖项，避免反复回流测量。
+
 #### 拓展
 
 1. 在Activity启动时获取View的尺寸？
+   - 不建议在`onCreate()`直接读取`getWidth()/getHeight()`，此时常为0。
    - 在 Activity#onWindowFocusChanged 回调中获取宽高。<br>`当Activity得到焦点或失去焦点的时候，这个方法都会被频繁调用`
    - view.post(runnable)，在 runnable 中获取宽高。
      `利用Handler通信机制，发送一个Runnable在MessageQueue中，当layout处理结束时会发送消息通知UI线程，可以获取到实际宽高。`
@@ -2018,6 +2040,8 @@ private void setChildFrame(child,int l,int t,int r,int b){
 
    上述代码就会导致View最终结果与测量时不同。
 
+   补充：`onSizeChanged()`更适合处理“尺寸变化触发的缓存重建”（路径、渐变、裁剪区等）；`onLayout()`更偏向子View摆放策略。
+
 ### draw-绘制
 
 > draw作用主要将View绘制在屏幕上面
@@ -2203,6 +2227,12 @@ public void onDrawForeground(Canvas canvas) {
 - 调用`dispatchDraw()`绘制子View
 - 如果需要显示边缘效果，绘制后，还原画布`canvas.restore()`
 - 调用`drawForeground()`绘制装饰，例如滚动条或前景
+
+补充：`onDraw()`性能建议
+
+- 避免在`onDraw()`里频繁创建对象（`Paint/Path/Rect`），改为成员变量复用。
+- 尺寸相关计算尽量放在`onSizeChanged()`，减少每帧重复计算。
+- 大量重绘优先局部刷新（脏区），避免无意义全量刷新。
 
 #### ViewGroup的draw过程
 
@@ -2447,6 +2477,8 @@ protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
 > 1. 不处理有可能造成内存泄漏，View不可见时也需要停止线程和动画
 > 2. 包含View的Activity启动时，View的`onAttachedToWindow()`会调用
 > 3. 包含View的Activity退出或当前View被移除时，调用`View.onDetachedFromWindow()`时关闭线程和动画
+>
+> 同时要注意：View树相关调用都在主线程，跨线程直接改View会在`ViewRootImpl.checkThread()`处抛异常。
 
 #### 5.View若有滑动冲突情况，需要处理
 
@@ -2951,6 +2983,14 @@ private void performTraversals() {
 
 `invalidate()`主要用于标记脏区并上报到`ViewRootImpl`，在下一次`performTraversal()`中进入`performDraw()`完成绘制。
 
+使用建议：
+
+- 内容变化但尺寸不变：优先`invalidate()`。
+- 尺寸或位置可能变化：使用`requestLayout()`（必要时再配合`invalidate()`）。
+- 子线程触发重绘：用`postInvalidate()`或切回主线程调用。
+
+排查建议：调用`invalidate/requestLayout`后若界面无变化，先检查主线程约束、脏区是否有效、父容器是否拦截刷新链路。
+
 ![区别](/images/View重绘.png)
 
 
@@ -3146,6 +3186,11 @@ private int maxViewDeep(View view) {
 
 **`root`不为null，无论`attachToRoot`，都会保持需要加载布局的宽高属性。`root`为null，无论`attachToRoot`，都不会持有原有的宽高属性。**
 
+实战建议：
+
+- `RecyclerView.Adapter`中通常使用`inflate(layout, parent, false)`，既拿到正确`LayoutParams`又不立即attach。
+- 页面根布局初始化时不要随意传`root = null`，否则容易丢失父容器相关布局参数语义。
+
 
 
 ### `MeasureSpec.UNSPECIFIED`使用场景
@@ -3178,61 +3223,3 @@ private int maxViewDeep(View view) {
         child.measure(childWidthMeasureSpec, childHeightMeasureSpec);
     }
 ```
-
-## 知识点补全
-
-### Traversal调度与Vsync关系
-
-- `requestLayout()`和`invalidate()`最终都会走到`scheduleTraversals()`，由`Choreographer`在下一帧调度`performTraversals()`。
-- `scheduleTraversals()`会先插入同步屏障，再通过`CALLBACK_TRAVERSAL`回调执行`doTraversal()`；执行前会移除同步屏障。
-- 这也是“频繁调用多次requestLayout/invalidate，通常合并到下一帧处理”的根本原因。
-
-### 三大流程的职责边界
-
-- `measure`：确定“要多大”（`measuredWidth/measuredHeight`）。
-- `layout`：确定“放哪里”（`left/top/right/bottom`）。
-- `draw`：确定“画什么”。
-
-`getMeasuredWidth/Height`不等于`getWidth/Height`的常见场景：父容器二次布局、动画/手动改`layout()`边界、自定义容器重新定位子View。
-
-### 自定义View测量建议
-
-直接继承`View`时，建议在`onMeasure()`里显式处理`AT_MOST`，并用系统工具方法收敛结果：
-
-```java
-@Override
-protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-    int desiredW = mWidth;
-    int desiredH = mHeight;
-
-    int measuredW = resolveSize(desiredW, widthMeasureSpec);
-    int measuredH = resolveSize(desiredH, heightMeasureSpec);
-    setMeasuredDimension(measuredW, measuredH);
-}
-```
-
-这样既能支持`wrap_content`，也能在父容器约束下保持稳定行为。
-
-### requestLayout与invalidate选择
-
-- 内容变化但尺寸不变：优先`invalidate()`（只触发draw）。
-- 尺寸或位置可能变化：用`requestLayout()`（会触发measure/layout，必要时再draw）。
-- 子线程触发重绘：使用`postInvalidate()`或切回主线程调用`invalidate()`。
-
-简单记忆：**改形状/尺寸走`requestLayout`，改像素内容走`invalidate`。**
-
-### onDraw性能实践
-
-- 避免在`onDraw()`里频繁创建对象（`Paint/Path/Rect`），改为成员变量复用。
-- 尺寸相关的计算尽量放在`onSizeChanged()`，减少每帧重复计算。
-- 大量重绘场景优先局部刷新（脏区），避免无意义全量刷新。
-
-### inflate参数实战建议
-
-- `RecyclerView.Adapter`中通常使用`inflate(layout, parent, false)`：拿到正确`LayoutParams`，但不立刻attach。
-- `Activity/Fragment`初始化根布局时，不要随意传`root = null`，否则可能丢失父容器相关布局参数语义。
-
-### 线程与生命周期补充
-
-- View树的measure/layout/draw都在主线程，`ViewRootImpl.checkThread()`会对非法线程调用直接抛异常。
-- 自定义View里若有动画、线程或回调，建议在`onAttachedToWindow()`启动，在`onDetachedFromWindow()`停止，避免泄漏和后台无效工作。

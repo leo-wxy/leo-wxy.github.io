@@ -211,6 +211,18 @@ public class HandlerThread extends Thread {
 - `HandlerThread`内嵌了Handler,Looper,MessageQueue对象
 - `HandlerThread`内部使用`wait(),notifyAll()`等线程同步方式保证`mLooper`对象不会为空，`wait()`当Looper对象尚未初始化完成时阻塞其他线程，`notifyAll()`当mLooper对象不为空时，通知其他线程使用mLooper。
 
+补充：`HandlerThread`与手写`Looper`的边界
+
+- 手写`Looper.prepare()` + `Looper.loop()`的问题不在于“不能用”，而在于容易出现初始化时序和退出时机管理不当。
+- `HandlerThread.getLooper()`内部用`wait()/notifyAll()`等待`mLooper`完成初始化，天然规避“先取Looper后初始化”的竞态。
+- 若使用手写Looper模型，必须额外设计“初始化完成通知 + 退出协议”，否则容易出现空指针或线程泄漏。
+
+补充：`quit`与`quitSafely`选择
+
+- `quit()`：立即退出，队列中的未处理消息会被移除，适合“任务已无意义”的快速收尾场景。
+- `quitSafely()`：只移除未来消息，允许已到期消息执行完，适合“希望平滑结束后台任务”的场景。
+- 生命周期结束时，除停止`HandlerThread`外，还建议同步清理`removeCallbacksAndMessages(null)`，避免页面销毁后仍有回调。
+
 ## 2. IdleHandler
 
 ![Handler-IdleHandler](/images/Handler-IdleHandler.png)
@@ -260,6 +272,12 @@ public class HandlerThread extends Thread {
 ```
 
 接入上述代码即可测试`IdleHandler`的使用，接下来分析它的源码实现以及使用场景。
+
+补充：`IdleHandler`执行语义
+
+- 触发条件并不只是在“队列完全为空”，当队头消息`when`尚未到达时也可能触发。
+- `queueIdle()`运行在Looper绑定线程（主线程场景最常见），因此必须保证逻辑短小且可快速返回。
+- 返回`true`会持续驻留，若逻辑较重应改为一次性任务（返回`false`）或转移到后台线程。
 
 ```java
 // 源码位置:../core/java/android/os/MessageQueue.java
@@ -769,39 +787,19 @@ public class HandlerActionQueue {
 
 `Handler`的`MessageQueue`是按顺序执行的，因此需要等`performTraversals()`执行完毕后，才可以执行后续任务（例如`HandlerActionQueue`中缓存的任务）。
 
-## 4. 知识点补全
-
-### HandlerThread与手写Looper的边界
-
-- 手写`Looper.prepare()` + `Looper.loop()`的问题不在于“不能用”，而在于容易出现初始化时序和退出时机管理不当。
-- `HandlerThread.getLooper()`内部用`wait()/notifyAll()`等待`mLooper`完成初始化，天然规避“先取Looper后初始化”的竞态。
-- 若使用手写Looper模型，必须额外设计“初始化完成通知 + 退出协议”，否则容易出现空指针或线程泄漏。
-
-### quit与quitSafely选择
-
-- `quit()`：立即退出，队列中的未处理消息会被移除，适合“任务已无意义”的快速收尾场景。
-- `quitSafely()`：只移除未来消息，允许已到期消息执行完，适合“希望平滑结束后台任务”的场景。
-- 生命周期结束时，除停止`HandlerThread`外，还建议同步清理`removeCallbacksAndMessages(null)`，避免页面销毁后仍有回调。
-
-### IdleHandler的执行语义
-
-- 触发条件并不只是在“队列完全为空”，当队头消息`when`尚未到达时也可能触发。
-- `queueIdle()`运行在Looper绑定线程（主线程场景最常见），因此必须保证逻辑短小且可快速返回。
-- 返回`true`会持续驻留，若逻辑较重应改为一次性任务（返回`false`）或转移到后台线程。
-
-### View.post与Handler.post的核心差异
+补充：`View.post()`与`Handler.post()`核心差异
 
 - `Handler.post()`直接向目标`Looper`入队，调用时就需要明确线程归属。
 - `View.post()`在`View`未attach时会先缓存到`HandlerActionQueue`，attach后再切到`ViewRootHandler`执行。
 - 因为`dispatchAttachedToWindow()`发生在`performTraversals()`链路中，所以`onCreate()`里调用`View.post()`常常能拿到宽高。
 
-### 观察主线程消息分发的实践建议
+补充：主线程消息分发观察建议
 
 - `Looper.setMessageLogging(Printer)`适合定位“哪类消息执行过久”，可用于卡顿初筛。
 - 线上监控不建议长期打印完整日志，建议抽样、限频并做阈值上报，避免日志本身放大主线程负担。
 - 结合`what/callback/target`维度统计，通常比只看单次耗时更容易定位高频慢消息来源。
 
-### 版本差异与写法建议
+补充：版本差异与写法建议
 
 - Android R(API 30)起，无参`Handler()`被标记为`@Deprecated`，建议显式传入`Looper`。
 - 需要异步消息通道时，可使用`Handler.createAsync(...)`或`Message.setAsynchronous(true)`。
