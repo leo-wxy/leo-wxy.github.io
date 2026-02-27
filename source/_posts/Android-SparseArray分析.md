@@ -26,6 +26,11 @@ top: 10
 - 空间比时间重要
 - 需要使用到Map型结构，且key为`int`类型
 
+补充：经验上更适合“中小规模、读多写少”的场景。
+
+- 读路径依赖二分查找，规模增大后常数项与数组搬移成本会逐步放大。
+- 写入/删除高频场景下，`gc()`压缩与数组移动可能成为额外开销。
+
 
 
 ### SparseArray重要参数分析
@@ -153,6 +158,11 @@ private void gc() {
 
 `gc()`实质是内部一个for循环，将value不为`DELETED`的数据重新插入数组中，以实现**对数组的压缩**，同时重置GC标志。
 
+补充：`gc()`并非每次`remove`后立即触发，而是“延迟到后续关键操作时再集中处理”。
+
+- 这种策略减少了删除时的即时成本。
+- 但在`keyAt/valueAt/indexOf...`或插入扩容前，可能一次性支付压缩开销。
+
 ②`GrowingArrayUtils.insert(mKeys, mSize, i, key)`：插入数据 可能需要扩容
 
 ```java
@@ -186,6 +196,11 @@ private void gc() {
 
 
 > `put()`需要通过**二分查找法**找到可以插入的位置，如果当前位置的key相同，则直接覆盖原数据。如果key不相同但是`value`为`DELETED`，可以拿新的数据直接覆盖；如果不是，需要先判断`mGarbage`为true，就需要执行`gc()`压缩数组空间(*有效的数据按照顺序重新排布*)，然后再去插入新数据，过程中可能需要扩容。
+
+补充：`append(key, value)`在“key严格递增”场景下更高效。
+
+- `append`可避免中间插入导致的数组搬移。
+- 若传入key并非递增，内部会退化回`put()`路径。
 
 #### 获取数据
 
@@ -262,7 +277,7 @@ stringSparseArray.keyAt(0)
         if (mGarbage) {
             gc();
         }
-        //不像key一样使用的二分查找。是直接线性遍历去比较，而且不像其他集合类使用equals比较，这里直接使用的 ==
+        //不像key一样使用二分查找，而是线性遍历；比较方式是`==`而非`equals`
         //如果有多个key 对应同一个value，则这里只会返回一个更靠前的index
         for (int i = 0; i < mSize; i++)
             if (mValues[i] == value)
@@ -348,3 +363,9 @@ public void removeAt(int index) {
 - 由于压缩数组的原因，所以占用空间会比`HashMap`小，当数据量上来时，二分查找将会成为其性能瓶颈，所以适合数据量小的情况
 - key为`int`类型，省去`Integer`拆箱的性能消耗。
 - 由于`SparseArray`没有实现`Serializable`接口，所以不支持序列化即无法进行传递。
+
+补充：选型时可按key类型与数据规模快速决策。
+
+- `int -> Object`：优先`SparseArray`。
+- `long -> Object`：优先`LongSparseArray`。
+- 规模继续增大且操作复杂时，再评估`HashMap`与可读性/维护成本。

@@ -579,6 +579,13 @@ Launcher请求到AMS后，后续逻辑由AMS继续执行。继续执行的是`AM
 
 换句话说，`startActivity`在 AMS 阶段的核心不是“立刻创建 Activity”，而是“先完成调度与状态机合法性”。
 
+补充：启动模式与任务栈行为可以拆成两层判断：
+
+- 先判断任务栈归属（是否受`FLAG_ACTIVITY_NEW_TASK/taskAffinity`影响）。
+- 再判断目标实例复用（`standard/singleTop/singleTask`）。
+- `singleTop`只在目标实例位于栈顶时复用，否则仍会创建新实例。
+- `singleTask`命中已存在实例时，会复用该实例并清理其上的Activity。
+
 ### AMS启动应用进程
 
 由于启动是根Activity，这时应用进程尚未启动，需要通过`AMS.startProcessLocked()`创建一个应用程序进程
@@ -1090,6 +1097,13 @@ boolean attachApplicationLocked(ProcessRecord app) throws RemoteException {
 
 需要启动的Activity所在进程已经启动时，开始准备启动根Activity `realStartActivityLocked()`
 
+补充：这里也是“是否需要拉起进程”的关键分叉点：
+
+- 进程不存在：`startProcessLocked()` -> `attachApplicationLocked()` -> `realStartActivityLocked()`。
+- 进程已存在：可直接进入`realStartActivityLocked()`，省去进程创建成本。
+
+因此同一启动请求在冷、热两种进程状态下，链路长度和耗时会明显不同。
+
 ```java
 final boolean realStartActivityLocked(ActivityRecord r, ProcessRecord app,
             boolean andResume, boolean checkConfig) throws RemoteException {    
@@ -1400,6 +1414,7 @@ private Activity performLaunchActivity(ActivityClientRecord r, Intent customInte
    ```
 
    最终调用到`Activity.performCreate()`，后续调用到`Activity.onCreate()`，这时根Activity就启动了，完成了整个启动流程。
+   需要注意的是，生命周期进入`onCreate()`不等于页面已经可见，首帧展示还要等待后续恢复与绘制合成完成。
 
 ![ActivityThread启动Activity过程](/images/ActivityThread启动Activity过程.png)
 
@@ -1438,6 +1453,12 @@ private Activity performLaunchActivity(ActivityClientRecord r, Intent customInte
 > `AMS`就会记录下要启动的Activity信息，并且跨进程通知Launcher进入`pause`状态，`Launcher`进入`pause`状态后，跨进程通知`AMS`自己已被`pause`。`AMS`会回调用自身的`startActivty()`去继续启动根Activity，这一步需要校验(调用者是否有权限调用)，检验通过后，发现此时应用进程尚未启动，`AMS`就会启动新的进程，并且在新进程中创建`ActivityThread`对象并执行`main()`进程初始化。
 >
 > 应用进程启动完毕后，`AMS`通知主线程绑定`Application`并启动根Activity。这时`AMS`会通过`ApplicationThread`回调到我们的进程，这一步也是一个跨进程的过程，利用`ApplicationThread`这个Binder对象。由于回调逻辑是在`Binder线程池`中进行的，所以需要通过`Handler H`将其切回主线程，发出的消息是`LAUNCH_ACTIVITY`，对应调用`handleLaunchActivity`，在这个方法中完成了根Activity的创建以及启动。接着在`handleResumeActivity()`中开始Activity的内容绘制，直到绘制完成被我们看见。
+
+#### 启动耗时观察点（补充）
+
+- 进程创建阶段：是否触发`startProcessLocked`，是否等待Zygote拉起。
+- 主线程阶段：`bindApplication`、`handleLaunchActivity`中是否有阻塞初始化。
+- 渲染阶段：`onResume`到首帧可见之间是否出现绘制/合成延迟。
 
 ## 普通Activity启动过程
 

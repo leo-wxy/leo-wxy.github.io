@@ -207,6 +207,12 @@ top: 11
 
 **系统只有在异常终止的情况下才会调用`onSaveInstanceState和onRestoreInstanceState`进行存储和恢复数据。**
 
+补充：
+
+- `onSaveInstanceState`主要面向“重建恢复”，不是通用持久化入口。
+- 进程被直接杀死后，未持久化到本地的数据依然会丢失。
+- 因此关键业务数据应落到DB/SP/File，`Bundle`只保留轻量UI状态。
+
 ### 状态保存与恢复分层（补充）
 
 建议把状态分成三层处理，避免把所有数据都塞进`Bundle`：
@@ -248,6 +254,12 @@ top: 11
 - “切换任务栈”也不一定“复用实例”。
 
 把这两个维度分开理解，很多启动模式问题会更清晰。
+
+补充：排查“为什么没复用/为什么被清栈”时，可按固定顺序定位：
+
+1. 先看`Intent Flag`是否改变了任务栈选择。
+2. 再看`launchMode`是否允许实例复用。
+3. 最后看目标实例是否处于栈顶或已存在于目标Task中。
 
 ### Activity的任务栈
 
@@ -308,6 +320,8 @@ A位于栈顶，B位于栈底。如果A的启动模式为`singleTop`，再次启
 >
 > 适合作为应用主入口，因为只会启动一次。
 
+补充：这里的“清理其上方页面”本质是`clearTop`语义，目标实例本身会被保留并移到前台继续承载新Intent。
+
 列举3个实例加深理解：
 
 - {% fullimage /images/study_plan/launchmode_singletask3.png, alt, SingleTask %}
@@ -342,6 +356,11 @@ A位于栈顶，B位于栈底。如果A的启动模式为`singleTop`，再次启
 1. 在`onNewIntent`里解析新参数并更新页面状态；
 2. 调用`setIntent(intent)`保持`getIntent()`与最新请求一致；
 3. 对同一参数重复到达做幂等处理，避免重复执行业务动作。
+
+补充：
+
+- 若页面内部依赖`SavedStateHandle/Fragment`状态，也要同步更新对应状态源。
+- 仅更新`Intent`但不刷新UI，会出现“参数已变、界面未变”的状态错位。
 
 #### TaskAffinity -- 栈亲和性
 
@@ -383,7 +402,13 @@ A位于栈顶，B位于栈底。如果A的启动模式为`singleTop`，再次启
 
 ##### FLAG_ACTIVITY_NEW_TASK
 
-> 作用等同 `singleTask`启动模式
+> 常见效果接近`singleTask`，但两者不完全等价。
+
+补充：
+
+- `FLAG_ACTIVITY_NEW_TASK`优先影响“任务栈选择/创建”。
+- `singleTask`同时约束“实例复用规则（任务栈内唯一实例）”。
+- 两者叠加时，通常表现为“先选Task，再按复用规则处理实例”。
 
 ##### FLAG_ACTIVITY_SINGLE_TOP
 

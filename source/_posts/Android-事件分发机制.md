@@ -981,6 +981,12 @@ void InputDispatcher::dispatchOnceInnerLocked(nsecs_t* nextWakeupTime) {
 
 ```
 
+补充：这里的超时管理本质是“分发时钟”而不是“单一主线程时钟”。
+
+- 事件进入分发链路后，会绑定对应的等待状态与超时窗口。
+- App侧若长时间不回传完成信号，会导致`waitQueue`持续堆积。
+- 因此输入卡顿排查要同时看“主线程处理耗时”与“finished回传是否及时”。
+
 ```c++
 bool InputDispatcher::dispatchMotionLocked(
         nsecs_t currentTime, MotionEntry* entry, DropReason* dropReason, nsecs_t* nextWakeupTime) {
@@ -1014,6 +1020,12 @@ bool InputDispatcher::dispatchMotionLocked(
 - 指针类事件（触摸）优先走`findTouchedWindowTargetsLocked()`，核心依据是当前坐标命中窗口。
 - 非指针类事件（如按键）通常走`findFocusedWindowTargetsLocked()`，核心依据是焦点窗口。
 - 命中窗口后，事件会以`InputTarget`形式封装偏移、缩放、pointerId集合等信息，再投递到对应`InputChannel`。
+
+补充：窗口级触摸目标也具有“序列粘连”特征。
+
+- 一次手势通常以`ACTION_DOWN`确定目标窗口。
+- 后续`MOVE/UP`默认沿用该目标窗口分发，避免手势中途因坐标抖动频繁切换窗口。
+- 序列被取消时，才会终止该次触摸焦点并进入下一次`DOWN`重新判定。
 
 `InputTarget`的结构
 
@@ -1906,6 +1918,12 @@ private void dispatchInputEvent(int seq, InputEvent event, int displayId) {
 
 ```
 
+补充：`InputStage`选择体现的是“是否先过IME阶段”的分流。
+
+- `mFirstInputStage`：包含前置输入阶段，可在进入View树前做预处理。
+- `mFirstPostImeInputStage`：跳过IME前置阶段，直接走后置链路。
+- 这样可以把“系统预处理”和“View树分发”解耦，降低链路耦合度。
+
 此处`stage`是`ViewPostImeInputStage`，向下继续调用到`onProcess()`
 
 `ViewPostImeInputStage`：**视图处理阶段**，主要处理按键、手指触摸等事件，分发的对象是View。
@@ -1998,7 +2016,13 @@ public final boolean dispatchPointerEvent(MotionEvent event) {
 - `ACTION_DOWN`：监听用户手指按下的操作，一次按下标志触摸事件的开始。
 - `ACTION_MOVE`：用户按压屏幕后，在抬起之前，如果移动的距离超过一定数值，就判定为移动事件。
 - `ACTION_UP`：监听用户手指离开屏幕的操作，一次抬起标志触摸事件的结束。
-- `ACTION_CANCEL`：当用户保持按下操作，并把手指移动到了控件外部区域时且父View处理事件触发。
+- `ACTION_CANCEL`：当前触摸目标被系统判定应终止本次手势序列，后续不再期待该序列的`UP`。
+
+常见触发场景补充：
+
+1. 父容器在手势中途改为拦截，子View收到`CANCEL`后让出处理权。
+2. 窗口焦点/输入通道状态发生切换，当前目标被动终止。
+3. 系统发生输入重置（如应用切换、超时回收链路）导致序列中断。
 
 多指触摸下还需要关注：
 

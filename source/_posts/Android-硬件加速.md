@@ -946,6 +946,12 @@ void SurfaceFlinger::signalLayerUpdate() {
 - 将`DisplayListCanvas`缓存的`DrawOp`填充到`RenderNode(View)`——`View.updateDisplayListIfDirty()`
 - 将`DecorView`的缓存`DrawOp`填充到`RootRenderNode`中——`mRootNode.end()`
 
+补充：`updateDisplayListIfDirty()`可以理解为“是否需要重录DisplayList”的总开关。
+
+- `PFLAG_INVALIDATED`、`renderNode`无效、绘制缓存失效时会触发重录。
+- 仅属性变化（如`translation/alpha`）在部分场景下可直接更新`RenderNode`属性，不一定触发整树重录。
+- 这也是“属性动画通常比频繁重绘更省成本”的核心原因之一。
+
 
 
 ![硬件绘制-updateDisplayListIfDirty()](/images/硬件绘制-updateDisplayListIfDirty.png)
@@ -1260,6 +1266,14 @@ void DrawFrameTask::run() {
     }
 }
 ```
+
+补充：这一阶段可以拆成三步理解：
+
+1. **同步阶段**：把UI线程录制好的`RenderNode/DisplayList`状态同步到渲染上下文。
+2. **准备阶段**：处理脏区、动画帧信息与绘制依赖。
+3. **提交阶段**：向GPU发起绘制并把结果写入`GraphicBuffer`，后续交给`SurfaceFlinger`合成显示。
+
+因此，UI线程“代码执行完”不代表“像素已经上屏”，中间还要经过RenderThread与合成链路。
 
 主要执行过程为两步：
 
@@ -1732,6 +1746,13 @@ boolean draw(Canvas canvas, ViewGroup parent, long drawingTime) {
 - 为`很少发生内容改变的控件`启用绘制缓存。避免`invalidate()`时产生额外的缓存绘制操作
 - 当父控件需要频繁改变子控件的位置或变换时对`子控件`启用绘制缓存，避免频繁重绘子控件。通过`ViewGroup.setChildrenDrawingWithCache()`启用子控件绘制缓存。
 
+补充：缓存并非“开启就一定更快”，常见反例有两类：
+
+- 内容本身高频变化（例如倒计时、频繁文本刷新）会导致缓存反复失效重建。
+- 缓存对象过大时会带来额外内存占用与上传成本，可能放大卡顿风险。
+
+实践上更推荐“按问题点局部启用”，并在问题修复后回收到默认策略。
+
 补充：局部降级策略。
 
 - 优先局部处理，不建议全局关闭硬件加速。
@@ -1786,6 +1807,12 @@ boolean draw(Canvas canvas, ViewGroup parent, long drawingTime) {
         }
     }
 ```
+
+补充：属性动画流畅的关键在于尽量走“属性更新路径”而不是“内容重绘路径”。
+
+- `alpha/translation/scale/rotation`通常可直接作用在`RenderNode`。
+- 若动画每帧都触发复杂`onDraw()`，会把压力重新带回UI线程。
+- 动画卡顿排查时，建议先区分是UI线程重绘瓶颈，还是RenderThread/GPU阶段瓶颈。
 
 `mParent`一般指向`ViewGroup`
 

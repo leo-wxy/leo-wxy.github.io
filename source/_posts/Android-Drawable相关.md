@@ -900,6 +900,11 @@ public class CustomDrawable extends Drawable {
 
 `setCallback()`的主要作用是让`invalidateDrawable()`在`Drawable`发生变化时，及时回调`View.invalidate()`进行重绘。
 
+补充：`invalidateSelf()`只负责触发重绘链路，不会触发布局流程。
+
+- 若仅颜色/状态变化，走`invalidate`即可。
+- 若`Drawable`固有尺寸发生变化（影响`getIntrinsicWidth/Height`），通常还需要触发`requestLayout`让View重新测量。
+
 
 
 ### Drawable获取
@@ -1035,6 +1040,11 @@ public class CustomDrawable extends Drawable {
 根据上述源码，实际缓存的不是`Drawable`，而是`Drawable.ConstantState`对象
 
 `caches`指的就是`DrawableCache`，由这个类负责`Drawable缓存`的处理
+
+补充：缓存命中不仅取决于`resId`，还受`density/theme/changingConfigurations`影响。
+
+- 主题或配置变化后，旧`ConstantState`可能失效并触发重建。
+- 这也是同一个资源在不同主题下可能得到不同实例表现的原因。
 
 ```java
 class DrawableCache extends ThemedResourceCache<Drawable.ConstantState> {
@@ -1225,6 +1235,11 @@ public class BitmapDrawable extends Drawable {
 > 使`Drawable`变得可变，且操作无法还原。**一旦调用无法撤销。**
 >
 > 主要为了**复制一份`ConstantState`，让`newDrawable()`之后的`Drawable`拥有自己的`ConstantState`，不会受到其他Drawable的干扰**。*深拷贝*
+
+补充：对共享资源做运行时改色/改透明度前，建议先`mutate()`。
+
+- 典型场景是列表复用：多个Item引用同一资源，不`mutate()`时修改一个可能影响全部。
+- `setTint/setAlpha/setColorFilter`这类会改状态的方法尤其需要注意共享污染。
 
 ```java
 //Drawable.java
@@ -1604,6 +1619,11 @@ Drawable inflateFromXmlForDensity(@NonNull String name, @NonNull XmlPullParser p
 
 当View的状态发生改变时，都会调用到`refreshDrawableList()`更新成对应状态的Drawable对象。
 
+补充：`StateListDrawable`按`item`声明顺序匹配，命中“第一个符合条件”的状态集合。
+
+- 条件更具体的状态（如`pressed + enabled`）应放前面。
+- 兜底项（无状态约束）应放最后，避免提前命中导致其他状态失效。
+
 
 
 ### Drawable着色
@@ -1742,6 +1762,11 @@ Android需要做效果切换时，大多数都是UI提供多张效果图，可�
 > View通过`setTintList()和setTintMode()`设置`Drawable`，配置完成后生成对应的`PorterDuffColorFilter`在`draw()`设置到对应的`paint`属性。
 >
 > **实质操作的是`Paint.setColorFilter()`**
+
+补充：`tint`属于运行时叠加效果，不会改动原始资源文件本身。
+
+- 在同一`Drawable`实例上重复设置`tint`会覆盖之前的着色结果。
+- 需要保留原始效果时，建议先基于`newDrawable()/mutate()`得到独立实例再着色。
 
 
 

@@ -263,6 +263,12 @@ void SurfaceFlinger::init() {
 }
 ```
 
+补充：这里实际是“双EventThread”协作模型。
+
+- `app`侧`EventThread`主要面向应用侧节奏（如`Choreographer`消费）。
+- `sf`侧`EventThread`主要驱动`SurfaceFlinger`自身合成节奏。
+- 两者共享同一物理`Vsync`源，但可通过`phaseOffset`形成不同相位，降低抢占冲突。
+
 ##### DispSyncSource
 
 ```cpp
@@ -941,6 +947,12 @@ void SurfaceFlinger::onMessageReceived(int32_t what) {
 3. 唤醒之后执行到`DispSyncSource.onDispSyncEvent()`继续执行到`EventThread.onVsyncEvent()`，其中内部调用了`DisplayEventReceiver.sendEvents() -> BitTube.sendObjects()`发送消息，`Looper`监听到`BitTube`有数据流动，就会回调`MessageQueue.cb_eventReceiver()`
 4. 继续通过消息机制，回调到`MessageQueue.handleMessage()`，最后调用`Sf.handleMessageReceived()`
 
+补充：进入`onMessageReceived()`后，通常先走`INVALIDATE`再走`REFRESH`。
+
+- `INVALIDATE`阶段处理事务与`buffer latch`（状态更新、是否需要刷新）。
+- `REFRESH`阶段执行真正的合成与提交（`handleMessageRefresh`）。
+- 这种拆分让“状态收敛”和“图像提交”在一帧内分工更清晰。
+
 > 简化版：
 >
 > `Vsync信号`由`HWC`产生，然后回调到`DispSyncthread`在继续回调到`DispSyncSource`，继续调用到了`EventThread`。最后`EventThread`通过`BitTube(Socket)`发送消息到`MessageQueue`，`MessageQueue`接收到消息后，在回调给`SurfaceFlinger`。
@@ -1221,9 +1233,9 @@ void SurfaceFlinger::computeVisibleRegions(
 
 按照上述源码，界面显示区域分为如下几种：
 
-- `opaqueRegion`：非透明区域——表示不完全透明的区域
+- `opaqueRegion`：完全不透明且可遮挡下层内容的区域
 - `dirtyRegion`：需要重绘的区域
-- `visibleRegion`：可见区域——表示完全不透明的区域
+- `visibleRegion`：当前Layer经裁剪后仍需参与合成显示的区域（可包含半透明）
 - `coveredRegion`：被覆盖区域——被完全不透明区域覆盖的区域
 - `transparentRegion`：完全透明的区域——一般需要从合成列表中移除
 - `aboveOpaqueLayers`：所有`非透明区域`的叠加
@@ -2633,6 +2645,12 @@ status_t BufferQueueProducer::queueBuffer(int slot,
 - 根据获取的`BufferSlot`构造出`BufferItem`，并添加到`mQueue`中
 - 最后回调到`frameAvailableListener.onFrameAvailable()`通知`消费者`有新数据入队，可以进行获取。
 
+补充：Fence语义可按“生产完成 -> 消费完成”理解。
+
+- `item.mFence(acquireFence)`表示生产者写入完成时序，消费者在`acquire`前需等待它就绪。
+- 消费完成后会回传`releaseFence`，生产者在复用该Buffer前需要等待释放完成。
+- 这套Fence链路保证了“同一Buffer不被读写并发踩踏”。
+
 ```mermaid
 graph TD
 A(queueBuffer)
@@ -3520,6 +3538,12 @@ bool SurfaceFlinger::handlePageFlip()
   ...
 }
 ```
+
+补充：`latchBuffer`是“把可用新帧并入当前合成状态”的关键点。
+
+- `latch`成功后，该帧才会进入本次合成可见集合。
+- 若上游持续高频入队但下游来不及消费，会表现为队列积压与帧替换（异步模式下更明显）。
+- 因此掉帧排查要区分“生产过慢”和“消费/合成过慢”两类瓶颈。
 
 其中`layer`的实现为`BufferLayer`
 
