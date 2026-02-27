@@ -8,16 +8,16 @@ top: 9
 
 ![SharedPreferences原理-xmind](/images/SharedPreferences原理.png)
 
-`SharedPreferences`是系统提供的一种简易数据持久化的手段，适合**单进程、小批量**的数据存储与访问。以键值对的形式存储在`xml`文件中。
+`SharedPreferences`是系统提供的一种简易数据持久化手段，适合**单进程、小批量**的数据存储与访问。以键值对形式存储在`xml`文件中。
 文件存储路径为`data/data/package_name/shared_prefs/`目录。
 
 ## 源码解析
 
 ![源码解析](/images/SP-源码解析.png)
 
-### 获取SharedPerferences对象
+### 获取SharedPreferences对象
 
-![获取SharedPerferences对象](/images/SP-源码解析1.png)
+![获取SharedPreferences对象](/images/SP-源码解析1.png)
 
 获取方法从`getSharedPreferences(name,mode)`开始，此时就需要去加载对应name的`xml`文件
 
@@ -40,8 +40,8 @@ class MainActivity : AppCompatActivity() {
 | ------------------------------ | ------------------------------------------------------------ | --------------------------- |
 | Context.MODE_PRIVATE           | **代表该文件是私有数据，只能被当前应用访问。**<br>写入的内容会覆盖源文件的内容。 | 默认操作模式                |
 | Context.MODE_WORLD_READABLE    | 表示当前文件可以被其他应用读取                               |                             |
-| Context.MODE_WORLE_WRITEABLE   | 表示当前文件可以被其他应用写入                               |                             |
-| Context.MODE_APPEND            | 会检查当前是否有文件存在？<br>在在后面追加内容<br>不存在则去创建新文件 |                             |
+| Context.MODE_WORLD_WRITEABLE   | 表示当前文件可以被其他应用写入                               |                             |
+| Context.MODE_APPEND            | 会检查当前是否有文件存在？<br>在后面追加内容<br>不存在则创建新文件 |                             |
 | ~~Context.MODE_MULTI_PROCESS~~ | 部分支持跨进程使用                                           | 原理就是重新读取xml文件内容 |
 
 ```java
@@ -304,7 +304,7 @@ public interface Editor {
     }
 ```
 
-`mModified`保存的是用户通过`putXX()`新增的数据，数据有效期位于`第一次putXX   到   commit()/apply()`.
+`mModified`保存的是用户通过`putXX()`新增的数据，数据有效期位于`第一次putXX()`到`commit()/apply()`之间。
 
 
 
@@ -410,11 +410,11 @@ mEditor.apply();
         }
 ```
 
-`apply()`也先调用`commitToMemory()`将更改提交到内存，之后调用`enqueueDiskWriter()`开启写入磁盘任务。
+`apply()`也先调用`commitToMemory()`将更改提交到内存，之后调用`enqueueDiskWrite()`开启写入磁盘任务。
 
-`apply()`是提交任务到线程池后，就直接通知写入成功，不需要等待线程执行完成。
+`apply()`是提交任务到线程池后立即返回，不等待磁盘写入完成；它只保证内存中的最新值立即可见。
 
-**虽然apply()是异步执行的，但是存在某些场景下也会发生ANR。后文会分析**
+**虽然`apply()`是异步执行，但在生命周期关键路径上仍可能触发等待，后文会分析。**
 
 #### 缓存写入内存
 
@@ -991,11 +991,13 @@ synchronized (mWritingToDiskLock) {
 
 ### ContentProvider(官方推荐)
 
-`ContentProvider`是Android提供的跨进程组件，可以替换其底层实现为SP，来保证SP的进程安全。
+`ContentProvider`是Android提供的跨进程组件，可以把底层存储实现为SP/数据库，并在Provider层统一串行化读写，保证多进程一致性。
 
+可落地的最小实践：
 
-
-//TODO 实现待添加
+1. 仅在Provider进程执行真实读写，客户端进程只走`ContentResolver`。
+2. 对写操作做单线程串行化，避免并发覆盖。
+3. 对外只暴露必要URI与字段，避免无边界读写。
 
 
 
@@ -1023,7 +1025,11 @@ SharedPreferences 本质是对xml文件的读写，可以通过对xml文件添�
 
 
 
-//TODO 实现待添加
+文件锁方案也建议只作为兜底：
+
+- 能保证互斥，但会引入额外阻塞与复杂度；
+- 需要严格处理异常分支中的锁释放；
+- 高频场景更建议使用官方推荐的`ContentProvider`或直接迁移`MMKV/DataStore`。
 
 ## ANR分析
 
@@ -1067,8 +1073,10 @@ SharedPreferences 本质是对xml文件的读写，可以通过对xml文件添�
 
 ### 解决方案
 
-- 反射在`ActivityThread`中的`H`变量添加一个`callback`，可以拦截Handler的事件分发。在几个关键的节点例如`stop`、`pause`及时通过反射清理`QueuedWork`中的`sFinishers`请求等待队列。
-- 开启一个异步线程在其内部调用`commit()`去写入数据
+- 避免在`onPause/onStop`前临时堆积大量`apply()`任务，写入尽量前移并做批量合并。
+- 高频写入场景优先使用`MMKV/DataStore`，减少XML全量重写成本。
+- 不建议通过反射清理`QueuedWork.sFinishers`，该方案依赖系统实现细节，兼容性与稳定性风险较高。
+- 需要“立即拿到落盘结果”时才使用`commit()`，其余场景优先`apply()`。
 
 
 
@@ -1076,7 +1084,7 @@ SharedPreferences 本质是对xml文件的读写，可以通过对xml文件添�
 
 1. 建议不要在SP里存储特别大的key/value,因为内容都是一次性加载到内存中，过大会导致卡顿/ANR。
 2. 不要频繁调用`commit()/apply()`，SP的数据每次都是全量写入文件，尤其是`commit()`直接同步操作，更容易卡顿。**建议批量写一次提交**
-3. `MODE_MULTI_PROCESS`是在每次`getSharedPreferences`时检查磁盘上配置文件上次修改时间和文件大小，一旦所有修改则会重新从磁盘加载文件，所以并不能保证多进程数据的实时同步。
+3. `MODE_MULTI_PROCESS`是在每次`getSharedPreferences`时检查磁盘上配置文件上次修改时间和文件大小，一旦有所修改则会重新从磁盘加载文件，所以并不能保证多进程数据的实时同步。
 4. 高频写操作的key与高频读操作的key可以适当的拆分文件，减少同步锁的竞争。
 5. **最好写入轻量级的数据，不要存储大量的数据。**
 
@@ -1100,7 +1108,7 @@ SharedPreferences 本质是对xml文件的读写，可以通过对xml文件添�
 
 ## 参考链接
 
-[全面解析SharedPReferences](http://gityuan.com/2017/06/18/SharedPreferences/)
+[全面解析SharedPreferences](http://gityuan.com/2017/06/18/SharedPreferences/)
 
 [SharedPreferences的设计与实现](https://juejin.im/post/6884505736836022280#heading-9)
 
@@ -1109,4 +1117,3 @@ SharedPreferences 本质是对xml文件的读写，可以通过对xml文件添�
 [剖析 SharedPreference apply 引起的 ANR 问题](https://mp.weixin.qq.com/s?__biz=MzI1MzYzMjE0MQ==&mid=2247484387&idx=1&sn=e3c8d6ef52520c51b5e07306d9750e70&scene=21#wechat_redirect)
 
 [Android 源码仓库](https://cs.android.com/)
-

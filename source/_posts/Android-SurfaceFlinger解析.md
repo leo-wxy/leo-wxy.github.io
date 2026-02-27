@@ -2618,7 +2618,7 @@ status_t BufferQueueProducer::queueBuffer(int slot,
     ...
       
         if (frameAvailableListener != NULL) {
-          //回调 onFrameAvaliaable 通知消费者有新的数据入队
+          //回调 onFrameAvailable 通知消费者有新的数据入队
             frameAvailableListener->onFrameAvailable(item);
         } else if (frameReplacedListener != NULL) {
             frameReplacedListener->onFrameReplaced(item);
@@ -2630,8 +2630,8 @@ status_t BufferQueueProducer::queueBuffer(int slot,
 `queueBuffer`主要执行了以下几步：
 
 - 根据传入的`slot`从`mSlots`获取对应的`BufferSlot`，并设置对应的`BufferState`为`QUEUED`
-- 根据获取的`BufferSlot`构造出`BufferItem`，并添加到`mQueues`中
-- 最后回调到`frameAvaliableListener.onFrameAvaliable()`通知`消费者`有新数据入队，可以进行获取。
+- 根据获取的`BufferSlot`构造出`BufferItem`，并添加到`mQueue`中
+- 最后回调到`frameAvailableListener.onFrameAvailable()`通知`消费者`有新数据入队，可以进行获取。
 
 ```mermaid
 graph TD
@@ -3634,4 +3634,3 @@ status_t ConsumerBase::releaseBufferLocked(
 [SurfaceFlinger 解读](https://androidperformance.com/2020/02/14/Android-Systrace-SurfaceFlinger/)
 
 [掌握Android图像显示原理-上](https://blog.csdn.net/tyuiof/article/details/108434845)
-

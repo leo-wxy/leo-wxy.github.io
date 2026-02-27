@@ -138,7 +138,7 @@ private void gc() {
                 if (i != o) {
                     keys[o] = keys[i];
                     values[o] = val;
-                    //防止内存泄露，使用过后置空
+                    //防止内存泄漏，使用过后置空
                     values[i] = null;
                 }
                 //重新统计数据量
@@ -151,7 +151,7 @@ private void gc() {
     }
 ```
 
-`gc()`实质是内部一个for循环，将value不为`DELETED`的数据重新插入数组中，已实现**对数组的压缩**，同时重置GC标志。
+`gc()`实质是内部一个for循环，将value不为`DELETED`的数据重新插入数组中，以实现**对数组的压缩**，同时重置GC标志。
 
 ②`GrowingArrayUtils.insert(mKeys, mSize, i, key)`：插入数据 可能需要扩容
 
@@ -185,7 +185,7 @@ private void gc() {
 
 
 
-> `put()`需要通过**二分查找法**找到可以插入的位置，如果当前位置的key相同，则直接覆盖原数据。如果key不相同但是`value`为`DELETED`，可以拿新的数据直接覆盖；如果不是，需要先判断`mGarabge`为true，就需要执行`gc()`压缩数组空间(*有效的数据按照顺序重新排布*)，然后再去插入新数据，过程中可能需要扩容。
+> `put()`需要通过**二分查找法**找到可以插入的位置，如果当前位置的key相同，则直接覆盖原数据。如果key不相同但是`value`为`DELETED`，可以拿新的数据直接覆盖；如果不是，需要先判断`mGarbage`为true，就需要执行`gc()`压缩数组空间(*有效的数据按照顺序重新排布*)，然后再去插入新数据，过程中可能需要扩容。
 
 #### 获取数据
 
@@ -223,7 +223,7 @@ stringSparseArray.keyAt(0)
 
 
 
-##### 根据key获取index
+##### 根据index获取key/value
 
 ```java
  	public int keyAt(int index) {
@@ -246,7 +246,7 @@ stringSparseArray.keyAt(0)
 
 
 
-##### 根据index获取key
+##### 根据key/value获取index
 
 ```java
 	public int indexOfKey(int key) {
@@ -281,7 +281,7 @@ stringSparseArray.keyAt(0)
 //删除对应key的数据
 stringSparseArray.remove(1);
 //删除对应index的数据
-stringSparseArray.removeAt(0)；
+stringSparseArray.removeAt(0);
 //删除对应区间的数据
 stringSparseArray.removeAtRange(0,1);
 ```
@@ -338,7 +338,7 @@ public void removeAt(int index) {
 
 
 
-`remove()`相关方法并不是直接删除数据，而是使用`DELETED`占据被删除数据的位置，同时设置`mGarabge=true`，等待调用`gc()`进行数据压缩。
+`remove()`相关方法并不是直接删除数据，而是使用`DELETED`占据被删除数据的位置，同时设置`mGarbage=true`，等待调用`gc()`进行数据压缩。
 
 > 设置`DELETED`的目的：如果`put()`时也要用到该位置，就可以不用进行数据复制，而直接放入数据即可。
 
@@ -348,4 +348,3 @@ public void removeAt(int index) {
 - 由于压缩数组的原因，所以占用空间会比`HashMap`小，当数据量上来时，二分查找将会成为其性能瓶颈，所以适合数据量小的情况
 - key为`int`类型，省去`Integer`拆箱的性能消耗。
 - 由于`SparseArray`没有实现`Serializable`接口，所以不支持序列化即无法进行传递。
-

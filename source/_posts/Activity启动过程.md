@@ -12,7 +12,7 @@ typora-root-url: ../
 
 Activity的启动过程分为两种：
 
-- **根Activity的启动过程**  -  指代根Actiivty的启动过程也可以认为是应用程序的启动过程
+- **根Activity的启动过程**  -  指代根Activity的启动过程，也可以认为是应用程序的启动过程
 - **普通Activity的启动过程**  -  除启动应用程序启动的第一个Activity之外Activity的启动过程
 
 ### 术语与范围约定（补充）
@@ -85,7 +85,7 @@ public boolean startActivitySafely(View v,Intent intent,ItemInfo item){
       startActivity(intent,optsBundle);
     } else{
       LauncherAppsCompat.getInstance(this).startActivityForProfile(intent.getComponent(),
-                                    user,intent.getSourceBounds(),optsBundle)；
+                                    user,intent.getSourceBounds(),optsBundle);
     }
     return true;
   }catch(ActivityNotFoundException|SecurityException e){
@@ -95,7 +95,7 @@ public boolean startActivitySafely(View v,Intent intent,ItemInfo item){
 }
 ```
 
-设置启动Acticvity为`FLAG_ACTIVITY_NEW_TASK`保证根Activity在一个新任务栈中启动。`Launcher.java`继承了`Activity`接下来就到了`Acticvity.startActivity()`中
+设置启动Activity为`FLAG_ACTIVITY_NEW_TASK`，保证根Activity在一个新任务栈中启动。`Launcher.java`继承了`Activity`，接下来就到了`Activity.startActivity()`中。
 
 ```java
 // ../android/app/Activity.java
@@ -109,7 +109,7 @@ public boolean startActivitySafely(View v,Intent intent,ItemInfo item){
     }
 ```
 
-接下来会走到`startActivityFroResult()`，第二个参数设为` -1 `表明*Launcher不需要知道返回结果*
+接下来会走到`startActivityForResult()`，第二个参数设为`-1`，表明*Launcher不需要知道返回结果*。
 
 ```java
 // ../android/app/Activity.java
@@ -555,18 +555,18 @@ Launcher请求到AMS后，后续逻辑由AMS继续执行。继续执行的是`AM
 
 `ActivityStack`:Activity的任务栈，从中获取需要进行操作的`ActivityRecord`进行操作。*在启动过程中，它的作用是检测当前栈顶Activity是否为要启动的Activity,不是就启动新Activity，是的话就重启，在这之前需要标记一下前Activity处于Pause状态。*
 
-`ActivityStackSupervisor`:管理整个手机任务栈，管理着所有的`ActivityStack`。*在启动过程，它负责检查是否已有对应的应用进程在运行，如果有就直接启动Actiivty，没有的话则需新建一个应用进程。*
+`ActivityStackSupervisor`:管理整个手机任务栈，管理着所有的`ActivityStack`。*在启动过程中，它负责检查是否已有对应的应用进程在运行，如果有就直接启动Activity，没有的话则需新建一个应用进程。*
 
 总结：
 
 - 调用`AMS.startActivity()`实质调用其内部的`startActivityAsUser()`并在方法内部进行验证，判定*调用者进程是否隔离以及调用者权限是否正确*
 - 通过验证后，就到了`ActivityStarter.startActivityMayWait()`,并设置启动理由为`startActivityAsUser`
 - 向下调用到了`startActivityLocked()`，方法内部会去判定`reason`是否为空
-- 不为空则走到`startActivity()`，该方法中主要*caller(`指向Launcher组件所运行的进程的ApplicationThread对象`)*，*callerApp(`指向Launcher组件所允许的应用程序进程`)*，基于`callerApp`生成对应的`ActivityRecord(记录即将要启动的Activity)`并存入`Activityrecord[]`中备用。
+- 不为空则走到`startActivity()`，该方法中主要*caller(`指向Launcher组件所运行进程的ApplicationThread对象`)*、*callerApp(`指向Launcher组件所运行的应用程序进程`)*，基于`callerApp`生成对应的`ActivityRecord(记录即将要启动的Activity)`并存入`ActivityRecord[]`中备用。
 - 对应参数传入`startActivity()`的重载函数中，向下继续调用`startActivityUnchecked()`
 - `startActivityUnchecked()`主要是 创建新的`TaskRecord(记录任务栈信息)`
-- 向下切换到`ActivityStackSupervisor.resumeFocusedStackTopActivityLocked()`，这个方法主要实现的是`寻找需要回复的栈顶Activity`
-- 内部实现由`ActivityStack.resumeTopActivityUncheckedLocked()`实现，这里又继续调用到`resumeTopActivityInnerLocked()`
+- 向下切换到`ActivityStackSupervisor.resumeFocusedStackTopActivityLocked()`，这个方法主要实现的是`寻找需要恢复的栈顶Activity`。
+- 内部实现由`ActivityStack.resumeTopActivityUncheckedLocked()`完成，这里又继续调用到`resumeTopActivityInnerLocked()`。
 - 后续又切换回到`ActivityStackSupervisor.startSpecificActivityLocked()`，在该方法中`获取即将启动的Activity所在应用程序进程`，已启动的话调用`realStartActivityLocked()`，未启动的话就调用`startProcessLocked()`去启动进程
 
 #### `ActivityStarter`关键决策点（补充）
@@ -1047,7 +1047,7 @@ private void handleBindApplication(AppBindData data) {
 
 也就是说，`ContentProvider`初始化通常先于`Application.onCreate()`，这也是很多库在 Provider 中做自动初始化的基础。
 
-#### `mStackSuperVisor.attachApplicationLocked()`：启动根Activity
+#### `mStackSupervisor.attachApplicationLocked()`：启动根Activity
 
 在该方法中`Application`已经绑定到进程上，接下来就是启动根Activity
 
@@ -1056,7 +1056,7 @@ private void handleBindApplication(AppBindData data) {
 boolean attachApplicationLocked(ProcessRecord app) throws RemoteException {
         final String processName = app.processName;
         boolean didSomething = false;
-        //ActivityStackSupervisor里面 维护者所有ActiivtyStack
+        //ActivityStackSupervisor里面维护着所有ActivityStack
         //通过循环 找到前台任务栈顶端的Activity
         for (int displayNdx = mActivityDisplays.size() - 1; displayNdx >= 0; --displayNdx) {
             ArrayList<ActivityStack> stacks = mActivityDisplays.valueAt(displayNdx).mStacks;
@@ -1067,7 +1067,7 @@ boolean attachApplicationLocked(ProcessRecord app) throws RemoteException {
                 }
                 ActivityRecord hr = stack.topRunningActivityLocked();
                 if (hr != null) {
-                    //前台待启动的Activity与当前新建的进程一致时，启动这个Actiivty
+                    //前台待启动的Activity与当前新建的进程一致时，启动这个Activity
                     if (hr.app == null && app.uid == hr.info.applicationInfo.uid
                             && processName.equals(hr.processName)) {
                         try {
@@ -1399,7 +1399,7 @@ private Activity performLaunchActivity(ActivityClientRecord r, Intent customInte
        }
    ```
 
-   最终调用到`Activity.performCreate()`后续调用到`Activity.onCreate()`这时根Activity就启动了，完成了整个启动流程。
+   最终调用到`Activity.performCreate()`，后续调用到`Activity.onCreate()`，这时根Activity就启动了，完成了整个启动流程。
 
 ![ActivityThread启动Activity过程](/images/ActivityThread启动Activity过程.png)
 

@@ -41,12 +41,12 @@ top: 11
 
       上述代码为两种命名方案
 
-      - 省略包名以:开头：代指进程名为`com.wxy.test:remote`为**私有进程**，其他应用的组件不可以和他跑到同一个进程中
-      - 完整命名：如上述`com.wxy.test.remote`为**全局进程**，其他应用可以通过`ShareUID方式与他在同一进程中运行。`
+      - 省略包名以:开头：代指进程名为`com.wxy.test:remote`为**私有进程**，其他应用的组件不可以和它跑到同一个进程中
+      - 完整命名：如上述`com.wxy.test.remote`为**全局进程**，其他应用可以通过`sharedUserId`方式与它在同一进程中运行。
 
       Android系统会为每一个应用分配一个唯一的UID，具有相同UID的应用才能共享数据。
 
-      上述通过ShareUID将两个应用跑在同一个进程间是有要求的，**必须是两个应用具有相同的ShareUID且签名相同才可以**。达成上述要求时就可以 **共享两者间的data目录、组件信息以及内存数据**。
+      上述通过`sharedUserId`将两个应用跑在同一个进程间是有要求的，**必须是两个应用具有相同的`sharedUserId`且签名相同才可以**。达成上述要求时就可以 **共享两者间的data目录、组件信息以及内存数据**。
 
       拓展知识：当两者签名不同时，会触发安装错误[INSTALL_FAILED_SHARED_USER_INCOMPATIBLE]
 
@@ -73,7 +73,7 @@ top: 11
       - SharedPreferences的可靠性下降 `不支持多进程读写`
       - Application会多次创建`分配了独立的虚拟机`
 
-   一个应用内的多进程：**相当于两个不同的应用采用了ShareUId模式**。虽说不能直接共享内存数据，但是可以通过跨进程通信来实现数据交互。
+   一个应用内的多进程：**相当于两个不同的应用采用了`sharedUserId`模式**。虽说不能直接共享内存数据，但是可以通过跨进程通信来实现数据交互。
 
 ## 2. 序列化
 
@@ -148,9 +148,11 @@ top: 11
 
       序列化功能由`writeToParcel`实现，反序列化由`Parcel的read`实现。
 
-      优缺点：传递效率高效使用较为繁琐，主要序列化都在内存上进行。由于Parcelabel是Android提供的方法，可能会由于版本更新而会有些许改动。
+      优缺点：传递效率高但使用较为繁琐，主要序列化都在内存上进行。由于`Parcelable`是Android提供的方法，可能会由于版本更新而有些许改动。
 
       适用场景：在内存的序列化中使用。
+
+      补充：`Parcelable`常用于Binder事务参数，设计时尽量控制体积，避免单次事务过大导致`TransactionTooLargeException`。
 
 ## 3. IPC方式
 
@@ -159,6 +161,35 @@ top: 11
 > {% fullimage /images/IPC-mode.png,IPC方式, IPC方式 %}
 >
 > 上述方式实际都是通过Binder来实现的
+
+### Binder核心链路（AIDL前置）
+
+一次典型跨进程调用可以概括为：
+
+`Client(Proxy).transact() -> Binder驱动 -> Server(Stub).onTransact() -> 业务实现 -> reply`
+
+关键角色：
+
+- `ServiceManager`：负责服务注册与查询（`addService/getService`）。
+- `IBinder`：跨进程调用统一入口。
+- `Stub/Proxy`：AIDL编译后生成的服务端/客户端代理代码。
+- `Parcel`：参数与返回值的序列化容器。
+
+`asInterface()`是高频追问点：
+
+- 同进程：直接返回本地`Stub`实现，调用不经过驱动。
+- 跨进程：返回`Proxy`，通过`transact()`进入Binder驱动。
+
+```java
+public static IBookManager asInterface(IBinder obj) {
+    if (obj == null) return null;
+    IInterface iin = obj.queryLocalInterface(DESCRIPTOR);
+    if (iin instanceof IBookManager) {
+        return (IBookManager) iin; // 同进程
+    }
+    return new Proxy(obj); // 跨进程
+}
+```
 
 ### 1.Bundle
 
@@ -171,7 +202,7 @@ top: 11
 > 为什么Bundle不直接使用HashMap呢？
 >
 > 1. Bundle内部是由ArrayMap实现的，ArrayMap实质内部为两个数组，一个是`int[]`用于保存每个item的`hashCode`，另一个`Object[]`用于保存`key/value`键值对，容量为上一个数组的2倍。在添加、查找数据时，只要用二分查找法找到对应位置进行操作即可。占用内存也会小于`HashMap`。
-> 2. 在Android中如果需要使用Intent传递数据的话，需要的数据类型必须为`基本类型`或`可序列化类型`，`HashMap`采用`Serializable`进行序列化，`Bundle`采用了`Paracelable`进行序列化，更加适合于Android平台，在内存中完成序列化功能，开销更小。
+> 2. 在Android中如果需要使用Intent传递数据的话，需要的数据类型必须为`基本类型`或`可序列化类型`，`HashMap`采用`Serializable`进行序列化，`Bundle`采用了`Parcelable`进行序列化，更加适合于Android平台，在内存中完成序列化功能，开销更小。
 
 ### 2.文件共享
 
@@ -183,7 +214,7 @@ top: 11
 
 > 轻量级的IPC方案，可以在不同的进程间传递Message对象。调用`Messenger.send(Message message)`传递Message对象。
 >
-> Messager的底层实现是`AIDL`。它对AIDL做了封装，由于它一次只可以处理一个请求**（串行请求）**，因此不需考虑线程同步的问题。不过不能直接调用服务端的方法，只能通过传递消息处理。
+> Messenger的底层实现是`AIDL`。它对AIDL做了封装，由于它一次只可以处理一个请求**（串行请求）**，因此不需考虑线程同步的问题。不过不能直接调用服务端的方法，只能通过传递消息处理。
 >
 > 由于主要传递的都是Message对象，导致无法实现远程调用。
 
@@ -309,13 +340,76 @@ Messenger的工作原理：
 
 ### 4.AIDL
 
+> AIDL是Android里定义跨进程接口的IDL（Interface Definition Language），会生成`Stub/Proxy`代码，便于做“像本地调用一样”的远程调用。
+
+#### AIDL最小闭环
+
+1. 定义`.aidl`接口
+2. 编译后生成`Stub/Proxy`
+3. Service端在`onBind()`返回`Stub`
+4. Client端`bindService()`拿到`IBinder`，通过`Stub.asInterface()`转换后调用
+
+```java
+// IBookManager.aidl
+interface IBookManager {
+    List<Book> getBooks();
+    void addBook(in Book book);
+}
+```
+
+#### AIDL方向修饰符
+
+- `in`：客户端 -> 服务端（默认）
+- `out`：服务端写回客户端
+- `inout`：双向拷贝（开销更大，谨慎使用）
+
+原则：能用`in`就不要用`out/inout`，减少拷贝与复杂度。
+
+#### `oneway`语义
+
+- `oneway`方法为异步调用，客户端发起后不等待返回。
+- 异步不等于“无限快”，服务端线程池同样会拥塞。
+- 高频`oneway`调用需配合限流、丢弃策略或批处理，避免把服务端压垮。
+
+#### 服务端线程模型
+
+- AIDL服务端方法默认运行在Binder线程池，不是主线程。
+- 如果方法里访问共享状态，必须做好并发保护（锁、串行队列、不可变数据）。
+- 若要更新UI，需要切回主线程。
+
+#### 稳定性：死亡通知
+
+跨进程通信要考虑远端进程随时死亡，可通过`linkToDeath`监听：
+
+```java
+IBinder binder = service.asBinder();
+IBinder.DeathRecipient dr = () -> {
+    // 远端进程死亡，清理本地引用并触发重连
+};
+binder.linkToDeath(dr, 0);
+```
+
+在`binderDied()`里建议做三件事：清理旧引用、取消旧任务、触发重连。
+
+#### 常见风险与边界
+
+- `TransactionTooLargeException`：单次事务数据过大（尤其是Intent/Binder传大列表）。
+- 避免传大对象/大Bitmap，建议传ID、文件描述符、分页结果。
+- 接口入口要做权限校验（`checkCallingPermission`、UID/包名校验），不要把敏感能力直接暴露给任意调用方。
+
+#### 调试建议
+
+- 先看调用链日志（客户端发起 -> 服务端进入 -> 返回）。
+- 再看Binder状态（如`dumpsys`相关信息）判断是否线程池拥塞。
+- 遇到ANR时，先区分是主线程阻塞还是Binder调用阻塞。
+
 {% post_link Android-Binder分析%}
 
 ### 5.ContentProvider
 
-> ContentProvider是专门用于不同应用间进行数据共享的方式，底层同样是由Binder实现。**主要是提供了一个统一的接口为了存储和获取数据。**
+> ContentProvider是专门用于不同应用间进行数据共享的方式，底层同样由Binder实现。**主要是提供统一接口来存储和获取数据。**
 
-[ContentProvide](https://www.jianshu.com/p/9048b47bb267)
+[ContentProvider](https://www.jianshu.com/p/9048b47bb267)
 
 ### 6.Socket
 
@@ -351,7 +445,7 @@ Messenger的工作原理：
 | --------------- | ------------------------------------------------------------ | --------------------------------------------------- | ---------------------------------------------------------- |
 | Bundle          | 简单易用                                                     | 只能传输Bundle支持的数据类型                        | 四大组件的进程间通信                                       |
 | 文件共享        | 简单易用                                                     | 不适合高并发场景，且无法做到实时通信                | 无并发访问情形，数据简单且实时性不高                       |
-| AIDL            | 功能强大，支持一对多并发通信，支持实时通信                   | 使用稍复杂，需要处理好线程同步                      | 一对多通信且支持远程调用                                   |
+| AIDL            | 功能强大，支持一对多并发通信，支持实时通信                   | 使用稍复杂，需要处理线程同步与权限边界              | 一对多通信且支持远程调用                                   |
 | Messenger       | 功能强大，支持一对多串行通信，支持实时通信                   | 不能很好处理高并发场景，数据只能通过Message进行传输 | 低并发的一对多即时通信，并且不需要返回结果，不需要远程调用 |
 | ContentProvider | 在数据访问方面功能强大，支持一对多数据共享，可通过Call方法扩展其他操作 | 受约束的AIDL实现，主要提供对数据的CRUD操作          | 一对多的进程间数据共享                                     |
 | Socket          | 功能强大，可以通过网络传输字节流，支持一对多并发通信         | 实现细节稍微麻烦                                    | 网络数据交换                                               |

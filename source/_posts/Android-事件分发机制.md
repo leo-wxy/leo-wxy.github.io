@@ -137,16 +137,16 @@ EventHub::EventHub(void) :
 //创建epoll实例
     mEpollFd = epoll_create(EPOLL_SIZE_HINT);
 
-//创建iNotify实例
+//创建inotify实例
     mINotifyFd = inotify_init();
-//iNotify实例 监听 DEVICE_PATH 
+//inotify实例监听 DEVICE_PATH
     int result = inotify_add_watch(mINotifyFd, DEVICE_PATH, IN_DELETE | IN_CREATE);
           
     struct epoll_event eventItem;
     memset(&eventItem, 0, sizeof(eventItem));
     eventItem.events = EPOLLIN;
     eventItem.data.u32 = EPOLL_ID_INOTIFY;
-//epoll 监听 iNotify实例
+//epoll监听 inotify实例
     result = epoll_ctl(mEpollFd, EPOLL_CTL_ADD, mINotifyFd, &eventItem);
 
     int wakeFds[2];
@@ -173,7 +173,7 @@ EventHub::EventHub(void) :
 `EventHub`主要执行了以下几步：
 
 1. 初始化`epoll`实例
-2. 初始化`iNotify`实例，用于监控`/dev/input`目录的变化。若发生变化，意味设备发生变化，需要处理。`epoll`添加`iNotify实例`监听
+2. 初始化`inotify`实例，用于监控`/dev/input`目录的变化。若发生变化，意味设备发生变化，需要处理。`epoll`添加`inotify实例`监听
 3. 创建非阻塞模式的管道(`pipe`)，epoll监听管道的内容。(主要用于 唤醒InputReader线程)
 
 
@@ -484,7 +484,7 @@ struct RawEvent {
 
 `getEvents()`大概执行流程：
 
-当`设备节点(/dev/input)`发生变化时，`epoll_wait()`会响应到对应的变化，然后`getEvents()`可以知道对应的变化。继续从`mINotifyFd`读取`iNotify事件`，进行输入设备的操作，最后生成相应的`RawEvent`
+当`设备节点(/dev/input)`发生变化时，`epoll_wait()`会响应到对应的变化，然后`getEvents()`可以知道对应的变化。继续从`mINotifyFd`读取`inotify事件`，进行输入设备的操作，最后生成相应的`RawEvent`
 
 
 
@@ -802,7 +802,7 @@ void InputDispatcher::notifyMotion(const NotifyMotionArgs* args) {
 ```c++
 bool InputDispatcher::enqueueInboundEventLocked(EventEntry* entry) {
     bool needWake = mInboundQueue.isEmpty();
-    mInboundQueue.enqueueAtTail(entry);//将事件放入`mInBoundQueue`的尾部，等待处理
+    mInboundQueue.enqueueAtTail(entry);//将事件放入`mInboundQueue`的尾部，等待处理
     traceInboundQueueLengthLocked();
 
     switch (entry->type) {
@@ -847,9 +847,9 @@ bool InputDispatcher::enqueueInboundEventLocked(EventEntry* entry) {
 
 `InputReaderThread`主要负责**事件封装转换**
 
-- `EventHub.getEvents()`：通过`epoll`监听`iNotify实例(监听 /dev/input/ 目录)`读取事件放入`mEventBuffer`，然后转换成`RawEvent`
+- `EventHub.getEvents()`：通过`epoll`监听`inotify实例(监听 /dev/input/ 目录)`读取事件放入`mEventBuffer`，然后转换成`RawEvent`
 - `processEventsLocked()`：对`RawEvent`进行加工，转换成`NotifyMotionArgs`
-- `flush()`：将事件`NotifyMotionArgs`发送到`InputDispatcher`进行处理，最后转换成`MotionEntry`并写入到`InputDispatcher.mInBoundQueue`
+- `flush()`：将事件`NotifyMotionArgs`发送到`InputDispatcher`进行处理，最后转换成`MotionEntry`并写入到`InputDispatcher.mInboundQueue`
 
 
 
@@ -911,7 +911,7 @@ void InputDispatcher::dispatchOnceInnerLocked(nsecs_t* nextWakeupTime) {
                 return;
             }
         } else {
-            // 从 mInBoundQueue获取事件 实质就是上一步的 MotionEntry
+            // 从 mInboundQueue获取事件，实质就是上一步的 MotionEntry
             mPendingEvent = mInboundQueue.dequeueAtHead();
             traceInboundQueueLengthLocked();
         }

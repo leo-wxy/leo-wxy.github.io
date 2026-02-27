@@ -898,15 +898,15 @@ public class CustomDrawable extends Drawable {
 
 `setCallback()`将传进去的`View实例`，通过`弱引用`包装起来，防止`Drawable`长时间不释放，导致`内存泄漏`。最好还是不用`drawable`的时候，调用`setCallback(null)`解除引用。
 
-`setCallback()`主要的是`invalidateDrawable()`可以在`Drawable`发生变化的时候，及时回调`View.invalidate()`进行重绘。
+`setCallback()`的主要作用是让`invalidateDrawable()`在`Drawable`发生变化时，及时回调`View.invalidate()`进行重绘。
 
-
+
 
 ### Drawable获取
 
 ![Drawable-Drawable获取](/images/Drawable-Drawable获取.png)
 
-一般都是通过`getResource.getDrawable()`根据`drawableId`获取对应Drawable对象。后来添加了`getDrawableForDensity()`可以`根据缩放比返回对应的Drawable`
+一般通过`getResources().getDrawable()`根据`drawableId`获取对应Drawable对象。后来添加了`getDrawableForDensity()`，可以根据密度返回对应的Drawable。
 
 ```java
 //Resource.java    
@@ -928,12 +928,12 @@ public class CustomDrawable extends Drawable {
     }
 ```
 
-向下继续调用到`ResourceImpl.loadDrawable()`
+向下继续调用到`ResourcesImpl.loadDrawable()`
 
 ![Drawable-loadDrawable](/images/Drawable-loadDrawable.png)
 
 ```java
-//ResourceImpl.java
+//ResourcesImpl.java
     Drawable loadDrawable(@NonNull Resources wrapper, @NonNull TypedValue value, int id,
             int density, @Nullable Resources.Theme theme)
             throws NotFoundException {
@@ -1126,7 +1126,7 @@ public static abstract class ConstantState {
     }
 ```
 
-`ConstantState`的具体实现类，都交由`Drawable`的子类实现，就拿常用的`BitmapDrawable`示例。*一般getResource().getDrawable()获取的也是这个对象。*
+`ConstantState`的具体实现类都交由`Drawable`的子类实现，就拿常用的`BitmapDrawable`示例。*一般`getResources().getDrawable()`获取的也是这个对象。*
 
 ```java
 public class BitmapDrawable extends Drawable {
@@ -1435,7 +1435,7 @@ Drawable inflateFromXmlForDensity(@NonNull String name, @NonNull XmlPullParser p
 ###### 图片文件加载
 
 ```java
-//ResourceImpl.java
+//ResourcesImpl.java
     private Drawable decodeImageDrawable(@NonNull AssetInputStream ais,
             @NonNull Resources wrapper, @NonNull TypedValue value) {
         ImageDecoder.Source src = new ImageDecoder.AssetInputStreamSource(ais,
@@ -1483,8 +1483,8 @@ Drawable inflateFromXmlForDensity(@NonNull String name, @NonNull XmlPullParser p
 | 状态名称   | 对应属性                        | 含义                                               |
 | ---------- | ------------------------------- | -------------------------------------------------- |
 | `pressed`  | `<attr android:state_pressed>`  | 是否处于按下状态，一般通过按压表现                 |
-| `enable`   | `<attr android:state_enabled>`  | 是否可以点击，通过`setEnable()`控制                |
-| `focused`  | `<attr android:state_focused>`  | 是否处于聚焦状态，一般由按键操作引起的             |
+| `enabled`  | `<attr android:state_enabled>`  | 是否可以点击，通过`setEnabled()`控制               |
+| `focused`  | `<attr android:state_focused>`  | 是否处于聚焦状态，一般由按键操作引起                |
 | `selected` | `<attr android:state_selected>` | 是否处于选择状态，通过`setSelected()`控制          |
 | `checked`  | `<attr android:state_checked>`  | 是否处于选中状态，多用于`CheckBox`之类可以选择控件 |
 

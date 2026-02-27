@@ -124,12 +124,12 @@ top: 11
 - 点亮屏幕/回到应用
 
   - `onRestart() -> onStart() -> onResume()`
-  - 新Activity显示，旧Activity依然可见 `新Activity.onRestart() -> 新Acticvity.onStart() -> 旧Activity.onRestart() ->旧Activity.onStart() -> 新Activity.onResume()`
+  - 新Activity显示，旧Activity依然可见 `新Activity.onRestart() -> 新Activity.onStart() -> 旧Activity.onRestart() -> 旧Activity.onStart() -> 新Activity.onResume()`
 
 - 销毁Activity
 
   - `onPause() -> onStop() -> onDestroy()`
-  - 新Activity显示，旧Activity依然可见，销毁新Acticvity `新Activity.onPause() -> 旧Activity.onResume() -> 旧Activity.onStop() -> 旧Activity.onDestroy()`
+  - 新Activity显示，旧Activity依然可见，销毁新Activity `新Activity.onPause() -> 旧Activity.onResume() -> 旧Activity.onStop() -> 旧Activity.onDestroy()`
 
 - 弹出对话框样式的Activity
 
@@ -264,11 +264,11 @@ top: 11
 
 ### Activity的LaunchMode
 
-> LaunchMode为了减少Activity实例的创建优化
+> LaunchMode是为了减少Activity实例的重复创建，并优化任务栈行为
 
 使用方法：
 
-- 在`AndroidManifest.xml`中给对应Activity配置属性 `android:launchMode="standard | singltTop | singleTask | singleInstance"`
+- 在`AndroidManifest.xml`中给对应Activity配置属性 `android:launchMode="standard | singleTop | singleTask | singleInstance"`
 - `startActivity`时添加`intent.addFlags(FLAG)`
 
 #### launchMode行为对照表（补充）
@@ -349,7 +349,7 @@ A位于栈顶，B位于栈底。如果A的启动模式为`singleTop`，再次启
 
 - 配合`singleTask`使用
 
-  新Activity启动时默认被加载进启动该Activity的对象所在任务栈中。如果给启动的Activity设置`FLAG_ACTIVITY_NEW_TASK`标记或者设置`singleTask`启动模式，再配合`taskAffinity`设置任务栈名字，该实例就会被加载进相同名字的任务栈中，如果不存在相同就创建新的任务栈并压入实例。
+  新Activity启动时默认被加载进启动该Activity的对象所在任务栈中。如果给启动的Activity设置`FLAG_ACTIVITY_NEW_TASK`标记或者设置`singleTask`启动模式，再配合`taskAffinity`设置任务栈名字，该实例就会被加载进相同名字的任务栈中，如果不存在相同就创建新的任务栈并压入实例。
 
 - 配合`allowTaskReparenting`使用
 
@@ -417,7 +417,7 @@ A位于栈顶，B位于栈底。如果A的启动模式为`singleTop`，再次启
 
   创建独立任务但不出现在最近任务列表，适合短期工具页或中转页。
 
-#### IntenFilter的匹配规则
+#### IntentFilter的匹配规则
 
 > 启动Activity方法分为两种：`显式调用(可以清楚指出被启动组件的信息，例如类名)`，`隐式调用(没有明确的指出组件信息，通过IntentFilter找到符合要求的组件)`。
 
@@ -432,9 +432,9 @@ A位于栈顶，B位于栈底。如果A的启动模式为`singleTop`，再次启
 
 ##### category匹配规则
 
-> 传递过来的Intent中不包含`categroy`，那么就会启用默认的`categroy`，由于系统在启动Activity的时候默认会加上`android.intent.categroy.DEFAULT`属性
+> 传递过来的Intent中不包含`category`，那么就会启用默认的`category`，由于系统在启动Activity的时候默认会加上`android.intent.category.DEFAULT`属性
 >
-> 如果包含`categroy`，那必须匹配`<intent-filter>`定义的任一`categroy`
+> 如果包含`category`，那必须匹配`<intent-filter>`定义的任一`category`
 
 ##### data匹配规则
 
@@ -573,7 +573,7 @@ data主要分为两部分：
    - LaunchMode设置为`singleTop`，且要启动的Activity已经处于栈顶
    - LaunchMode设置为`singleTask`或者`singleInstance`，且实例已存在
 
-   需要注意的是：*当调用到`onNewIntent(intent)`的时候，需要在内部调用`setNewIntent(intent)`赋值给当前Activity的Intent，否则后续的getIntent()得到的都是老Intent*
+   需要注意的是：*当调用到`onNewIntent(intent)`的时候，需要在内部调用`setIntent(intent)`更新当前Activity的Intent，否则后续的`getIntent()`得到的都是旧Intent。*
    
 2. 监控应用回到桌面或者应用退出
 

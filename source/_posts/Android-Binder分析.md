@@ -45,7 +45,7 @@ Linux采用两级保护机制：
 - 0级供系统内核使用
 - 3级供用户程序使用
 
-当进程使用`系统调用`执行内核代码时，进程就进入了**内核态**，此时处理器处于`0级·`；当进程执行自己的代码时，进程就进入**用户态**，此时处理器位于`3级·`。
+当进程使用`系统调用`执行内核代码时，进程就进入了**内核态**，此时处理器处于`0级`；当进程执行自己的代码时，进程就进入**用户态**，此时处理器位于`3级`。
 
 `系统调用`主要通过以下两个函数实现：
 
@@ -58,7 +58,7 @@ Linux采用两级保护机制：
 
 ![Linux-IPC](/images/Linux-IPC.png)
 
-1. 发送进程通过`系统调用 copy_from_user·`把自己的`内存缓存区(发送进程)`的数据拷贝到`内核缓存区`中
+1. 发送进程通过`系统调用 copy_from_user`把自己的`内存缓存区(发送进程)`的数据拷贝到`内核缓存区`中
 2. 内核程序通过`系统调用 copy_to_user`把内核缓存区的数据拷贝到接收进程的`内存缓存区`中
 
 传统IPC通信过程中暴露了两个明显的缺点：
@@ -117,11 +117,11 @@ Binder建立了一个虚拟设备`/dev/binder`，然后在内核空间创建了�
 
 - 性能
 
-  > Linux上的通信方式例如`管道、Socket`都需要复制两次数据。而Binder只要一次
+  > Linux上的通信方式例如`管道、Socket`都需要复制两次数据。而Binder只要一次
   >
   > 拷贝两次过程：发送方数据通过`系统调用copy_from_user`拷贝到`内核缓存区`，再由`内核缓存区`调用`系统调用copy_to_user`拷贝至接收方。
   >
-  > Binder执行过程：在内核中建立数`据接收缓存区`，发送方数据通过`系统调用copy_from_user`拷贝到`内核缓存区`，此时`内核缓存区`已与`数据接收缓存区`和`接收进程数据缓存区`建立映射，相当于发送方的数据直接到接收方。
+  > Binder执行过程：在内核中建立`数据接收缓存区`，发送方数据通过`系统调用copy_from_user`拷贝到`内核缓存区`，此时`内核缓存区`已与`数据接收缓存区`和`接收进程数据缓存区`建立映射，相当于发送方的数据直接到接收方。
 
 - 安全性
 
@@ -145,7 +145,7 @@ Binder建立了一个虚拟设备`/dev/binder`，然后在内核空间创建了�
 
 > 客户端进程
 
-`Client`负责向`Service Mananger`查询所需Service，并且获得一个`Binder代理对象`，再通过`Binder代理对象`向`Server`发起请求
+`Client`负责向`ServiceManager`查询所需Service，并且获得一个`Binder代理对象`，再通过`Binder代理对象`向`Server`发起请求
 
 ### Server
 
@@ -155,7 +155,7 @@ Binder建立了一个虚拟设备`/dev/binder`，然后在内核空间创建了�
 
 ### Service Manager
 
-> 服务的管理者，指代的是`Native`层的`ServiceManager`，是整个 Binder通信机制的 大管家，也是Android进程间通信的守护进程。
+> 服务的管理者，指代的是`Native`层的`ServiceManager`，是整个Binder通信机制的大管家，也是Android进程间通信的守护进程。
 
 主要有以下功能
 
@@ -247,7 +247,7 @@ fail_open:
 }
 ```
 
-`bidner_open()`总共执行了三步：
+`binder_open()`总共执行了三步：
 
 1. `open()`打开`/dev/binder`设备节点，最终调用到内核中的`binder驱动`，同样执行到`binder_open()`，创建了`binder_proc`，再放入`binder_procs`中
 2. 调用`mmap()`进行内存映射，映射大小为`128k`，主要在`binder驱动`创建`Binder_buffer`对象
@@ -570,7 +570,7 @@ int svcmgr_handler(struct binder_state *bs,
 
 `svcmgr_handler()`主要提供服务相关的功能，根据不同的`code`有对应的功能：
 
-- `SVG_MGR_GET_SERVICE`，`SVC_MGR_CHECK_SERVICE`：获取服务
+- `SVC_MGR_GET_SERVICE`，`SVC_MGR_CHECK_SERVICE`：获取服务
 - `SVC_MGR_ADD_SERVICE`：注册服务
 - `SVC_MGR_LIST_SERVICES`：列举所有服务
 
@@ -1488,7 +1488,7 @@ status_t flatten_binder(const sp<ProcessState>& /*proc*/,
     }
 
     if (binder != NULL) {
-        IBinder *local = binder->localBinder();//本地bidner对象
+        IBinder *local = binder->localBinder();//本地binder对象
         if (!local) {
             BpBinder *proxy = binder->remoteBinder();//远程Binder对象
             if (proxy == NULL) {
@@ -1515,11 +1515,11 @@ status_t flatten_binder(const sp<ProcessState>& /*proc*/,
 }
 ```
 
-`writeStrongBinder()`负责转换`IBinder`对象到`flat_bidner_object`
+`writeStrongBinder()`负责转换`IBinder`对象到`flat_binder_object`
 
 ###### `mRemote.transact(ADD_SERVICE_TRANSACTION)`
 
-> 通过`BinderProxy`传输`Binder对象`到`Binder驱动`
+> 通过`BinderProxy`传输`Binder对象`到`Binder驱动`
 
 ```java
 mRemote.transact(ADD_SERVICE_TRANSACTION, data, reply, 0);
@@ -1599,7 +1599,7 @@ struct BinderProxyNativeData {
 `ServiceManager.addService()`主要执行了以下几步：
 
 1. `Parcel.obtain()`：构建Native层的`Parcel`对象
-2. `parcel.writeStrongBinder()`：构造`JavaBBinder`对象写入到`falt_binder_object`，准备传到`Binder驱动`
+2. `parcel.writeStrongBinder()`：构造`JavaBBinder`对象写入到`flat_binder_object`，准备传到`Binder驱动`
 3. `BpBinder.transact(ADD_SERVICE_TRANSACTION)`：通过`IPCThreadState.talkWithDriver()`发送数据到`Binder驱动`
 
 
@@ -1726,7 +1726,7 @@ static int svc_can_register(const uint16_t *name, size_t name_len, pid_t spid, u
 根据上述源码得知`ServiceFetcher`主要有以下3种实现类
 
 - `CachedServiceFetcher`：进程内部缓存`SystemService`，切换进程需要重新获取
-- `StaticServiceFetcher`：系统内部缓存，所有进程获取的都是同一个`SystemService`
+- `StaticServiceFetcher`：系统内部缓存，所有进程获取的都是同一个`SystemService`
 - `StaticApplicationContextServiceFetcher`：应用内部缓存`SystemService`，其他应用需要重新获取。
 
 
@@ -1770,7 +1770,7 @@ static int svc_can_register(const uint16_t *name, size_t name_len, pid_t spid, u
          }
 ```
 
-`getIServiceManager()`最后指向的就是`ServiceManagerProxy`
+`getIServiceManager()`最后指向的就是`ServiceManagerProxy`
 
 ```java
 //core/java/android/os/ServiceManagerNative.java
@@ -1941,7 +1941,7 @@ static int __init binder_init(void){
     return -ENOMEM;
 
   while ((device_name = strsep(& device_names, ","))) {
-    //注册bidner设备
+    //注册binder设备
     ret = init_binder_device(device_name);
     if (ret)
        goto err_init_binder_device_failed;
@@ -2091,7 +2091,7 @@ struct binder_proc {
 
 ```c
 //drivers/android/binder.c
-static int binder_mmap(struct file *filp/*Bidner驱动的fd*/, struct vm_area_struct *vma/*用户虚拟内存*/)
+static int binder_mmap(struct file *filp/*Binder驱动的fd*/, struct vm_area_struct *vma/*用户虚拟内存*/)
 {
     int ret;
     struct binder_proc *proc = filp->private_data;
@@ -2334,6 +2334,17 @@ struct binder_write_read {//用在binder内部
 
 ## Binder通信过程
 
+结合前面的源码与驱动流程，一次典型Binder调用链可以抽象成6步：
+
+1. `Client`侧`Proxy`把方法参数写入`Parcel`，调用`transact()`。
+2. `IPCThreadState`通过`ioctl(BINDER_WRITE_READ)`把`BC_TRANSACTION`送入驱动。
+3. `Binder驱动`定位目标`binder_proc/binder_thread`，将事务投递到`Server`进程待处理队列。
+4. `Server`侧`Stub.onTransact()`被唤醒并执行业务逻辑。
+5. 执行结果写回`reply Parcel`，驱动回传`BR_REPLY`给`Client`。
+6. `Client`线程收到响应并反序列化结果，方法调用返回。
+
+`oneway`调用在第5步不会等待`BR_REPLY`，通常在收到`BR_TRANSACTION_COMPLETE`后即可返回。
+
 
 
 
@@ -2356,13 +2367,13 @@ struct binder_write_read {//用在binder内部
 
 
 
-*Binder的权限验证回导致进程A调用进程B后，进程B调用原进程方法时失败。*
+*Binder的权限验证会导致进程A调用进程B后，进程B调用原进程方法时失败。*
 
 
 
 上述流程就是`Binder权限验证`的流程。
 
-`在被调用时进程回去检测是否与自身IPCThreadState存储的uid与pid一致，只有一致才会请求成功。否则抛出异常`
+`在被调用时进程会去检测是否与自身IPCThreadState存储的UID与PID一致，只有一致才会请求成功。否则抛出异常。`
 
 #### 解决方案
 
@@ -2372,7 +2383,7 @@ final long origId = Binder.clearCallingIdentity();
 Binder.restoreCallingIdentity(origId);
 ```
 
-`clearCallingIndetity()`
+`clearCallingIdentity()`
 
 > 在当前线程中重置到来的IPC标识(`uid/pid`)，然后设置`mCallingUid`和`mCallingPid`为当前进程的值
 
@@ -2421,8 +2432,8 @@ Binder.restoreCallingIdentity(origId);
 - 基本数据类型：`byte、int、long、float、double、boolean，char`
 - String 和 CharSequence
 - ArrayList，HashMap(**包括key，每个元素必须可以被AIDL支持**)
-- 实现了Parcelabe接口的对象 **必须要显示Import进来**
-- 所有AIDL接口本身也会被调用**必须要显示Import进来**
+- 实现了`Parcelable`接口的对象 **必须显式import进来**
+- 所有AIDL接口本身也会被调用 **必须显式import进来**
 
 
 
@@ -2554,9 +2565,9 @@ public interface BookManager extends IInterface {
 
 `Proxy`
 
-Binder代理对象，位于`Client`进程，由其发起`transcat()`与Binder驱动进行通信。
+`Binder`代理对象，位于`Client`进程，由其发起`transact()`与Binder驱动进行通信。
 
-#### 方法
+#### 方法
 
 `asBinder()`
 
@@ -2573,7 +2584,7 @@ public interface BookManager extends IInterface {
 
 
 
-`onTrancast(int code, Parcel data, Parcel reply, int flags)`
+`onTransact(int code, Parcel data, Parcel reply, int flags)`
 
 参数说明：
 
@@ -2584,7 +2595,7 @@ public interface BookManager extends IInterface {
   - 0：双向流通(默认值)
   - 1：单向流程
 
-对应的就是`Proxy`中各个方法内部调用的`mRemote.transcat()`传递的参数。
+对应的就是`Proxy`中各个方法内部调用的`mRemote.transact()`传递的参数。
 
 #### 代理机制补充
 
@@ -2602,7 +2613,7 @@ public interface BookManager extends IInterface {
 
 ![Binder代理机制](/images/Binder代理机制.png)
 
-//TODO 关系图
+上图可以和AIDL生成代码对照理解：`Proxy`负责请求打包与发起，`Stub`负责解包与分发，两者通过`Binder驱动`完成跨进程桥接。
 
 
 
@@ -2645,11 +2656,17 @@ public interface BookManager extends IInterface {
 
 ## Binder-系统调用
 
-`system_call`的实现位于内核之中，。
+Binder用户态最终是通过`ioctl`进入内核驱动，不同命令码会路由到不同处理分支。
 
-各个地方调用`ioctl`如何控制可以准确的调用到对应的方法？
+`ioctl`命令通常由`_IO/_IOR/_IOW/_IOWR`宏编码，包含了`方向(读/写)`、`类型`、`序号`、`数据结构大小`等信息，内核据此做参数校验与分发。
 
-通过`system_call()`，其中第一个参数表示的是`对应构造函数的参数个数`，第二个就表示可`对应要调用的方法`
+在Binder场景里最常见的是`BINDER_WRITE_READ`：
+
+1. 用户态把`binder_write_read`结构体传给驱动。
+2. 驱动在`binder_ioctl()`中根据`cmd`命中`BINDER_WRITE_READ`分支。
+3. 进入`binder_ioctl_write_read()`，再按`write_size/read_size`分别处理`binder_thread_write()`和`binder_thread_read()`。
+
+因此可以理解为：`ioctl`负责“路由到哪个驱动命令”，`binder_write_read`负责“本次事务要写什么、读什么”。
 
 
 
@@ -2657,9 +2674,9 @@ public interface BookManager extends IInterface {
 
 ### Binder传输数据上限，以及超出会如何？
 
-> Binder传输数据的最大限制为`1016KB`(默认情况下)，如果是异步执行，最多只有`508KB`。
+> Binder单进程映射缓冲区常见为约`1MB`（常见可用值约`1016KB`），异步事务可用空间通常受`free_async_space`限制（常见约一半）。
 
-调用`mmap`映射的大小就为`1016KB`，如果超出这块区域，`Binder驱动`就无法处理Binder调用，然后会抛出`DeadObjectException`异常。
+当单次事务数据过大时，应用层最常见异常是`TransactionTooLargeException`；在更底层场景也可能表现为`BR_FAILED_REPLY/FAILED_TRANSACTION`，极端情况下才可能看到`DeadObjectException`。
 
 ### 每个进程最大Binder线程数，以及超出会如何？
 
@@ -2671,8 +2688,8 @@ public interface BookManager extends IInterface {
 
 **异步调用和串行化处理**
 
-- `异步调用`:应用向`Binder驱动`发送数据后不需要挂起线程等待`Binder驱动`的回复，接收到`BR_TRANSACTION_COMPLETE`之后就直接结束。
-- `串行化处理`：所有`oneway`方法不会同时执行，`Binder驱动`会进行串行化处理，保证一个个执行。
+- `异步调用`：应用向`Binder驱动`发送数据后不等待`BR_REPLY`，通常在收到`BR_TRANSACTION_COMPLETE`后就返回。
+- `串行化处理`：同一Binder对象上的`oneway`事务会按队列顺序处理，不是无限并发执行。
 
 
 
@@ -2680,7 +2697,7 @@ public interface BookManager extends IInterface {
 >
 > 不过`oneway`的请求方式在收到`BR_TRANSACTION_COMPLETE`消息后，立即返回；
 >
-> `非oneway`的请求方式，还需要等到`BR_REPLY`之后才返回。此时`线程就会处于Sleep状态`，底层调用的就是`wait_event_interruptible()`
+> `非oneway`的请求方式，还需要等到`BR_REPLY`之后才返回，此时线程会处于阻塞等待状态，底层常见路径是`wait_event_interruptible()`。
 
 ```java
 //XX.aidl
@@ -2741,4 +2758,4 @@ interface IXX {
 
 [Android Binder设计与实现-设计篇](https://blog.csdn.net/universus/article/details/6211589)
 
-[Bidner｜内存拷贝的本质和变迁](https://juejin.cn/post/6844904113046568973)
+[Binder｜内存拷贝的本质和变迁](https://juejin.cn/post/6844904113046568973)

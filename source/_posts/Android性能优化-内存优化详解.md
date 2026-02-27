@@ -465,13 +465,13 @@ cd platform-tools //切换Android SDK目录
 
 ### Memory Analyzer Tool
 
-> `Memory Profiler`只能查看对应内存的分配，不能判断是否发生了内存泄漏。
+> `Memory Profiler`只能查看对应内存的分配，不能判断是否发生了内存泄漏。
 >
 > `MAT`可以提供完整的`Java Heap`分析功能，并可以生成对应的内存分配报告以及分析内存问题。
 
 #### 如何使用
 
-使用Mat打开的上一步生成的`mat.hprof`文件，打开后会显示一个预览页。
+使用MAT打开上一步生成的`mat.hprof`文件，打开后会显示一个预览页。
 
 预览页上主要显示以下组件：
 
@@ -481,7 +481,7 @@ cd platform-tools //切换Android SDK目录
 
   主要显示以下内容：
 
-  - `Shallow Heap`：对象自身占用的内存
+  - `Shallow Heap`：对象自身占用的内存
   - `Retained Heap`：对象自身占用的内存 + 对象引用对象所占用内存
   - `Objects`：对象个数
 
@@ -518,7 +518,7 @@ cd platform-tools //切换Android SDK目录
 
 #### 高级使用
 
-有两个hprof文件中，通过`Compare Basket`进行比较，可以快速生成对比结果，直接进行对应实例对象的比较。
+有两个hprof文件时，通过`Compare Basket`进行比较，可以快速生成对比结果，直接进行对应实例对象的比较。
 
 
 
@@ -536,7 +536,7 @@ cd platform-tools //切换Android SDK目录
 
 ### 图片高效加载方式
 
-图片的主要载体形式为`Bitmap`，一般通过`BitmapFactory.decodeFile()或`BitmapFactory.decodeResource()去进行加载。
+图片的主要载体形式为`Bitmap`，一般通过`BitmapFactory.decodeFile()`或`BitmapFactory.decodeResource()`进行加载。
 
 ```java
 //加载本地文件
@@ -664,7 +664,7 @@ iv.setImageBitmap(decodeSampledBitmapTromResource(getResources(),R.drawable.bitm
 
 #### 减少使用枚举类型
 
-一般情况下使用枚举类型的`dex size`是普通常量定义的`dex size`的13倍以上，同时运行时的内存分配，一个`enum`值的生命也会消耗至少20Bytes。
+一般情况下使用枚举类型的`dex size`是普通常量定义的`dex size`的13倍以上，同时运行时的内存分配，一个`enum`值的生命周期也会消耗至少20Bytes。
 
 **建议使用`IntDef`和`StringDef`替代枚举类型。简单的枚举的话，可以直接使用静态常量代替。**
 
@@ -675,7 +675,7 @@ iv.setImageBitmap(decodeSampledBitmapTromResource(getResources(),R.drawable.bitm
 - 资源复用：通用的字符串、颜色定义、简单页面布局的复用(`<merge>、<include>`)
 - 视图复用：使用ViewHolder实现ConvertView复用
 - 对象池：创建对象池，实现复用逻辑，对相同类型的数据使用同一块内存空间。*不要使用new Message()而是使用Message.obtain()以复用Message对象*
-- Bitmap复用：使用`inBitmap`属性告知BitmapDecoder尝试使用已经存在的内存区域。*在Android 4.4之前只能重用相同大小的Bitmap内存，4.4之后的只要后来的Bitmap比之前的小即可。*
+- Bitmap复用：使用`inBitmap`属性告知BitmapDecoder尝试使用已经存在的内存区域。*在Android 4.4之前只能重用相同大小的Bitmap内存，4.4之后只要后来的Bitmap比之前的小即可。*
 
 #### 可用内存过低主动清理
 
@@ -703,4 +703,3 @@ iv.setImageBitmap(decodeSampledBitmapTromResource(getResources(),R.drawable.bitm
 [抖音Android性能优化系列:Java内存优化篇](https://mp.weixin.qq.com/s?__biz=MzI1MzYzMjE0MQ==&mid=2247487267&idx=1&sn=64858e39d3c0ac3b3444213856f0d9a3&chksm=e9d0c4c1dea74dd72482c94f936fa31d5609eff5f09b7ee2405e95eecba7ce00bbbb5657730b&mpshare=1&scene=23&srcid=1222g3BpOggvZ2gUY7fgOwUr&sharer_sharetime=1608602832041&sharer_shareid=65073698ab9ac2983b955fa53b4ff585%23rd)
 
 [MAT使用详解](https://juejin.cn/post/6911624328472133646#heading-11)
-

@@ -13,7 +13,7 @@ top: 10
 绘制过程入口位于`ViewRootImpl.performDraw()`中
 
 ```java
-//viewRootImpl.java
+//ViewRootImpl.java
     private void performDraw() {
       ...
         try {
@@ -606,7 +606,7 @@ status_t BufferQueueProducer::queueBuffer(int slot,
             }
         }
   ...
-    //回调frameAvaliableListener 通知消费者有数据入队了
+    //回调frameAvailableListener，通知消费者有数据入队
         if (frameAvailableListener != NULL) {
             frameAvailableListener->onFrameAvailable(item);
         } else if (frameReplacedListener != NULL) {
@@ -615,7 +615,9 @@ status_t BufferQueueProducer::queueBuffer(int slot,
 }
 ```
 
-//TODO 这里有个问题 如何和`BufferLayer`绑定
+上面这条回调链路里，`BufferQueueLayer`本身就是`BufferLayer`体系中的生产者入口。
+
+`queueBuffer()`触发`onFrameAvailable()`后，会通过`SurfaceFlinger.signalLayerUpdate()`把该Layer标记为需要参与下一帧合成。
 
 
 
@@ -657,10 +659,10 @@ void SurfaceFlinger::signalLayerUpdate() {
 如图所示执行步骤如下所示：
 
 1. 初始化一个`BufferQueue`
-2. `BufferQueueProducer`调用`dequeueBuffer`向`BufferQueue`申请一块空的`GRaphicBuffer`
+2. `BufferQueueProducer`调用`dequeueBuffer`向`BufferQueue`申请一块空的`GraphicBuffer`
 3. 可以通过`requestBuffer`获取对应的`GraphicBuffer`
 4. 向`GraphicBuffer`填充完数据后，调用`queueBuffer`向`BufferQueue`添加`GraphicBuffer`
-5. 添加数据完成后，`BufferQueue`通过回调通知消费者，有新数据加入——`onFrameAvaliable()`
+5. 添加数据完成后，`BufferQueue`通过回调通知消费者，有新数据加入——`onFrameAvailable()`
 6. `BufferQueueConsumer`调用`acquireBuffer`从`BufferQueue`获取`GraphicBuffer`
 7. 待`GraphicBuffer`使用完毕后，调用`releaseBuffer`将空的`GraphicBuffer`还给`BufferQueue`以便重复利用
 8. 空的数据返回后，`BufferQueue`通过回调通知生产者，有空闲数据。后续生产者可以继续获取空的`GraphicBuffer`进行使用——`onBufferReleased()`
@@ -695,7 +697,7 @@ void SurfaceFlinger::signalLayerUpdate() {
 
 - `构建阶段`
 
-  > 遍历所有View，将需要绘制的操作缓存下来，构建`DisplayList`。交给`RenderThread`使用GPU进行硬件加速渲染。
+  > 遍历所有View，将需要绘制的操作缓存下来，构建`DisplayList`。交给`RenderThread`使用GPU进行硬件加速渲染。
 
 - `绘制阶段`
 
@@ -1080,7 +1082,7 @@ public View(Context context) {
 
    **只要View绘制过一次，就会一直返回true。除非`detached`**
 
-3. `mRecreateDisplayList==true` View需要重新构建`DisplayList`
+3. `mRecreateDisplayList==true` View需要重新构建`DisplayList`
 
    **mPrivateFlags持有`PFLAG_INVALIDATED`标记**
 
@@ -1646,7 +1648,7 @@ bool OpenGLPipeline::swapBuffers(const Frame& frame, bool drew, const SkRect& sc
 >
 > `LAYER_TYPE_SOFTWARE`：标识这个View有一个`Software Layer`，在一定条件下，会变成`bitmap`对象。
 >
-> `LAYER_TYPE_HARDWARE`：标识这个VIew有一个`Hardware Layer`，通过GPU来实现。依赖`硬件加速`实现，如果未开启`硬件加速`，按照`Software Layer`实现。
+> `LAYER_TYPE_HARDWARE`：标识这个View有一个`Hardware Layer`，通过GPU来实现。依赖`硬件加速`实现，如果未开启`硬件加速`，按`Software Layer`实现。
 
 ### 软件绘制缓存
 
@@ -1685,7 +1687,7 @@ bool OpenGLPipeline::swapBuffers(const Frame& frame, bool drew, const SkRect& sc
     }
 ```
 
-要启用`软件绘制缓存`，必须调用`View.setLayerType()`设置`LAYER_TYPE_HARDDWARE、LAYER_TYPE_SOFTWARE`。通过`buildDrawingCache()`生成`绘制缓存`，对应会生成两个缓存对象：
+要启用`软件绘制缓存`，必须调用`View.setLayerType()`设置`LAYER_TYPE_HARDWARE、LAYER_TYPE_SOFTWARE`。通过`buildDrawingCache()`生成`绘制缓存`，对应会生成两个缓存对象：
 
 - `mDrawingCache`：根据兼容模式进行放大或缩小
 - `mUnscaledDrawingCache`：反映了控件的真实尺寸，多用作控件截图。

@@ -72,7 +72,7 @@ public class TrafficStats {
     }
 ```
 
-通过AIDL调用到`NetWorkStatsService`
+通过AIDL调用到`NetworkStatsService`
 
 ```java
 public class NetworkStatsService extends INetworkStatsService.Stub {
@@ -168,7 +168,7 @@ public class TrafficStatsHelper {
 }
 
 调用实例：
-TrafficStats.getUidRxBytes(Process.myUid()) //当前不支持外部获取对应应用的流量信息，如果有需求需要使用NetWorkStatsManager
+TrafficStats.getUidRxBytes(Process.myUid()) //当前不支持外部获取对应应用的流量信息，如果有需求需要使用NetworkStatsManager
 ```
 
 
@@ -204,7 +204,7 @@ public static class Bucket {
 
 以上为`NetworkStatsManager`的主要调用方法
 
-根据上述提供的方法，可以得到设备一直的流量数据，并且支持按照`networkType`区分和`startTime~endTime`获取指定时间段的流量数据。
+根据上述提供的方法，可以得到设备历史流量数据，并且支持按照`networkType`区分和`startTime~endTime`获取指定时间段的流量数据。
 
 优点：
 
@@ -221,7 +221,7 @@ INetworkStatsSession.aidl -> getDeviceSummaryForNetwork
 
 NetworkStatsService.java
 
-NetworkStatsCollection.java -> getHistory()
+NetworkStatsCollection.java -> getHistory()
 
 #### 使用实例
 
@@ -239,7 +239,7 @@ AndroidManifest.xml 配置权限
         if (!hasPermissionToReadNetworkHistory()) {
             return;
         }
-        //检测有无获取 READ_PHOBE_STATE 权限
+        //检测有无获取 READ_PHONE_STATE 权限
         if (!hasPermissionToReadPhoneStats()) {
             //申请对应权限
             requestPhoneStateStats();
@@ -320,6 +320,6 @@ AndroidManifest.xml 配置权限
 
 [TrafficStats流程分析](https://www.jianshu.com/p/061f8889a888)
 
-[ePBF流量监控](https://source.android.google.cn/devices/tech/datausage/ebpf-traffic-monitor)
+[eBPF流量监控](https://source.android.google.cn/devices/tech/datausage/ebpf-traffic-monitor)
 
-[NetStads Demo]( https://github.com/RobertZagorski/NetworkStats.git )
+[NetStats Demo](https://github.com/RobertZagorski/NetworkStats.git)
