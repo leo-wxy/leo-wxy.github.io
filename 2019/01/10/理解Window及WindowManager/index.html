@@ -33,7 +33,7 @@
 <meta property="og:image" content="https://leo-wxy.github.io/images/Window%E6%9B%B4%E6%96%B0%E8%BF%87%E7%A8%8B.png">
 <meta property="og:image" content="https://leo-wxy.github.io/images/Window%E5%88%A0%E9%99%A4%E8%BF%87%E7%A8%8B.png">
 <meta property="article:published_time" content="2019-01-10T03:48:59.000Z">
-<meta property="article:modified_time" content="2026-02-25T15:08:31.071Z">
+<meta property="article:modified_time" content="2026-02-27T12:45:56.168Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="Android">
 <meta name="twitter:card" content="summary_large_image">
@@ -303,6 +303,11 @@
 <h2 id="1-基本概念"><a href="#1-基本概念" class="headerlink" title="1.基本概念"></a>1.基本概念</h2><p><code>Window</code>：它是一个抽象类，具体实现类为<code>PhoneWindow</code>，负责对View进行管理。每个Window都会对应一个<code>View</code>和一个<code>ViewRootImpl</code>，Window通过<code>ViewRootImpl</code>与View建立联系。</p>
 <p><code>WindowManager</code>：是一个接口类，继承<code>ViewManager</code>，主要用于管理Window，具体实现类为<code>WindowManagerImpl</code>。实际使用中无法直接访问Window，需要通过<code>WindowManager</code>进行操作。</p>
 <p><code>WindowManagerService</code>：<code>WindowManager</code>的具体工作都会通过<code>WindowManagerService</code>处理，它们之间通过<code>Binder</code>进行跨进程通信，<code>WindowManager</code>无法直接调用WMS中的API。</p>
+<p>补充：应用窗口和子窗口都需要合法<code>token</code>，用于让WMS确认“这个窗口属于哪个Activity&#x2F;父窗口”。</p>
+<ul>
+<li><code>BadTokenException</code>常见原因：<code>Activity</code>已销毁后仍<code>show Dialog/addView</code>、使用了不匹配的<code>Context</code>、子窗口未绑定有效父窗口。</li>
+<li>规避方式：把窗口操作与生命周期对齐（如<code>onStart/onStop</code>或<code>onResume/onPause</code>），并优先使用当前Activity上下文。</li>
+</ul>
 <span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/Window&WindowManager&WMS.png" srcset="/img/loading.gif" lazyload class="full-image" alt="Window&WindowManager&WMS" title="Window&WindowManager&WMS" /><meta itemprop="width" content="auto"/><meta itemprop="height" content="auto"/></span>
 
 
@@ -410,6 +415,11 @@
 
 
 <h2 id="3-Window的操作"><a href="#3-Window的操作" class="headerlink" title="3.Window的操作"></a>3.Window的操作</h2><p>对Window的访问必须通过<code>WindowManager</code>，主要有三大操作：<strong>添加、更新、删除</strong>。这三个方法主要定义在<code>ViewManager</code>中</p>
+<p>补充：Window相关<code>add/update/remove</code>本质都绑定在View树线程，跨线程调用会在<code>ViewRootImpl.checkThread()</code>处失败。</p>
+<ul>
+<li>实践中应保证在主线程操作。</li>
+<li>后台线程若需操作窗口，应通过<code>Handler</code>或主线程调度切回后执行。</li>
+</ul>
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title class_">ViewManager</span><br>&#123;<br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">addView</span><span class="hljs-params">(View view, ViewGroup.LayoutParams params)</span>;<br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">updateViewLayout</span><span class="hljs-params">(View view, ViewGroup.LayoutParams params)</span>;<br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">removeView</span><span class="hljs-params">(View view)</span>;<br>&#125;<br></code></pre></td></tr></table></figure>
 
 <p><code>WindowManager</code>也是一个接口继承自<code>ViewManager</code></p>
@@ -462,6 +472,10 @@
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">performTraversals</span><span class="hljs-params">()</span> &#123;<br>  ...<br>    relayoutResult = relayoutWindow(params, viewVisibility, insetsPending);<br>  ...<br>    <span class="hljs-keyword">if</span>(!mStopped)&#123;<br>      <span class="hljs-type">int</span> <span class="hljs-variable">childWidthMeasureSpec</span> <span class="hljs-operator">=</span> getRootMeasureSpec(mWidth, lp.width);<br>      <span class="hljs-type">int</span> <span class="hljs-variable">childHeightMeasureSpec</span> <span class="hljs-operator">=</span> getRootMeasureSpec(mHeight, lp.height); <br>      <span class="hljs-comment">//开始测量过程</span><br>      performMeasure(childWidthMeasureSpec, childHeightMeasureSpec);<br>    &#125;<br>    ...<br>    <span class="hljs-comment">//layoutRequested 是否需要重新执行布局过程</span><br>    <span class="hljs-keyword">final</span> <span class="hljs-type">boolean</span> <span class="hljs-variable">didLayout</span> <span class="hljs-operator">=</span> layoutRequested &amp;&amp; (!mStopped || mReportNextDraw);<br>    <span class="hljs-keyword">if</span>(didLayout)&#123;<br>      <span class="hljs-comment">//开始布局过程</span><br>      performLayout(lp, mWidth, mHeight);<br>    &#125;<br>    ...<br>    <span class="hljs-keyword">if</span> (!cancelDraw &amp;&amp; !newSurface) &#123;<br>            <span class="hljs-keyword">if</span> (mPendingTransitions != <span class="hljs-literal">null</span> &amp;&amp; mPendingTransitions.size() &gt; <span class="hljs-number">0</span>) &#123;<br>                <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> <span class="hljs-variable">i</span> <span class="hljs-operator">=</span> <span class="hljs-number">0</span>; i &lt; mPendingTransitions.size(); ++i) &#123;<br>                    mPendingTransitions.get(i).startChangingAnimations();<br>                &#125;<br>                mPendingTransitions.clear();<br>            &#125;<br>            <span class="hljs-comment">//开始绘制过程</span><br>            performDraw();<br>        &#125; <br>  ...<br>  <br>&#125;<br></code></pre></td></tr></table></figure>
 
 <p><code>performTraversals()</code>内部实现了Window更新以及View的工作流程。是否完整执行<em>测量-布局-绘制</em>取决于当前标记位和状态，不是每次更新都必然全量重走。</p>
+<p>补充：<code>updateViewLayout()</code>会触发<code>setLayoutParams -&gt; scheduleTraversals</code>，但后续是否执行<code>measure/layout/draw</code>取决于标记位与参数变化。</p>
+<ul>
+<li>例如仅部分Window属性变化时，可能主要走<code>relayoutWindow</code>与局部绘制，而不是完整三阶段。</li>
+</ul>
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">private</span> <span class="hljs-type">int</span> <span class="hljs-title function_">relayoutWindow</span><span class="hljs-params">(WindowManager.LayoutParams params, <span class="hljs-type">int</span> viewVisibility,</span><br><span class="hljs-params">        <span class="hljs-type">boolean</span> insetsPending)</span> <span class="hljs-keyword">throws</span> RemoteException &#123;<br>  ...<br>     <span class="hljs-type">int</span> <span class="hljs-variable">relayoutResult</span> <span class="hljs-operator">=</span> mWindowSession.relayout(<br>            mWindow, mSeq, params,<br>            (<span class="hljs-type">int</span>) (mView.getMeasuredWidth() * appScale + <span class="hljs-number">0.5f</span>),<br>            (<span class="hljs-type">int</span>) (mView.getMeasuredHeight() * appScale + <span class="hljs-number">0.5f</span>),<br>            viewVisibility, insetsPending ? WindowManagerGlobal.RELAYOUT_INSETS_PENDING : <span class="hljs-number">0</span>,<br>            mWinFrame, mPendingOverscanInsets, mPendingContentInsets, mPendingVisibleInsets,<br>            mPendingStableInsets, mPendingOutsets, mPendingBackDropFrame,<br>            mPendingMergedConfiguration, mSurface);<br>  ...<br>&#125;<br></code></pre></td></tr></table></figure>
 
 <p><code>mWindowSession</code>的类型是<code>IWindowSession</code>，它是一个Binder对象，用于进行进程间通信，也是<code>Session</code>在客户端的代理。</p>
@@ -498,37 +512,26 @@
 <figure class="highlight java"><figcaption><span>../core/java/com/android/server/wm/Session.java</span></figcaption><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">remove</span><span class="hljs-params">(IWindow window)</span> &#123;<br>    mService.removeWindow(<span class="hljs-built_in">this</span>, window);<br>&#125;<br></code></pre></td></tr></table></figure>
 
 <p><code>remove()</code>最终通过<code>WindowManagerService.removeWindow()</code>实现Window删除逻辑。</p>
-<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/Window删除过程.png" srcset="/img/loading.gif" lazyload class="full-image" alt="Window删除过程" title="Window删除过程" /><meta itemprop="width" content="auto"/><meta itemprop="height" content="auto"/></span>
-
-<h2 id="4-知识点补全"><a href="#4-知识点补全" class="headerlink" title="4.知识点补全"></a>4.知识点补全</h2><h3 id="WindowToken与BadTokenException"><a href="#WindowToken与BadTokenException" class="headerlink" title="WindowToken与BadTokenException"></a>WindowToken与BadTokenException</h3><ul>
-<li>应用窗口和子窗口都需要合法<code>token</code>，用于让WMS确认“这个窗口属于哪个Activity&#x2F;父窗口”。</li>
-<li><code>BadTokenException</code>常见原因：<code>Activity</code>已销毁后仍<code>show Dialog/addView</code>、使用了不匹配的<code>Context</code>、子窗口未绑定有效父窗口。</li>
-<li>规避方式：把窗口操作与生命周期对齐（如<code>onStart/onStop</code>或<code>onResume/onPause</code>），并优先使用当前Activity的上下文。</li>
-</ul>
-<h3 id="removeView与removeViewImmediate"><a href="#removeView与removeViewImmediate" class="headerlink" title="removeView与removeViewImmediate"></a>removeView与removeViewImmediate</h3><ul>
+<p>补充：<code>removeView()</code>与<code>removeViewImmediate()</code></p>
+<ul>
 <li><code>removeView()</code>走异步路径，最终由<code>ViewRootImpl</code>消息循环触发<code>doDie()</code>，更平滑。</li>
 <li><code>removeViewImmediate()</code>走同步路径，立即执行移除，适合退出前需要立刻释放窗口资源的场景。</li>
 <li>两者都应保证“add&#x2F;remove成对”，否则容易出现<code>WindowLeaked</code>。</li>
 </ul>
-<h3 id="WindowLeaked触发场景"><a href="#WindowLeaked触发场景" class="headerlink" title="WindowLeaked触发场景"></a>WindowLeaked触发场景</h3><ul>
+<p>常见<code>WindowLeaked</code>触发场景：</p>
+<ul>
 <li><code>Activity</code>结束前未及时移除通过<code>WindowManager.addView()</code>添加的悬浮View。</li>
-<li>异步任务回调晚于页面销毁，仍尝试弹窗或更新窗口。</li>
+<li>异步回调晚于页面销毁，仍尝试弹窗或更新窗口。</li>
 <li>在<code>Fragment</code>中持有旧<code>Activity</code>引用，导致窗口生命周期错配。</li>
 </ul>
-<p>建议：在页面销毁链路统一回收窗口，并在回调中先判断<code>isFinishing()/isDestroyed()</code>。</p>
-<h3 id="updateViewLayout不等于全量重绘"><a href="#updateViewLayout不等于全量重绘" class="headerlink" title="updateViewLayout不等于全量重绘"></a>updateViewLayout不等于全量重绘</h3><ul>
-<li><code>updateViewLayout()</code>会触发<code>setLayoutParams -&gt; scheduleTraversals</code>，但后续是否执行<code>measure/layout/draw</code>取决于标记位与参数变化。</li>
-<li>例如仅部分Window属性变化时，可能主要走<code>relayoutWindow</code>与局部绘制，而不是完整三阶段。</li>
-</ul>
-<h3 id="线程约束"><a href="#线程约束" class="headerlink" title="线程约束"></a>线程约束</h3><ul>
-<li>Window相关的<code>add/update/remove</code>本质都绑定到View树线程，跨线程调用会在<code>ViewRootImpl.checkThread()</code>处失败。</li>
-<li>实践中应保证在主线程操作，后台线程通过<code>Handler</code>或主线程调度切回后再执行。</li>
-</ul>
-<h3 id="InputChannel在窗口层的作用"><a href="#InputChannel在窗口层的作用" class="headerlink" title="InputChannel在窗口层的作用"></a>InputChannel在窗口层的作用</h3><ul>
-<li>窗口添加时，<code>mWindowSession.addToDisplay(...)</code>会建立窗口与输入系统之间的<code>InputChannel</code>绑定。</li>
+<p>建议在页面销毁链路统一回收窗口，并在回调中先判断<code>isFinishing()/isDestroyed()</code>。</p>
+<p>补充：窗口添加时，<code>mWindowSession.addToDisplay(...)</code>会建立窗口与输入系统之间的<code>InputChannel</code>绑定。</p>
+<ul>
 <li>后续触摸事件由<code>InputDispatcher</code>投递到目标窗口通道，再回流到App侧<code>ViewRootImpl</code>分发。</li>
 <li>因此窗口可见性、焦点与type变化，不仅影响层级，也会直接影响输入命中。</li>
 </ul>
+<span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/Window删除过程.png" srcset="/img/loading.gif" lazyload class="full-image" alt="Window删除过程" title="Window删除过程" /><meta itemprop="width" content="auto"/><meta itemprop="height" content="auto"/></span>
+
 <h3 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h3><blockquote>
 <p>上述Window的三大操作(<em>添加、更新和删除</em>)都会通过一个IPC过程调用<code>WindowManagerService</code>去实现具体逻辑。</p>
 <p>三大操作过程也都需要通过<code>ViewRootImpl</code>来关联起Window和View，<code>ViewRootImpl</code>可以控制内部View的<em>测量、布局与绘制</em>。</p>
