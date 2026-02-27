@@ -340,6 +340,16 @@ IMS启动过程重点在于Native的初始化，分别创建以下对象：
 
 `IMS`启动之后，`InputDispatcherThread`与`InputReaderThread`随之启动。
 
+补充：一次触摸从内核到View的大致主链路如下。
+
+`/dev/input -> EventHub -> InputReader -> NotifyMotionArgs -> InputDispatcher(mInboundQueue) -> InputChannel -> WindowInputEventReceiver -> ViewRootImpl -> DecorView -> Activity -> ViewGroup -> View`
+
+排查问题时可先判断“卡在哪一段”：
+
+- Native采集阶段（EventHub/InputReader）
+- Native分发阶段（InputDispatcher + window命中）
+- App消费阶段（ViewRootImpl输入阶段链 + View树分发）
+
 #### InputReaderThread
 
 ![InputReaderThread](/images/InputReaderThread.png)
@@ -998,6 +1008,12 @@ bool InputDispatcher::dispatchMotionLocked(
     return true;
 }
 ```
+
+补充：窗口命中规则
+
+- 指针类事件（触摸）优先走`findTouchedWindowTargetsLocked()`，核心依据是当前坐标命中窗口。
+- 非指针类事件（如按键）通常走`findFocusedWindowTargetsLocked()`，核心依据是焦点窗口。
+- 命中窗口后，事件会以`InputTarget`形式封装偏移、缩放、pointerId集合等信息，再投递到对应`InputChannel`。
 
 `InputTarget`的结构
 
@@ -1821,6 +1837,9 @@ private void dispatchInputEvent(int seq, InputEvent event, int displayId) {
         }
     }
 
+    // 默认模式下，输入批处理会挂到 CALLBACK_INPUT 对齐帧节奏
+    // 若开启 mUnbufferedInputDispatch，会偏向即时分发以降低输入延迟
+
     void enqueueInputEvent(InputEvent event,
             InputEventReceiver receiver, int flags, boolean processImmediately) {
         adjustInputEventForCompatibility(event);
@@ -1980,6 +1999,12 @@ public final boolean dispatchPointerEvent(MotionEvent event) {
 - `ACTION_MOVE`：用户按压屏幕后，在抬起之前，如果移动的距离超过一定数值，就判定为移动事件。
 - `ACTION_UP`：监听用户手指离开屏幕的操作，一次抬起标志触摸事件的结束。
 - `ACTION_CANCEL`：当用户保持按下操作，并把手指移动到了控件外部区域时且父View处理事件触发。
+
+多指触摸下还需要关注：
+
+- `ACTION_POINTER_DOWN/ACTION_POINTER_UP`：表示非首指的按下/抬起，不会重置整段手势。
+- `actionIndex`表示“本次变化的是哪根手指”，`pointerId`用于跨事件稳定标识同一手指。
+- 多指处理应基于`pointerId`而不是临时索引，避免索引变化导致手指错位。
 
 
 
@@ -2460,6 +2485,8 @@ public boolean dispatchTouchEvent(MotionEvent event) {
 1. `onTouchListener.ouTouch()`开始执行，返回`true`表示当前事件已被消费，不需要向上执行。否则继续向下执行
 2. `onTouchEvent()`返回`true`表示消费事件。
 
+补充：`onTouch()`返回`true`后，事件通常不会再触发`onClick()`。
+
 
 
 ```java
@@ -2590,6 +2617,8 @@ public boolean dispatchTouchEvent(MotionEvent event) {
 
   当前View未设置`clickable/longclickable`，等价于返回false,交由上一层的`onTouchEvent()`处理。
 
+  这也是“View不可点击时，`onTouchEvent()`默认可能返回false，事件向父层回传”的常见来源。
+
 
 
 上述三个核心方法，可以用如下伪代码代替
@@ -2640,6 +2669,8 @@ public boolean dispatchTouchEvent() {
 >
 > 如果`mFirstTarget`不为空，`ACTION_MOVE`和`ACTION_UP`才会向子View传递，如果中途被`ViewGroup`拦截了事件，子View就会收到`ACTION_CANCEL`，并且`mFirstTouchTarget`为null，后续的事件只会走到`ViewGroup`。
 
+补充：`mFirstTouchTarget`通常在`ACTION_DOWN`阶段建立，后续`MOVE/UP`会按该目标持续分发；父容器中途改为拦截时，会向子View发送`ACTION_CANCEL`结束本次手势序列。
+
 #### 事件分发特殊情况
 
 ![事件分发特殊情况](/images/事件分发特殊情况.png)
@@ -2652,6 +2683,8 @@ public boolean dispatchTouchEvent() {
 
 2. 子View收到ACTION_DOWN，但是上一个事件还没有结束(因为APP切换、ANR导致后续事件丢失)，此时也会执行ACTION_CANCEL
 
+`ACTION_CANCEL`本身不代表异常崩溃，更多是分发策略变化（父拦截、窗口切换、系统接管）的正常信号。
+
 
 
 ##### 子View拦截父View事件
@@ -2659,6 +2692,8 @@ public boolean dispatchTouchEvent() {
 子View通过使用`requestDisallowInterceptTouchEvent(true)`命令**指定ViewGroup不再针对事件序列进行拦截**，将事件交由子View去处理。
 
 *设置`requestDisallowInterceptTouchEvent(true)`后，父类会在每次`ACTION_DOWN`的时候进行重置，避免影响其他子View的事件处理。*
+
+也就是说，`requestDisallowInterceptTouchEvent(true)`只影响当前这次手势序列，下次`ACTION_DOWN`会重新开始判定。
 
 上述方法也是解决`滑动冲突`的一种方法：
 
@@ -2783,68 +2818,17 @@ status_t InputConsumer::sendUnchainedFinishedSignal(uint32_t seq, bool handled) 
 
 `InputChannel.sendMessage()`之后，`InputDispatcher`线程被唤醒，回调到`handleReceiveCallback()`。执行到上面的`InputDispatcheThread`相关代码。
 
-## 知识点补全
-
-### 输入事件主链路（定位问题用）
-
-一次触摸从内核到View，大致经过以下主链路：
-
-`/dev/input -> EventHub -> InputReader -> NotifyMotionArgs -> InputDispatcher(mInboundQueue) -> InputChannel -> WindowInputEventReceiver -> ViewRootImpl -> DecorView -> Activity -> ViewGroup -> View`
-
-排查问题时可以先确认“卡在哪一段”：
-
-- Native采集阶段（EventHub/InputReader）
-- Native分发阶段（InputDispatcher + window命中）
-- App消费阶段（ViewRootImpl输入阶段链 + View树分发）
-
-### finishInputEvent与ANR关系
+补充：`finishInputEvent`是输入消费闭环的关键点。
 
 - `ViewRootImpl.finishInputEvent()`最终会走到`InputConsumer.sendFinishedSignal()`，通知`InputDispatcher`本次事件已处理。
 - `InputDispatcher`收到finished信号后，会从`waitQueue`移除对应`DispatchEntry`并继续下一轮发送。
 - 如果App侧长期不回传finished，`waitQueue`会堆积，可能触发输入超时与ANR判定。
 
-也就是说，`finishInputEvent`是“消费闭环”的关键节点，不只是一个收尾回调。
-
-### 窗口命中规则补充
-
-- 指针类事件（触摸）优先走`findTouchedWindowTargetsLocked()`，核心依据是当前坐标命中窗口。
-- 非指针类事件（如按键）通常走`findFocusedWindowTargetsLocked()`，核心依据是焦点窗口。
-- 命中窗口后，事件以`InputTarget`形式封装偏移、缩放、pointerId集合等信息，再投递到对应`InputChannel`。
-
-### 多指触摸语义补充
-
-- `ACTION_DOWN/ACTION_UP`：表示首指按下与末指抬起，定义一段手势序列的起止。
-- `ACTION_POINTER_DOWN/ACTION_POINTER_UP`：表示非首指的按下/抬起，不会重置整段手势。
-- `actionIndex`表示“本次变化的是哪根手指”，`pointerId`用于跨事件稳定标识同一手指。
-
-处理多指时应基于`pointerId`而不是临时索引，避免索引变化导致手指错位。
-
-### ViewGroup拦截时序补充
-
-- `mFirstTouchTarget`通常在`ACTION_DOWN`阶段建立，后续`MOVE/UP`按该目标持续分发。
-- 父容器若中途改为拦截，会向子View发送`ACTION_CANCEL`，子View结束当前手势。
-- `requestDisallowInterceptTouchEvent(true)`只影响本次手势序列；下次`ACTION_DOWN`会重新开始判定。
-
-这也是滑动冲突常见解法的基础：外部拦截法（父容器）与内部拦截法（子View）本质都是在控制上述时序。
-
-### 批量输入与Vsync对齐
-
-- `onBatchedInputEventPending()`在默认模式下会走`scheduleConsumeBatchedInput()`，把输入消费挂到`Choreographer.CALLBACK_INPUT`。
-- 这样做的目标是把输入处理与帧节奏对齐，减少抖动与无效唤醒。
-- 若启用`mUnbufferedInputDispatch`，会更偏向即时分发，降低输入延迟但可能增加调度开销。
-
-### 常见误区速查
-
-- `onTouch()`返回`true`后，事件已被消费，通常不会再触发`onClick()`。
-- `View`不可点击时，`onTouchEvent()`默认可能返回`false`，事件会向父层回传。
-- `ACTION_CANCEL`不代表异常，它是分发策略变化（父拦截、窗口切换等）的正常信号。
-
-### 版本差异观察点
+补充：版本差异观察点。
 
 - 新版本系统中`MotionEvent`与分发链路更强调`displayId`，多显示场景下必须关注事件所属display。
 - 高刷新率设备上，输入批处理与Vsync协同更明显，卡顿排查要同时看输入阶段与绘制阶段。
-
-建议把输入链路日志与`FrameTimeline`一起看，避免只看`View`层导致定位偏差。
+- 建议把输入链路日志与`FrameTimeline`一起看，避免只看`View`层导致定位偏差。
 
 ## 相关示例
 

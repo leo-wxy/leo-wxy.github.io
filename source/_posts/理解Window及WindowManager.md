@@ -15,6 +15,11 @@ top: 10
 
 `WindowManagerService`：`WindowManager`的具体工作都会通过`WindowManagerService`处理，它们之间通过`Binder`进行跨进程通信，`WindowManager`无法直接调用WMS中的API。
 
+补充：应用窗口和子窗口都需要合法`token`，用于让WMS确认“这个窗口属于哪个Activity/父窗口”。
+
+- `BadTokenException`常见原因：`Activity`已销毁后仍`show Dialog/addView`、使用了不匹配的`Context`、子窗口未绑定有效父窗口。
+- 规避方式：把窗口操作与生命周期对齐（如`onStart/onStop`或`onResume/onPause`），并优先使用当前Activity上下文。
+
 
 
 {% fullimage /images/Window&WindowManager&WMS.png,Window&WindowManager&WMS,Window&WindowManager&WMS%}
@@ -128,6 +133,11 @@ getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN);
 ## 3.Window的操作
 
 对Window的访问必须通过`WindowManager`，主要有三大操作：**添加、更新、删除**。这三个方法主要定义在`ViewManager`中
+
+补充：Window相关`add/update/remove`本质都绑定在View树线程，跨线程调用会在`ViewRootImpl.checkThread()`处失败。
+
+- 实践中应保证在主线程操作。
+- 后台线程若需操作窗口，应通过`Handler`或主线程调度切回后执行。
 
 ```java
 public interface ViewManager
@@ -398,6 +408,10 @@ private void performTraversals() {
 
 `performTraversals()`内部实现了Window更新以及View的工作流程。是否完整执行*测量-布局-绘制*取决于当前标记位和状态，不是每次更新都必然全量重走。
 
+补充：`updateViewLayout()`会触发`setLayoutParams -> scheduleTraversals`，但后续是否执行`measure/layout/draw`取决于标记位与参数变化。
+
+- 例如仅部分Window属性变化时，可能主要走`relayoutWindow`与局部绘制，而不是完整三阶段。
+
 ```java
     private int relayoutWindow(WindowManager.LayoutParams params, int viewVisibility,
             boolean insetsPending) throws RemoteException {
@@ -571,45 +585,26 @@ public void removeView(View view, boolean immediate) {
 
 `remove()`最终通过`WindowManagerService.removeWindow()`实现Window删除逻辑。
 
-{% fullimage /images/Window删除过程.png,Window删除过程,Window删除过程%}
-
-## 4.知识点补全
-
-### WindowToken与BadTokenException
-
-- 应用窗口和子窗口都需要合法`token`，用于让WMS确认“这个窗口属于哪个Activity/父窗口”。
-- `BadTokenException`常见原因：`Activity`已销毁后仍`show Dialog/addView`、使用了不匹配的`Context`、子窗口未绑定有效父窗口。
-- 规避方式：把窗口操作与生命周期对齐（如`onStart/onStop`或`onResume/onPause`），并优先使用当前Activity的上下文。
-
-### removeView与removeViewImmediate
+补充：`removeView()`与`removeViewImmediate()`
 
 - `removeView()`走异步路径，最终由`ViewRootImpl`消息循环触发`doDie()`，更平滑。
 - `removeViewImmediate()`走同步路径，立即执行移除，适合退出前需要立刻释放窗口资源的场景。
 - 两者都应保证“add/remove成对”，否则容易出现`WindowLeaked`。
 
-### WindowLeaked触发场景
+常见`WindowLeaked`触发场景：
 
 - `Activity`结束前未及时移除通过`WindowManager.addView()`添加的悬浮View。
-- 异步任务回调晚于页面销毁，仍尝试弹窗或更新窗口。
+- 异步回调晚于页面销毁，仍尝试弹窗或更新窗口。
 - 在`Fragment`中持有旧`Activity`引用，导致窗口生命周期错配。
 
-建议：在页面销毁链路统一回收窗口，并在回调中先判断`isFinishing()/isDestroyed()`。
+建议在页面销毁链路统一回收窗口，并在回调中先判断`isFinishing()/isDestroyed()`。
 
-### updateViewLayout不等于全量重绘
+补充：窗口添加时，`mWindowSession.addToDisplay(...)`会建立窗口与输入系统之间的`InputChannel`绑定。
 
-- `updateViewLayout()`会触发`setLayoutParams -> scheduleTraversals`，但后续是否执行`measure/layout/draw`取决于标记位与参数变化。
-- 例如仅部分Window属性变化时，可能主要走`relayoutWindow`与局部绘制，而不是完整三阶段。
-
-### 线程约束
-
-- Window相关的`add/update/remove`本质都绑定到View树线程，跨线程调用会在`ViewRootImpl.checkThread()`处失败。
-- 实践中应保证在主线程操作，后台线程通过`Handler`或主线程调度切回后再执行。
-
-### InputChannel在窗口层的作用
-
-- 窗口添加时，`mWindowSession.addToDisplay(...)`会建立窗口与输入系统之间的`InputChannel`绑定。
 - 后续触摸事件由`InputDispatcher`投递到目标窗口通道，再回流到App侧`ViewRootImpl`分发。
 - 因此窗口可见性、焦点与type变化，不仅影响层级，也会直接影响输入命中。
+
+{% fullimage /images/Window删除过程.png,Window删除过程,Window删除过程%}
 
 ### 总结
 

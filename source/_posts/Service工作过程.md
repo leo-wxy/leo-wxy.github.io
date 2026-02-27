@@ -26,6 +26,11 @@ bindService(intent,mServiceConnection,BIND_AUTO_CREATE);
 
 Service的启动过程从`ContextWrapper.startService()`开始
 
+补充：Service生命周期回调默认运行在主线程（`ActivityThread`）。
+
+- `onCreate/onStartCommand/onBind`中执行重任务会阻塞主线程并放大ANR风险。
+- 实践上应快速返回，把IO/CPU任务切到工作线程（线程池、协程、WorkManager等）。
+
 ```java
 // ../android/content/ContextWrapper.java
     Context mBase;
@@ -68,6 +73,18 @@ Service的启动过程从`ContextWrapper.startService()`开始
 `ActivityManager.getService()`在Activity启动过程中有介绍，它拿到的是`IActivityManager`，实际指向`AMS`的一个Binder代理对象，随后调用`AMS.startService()`。
 
 > 主链路：`ContextImpl.startServiceCommon() -> AMS.startService() -> ActiveServices.startServiceLocked() -> bringUpServiceLocked() -> realStartServiceLocked() -> ActivityThread.handleCreateService()`
+
+补充：前台服务版本差异
+
+- Android 8.0(API 26)+引入`startForegroundService()`约束。
+- Service启动后需在限定时间内调用`startForeground()`，否则系统会判定异常并终止。
+- 新版本还叠加了后台启动限制，设计时应优先考虑可延迟任务与系统调度组件。
+
+补充：`startService`与`bindService`本质差异
+
+- `startService()`关注的是“启动请求计数”（`startRequested/startId`），对应回调是`onStartCommand()`。
+- `bindService()`关注的是“连接关系计数”（`ConnectionRecord/AppBindRecord`），对应回调是`onBind()/onUnbind()`。
+- 两者可共存：同一Service既被start又被bind时，必须同时满足“无启动请求 + 无绑定连接”才会销毁。
 
 ```java
 // ../core/java/com/android/server/am/ActivityManagerService.java
@@ -677,6 +694,11 @@ private void handleBindService(BindServiceData data) {
 >
 > **当多次绑定同一个Service时，`onBind()`只会执行一次，除非Service被终止。**
 
+补充：
+
+- 前提是`onUnbind()`返回`true`，系统才会记录后续可重绑。
+- 下次有客户端重新绑定同一Service时，回调`onRebind()`而不是再次走`onBind()`。
+
 {% fullimage /images/Service绑定过程.png,Service绑定过程,Service绑定过程%}
 
 #### Service绑定通知
@@ -1118,6 +1140,12 @@ private final boolean isServiceNeededLocked(ServiceRecord r, boolean knowConn,
 
 ```
 
+补充：`BIND_AUTO_CREATE`与销毁时机
+
+- `BIND_AUTO_CREATE`会在绑定时自动拉起Service。
+- 当最后一个自动创建连接断开时，会进入`bringDownServiceIfNeededLocked()`判定是否可销毁。
+- 若Service此前被`startService()`启动且尚未`stopService/stopSelf`，则不会仅因解绑而销毁。
+
 {% fullimage /images/Service解绑过程.png,Service解绑过程,Service解绑过程%}
 
 ### Service停止过程 - stopService()
@@ -1324,52 +1352,15 @@ private void handleStopService(IBinder token) {
     }
 ```
 
-最后执行到`Service.onDestroy`完成停止流程。
-
-{% fullimage /images/Service停止流程.png,Service停止流程,Service停止流程%}
-
-## 知识点补全
-
-### startService与bindService的本质差异
-
-- `startService()`关注的是“启动请求计数”（`startRequested/startId`），对应回调是`onStartCommand()`。
-- `bindService()`关注的是“连接关系计数”（`ConnectionRecord/AppBindRecord`），对应回调是`onBind()/onUnbind()`。
-- 两者可共存：同一Service既被start又被bind时，必须同时满足“无启动请求 + 无绑定连接”才会销毁。
-
-### 生命周期组合速览
+生命周期组合速览：
 
 1. 仅`startService()`：`onCreate -> onStartCommand(可多次) -> onDestroy`
 2. 仅`bindService()`：`onCreate -> onBind -> onUnbind -> onDestroy`（最后一个连接断开后）
 3. `start + bind`：先走start链路，再走bind链路；即使全部解绑，只要未stop仍可继续存活
 
-### 为什么bind不会触发onStartCommand
+最后执行到`Service.onDestroy`完成停止流程。
 
-- `onStartCommand()`对应的是“启动请求”，由`sendServiceArgsLocked -> scheduleServiceArgs`触发。
-- 纯bind路径走的是`requestServiceBindingLocked -> scheduleBindService -> onBind`，没有`StartItem`入队。
-- 因此“bind会拉起Service进程”与“触发onStartCommand”是两件不同的事。
-
-### onRebind触发条件再确认
-
-- 前提是`onUnbind()`返回`true`，系统才会记录后续可重绑。
-- 下次有客户端重新绑定同一Service时，回调`onRebind()`而不是再次走`onBind()`。
-
-### BIND_AUTO_CREATE与销毁时机
-
-- `BIND_AUTO_CREATE`会在绑定时自动拉起Service。
-- 当最后一个自动创建连接断开时，会进入`bringDownServiceIfNeededLocked()`判定是否可销毁。
-- 若Service此前被`startService()`启动且尚未`stopService/stopSelf`，则不会仅因解绑而销毁。
-
-### 主线程约束与ANR风险
-
-- Service生命周期回调默认运行在主线程（`ActivityThread`）。
-- `onCreate/onStartCommand/onBind`中执行重任务会阻塞主线程并放大ANR风险。
-- 实践上应快速返回，把IO/CPU任务切到工作线程（线程池、协程、WorkManager等）。
-
-### 前台服务版本差异
-
-- Android 8.0(API 26)+引入`startForegroundService()`约束。
-- Service启动后需在限定时间内调用`startForeground()`，否则系统会判定异常并终止。
-- 新版本还叠加了后台启动限制，设计时应优先考虑可延迟任务与系统调度组件。
+{% fullimage /images/Service停止流程.png,Service停止流程,Service停止流程%}
 
 ## 拓展
 
@@ -1378,3 +1369,6 @@ private void handleStopService(IBinder token) {
 观察源码发现，`bindService()`也会去启动Service，但为什么没有回调到`onStartCommand()`？
 
 核心原因是：`bindService()`拉起的是“绑定链路”，会走`onBind()`；`onStartCommand()`只属于“启动链路”，只有`startService()/startForegroundService()`写入启动请求后才会触发。
+
+- `onStartCommand()`对应的是“启动请求”，由`sendServiceArgsLocked -> scheduleServiceArgs`触发。
+- 纯bind路径走的是`requestServiceBindingLocked -> scheduleBindService -> onBind`，没有`StartItem`入队。
