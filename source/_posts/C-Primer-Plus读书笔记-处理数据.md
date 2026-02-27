@@ -143,7 +143,7 @@ unsigned long longNum;
 
 如果变量可能表示的整数值`大于16为整数`，则使用`long`
 
-如果要存储更大的值，则使用`long long `
+如果要存储更大的值，则使用`long long`
 
 使用`short`可以节省内存，一般用于`大型整数数组`
 

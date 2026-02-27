@@ -1,5 +1,5 @@
 ---
-title: Java-BockingQueue阻塞队列
+title: Java-BlockingQueue阻塞队列
 date: 2018-12-24 15:16:57
 tags: Java
 top: 9
@@ -678,7 +678,7 @@ private transient volatile Transferer<E> transferer;
 
 上述的数据操作方法都涉及到了两部分内容：
 
-- `transferer`：数据调度
+- `transferer`：数据调度
 - `transfer`：数据执行
 
 ###### TransferQueue
@@ -725,7 +725,7 @@ private transient volatile Transferer<E> transferer;
 
 
 
-![TranferStack](/images/TransferStack.jpg)
+![TransferStack](/images/TransferStack.jpg)
 
 `next`：下一个元素
 
@@ -752,7 +752,7 @@ private transient volatile Transferer<E> transferer;
 
 绝大多数都是利用了**Lock锁的多条件(Condition)阻塞控制**。
 
-拿`ArrayBlockigQueue`进行简单描述就是：
+拿`ArrayBlockingQueue`进行简单描述就是：
 
 1. `put`和`take`操作都需要先**获取锁**，无法获取的话就要一直自旋拿锁，直到获取锁为止
 2. 在拿到锁以后。还需要判断当前队列是否可用(`队列非满且非空`)，如果队列不可用就会被阻塞，并**释放锁**
@@ -866,4 +866,3 @@ public class GuardedObject<T>{
 [SynchronousQueue-公平模式](https://www.cnblogs.com/dwlsxj/archive/2004/01/13/Thread.html)
 
 [SynchronousQueue](https://www.jianshu.com/p/a565b0b25c43)
-

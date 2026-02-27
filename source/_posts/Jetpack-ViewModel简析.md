@@ -582,7 +582,7 @@ class FragmentManagerViewModel extends ViewModel {
 
 所以`ViewModel`在Fragment中也不会因为重建而被销毁。
 
-原因就是**Fragmen的ViewMode存储于FragmentManagerViewModel，而它存在于FragmentActivity的ViewModelStore中。FragmentActivity的ViewModelStore会在Activity销毁时存储于`NonConfigurationInstances`中，当然也会存到ActivityyClienrtRecord中。**
+原因就是**Fragment的ViewModel存储于FragmentManagerViewModel，而它存在于FragmentActivity的ViewModelStore中。FragmentActivity的ViewModelStore会在Activity销毁时存储于`NonConfigurationInstances`中，当然也会存到ActivityClientRecord中。**
 
 ### ViewModel-Fragment间数据共享
 
@@ -697,18 +697,18 @@ public val ViewModel.viewModelScope: CoroutineScope
 
 简述`setRetainInstance(true)`流程：
 
-> 调用`setRetainInstance(true)`时，会将该Fragment存入到`FragmentManagerViewModel`中的`mRetainedFragment`中，等价于`Fragment`已经位于`FragmentActivity`的`ViewModelStore`中。也就是存储于`NonconfigurationInstance`中。
+> 调用`setRetainInstance(true)`时，会将该Fragment存入到`FragmentManagerViewModel`中的`mRetainedFragment`中，等价于`Fragment`已经位于`FragmentActivity`的`ViewModelStore`中。也就是存储于`NonConfigurationInstances`中。
 >
-> 后续可以从`mLastConfiguationInstances`获取存储的`Fragment`，再调用到`FragmentManager.restoreSaveState()`就可以还原Fragment。**Fragment实例也没有发生改变。**
+> 后续可以从`mLastConfigurationInstances`获取存储的`Fragment`，再调用到`FragmentManager.restoreSaveState()`就可以还原Fragment。**Fragment实例也没有发生改变。**
 
-### onRetainNonConfigurationInstance()/getLastNonConfigurationInstance()
+### onRetainNonConfigurationInstance()/getLastNonConfigurationInstance()
 
 在 Activity 中提供了 `onRetainNonConfigurationInstance` 方法，用于处理配置发生改变时数据的保存。随后在重新创建的 Activity 中调用 `getLastNonConfigurationInstance` 获取上次保存的数据。我们不能直接重写上述方法，如果想在 Activity 中自定义想要恢复的数据，需要我们调用上述两个方法的内部方法：
 
 - `onRetainCustomNonConfigurationInstance()`
 - `getLastCustomNonConfigurationInstance()`
 
-注意：`onRetainNonConfigurationInstance` 方法系统调用时机介于 onStop - onDestory 之间，`getLastNonConfigurationInstance` 方法可在 onCreate 与 onStart 方法中调用。
+注意：`onRetainNonConfigurationInstance` 方法系统调用时机介于 onStop - onDestroy 之间，`getLastNonConfigurationInstance` 方法可在 onCreate 与 onStart 方法中调用。
 
 
 
@@ -716,7 +716,7 @@ public val ViewModel.viewModelScope: CoroutineScope
 | ------------------------------------------------------------ | ------------ | ---------------------------------- | -------------------------------- | ------------------------ | ------------------- |
 | onSaveInstanceState() /<br> onRestoreInstanceState()         | 序列化到磁盘 | 支持`基础数据类型`和`可序列化对象` | 是                               | 是                       | 慢<br>有IO操作      |
 | setRetainInstance(true)                                      | 内存         | `支持复杂对象`<br>受可用内存限制   | 否<br>实例已被销毁               | 是                       | 快<br>直接内存读写  |
-| onRetainNonConfigurationInstance()/<br>getLastNonConfigurationInstance() | 内存         | `支持复杂对象`<br/>受可用内存限制  | 否<br/>实例已被销毁              | 是                       | 快<br/>直接内存读写 |
+| onRetainNonConfigurationInstance()/<br>getLastNonConfigurationInstance() | 内存         | `支持复杂对象`<br/>受可用内存限制  | 否<br/>实例已被销毁              | 是                       | 快<br/>直接内存读写 |
 
 
 

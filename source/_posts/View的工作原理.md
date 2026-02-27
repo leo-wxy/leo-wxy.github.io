@@ -1176,7 +1176,7 @@ public final View createView(String name, String prefix, AttributeSet attrs)
   - 构建View的缓存，缓存的是`constructor`，根据`name`获取`constructor`
   - 缓存中不存在时，需要根据`prefix+name`获取View的`constructor`，并存入缓存中
   - 根据`constructor`构造`View实例`——`constructor.newInstance()`
-  - 如果需要处理`ViewStub`，为`ViewStub`指定加载类
+  - 如果需要处理`ViewStub`，为`ViewStub`指定加载类
 
 
 
@@ -1323,7 +1323,7 @@ private void performTraversals() {
 - `layout`：确定“放哪里”（`left/top/right/bottom`）。
 - `draw`：确定“画什么”。
 
-### measure-测量
+### measure-测量
 
 
 

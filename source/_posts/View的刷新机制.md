@@ -1058,7 +1058,7 @@ DisplayEventReceiver::DisplayEventReceiver(ISurfaceComposer::VsyncSource vsyncSo
 
 #### createDisplayEventConnection
 
-`createDisplayEventConnection()`是一个Binder IPC
+`createDisplayEventConnection()`是一个Binder IPC
 
 ```c++
 //ISurfaceComposer.cpp

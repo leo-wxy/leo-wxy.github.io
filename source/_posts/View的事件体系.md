@@ -22,7 +22,7 @@ View是Android中所有控件的基类，也包括ViewGroup。ViewGroup可以理
 
 ![ViewTree](/images/View-Tree.png)
 
-上层的控件主要负责测量与绘制下层的控件，并传递交互事件。
+上层的控件主要负责测量与绘制下层的控件，并传递交互事件。
 
 ### 1. View的位置参数
 
