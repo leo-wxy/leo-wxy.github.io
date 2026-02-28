@@ -19,16 +19,16 @@
   <meta name="author" content="Leo-Wxy">
   <meta name="keywords" content="">
   
-    <meta name="description" content="Dex文件加载 加载Dex文件后会生成DexFile对象，里面储存了多个类文件信息。  通过PathClassLoader或者DexClassLoader去加载Dex文件，最后还是调用到BaseDexClassLoader的加载方法 12345678class BaseDexClassLoader extends ClassLaoder&#123;      public BaseDexClass">
+    <meta name="description" content="Dex文件加载 加载Dex文件后会生成DexFile对象，里面储存了多个类文件信息。  通过PathClassLoader或者DexClassLoader去加载Dex文件，最后还是调用到BaseDexClassLoader的加载方法 类唯一性（补充）在 Android&#x2F;Java 类型系统里，类唯一性可以概括为： Class &#x3D; (ClassLoader, binaryName) 也就是说">
 <meta property="og:type" content="article">
 <meta property="og:title" content="Android-Art类加载过程">
 <meta property="og:url" content="https://leo-wxy.github.io/2019/12/19/Android-Art%E7%B1%BB%E5%8A%A0%E8%BD%BD%E8%BF%87%E7%A8%8B/index.html">
 <meta property="og:site_name" content="Wxy的个人博客">
-<meta property="og:description" content="Dex文件加载 加载Dex文件后会生成DexFile对象，里面储存了多个类文件信息。  通过PathClassLoader或者DexClassLoader去加载Dex文件，最后还是调用到BaseDexClassLoader的加载方法 12345678class BaseDexClassLoader extends ClassLaoder&#123;      public BaseDexClass">
+<meta property="og:description" content="Dex文件加载 加载Dex文件后会生成DexFile对象，里面储存了多个类文件信息。  通过PathClassLoader或者DexClassLoader去加载Dex文件，最后还是调用到BaseDexClassLoader的加载方法 类唯一性（补充）在 Android&#x2F;Java 类型系统里，类唯一性可以概括为： Class &#x3D; (ClassLoader, binaryName) 也就是说">
 <meta property="og:locale" content="zh_CN">
 <meta property="og:image" content="https://leo-wxy.github.io/images/jvm/Dex%E5%8A%A0%E8%BD%BD%E8%BF%87%E7%A8%8B.png">
 <meta property="article:published_time" content="2019-12-19T05:45:11.000Z">
-<meta property="article:modified_time" content="2020-05-31T12:19:08.000Z">
+<meta property="article:modified_time" content="2026-02-28T07:29:10.921Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="Android">
 <meta name="twitter:card" content="summary_large_image">
@@ -226,7 +226,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          1.5k 字
+          2.4k 字
         
       </span>
     
@@ -238,7 +238,7 @@
         
         
           <!-- compatible with older versions-->
-          5 分钟
+          8 分钟
         
       </span>
     
@@ -297,6 +297,10 @@
 <p>加载Dex文件后会生成<code>DexFile</code>对象，里面储存了多个类文件信息。</p>
 </blockquote>
 <p>通过<code>PathClassLoader</code>或者<code>DexClassLoader</code>去加载<code>Dex</code>文件，最后还是调用到<code>BaseDexClassLoader</code>的加载方法</p>
+<h3 id="类唯一性（补充）"><a href="#类唯一性（补充）" class="headerlink" title="类唯一性（补充）"></a>类唯一性（补充）</h3><p>在 Android&#x2F;Java 类型系统里，类唯一性可以概括为：</p>
+<p><code>Class = (ClassLoader, binaryName)</code></p>
+<p>也就是说：即使类名完全相同，只要由不同<code>ClassLoader</code>定义，运行时也会被视为不同类型。</p>
+<p>这也是插件化&#x2F;热修复场景中<code>ClassCastException</code>的常见根因之一。</p>
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">class</span> <span class="hljs-title class_">BaseDexClassLoader</span> <span class="hljs-keyword">extends</span> <span class="hljs-title class_">ClassLaoder</span>&#123;<br>      <span class="hljs-keyword">public</span> <span class="hljs-title function_">BaseDexClassLoader</span><span class="hljs-params">(String dexPath, File optimizedDirectory,</span><br><span class="hljs-params">            String librarySearchPath, ClassLoader parent)</span> &#123;<br>        <span class="hljs-built_in">super</span>(parent);<br>        <span class="hljs-built_in">this</span>.pathList = <span class="hljs-keyword">new</span> <span class="hljs-title class_">DexPathList</span>(<span class="hljs-built_in">this</span>, dexPath, librarySearchPath, <span class="hljs-literal">null</span>);<br>				...<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
 
 <ul>
@@ -307,6 +311,11 @@
 <ul>
 <li><code>dexElements</code>：记录所有的DexFile，按照<code>;</code>进行路径分割</li>
 <li><code>nativeLibraryPathElements</code>：记录所有的Native代码库，包括<code>app</code>和<code>系统</code>使用的Native库</li>
+</ul>
+<p>补充：<code>dexElements</code>的顺序直接决定同名类命中优先级（先命中先返回）。</p>
+<ul>
+<li>MultiDex 场景下，主 dex 与次 dex 的排列顺序会影响同名类解析结果。</li>
+<li>热修复常见做法是把补丁 dex 前插到<code>dexElements</code>首位。</li>
 </ul>
 </li>
 <li><p>makeDexElements</p>
@@ -333,6 +342,12 @@
 <figure class="highlight c"><figcaption><span>dalvik_system_DexFile.cc</span></figcaption><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><code class="hljs c"><span class="hljs-comment">// art/runtime/native/dalvik_system_DexFile.cc</span><br><span class="hljs-type">static</span> jobject <span class="hljs-title function_">DexFile_openDexFileNative</span><span class="hljs-params">(JNIEnv* env,</span><br><span class="hljs-params">                                         jclass,</span><br><span class="hljs-params">                                         jstring javaSourceName,</span><br><span class="hljs-params">                                         jstring javaOutputName ATTRIBUTE_UNUSED,</span><br><span class="hljs-params">                                         jint flags ATTRIBUTE_UNUSED,</span><br><span class="hljs-params">                                         jobject class_loader,</span><br><span class="hljs-params">                                         jobjectArray dex_elements)</span> &#123;<br>  ScopedUtfChars <span class="hljs-title function_">sourceName</span><span class="hljs-params">(env, javaSourceName)</span>;<br>  <span class="hljs-keyword">if</span> (sourceName.c_str() == nullptr) &#123;<br>    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;<br>  &#125;<br><br>  Runtime* <span class="hljs-type">const</span> runtime = Runtime::Current();<br>  ClassLinker* linker = runtime-&gt;GetClassLinker();<br>  <span class="hljs-built_in">std</span>::<span class="hljs-built_in">vector</span>&lt;<span class="hljs-built_in">std</span>::<span class="hljs-built_in">unique_ptr</span>&lt;<span class="hljs-type">const</span> DexFile&gt;&gt; dex_files;<br>  <span class="hljs-built_in">std</span>::<span class="hljs-built_in">vector</span>&lt;<span class="hljs-built_in">std</span>::<span class="hljs-built_in">string</span>&gt; error_msgs;<br>  <span class="hljs-type">const</span> OatFile* oat_file = nullptr;<br><br>  dex_files = runtime-&gt;GetOatFileManager().OpenDexFilesFromOat(sourceName.c_str(),<br>                                                               class_loader,<br>                                                               dex_elements,<br>                                                               <span class="hljs-comment">/*out*/</span> &amp;oat_file,<br>                                                               <span class="hljs-comment">/*out*/</span> &amp;error_msgs);<br><br>...<br><br>    <span class="hljs-keyword">return</span> nullptr;<br>  &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
 
 <p><code>openDexFileNative</code>主要处理dex文件，并生成<code>odex</code>到<code>optimizedDirectory</code>里</p>
+<p>补充：从产物链路看，dex 优化通常会关联到<code>vdex/oat</code>等文件。</p>
+<ul>
+<li><code>vdex</code>侧重校验&#x2F;快速验证相关信息；</li>
+<li><code>oat</code>侧重编译后代码与元数据承载（具体形态受系统版本与编译策略影响）。</li>
+</ul>
+<p>因此“类加载慢”不一定全是 I&#x2F;O 问题，也可能是验证、链接与优化状态未命中导致。</p>
 </li>
 <li><p>openDexFilesFromOat</p>
 <p>&#x2F;&#x2F;TODO 版本差异较大</p>
@@ -345,6 +360,12 @@
 <h2 id="Dex中的类文件加载"><a href="#Dex中的类文件加载" class="headerlink" title="Dex中的类文件加载"></a>Dex中的类文件加载</h2><blockquote>
 <p>Dex文件是由多个Class类文件组成，Android加载类需要从Dex中找到对应类进行加载，实际<code>从DexFile找到Class</code></p>
 </blockquote>
+<p>补充：<code>loadClass()</code>和<code>findClass()</code>职责不同。</p>
+<ul>
+<li><code>loadClass()</code>位于<code>ClassLoader</code>父类，负责双亲委派与已加载缓存检查。</li>
+<li><code>findClass()</code>由具体加载器实现，负责当前命名空间内实际查找。</li>
+</ul>
+<p>排查类加载问题时建议先看“委派链是否命中”，再看“当前<code>pathList</code>是否可达”。</p>
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">BaseDexClassLoader</span> <span class="hljs-keyword">extends</span> <span class="hljs-title class_">ClassLoader</span> &#123;<br> ...<br>   <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> DexPathList pathList;<br>   <br>     <span class="hljs-meta">@Override</span><br>    <span class="hljs-keyword">protected</span> Class&lt;?&gt; findClass(String name) <span class="hljs-keyword">throws</span> ClassNotFoundException &#123;<br>        <span class="hljs-comment">// First, check whether the class is present in our shared libraries.</span><br>        <span class="hljs-comment">//加载需要使用的Native库</span><br>        <span class="hljs-keyword">if</span> (sharedLibraryLoaders != <span class="hljs-literal">null</span>) &#123;<br>            <span class="hljs-keyword">for</span> (ClassLoader loader : sharedLibraryLoaders) &#123;<br>                <span class="hljs-keyword">try</span> &#123;<br>                    <span class="hljs-keyword">return</span> loader.loadClass(name);<br>                &#125; <span class="hljs-keyword">catch</span> (ClassNotFoundException ignored) &#123;<br>                &#125;<br>            &#125;<br>        &#125;<br>        <span class="hljs-comment">// Check whether the class in question is present in the dexPath that</span><br>        <span class="hljs-comment">// this classloader operates on.</span><br>        List&lt;Throwable&gt; suppressedExceptions = <span class="hljs-keyword">new</span> <span class="hljs-title class_">ArrayList</span>&lt;Throwable&gt;();<br>        <span class="hljs-comment">// 找寻Dex中对应class</span><br>        <span class="hljs-type">Class</span> <span class="hljs-variable">c</span> <span class="hljs-operator">=</span> pathList.findClass(name, suppressedExceptions);<br>        <span class="hljs-keyword">if</span> (c == <span class="hljs-literal">null</span>) &#123;<br>            <span class="hljs-type">ClassNotFoundException</span> <span class="hljs-variable">cnfe</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">ClassNotFoundException</span>(<br>                    <span class="hljs-string">&quot;Didn&#x27;t find class \&quot;&quot;</span> + name + <span class="hljs-string">&quot;\&quot; on path: &quot;</span> + pathList);<br>            <span class="hljs-keyword">for</span> (Throwable t : suppressedExceptions) &#123;<br>                cnfe.addSuppressed(t);<br>            &#125;<br>            <span class="hljs-keyword">throw</span> cnfe;<br>        &#125;<br>        <span class="hljs-keyword">return</span> c;<br>    &#125;<br><br>&#125;<br></code></pre></td></tr></table></figure>
 
 <ul>
@@ -358,6 +379,11 @@
 <p><strong>当两个相同的类出现在不同的Dex时，系统会优先处理排在前面的Dex文件中的类，后面出现的就不会被加载。</strong></p>
 <p>热修复的核心逻辑：<code>将需要修复的类所打包的Dex文件插入到dexElements的首位</code>。</p>
 </blockquote>
+<p>补充：这也是“同名类冲突”高发点。</p>
+<ul>
+<li>若是同一<code>ClassLoader</code>内同名类，通常前序 dex 命中后就不会再看后序。</li>
+<li>若是不同<code>ClassLoader</code>各自定义同名类，类型系统会视为不同类型（见上面的类唯一性公式）。</li>
+</ul>
 </li>
 <li><p>Element - findClass</p>
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> Class&lt;?&gt; findClass(String name, ClassLoader definingContext,<br>         List&lt;Throwable&gt; suppressed) &#123;<br>     <span class="hljs-keyword">return</span> dexFile != <span class="hljs-literal">null</span> ? dexFile.loadClassBinaryName(name, definingContext, suppressed)<br>             : <span class="hljs-literal">null</span>;<br> &#125;<br></code></pre></td></tr></table></figure>
@@ -367,7 +393,12 @@
 <li><p>DexFile - loadClassBinaryName</p>
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> Class <span class="hljs-title function_">loadClassBinaryName</span><span class="hljs-params">(String name, ClassLoader loader, List&lt;Throwable&gt; suppressed)</span> &#123;<br>    <span class="hljs-keyword">return</span> defineClass(name, loader, mCookie, <span class="hljs-built_in">this</span>, suppressed);<br>&#125;<br>  <br><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> Class <span class="hljs-title function_">defineClass</span><span class="hljs-params">(String name, ClassLoader loader, Object cookie,</span><br><span class="hljs-params">                                 DexFile dexFile, List&lt;Throwable&gt; suppressed)</span> &#123;<br>    <span class="hljs-type">Class</span> <span class="hljs-variable">result</span> <span class="hljs-operator">=</span> <span class="hljs-literal">null</span>;<br>    <span class="hljs-keyword">try</span> &#123;<br>        <span class="hljs-comment">//定义Class</span><br>        result = defineClassNative(name, loader, cookie, dexFile);<br>    &#125; <span class="hljs-keyword">catch</span> (NoClassDefFoundError e) &#123;<br>        <span class="hljs-keyword">if</span> (suppressed != <span class="hljs-literal">null</span>) &#123;<br>            suppressed.add(e);<br>        &#125;<br>    &#125; <span class="hljs-keyword">catch</span> (ClassNotFoundException e) &#123;<br>        <span class="hljs-keyword">if</span> (suppressed != <span class="hljs-literal">null</span>) &#123;<br>            suppressed.add(e);<br>        &#125;<br>    &#125;<br>    <span class="hljs-keyword">return</span> result;<br>&#125;<br></code></pre></td></tr></table></figure>
 
-
+<p>补充：这段代码里能看到两类常见异常来源：</p>
+<ul>
+<li><code>ClassNotFoundException</code>：找不到类定义（路径&#x2F;命名空间&#x2F;依赖不可达）。</li>
+<li><code>NoClassDefFoundError</code>：编译期可见、运行期定义失败（常见于依赖缺失或初始化失败后的再次访问）。</li>
+</ul>
+<p>另外还有一类容易混淆的<code>VerifyError</code>，通常来自字节码校验阶段失败。</p>
 </li>
 <li><p>Dalvik_system_DexFile.cc - DexFile_defineClassNative</p>
 <figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br></pre></td><td class="code"><pre><code class="hljs c"><span class="hljs-type">static</span> jclass <span class="hljs-title function_">DexFile_defineClassNative</span><span class="hljs-params">(JNIEnv* env,</span><br><span class="hljs-params">                                        jclass,</span><br><span class="hljs-params">                                        jstring javaName,</span><br><span class="hljs-params">                                        jobject javaLoader,</span><br><span class="hljs-params">                                        jobject cookie,</span><br><span class="hljs-params">                                        jobject dexFile)</span> &#123;<br>  <span class="hljs-built_in">std</span>::<span class="hljs-built_in">vector</span>&lt;<span class="hljs-type">const</span> DexFile*&gt; dex_files;<br>  <span class="hljs-type">const</span> OatFile* oat_file;<br>  <span class="hljs-keyword">if</span> (!ConvertJavaArrayToDexFiles(env, cookie, <span class="hljs-comment">/*out*/</span> dex_files, <span class="hljs-comment">/*out*/</span> oat_file)) &#123;<br>    VLOG(class_linker) &lt;&lt; <span class="hljs-string">&quot;Failed to find dex_file&quot;</span>;<br>    DCHECK(env-&gt;ExceptionCheck());<br>    <span class="hljs-keyword">return</span> nullptr;<br>  &#125;<br><br>  ScopedUtfChars <span class="hljs-title function_">class_name</span><span class="hljs-params">(env, javaName)</span>;<br>  <span class="hljs-keyword">if</span> (class_name.c_str() == nullptr) &#123;<br>    VLOG(class_linker) &lt;&lt; <span class="hljs-string">&quot;Failed to find class_name&quot;</span>;<br>    <span class="hljs-keyword">return</span> nullptr;<br>  &#125;<br>  <span class="hljs-type">const</span> <span class="hljs-built_in">std</span>::<span class="hljs-built_in">string</span> <span class="hljs-title function_">descriptor</span><span class="hljs-params">(DotToDescriptor(class_name.c_str()))</span>;<br>  <span class="hljs-type">const</span> <span class="hljs-type">size_t</span> <span class="hljs-title function_">hash</span><span class="hljs-params">(ComputeModifiedUtf8Hash(descriptor.c_str()))</span>;<br>  <span class="hljs-keyword">for</span> (<span class="hljs-keyword">auto</span>&amp; dex_file : dex_files) &#123;<br>    <span class="hljs-type">const</span> DexFile::ClassDef* dex_class_def =<br>        OatDexFile::FindClassDef(*dex_file, descriptor.c_str(), hash);<br>    <span class="hljs-keyword">if</span> (dex_class_def != nullptr) &#123;<br>      ScopedObjectAccess <span class="hljs-title function_">soa</span><span class="hljs-params">(env)</span>;<br>      ClassLinker* class_linker = Runtime::Current()-&gt;GetClassLinker();<br>			...<br>        <span class="hljs-keyword">return</span> nullptr;<br>      &#125;<br>      <span class="hljs-comment">//创建目标类对象</span><br>      ObjPtr&lt;mirror::Class&gt; result = class_linker-&gt;DefineClass(soa.Self(),<br>                                                               descriptor.c_str(),<br>                                                               hash,<br>                                                               class_loader,<br>                                                               *dex_file,<br>                                                               *dex_class_def);<br>      <span class="hljs-comment">// Add the used dex file. This only required for the DexFile.loadClass API since normal</span><br>      <span class="hljs-comment">// class loaders already keep their dex files live.</span><br>      class_linker-&gt;InsertDexFileInToClassLoader(soa.Decode&lt;mirror::Object&gt;(dexFile),<br>                                                 class_loader.Get());<br>      <span class="hljs-keyword">if</span> (result != nullptr) &#123;<br>        VLOG(class_linker) &lt;&lt; <span class="hljs-string">&quot;DexFile_defineClassNative returning &quot;</span> &lt;&lt; result<br>                           &lt;&lt; <span class="hljs-string">&quot; for &quot;</span> &lt;&lt; class_name.c_str();<br>        <span class="hljs-keyword">return</span> soa.AddLocalReference&lt;jclass&gt;(result);<br>      &#125;<br>    &#125;<br>  &#125;<br>  VLOG(class_linker) &lt;&lt; <span class="hljs-string">&quot;Failed to find dex_class_def &quot;</span> &lt;&lt; class_name.c_str();<br>  <span class="hljs-keyword">return</span> nullptr;<br>&#125;<br></code></pre></td></tr></table></figure>
@@ -379,9 +410,37 @@
 <p>如果尚未关联，就会创建一个<code>dex_cache</code>与Dex文件建立关联，建立关联后，通过调用<code>RegisterDexFile</code>注册到aRT运行时中去，后续可以直接使用。</p>
 <p><code>dex_cache</code>用来缓存包含在一个Dex文件里的<code>类型(Type)、方法(Method)、域(Field)、字符串(String)和静态存储区(Static Storage)</code>等信息。</p>
 <p><code>通过dex_cache间接调用类方法，可以做到延时解析类方法(只有方法第一次调用才会被解析，可以避免解析永远不调用的方法)；一个类方法只会被解析一次，解析的结果存在dex_cache中，下次调用时可以直接从dex_cache进行调用。</code></p>
+<p>补充：类生命周期可拆为<code>加载 -&gt; 验证 -&gt; 准备 -&gt; 解析 -&gt; 初始化</code>。</p>
+<ul>
+<li>上述流程并非总是一次性全部完成，部分环节会按需触发。</li>
+<li><code>&lt;clinit&gt;</code>属于初始化阶段，若静态初始化过重，会直接放大冷启动主线程耗时。</li>
+</ul>
+<p>补充：ART在运行期会结合解释执行、JIT与AOT协同。</p>
+<ul>
+<li>首次启动可能更多落在解释&#x2F;JIT热身路径；</li>
+<li>安装期或后台 profile 命中后，AOT 产物命中率提高，后续启动通常更稳定。</li>
+</ul>
 </li>
 </ul>
-<h3 id="加载类成员"><a href="#加载类成员" class="headerlink" title="加载类成员"></a>加载类成员</h3><h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a target="_blank" rel="noopener" href="http://gityuan.com/2017/03/19/android-classloader/">Android类加载器ClassLoader</a></p>
+<h3 id="加载类成员"><a href="#加载类成员" class="headerlink" title="加载类成员"></a>加载类成员</h3><p>类被定义后，成员加载通常会完成以下工作：</p>
+<ul>
+<li>字段布局建立（实例字段&#x2F;静态字段）</li>
+<li>方法表与接口分发表准备</li>
+<li>访问标记、父子类关系与注解元信息关联</li>
+</ul>
+<p>补充：</p>
+<ul>
+<li>类“被加载”不代表所有方法都立刻编译成本地代码。</li>
+<li>热点方法一般在运行期按策略逐步优化，避免一次性做全量重活。</li>
+</ul>
+<h3 id="动态加载边界（补充）"><a href="#动态加载边界（补充）" class="headerlink" title="动态加载边界（补充）"></a>动态加载边界（补充）</h3><p>动态加载常见入口有<code>DexClassLoader</code>、<code>InMemoryDexClassLoader</code>等。</p>
+<p>工程上建议关注三点：</p>
+<ol>
+<li>来源可信：加载前做签名&#x2F;完整性校验。</li>
+<li>命名空间隔离：避免污染宿主主加载器，降低类冲突风险。</li>
+<li>生命周期可控：插件卸载与资源释放要有闭环，避免类加载器泄漏。</li>
+</ol>
+<h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a target="_blank" rel="noopener" href="http://gityuan.com/2017/03/19/android-classloader/">Android类加载器ClassLoader</a></p>
 <p><a href="cs.android.com">相关源码</a></p>
 <p><a target="_blank" rel="noopener" href="https://juejin.im/post/5d6a79de5188256c3920b8f7#heading-4">谈谈 Android 中的 PathClassLoader 和 DexClassLoader</a></p>
 

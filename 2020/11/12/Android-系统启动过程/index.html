@@ -19,15 +19,15 @@
   <meta name="author" content="Leo-Wxy">
   <meta name="keywords" content="">
   
-    <meta name="description" content="如果我没有见过光明，那我本可以忍受黑暗">
+    <meta name="description" content="启动总览Android 启动链路可以先按 7 个节点记忆：  BootROM BootLoader Linux Kernel init（用户空间 1 号进程） Zygote SystemServer Launcher（Home）  补充：从 framework 视角，真正高频关注的是 init -&gt; Zygote -&gt; SystemServer -&gt; Launcher 这条链路。">
 <meta property="og:type" content="article">
 <meta property="og:title" content="Android系统启动过程">
 <meta property="og:url" content="https://leo-wxy.github.io/2020/11/12/Android-%E7%B3%BB%E7%BB%9F%E5%90%AF%E5%8A%A8%E8%BF%87%E7%A8%8B/index.html">
 <meta property="og:site_name" content="Wxy的个人博客">
-<meta property="og:description" content="如果我没有见过光明，那我本可以忍受黑暗">
+<meta property="og:description" content="启动总览Android 启动链路可以先按 7 个节点记忆：  BootROM BootLoader Linux Kernel init（用户空间 1 号进程） Zygote SystemServer Launcher（Home）  补充：从 framework 视角，真正高频关注的是 init -&gt; Zygote -&gt; SystemServer -&gt; Launcher 这条链路。">
 <meta property="og:locale" content="zh_CN">
 <meta property="article:published_time" content="2020-11-12T13:37:13.000Z">
-<meta property="article:modified_time" content="2020-11-23T08:08:15.000Z">
+<meta property="article:modified_time" content="2026-02-28T07:11:41.581Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="Android">
 <meta name="twitter:card" content="summary_large_image">
@@ -224,7 +224,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          0 字
+          2k 字
         
       </span>
     
@@ -236,7 +236,7 @@
         
         
           <!-- compatible with older versions-->
-          1 分钟
+          7 分钟
         
       </span>
     
@@ -291,7 +291,161 @@
             
               <div class="markdown-body">
                 
-                
+                <h2 id="启动总览"><a href="#启动总览" class="headerlink" title="启动总览"></a>启动总览</h2><p>Android 启动链路可以先按 7 个节点记忆：</p>
+<ol>
+<li>BootROM</li>
+<li>BootLoader</li>
+<li>Linux Kernel</li>
+<li>init（用户空间 1 号进程）</li>
+<li>Zygote</li>
+<li>SystemServer</li>
+<li>Launcher（Home）</li>
+</ol>
+<p>补充：从 framework 视角，真正高频关注的是 <code>init -&gt; Zygote -&gt; SystemServer -&gt; Launcher</code> 这条链路。</p>
+<h3 id="启动阶段关键产物（补充）"><a href="#启动阶段关键产物（补充）" class="headerlink" title="启动阶段关键产物（补充）"></a>启动阶段关键产物（补充）</h3><ul>
+<li><code>BootLoader</code>阶段：完成硬件初始化与内核加载。</li>
+<li><code>Kernel</code>阶段：驱动初始化、挂载关键文件系统、拉起<code>init</code>。</li>
+<li><code>init</code>阶段：解析<code>rc</code>脚本并启动系统基础服务。</li>
+<li><code>Zygote</code>阶段：预加载 + 等待孵化请求 + fork <code>SystemServer</code>。</li>
+<li><code>SystemServer</code>阶段：启动 Java 系统服务并进入 system ready。</li>
+<li><code>Launcher</code>阶段：Home 进程拉起并进入可交互首屏。</li>
+</ul>
+<p>从稳定性角度看，每个阶段的输出都是下一阶段的输入，任何前序阻塞都会向后放大。</p>
+<h2 id="从内核到-init"><a href="#从内核到-init" class="headerlink" title="从内核到 init"></a>从内核到 init</h2><ul>
+<li>内核启动后挂载根文件系统，启动用户空间的 <code>init</code>。</li>
+<li><code>init</code> 会解析 <code>init.rc</code> 及 import 的 rc 脚本，按触发器（<code>on xxx</code>）执行动作。</li>
+<li>关键系统服务（含 zygote）在这个阶段由 <code>init</code> 拉起。</li>
+</ul>
+<p>补充：<code>init</code>通常可以理解为两阶段：</p>
+<ol>
+<li><strong>first-stage init</strong>：早期挂载、设备节点准备、基础安全环境建立。</li>
+<li><strong>second-stage init</strong>：解析<code>rc</code>并驱动完整服务编排（含属性服务与事件触发）。</li>
+</ol>
+<p>常见触发链可简化理解为：<code>early-init -&gt; init -&gt; late-init -&gt; zygote-start</code>。</p>
+<p>补充：<code>init</code> 是 Android 用户空间“总调度入口”，后续很多系统能力都由它托管生命周期。</p>
+<h2 id="init-拉起-Zygote"><a href="#init-拉起-Zygote" class="headerlink" title="init 拉起 Zygote"></a>init 拉起 Zygote</h2><p>典型 rc 里会定义 zygote service（32&#x2F;64 位机型可能不同）：</p>
+<ul>
+<li>可执行入口：<code>app_process</code>（如 <code>app_process64</code>）</li>
+<li>参数：<code>--zygote --start-system-server</code></li>
+</ul>
+<p>补充：</p>
+<ul>
+<li><code>--zygote</code> 代表进入孵化器模式</li>
+<li><code>--start-system-server</code> 代表 zygote 启动后会 fork 出 SystemServer</li>
+</ul>
+<p>在 64 位设备上，通常还会看到<code>zygote64/zygote32</code>协同形态（具体以机型与系统配置为准），用于兼容不同 ABI 的应用进程创建。</p>
+<h2 id="Zygote-关键流程"><a href="#Zygote-关键流程" class="headerlink" title="Zygote 关键流程"></a>Zygote 关键流程</h2><p>Zygote 启动后主要做三件事：</p>
+<ol>
+<li>创建 Server Socket，等待 AMS 的创建进程请求</li>
+<li>预加载常用类&#x2F;资源（preload），降低后续 App 冷启动成本</li>
+<li>fork 出 <code>SystemServer</code>，进入系统服务启动阶段</li>
+</ol>
+<p>补充：预加载本质是“用启动时空间换运行时时间”，减少每个 App 进程重复初始化。</p>
+<h3 id="Zygote-内存优化核心（补充）"><a href="#Zygote-内存优化核心（补充）" class="headerlink" title="Zygote 内存优化核心（补充）"></a>Zygote 内存优化核心（补充）</h3><p>核心思路：Zygote 把“公共部分”提前加载成可共享内存，<code>fork</code> 后依赖 <code>COW</code>，子进程只做个性化初始化，尽量少把共享页写脏。</p>
+<ul>
+<li><code>fork + COW</code>：子进程初始不复制父进程页，只有写入时才复制，显著降低启动时内存开销。</li>
+<li><code>预加载并共享</code>：Zygote 预加载 framework 类、资源、部分 so，子进程直接复用这些页，避免重复加载。</li>
+<li><code>ART 映像共享</code>：<code>boot.art/oat/vdex</code> 这类映射页多为只读，可跨进程共享，降低每个 App 私有内存。</li>
+<li><code>控制脏页</code>：预加载后通过 <code>GC/Finalize/trim</code> 尽量保持静态对象稳定；共享页一旦写脏会触发 COW，内存随之上升。</li>
+<li><code>fork 前后钩子</code>：<code>preFork/postFork</code> 会暂停&#x2F;恢复运行时关键线程，降低 fork 时状态复杂度与内存扰动。</li>
+<li><code>子进程专有初始化后置</code>：<code>UID/权限/ClassLoader/应用逻辑</code> 放到 child 做，减少对 Zygote 公共页的污染。</li>
+</ul>
+<p>可直接总结为：Zygote 省内存的关键不只是 <code>fork</code>，而是“共享页尽量不被写脏”；写脏越多，COW 复制越多，<code>PSS</code> 就越高。</p>
+<h3 id="应用进程创建链路（补充）"><a href="#应用进程创建链路（补充）" class="headerlink" title="应用进程创建链路（补充）"></a>应用进程创建链路（补充）</h3><p>应用冷启动时，常见路径可以抽象为：</p>
+<ol>
+<li>AMS判定目标进程不存在，进入<code>startProcessLocked</code>。</li>
+<li>通过<code>ZygoteProcess</code>向 zygote socket 发送创建参数。</li>
+<li>Zygote 执行<code>forkAndSpecialize</code>，子进程完成 UID&#x2F;GID&#x2F;SELinux 等专有设置。</li>
+<li>子进程进入<code>ActivityThread.main()</code>，绑定 Application 并进入主线程消息循环。</li>
+</ol>
+<p>这条链路里，真正“贵”的步骤往往不在 fork 本身，而在 fork 后子进程的类加载、资源初始化与主线程阻塞。</p>
+<h3 id="共享页写脏的典型来源（补充）"><a href="#共享页写脏的典型来源（补充）" class="headerlink" title="共享页写脏的典型来源（补充）"></a>共享页写脏的典型来源（补充）</h3><ul>
+<li>子进程在早期大量修改静态缓存对象。</li>
+<li>预加载后又在子进程改写本应稳定的全局结构。</li>
+<li>初始化阶段引入高频写操作，导致共享页快速私有化。</li>
+</ul>
+<p>优化方向就是一句话：把“可共享内容”尽量做成只读或稳定结构，把“个性化可变内容”后置到子进程并限制写放大。</p>
+<h2 id="SystemServer-启动三阶段"><a href="#SystemServer-启动三阶段" class="headerlink" title="SystemServer 启动三阶段"></a>SystemServer 启动三阶段</h2><p><code>SystemServer</code> 主流程可概括为：</p>
+<ul>
+<li><code>startBootstrapServices()</code></li>
+<li><code>startCoreServices()</code></li>
+<li><code>startOtherServices()</code></li>
+</ul>
+<p>其中会陆续启动：</p>
+<ul>
+<li>AMS（ActivityManagerService）</li>
+<li>PMS（PackageManagerService）</li>
+<li>WMS（WindowManagerService）等核心服务</li>
+</ul>
+<p>补充：AMS&#x2F;WMS&#x2F;PMS 的 ready 时序决定了“何时可拉起桌面、何时可响应应用启动”。</p>
+<h3 id="SystemServer-编排方式（补充）"><a href="#SystemServer-编排方式（补充）" class="headerlink" title="SystemServer 编排方式（补充）"></a>SystemServer 编排方式（补充）</h3><p><code>SystemServer</code>内部通常通过<code>SystemServiceManager</code>统一管理服务生命周期，核心动作包括：</p>
+<ul>
+<li>创建服务实例</li>
+<li>调用<code>onStart()</code>完成注册</li>
+<li>在系统阶段切换时分发<code>boot phase</code>回调</li>
+</ul>
+<p>这使得服务启动具备可编排性：不仅“启动顺序”可控，“阶段行为”也可控。</p>
+<p>从排障角度看，若某核心服务在早期 phase 卡住，后续依赖服务会级联延迟。</p>
+<h2 id="Launcher-启动到可交互"><a href="#Launcher-启动到可交互" class="headerlink" title="Launcher 启动到可交互"></a>Launcher 启动到可交互</h2><ul>
+<li>SystemServer 在关键服务 ready 后，通过 AMS 拉起 Home（Launcher）。</li>
+<li>Launcher 完成 <code>onCreate/onStart/onResume</code> 后进入首帧绘制。</li>
+<li>用户可见“系统启动完成”通常以 Launcher 可交互为标志。</li>
+</ul>
+<p>补充：生命周期到 <code>onResume</code> 不等于像素已上屏，首帧可见还要经过渲染&#x2F;合成。</p>
+<p>可把“可见”再细分为两层：</p>
+<ul>
+<li><strong>生命周期可见</strong>：组件回调已进入前台态（如<code>onResume</code>）。</li>
+<li><strong>图像可见</strong>：首帧完成<code>measure/layout/draw</code>并经合成后真正显示到屏幕。</li>
+</ul>
+<p>启动体验优化通常以第二层为目标，因为这是用户真正感知的时间点。</p>
+<h2 id="启动链路里的角色分工"><a href="#启动链路里的角色分工" class="headerlink" title="启动链路里的角色分工"></a>启动链路里的角色分工</h2><ul>
+<li><code>init</code>：进程与服务生命周期托管（用户空间根进程）</li>
+<li><code>Zygote</code>：进程孵化与预加载</li>
+<li><code>SystemServer</code>：Java 系统服务宿主</li>
+<li><code>Launcher</code>：用户交互入口</li>
+</ul>
+<h2 id="启动排障观测点（补充）"><a href="#启动排障观测点（补充）" class="headerlink" title="启动排障观测点（补充）"></a>启动排障观测点（补充）</h2><ul>
+<li>看阶段完成标记：例如<code>sys.boot_completed</code>是否置位。</li>
+<li>看事件日志时间线：关注<code>boot_progress_*</code>类关键点是否长时间停顿。</li>
+<li>看 SystemServer 主线程是否被慢初始化阻塞。</li>
+<li>看 Launcher 首帧之前是否存在主线程重活或 IO 抖动。</li>
+</ul>
+<p>实战建议：先判定“卡在哪个阶段”，再下钻到该阶段内的关键线程与关键服务，避免全链路盲查。</p>
+<h2 id="常见问题（补充）"><a href="#常见问题（补充）" class="headerlink" title="常见问题（补充）"></a>常见问题（补充）</h2><ol>
+<li><p>为什么 App 进程创建快？</p>
+<p>因为大多数是 Zygote fork，复用预加载成果。</p>
+</li>
+<li><p>为什么系统服务都在 SystemServer？</p>
+<p>统一管理、统一调度，降低跨进程组织复杂度。</p>
+</li>
+<li><p>启动慢先看哪里？</p>
+<p>先看 <code>init -&gt; zygote -&gt; system_server</code> 是否有阻塞，再看 Launcher 首帧路径。</p>
+</li>
+<li><p>为什么有些机型同样流程但内存占用差异大？</p>
+<p>关键看共享页是否被大量写脏。写脏越多，COW复制越多，进程私有页与PSS都会上升。</p>
+</li>
+</ol>
+<h2 id="后续追问与答题要点（补充）"><a href="#后续追问与答题要点（补充）" class="headerlink" title="后续追问与答题要点（补充）"></a>后续追问与答题要点（补充）</h2><ul>
+<li><strong>为什么需要 Zygote？</strong> 统一预加载 + <code>fork</code> 孵化，减少每个 App 重复初始化成本。</li>
+<li><strong>Zygote 省内存关键是什么？</strong> 不是只靠<code>fork</code>，而是尽量避免共享页写脏，减少 COW 复制。</li>
+<li><strong>Zygote 预加载了什么？</strong> framework 常用类、资源、部分 so 与运行时映像。</li>
+<li><strong>App 进程怎么创建？</strong> AMS <code>startProcessLocked</code> -&gt; zygote socket 请求 -&gt; <code>forkAndSpecialize</code> -&gt; <code>ActivityThread.main()</code>。</li>
+<li><strong>SystemServer 为什么关键？</strong> 它是 Java 系统服务宿主，AMS&#x2F;PMS&#x2F;WMS 等核心服务都在此启动。</li>
+<li><strong>SystemServer 启动怎么分段？</strong> <code>startBootstrapServices</code>、<code>startCoreServices</code>、<code>startOtherServices</code>。</li>
+<li><strong>什么时候算启动完成？</strong> 系统口径看<code>boot_completed</code>，用户口径看 Launcher 首帧可交互。</li>
+<li><strong>启动慢先看哪里？</strong> 先分段定位 <code>init -&gt; zygote -&gt; system_server -&gt; launcher</code>，再下钻具体线程与服务。</li>
+<li><strong>冷启动和热启动差异？</strong> 冷启动要新建进程并走完整初始化，热启动更多是复用现有进程与状态。</li>
+<li><strong>同链路下内存差异来源？</strong> 共享页写脏程度不同，COW 复制量不同，最终 PSS 不同。</li>
+</ul>
+<h2 id="小结"><a href="#小结" class="headerlink" title="小结"></a>小结</h2><p>Android 启动是分层接力模型：</p>
+<ul>
+<li>底层完成硬件与内核准备</li>
+<li><code>init</code> 建立用户空间服务框架</li>
+<li><code>Zygote</code> 负责孵化</li>
+<li><code>SystemServer</code> 拉起系统服务</li>
+<li><code>Launcher</code> 对外提供可交互桌面</li>
+</ul>
+
                 
               </div>
             

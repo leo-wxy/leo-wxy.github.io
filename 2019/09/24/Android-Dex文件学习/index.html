@@ -19,15 +19,15 @@
   <meta name="author" content="Leo-Wxy">
   <meta name="keywords" content="">
   
-    <meta name="description" content="Dex文件Dex转换过程参考链接Android Developer Dex文档">
+    <meta name="description" content="Dex文件Dex（Dalvik Executable）是 Android 运行时可直接消费的字节码格式。 核心目标：  把多个.class合并为更紧凑的数据结构，减少包体与内存占用 采用“共享常量池 + 索引表”降低重复信息 为 ART 运行时加载、校验、链接提供统一输入  补充：  Java&#x2F;Kotlin 编译后先得到.class，再由D8&#x2F;R8转成classes.dex APK">
 <meta property="og:type" content="article">
 <meta property="og:title" content="Android Dex文件学习">
 <meta property="og:url" content="https://leo-wxy.github.io/2019/09/24/Android-Dex%E6%96%87%E4%BB%B6%E5%AD%A6%E4%B9%A0/index.html">
 <meta property="og:site_name" content="Wxy的个人博客">
-<meta property="og:description" content="Dex文件Dex转换过程参考链接Android Developer Dex文档">
+<meta property="og:description" content="Dex文件Dex（Dalvik Executable）是 Android 运行时可直接消费的字节码格式。 核心目标：  把多个.class合并为更紧凑的数据结构，减少包体与内存占用 采用“共享常量池 + 索引表”降低重复信息 为 ART 运行时加载、校验、链接提供统一输入  补充：  Java&#x2F;Kotlin 编译后先得到.class，再由D8&#x2F;R8转成classes.dex APK">
 <meta property="og:locale" content="zh_CN">
 <meta property="article:published_time" content="2019-09-24T15:27:49.000Z">
-<meta property="article:modified_time" content="2020-11-12T13:26:37.000Z">
+<meta property="article:modified_time" content="2026-02-28T10:57:54.438Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="Android">
 <meta name="twitter:card" content="summary_large_image">
@@ -224,7 +224,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          13 字
+          851 字
         
       </span>
     
@@ -236,7 +236,7 @@
         
         
           <!-- compatible with older versions-->
-          1 分钟
+          3 分钟
         
       </span>
     
@@ -293,7 +293,82 @@
                 
                 <!--https://source.android.com/devices/tech/dalvik/dex-format dex组成 dex如何转换机器码 dex到odex过程 dex2oat过程分析-->
 
-<h2 id="Dex文件"><a href="#Dex文件" class="headerlink" title="Dex文件"></a>Dex文件</h2><h2 id="Dex转换过程"><a href="#Dex转换过程" class="headerlink" title="Dex转换过程"></a>Dex转换过程</h2><h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a target="_blank" rel="noopener" href="https://source.android.com/devices/tech/dalvik/dex-format">Android Developer Dex文档</a></p>
+<h2 id="Dex文件"><a href="#Dex文件" class="headerlink" title="Dex文件"></a>Dex文件</h2><p><code>Dex</code>（Dalvik Executable）是 Android 运行时可直接消费的字节码格式。</p>
+<p>核心目标：</p>
+<ul>
+<li>把多个<code>.class</code>合并为更紧凑的数据结构，减少包体与内存占用</li>
+<li>采用“共享常量池 + 索引表”降低重复信息</li>
+<li>为 ART 运行时加载、校验、链接提供统一输入</li>
+</ul>
+<p>补充：</p>
+<ul>
+<li>Java&#x2F;Kotlin 编译后先得到<code>.class</code>，再由<code>D8/R8</code>转成<code>classes.dex</code></li>
+<li>APK 可以包含多个 dex（<code>classes.dex</code>、<code>classes2.dex</code>…）</li>
+<li><code>65K</code>限制本质是单 dex 的<code>method_refs</code>上限，不是源码方法总数</li>
+<li><code>main-dex</code>承载启动早期必须可达类，配置不当会影响首启稳定性</li>
+</ul>
+<h3 id="Dex核心结构（补充）"><a href="#Dex核心结构（补充）" class="headerlink" title="Dex核心结构（补充）"></a>Dex核心结构（补充）</h3><p>一个 dex 可简化为三层：</p>
+<ol>
+<li>Header：文件魔数、版本、各区偏移与大小</li>
+<li>索引区：<code>string_ids/type_ids/proto_ids/field_ids/method_ids/class_defs</code></li>
+<li>数据区：字符串内容、类型列表、注解、<code>class_data_item</code>、<code>code_item</code>等</li>
+</ol>
+<p>其中高频关注：</p>
+<ul>
+<li><code>class_def_item</code>：类定义入口（对应类元信息）</li>
+<li><code>class_data_item</code>：字段&#x2F;方法声明列表</li>
+<li><code>code_item</code>：方法指令、寄存器数量、异常表等</li>
+</ul>
+<p>补充：<code>map_list</code>记录各数据块类型与位置，是解析工具的目录索引。</p>
+<h3 id="Dex指令特征（补充）"><a href="#Dex指令特征（补充）" class="headerlink" title="Dex指令特征（补充）"></a>Dex指令特征（补充）</h3><p>Dex 是寄存器机指令集（非 JVM 栈机）：</p>
+<ul>
+<li>方法执行围绕寄存器读写</li>
+<li>常见<code>invoke-*</code> + <code>move-result*</code></li>
+<li>分支与异常处理由<code>code_item</code>承载</li>
+</ul>
+<p>同一业务逻辑在 dex 与 JVM 字节码层表现不完全同形，属于正常现象。</p>
+<h2 id="Dex转换过程"><a href="#Dex转换过程" class="headerlink" title="Dex转换过程"></a>Dex转换过程</h2><p>可按“构建期 -&gt; 安装&#x2F;运行期”两段理解：</p>
+<h3 id="构建期"><a href="#构建期" class="headerlink" title="构建期"></a>构建期</h3><p><code>Java/Kotlin</code>源码 -&gt; <code>.class</code> -&gt; <code>D8/R8</code> -&gt; <code>classes.dex</code> -&gt; 打包进 APK</p>
+<p>补充：</p>
+<ul>
+<li><code>R8</code>会做 shrink&#x2F;obfuscate&#x2F;optimize，直接影响 dex 体积与方法引用数</li>
+<li><code>desugaring</code>（如 lambda、默认接口方法）会改变方法展开与 dex 规模</li>
+</ul>
+<h3 id="安装-运行期"><a href="#安装-运行期" class="headerlink" title="安装&#x2F;运行期"></a>安装&#x2F;运行期</h3><p>设备侧会进入 ART 优化链路（与版本&#x2F;编译策略相关）：</p>
+<ul>
+<li>可能生成&#x2F;使用<code>vdex/oat</code>产物</li>
+<li>编译模式常见<code>verify/speed-profile/speed</code>，对首启和后续启动有不同取舍</li>
+</ul>
+<p>补充：</p>
+<ul>
+<li><code>vdex</code>更偏校验&#x2F;快速验证信息</li>
+<li><code>oat</code>更偏编译代码与运行时元数据承载</li>
+</ul>
+<h3 id="MultiDex与加载顺序（补充）"><a href="#MultiDex与加载顺序（补充）" class="headerlink" title="MultiDex与加载顺序（补充）"></a>MultiDex与加载顺序（补充）</h3><ul>
+<li>主 dex（<code>classes.dex</code>）通常承载早期必需类</li>
+<li>次 dex 延后参与加载</li>
+<li>同一<code>ClassLoader</code>内，类查找按<code>dexElements</code>顺序命中，先命中先返回</li>
+</ul>
+<p>补充：热修复常见“补丁 dex 前插”依赖的就是这条顺序规则。</p>
+<h3 id="类加载异常边界（补充）"><a href="#类加载异常边界（补充）" class="headerlink" title="类加载异常边界（补充）"></a>类加载异常边界（补充）</h3><ul>
+<li><code>ClassNotFoundException</code>：路径&#x2F;命名空间不可达，找不到类定义</li>
+<li><code>NoClassDefFoundError</code>：编译期可见但运行期定义失败（常见依赖缺失&#x2F;初始化失败）</li>
+<li><code>VerifyError</code>：字节码校验阶段失败</li>
+</ul>
+<p>排查建议：先确认类是否可达，再看依赖与校验日志，不要只盯“类名是否存在”。</p>
+<h3 id="启动性能关联（补充）"><a href="#启动性能关联（补充）" class="headerlink" title="启动性能关联（补充）"></a>启动性能关联（补充）</h3><ul>
+<li>冷启动早期若主线程集中触发类加载&#x2F;初始化，会放大首帧耗时</li>
+<li><code>main-dex</code>组织与关键类可达性直接影响早期路径稳定性</li>
+<li><code>Baseline Profile</code>可降低关键路径解释&#x2F;JIT开销，改善首次打开体验</li>
+</ul>
+<h2 id="小结"><a href="#小结" class="headerlink" title="小结"></a>小结</h2><p>Dex 是 Android 应用从“编译产物”走向“运行时执行”的关键中间格式。</p>
+<p>理解重点不在死记字段名，而在三条主线：</p>
+<ol>
+<li>结构如何组织类与方法</li>
+<li>构建期与运行期如何转换与优化</li>
+<li>加载顺序如何影响类命中、启动稳定性与性能</li>
+</ol>
+<h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a target="_blank" rel="noopener" href="https://source.android.com/devices/tech/dalvik/dex-format">Android Developer Dex文档</a></p>
 
                 
               </div>
