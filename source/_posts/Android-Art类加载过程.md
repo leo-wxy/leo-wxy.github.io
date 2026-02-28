@@ -11,6 +11,16 @@ top: 10
 
 通过`PathClassLoader`或者`DexClassLoader`去加载`Dex`文件，最后还是调用到`BaseDexClassLoader`的加载方法
 
+### 类唯一性（补充）
+
+在 Android/Java 类型系统里，类唯一性可以概括为：
+
+`Class = (ClassLoader, binaryName)`
+
+也就是说：即使类名完全相同，只要由不同`ClassLoader`定义，运行时也会被视为不同类型。
+
+这也是插件化/热修复场景中`ClassCastException`的常见根因之一。
+
 ```java
 class BaseDexClassLoader extends ClassLaoder{
       public BaseDexClassLoader(String dexPath, File optimizedDirectory,
@@ -50,6 +60,11 @@ class BaseDexClassLoader extends ClassLaoder{
 
   - `dexElements`：记录所有的DexFile，按照`;`进行路径分割
   - `nativeLibraryPathElements`：记录所有的Native代码库，包括`app`和`系统`使用的Native库
+
+  补充：`dexElements`的顺序直接决定同名类命中优先级（先命中先返回）。
+
+  - MultiDex 场景下，主 dex 与次 dex 的排列顺序会影响同名类解析结果。
+  - 热修复常见做法是把补丁 dex 前插到`dexElements`首位。
 
 - makeDexElements
 
@@ -187,6 +202,13 @@ class BaseDexClassLoader extends ClassLaoder{
 
   `openDexFileNative`主要处理dex文件，并生成`odex`到`optimizedDirectory`里
 
+  补充：从产物链路看，dex 优化通常会关联到`vdex/oat`等文件。
+
+  - `vdex`侧重校验/快速验证相关信息；
+  - `oat`侧重编译后代码与元数据承载（具体形态受系统版本与编译策略影响）。
+
+  因此“类加载慢”不一定全是 I/O 问题，也可能是验证、链接与优化状态未命中导致。
+
 - openDexFilesFromOat
 
   //TODO 版本差异较大
@@ -218,6 +240,13 @@ class BaseDexClassLoader extends ClassLaoder{
 ## Dex中的类文件加载
 
 > Dex文件是由多个Class类文件组成，Android加载类需要从Dex中找到对应类进行加载，实际`从DexFile找到Class`
+
+补充：`loadClass()`和`findClass()`职责不同。
+
+- `loadClass()`位于`ClassLoader`父类，负责双亲委派与已加载缓存检查。
+- `findClass()`由具体加载器实现，负责当前命名空间内实际查找。
+
+排查类加载问题时建议先看“委派链是否命中”，再看“当前`pathList`是否可达”。
 
 ```java
 public class BaseDexClassLoader extends ClassLoader {
@@ -283,6 +312,11 @@ public class BaseDexClassLoader extends ClassLoader {
   >
   > 热修复的核心逻辑：`将需要修复的类所打包的Dex文件插入到dexElements的首位`。
 
+  补充：这也是“同名类冲突”高发点。
+
+  - 若是同一`ClassLoader`内同名类，通常前序 dex 命中后就不会再看后序。
+  - 若是不同`ClassLoader`各自定义同名类，类型系统会视为不同类型（见上面的类唯一性公式）。
+
   
 
 - Element - findClass
@@ -322,6 +356,13 @@ public class BaseDexClassLoader extends ClassLoader {
           return result;
       }
   ```
+
+  补充：这段代码里能看到两类常见异常来源：
+
+  - `ClassNotFoundException`：找不到类定义（路径/命名空间/依赖不可达）。
+  - `NoClassDefFoundError`：编译期可见、运行期定义失败（常见于依赖缺失或初始化失败后的再次访问）。
+
+  另外还有一类容易混淆的`VerifyError`，通常来自字节码校验阶段失败。
 
   
 
@@ -420,9 +461,42 @@ public class BaseDexClassLoader extends ClassLoader {
 
   `通过dex_cache间接调用类方法，可以做到延时解析类方法(只有方法第一次调用才会被解析，可以避免解析永远不调用的方法)；一个类方法只会被解析一次，解析的结果存在dex_cache中，下次调用时可以直接从dex_cache进行调用。`
 
+  补充：类生命周期可拆为`加载 -> 验证 -> 准备 -> 解析 -> 初始化`。
+
+  - 上述流程并非总是一次性全部完成，部分环节会按需触发。
+  - `<clinit>`属于初始化阶段，若静态初始化过重，会直接放大冷启动主线程耗时。
+
+  补充：ART在运行期会结合解释执行、JIT与AOT协同。
+
+  - 首次启动可能更多落在解释/JIT热身路径；
+  - 安装期或后台 profile 命中后，AOT 产物命中率提高，后续启动通常更稳定。
+
 
 
 ### 加载类成员
+
+类被定义后，成员加载通常会完成以下工作：
+
+- 字段布局建立（实例字段/静态字段）
+- 方法表与接口分发表准备
+- 访问标记、父子类关系与注解元信息关联
+
+补充：
+
+- 类“被加载”不代表所有方法都立刻编译成本地代码。
+- 热点方法一般在运行期按策略逐步优化，避免一次性做全量重活。
+
+
+
+### 动态加载边界（补充）
+
+动态加载常见入口有`DexClassLoader`、`InMemoryDexClassLoader`等。
+
+工程上建议关注三点：
+
+1. 来源可信：加载前做签名/完整性校验。
+2. 命名空间隔离：避免污染宿主主加载器，降低类冲突风险。
+3. 生命周期可控：插件卸载与资源释放要有闭环，避免类加载器泄漏。
 
 
 
