@@ -107,7 +107,13 @@ top: 10
 
 #### 内存分配过程
 
-//TODO
+对象分配一般会经历以下路径：
+
+1. 先尝试在当前线程的本地分配缓冲（TLAB）分配对象，成功则直接返回。
+2. TLAB不足时转到共享堆分配。
+3. 堆空间不足会触发`GC_FOR_MALLOC`尝试回收。
+4. 回收后仍不足时，会进入`GC_BEFORE_OOM`。
+5. 最终仍无法满足分配时抛出`OutOfMemoryError`。
 
 
 
@@ -251,6 +257,12 @@ void onTrimMemory(level:Int){
     })
 ```
 
+补充：不同`trim level`建议采用分级释放策略。
+
+- `TRIM_MEMORY_UI_HIDDEN`：释放仅界面可见期使用的资源（动画、页面级缓存）。
+- `TRIM_MEMORY_RUNNING_LOW/CRITICAL`：主动收缩图片缓存与对象池上限。
+- `TRIM_MEMORY_BACKGROUND/MODERATE/COMPLETE`：释放预加载大对象与低频缓存。
+
 
 
 ## 优化目标
@@ -383,6 +395,12 @@ void onTrimMemory(level:Int){
 >
 > *此时频繁触发GC，造成卡顿，甚至OOM*
 
+补充：识别内存抖动时建议结合三类信号一起看：
+
+- 内存曲线出现高频锯齿且峰值持续抬高。
+- GC日志中`GC_FOR_MALLOC`出现频次明显上升。
+- 卡顿时段与对象分配热点时段高度重合。
+
 #### 触发原因
 
 1. 频繁创建对象，例如在`for循环`创建对象
@@ -401,6 +419,12 @@ void onTrimMemory(level:Int){
 
 1. 内存泄漏积累到一定量之后导致OOM
 2. 一次性申请很多内存，例如`一次创建大的数组或者显示大型文件(图片)`
+
+补充：定位顺序建议固定为“泄漏 -> 大对象 -> 缓存上限”。
+
+1. 先确认对象是否持续增长（泄漏）。
+2. 再确认是否存在单次大内存申请（大图/大数组）。
+3. 最后检查容器和缓存是否缺少上限控制。
 
 ### 其他问题
 
@@ -578,8 +602,10 @@ public static class Options {
 
 ```kotlin
         val options = BitmapFactory.Options()
-        options.inPreferredConfig = Bitmap.Config.ARGB_4444
+        options.inPreferredConfig = Bitmap.Config.RGB_565 // 无透明场景
 ```
+
+补充：`ARGB_4444`已不推荐在新项目中使用，优先在“有透明”与“无透明”场景分别选择`ARGB_8888`和`RGB_565`。
 
 ##### inJustDecodeBounds
 
@@ -676,6 +702,8 @@ iv.setImageBitmap(decodeSampledBitmapTromResource(getResources(),R.drawable.bitm
 - 视图复用：使用ViewHolder实现ConvertView复用
 - 对象池：创建对象池，实现复用逻辑，对相同类型的数据使用同一块内存空间。*不要使用new Message()而是使用Message.obtain()以复用Message对象*
 - Bitmap复用：使用`inBitmap`属性告知BitmapDecoder尝试使用已经存在的内存区域。*在Android 4.4之前只能重用相同大小的Bitmap内存，4.4之后只要后来的Bitmap比之前的小即可。*
+
+补充：`inBitmap`在4.4+本质上是“可复用内存块大小满足新图需求”即可，不仅仅是“新图更小”这一种情况。
 
 #### 可用内存过低主动清理
 

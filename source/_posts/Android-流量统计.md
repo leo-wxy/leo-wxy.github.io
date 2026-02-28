@@ -36,6 +36,11 @@ public class TrafficStats {
 
 根据上述方法可以大致得到当前设备使用的流量数据，`getMobileXX()`获取移动网络数据，`getTotalXX()`获取总流量数据，所以`getTotalXX()-getMobileXX()`大致可以得到Wifi的使用数据。还可以通过指定`getUidXX()`获取指定应用的流量数据。
 
+补充：这个差值是“近似值”而非严格Wi-Fi口径。
+
+- `Total`口径可能包含除蜂窝外的其他网络接口（如以太网/VPN等）。
+- 不同厂商ROM对接口归类存在差异，跨机型对比时建议统一口径。
+
 优点：
 
 - 调用方法简单，无需特别权限
@@ -128,6 +133,11 @@ static jlong getTotalStat(JNIEnv* env, jclass clazz, jint type, jboolean useBpfS
 
 Android9 之后，通过读取`/sys/fs/bpf/traffic_uid_stats_map`获取数据
 
+补充：流量计数本质是内核累计值。
+
+- 设备重启后计数会重新累计，不适合直接当“日/月账单”使用。
+- 需要时间段统计时，应保存前后两次快照做差，或改用`NetworkStatsManager`按时间窗口查询。
+
 #### 使用实例
 
 ```java
@@ -201,6 +211,11 @@ public static class Bucket {
         }
 }
 ```
+
+补充：时间参数是毫秒时间戳（epoch millis），建议统一使用同一时区/时钟来源。
+
+- 查询结果按系统采样窗口聚合，不保证“实时逐秒”精度。
+- 做实时面板时建议结合轮询间隔与缓存策略，避免频繁重查。
 
 以上为`NetworkStatsManager`的主要调用方法
 
@@ -287,22 +302,25 @@ AndroidManifest.xml 配置权限
 
 //上述权限申请完毕后，调用对应方法获取流量数据
      public long getPackageBytesWithNetTypeAndFlow(Context context, boolean isRx/*Rx、Tx*/,
-                                                  int networkType/*TYPE_MOBILE，TYPE_WIFI*/) {
+                                                   int networkType/*TYPE_MOBILE，TYPE_WIFI*/) {
         NetworkStats networkStats = null;
         try {
             networkStats = networkStatsManager.queryDetailsForUid(networkType, getSubscriberId(context, networkType),
                     0, System.currentTimeMillis(), packageUid);
+            long bytes = 0L;
+            NetworkStats.Bucket bucket = new NetworkStats.Bucket();
+            while (networkStats.hasNextBucket()) {
+                networkStats.getNextBucket(bucket);
+                bytes += isRx ? bucket.getRxBytes() : bucket.getTxBytes();
+            }
+            return bytes;
         } catch (RemoteException e) {
             return -1;
+        } finally {
+            if (networkStats != null) {
+                networkStats.close();
+            }
         }
-        long bytes = 0L;
-        NetworkStats.Bucket bucket = new NetworkStats.Bucket();
-        while (networkStats.hasNextBucket()) {
-            networkStats.getNextBucket(bucket);
-            bytes += isRx ? bucket.getRxBytes() : bucket.getTxBytes();
-        }
-        networkStats.close();
-        return bytes;
     }
 
     private String getSubscriberId(Context context, int networkType) {
@@ -310,9 +328,19 @@ AndroidManifest.xml 配置权限
             TelephonyManager tm = (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
             return tm.getSubscriberId();
         }
-        return "";
+        return null;
     }
 ```
+
+补充：高版本对`subscriberId`读取限制更严格，移动网络查询需做好降级处理（拿不到时避免崩溃/空指针）。
+
+
+
+## 方案选择补充
+
+- 只看“设备启动以来累计流量”且无需复杂权限：优先`TrafficStats`。
+- 需要“按时间段/按UID”统计：使用`NetworkStatsManager`。
+- 多机型/多ROM做一致性对比时，先统一统计口径（网络类型、时间窗口、是否包含其他接口）。
 
 
 
