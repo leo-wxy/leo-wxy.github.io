@@ -30,7 +30,7 @@
 <meta property="og:image" content="https://leo-wxy.github.io/images/Memory%E5%A0%86%E8%BD%AC%E5%82%A8">
 <meta property="og:image" content="https://leo-wxy.github.io/images/20190814160744769.png">
 <meta property="article:published_time" content="2020-03-23T13:04:05.000Z">
-<meta property="article:modified_time" content="2026-02-27T13:58:20.029Z">
+<meta property="article:modified_time" content="2026-02-28T06:32:24.581Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="Android">
 <meta name="twitter:card" content="summary_large_image">
@@ -228,7 +228,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          4.4k 字
+          4.8k 字
         
       </span>
     
@@ -240,7 +240,7 @@
         
         
           <!-- compatible with older versions-->
-          14 分钟
+          15 分钟
         
       </span>
     
@@ -361,7 +361,14 @@
 <li><code>GC_EXPLICIT</code>：调用了<code>System.gc()</code>时触发的GC</li>
 <li><code>GC_BEFORE_OOM</code>：在准备抛出<code>OOM</code>异常前进行的GC</li>
 </ul>
-<h4 id="内存分配过程"><a href="#内存分配过程" class="headerlink" title="内存分配过程"></a>内存分配过程</h4><p>&#x2F;&#x2F;TODO</p>
+<h4 id="内存分配过程"><a href="#内存分配过程" class="headerlink" title="内存分配过程"></a>内存分配过程</h4><p>对象分配一般会经历以下路径：</p>
+<ol>
+<li>先尝试在当前线程的本地分配缓冲（TLAB）分配对象，成功则直接返回。</li>
+<li>TLAB不足时转到共享堆分配。</li>
+<li>堆空间不足会触发<code>GC_FOR_MALLOC</code>尝试回收。</li>
+<li>回收后仍不足时，会进入<code>GC_BEFORE_OOM</code>。</li>
+<li>最终仍无法满足分配时抛出<code>OutOfMemoryError</code>。</li>
+</ol>
 <h2 id="内存监听"><a href="#内存监听" class="headerlink" title="内存监听"></a>内存监听</h2><h3 id="获取系统内存信息"><a href="#获取系统内存信息" class="headerlink" title="获取系统内存信息"></a>获取系统内存信息</h3><blockquote>
 <p>Android提供了<code>ActivityManager.getMemoryInfo()</code>去获取系统的内存信息。</p>
 </blockquote>
@@ -388,8 +395,12 @@
 <h3 id="获取应用内存状态"><a href="#获取应用内存状态" class="headerlink" title="获取应用内存状态"></a>获取应用内存状态</h3><p>实现需要获取状态的<code>Activity</code>或<code>Application</code>的<code>onTrimMemory()</code></p>
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">void</span> <span class="hljs-title function_">onTrimMemory</span><span class="hljs-params">(level:Int)</span>&#123;<br>  <span class="hljs-comment">//根据对应Level去执行操作</span><br>  <span class="hljs-keyword">when</span>(level)&#123;<br>    <br>  &#125;<br>  <br>&#125;<br><span class="hljs-comment">//对应的level主要有以下几种</span><br>    <span class="hljs-meta">@IntDef(prefix = &#123; &quot;TRIM_MEMORY_&quot; &#125;, value = &#123;</span><br><span class="hljs-meta">           //系统内存非常低，且应用位于 LRU的边缘，极有可能被回收</span><br><span class="hljs-meta">            TRIM_MEMORY_COMPLETE,</span><br><span class="hljs-meta">           //系统内存非常低，且应用位于 LRU的中间，有可能被回收</span><br><span class="hljs-meta">            TRIM_MEMORY_MODERATE,</span><br><span class="hljs-meta">           //系统内存非常低，应用刚进入后台，回收可能性低</span><br><span class="hljs-meta">            TRIM_MEMORY_BACKGROUND,</span><br><span class="hljs-meta">           //应用处于后台</span><br><span class="hljs-meta">            TRIM_MEMORY_UI_HIDDEN,</span><br><span class="hljs-meta">           //应用正常运行，但是系统内存非常低</span><br><span class="hljs-meta">            TRIM_MEMORY_RUNNING_CRITICAL,</span><br><span class="hljs-meta">           //应用正常运行，但是系统内存非常低</span><br><span class="hljs-meta">            TRIM_MEMORY_RUNNING_LOW,</span><br><span class="hljs-meta">           ////应用正常运行，但是系统内存有点低</span><br><span class="hljs-meta">            TRIM_MEMORY_RUNNING_MODERATE,</span><br><span class="hljs-meta">    &#125;)</span><br></code></pre></td></tr></table></figure>
 
-
-
+<p>补充：不同<code>trim level</code>建议采用分级释放策略。</p>
+<ul>
+<li><code>TRIM_MEMORY_UI_HIDDEN</code>：释放仅界面可见期使用的资源（动画、页面级缓存）。</li>
+<li><code>TRIM_MEMORY_RUNNING_LOW/CRITICAL</code>：主动收缩图片缓存与对象池上限。</li>
+<li><code>TRIM_MEMORY_BACKGROUND/MODERATE/COMPLETE</code>：释放预加载大对象与低频缓存。</li>
+</ul>
 <h2 id="优化目标"><a href="#优化目标" class="headerlink" title="优化目标"></a>优化目标</h2><p><strong>减少内存的占用。</strong></p>
 <p>内存问题大致可以分为两类：</p>
 <ul>
@@ -493,6 +504,12 @@
 <p>短时间内有大量的对象被创建与回收，有短时间内快递的上升和下落的趋势，内存呈锯齿状。</p>
 <p><em>此时频繁触发GC，造成卡顿，甚至OOM</em></p>
 </blockquote>
+<p>补充：识别内存抖动时建议结合三类信号一起看：</p>
+<ul>
+<li>内存曲线出现高频锯齿且峰值持续抬高。</li>
+<li>GC日志中<code>GC_FOR_MALLOC</code>出现频次明显上升。</li>
+<li>卡顿时段与对象分配热点时段高度重合。</li>
+</ul>
 <h4 id="触发原因-1"><a href="#触发原因-1" class="headerlink" title="触发原因"></a>触发原因</h4><ol>
 <li>频繁创建对象，例如在<code>for循环</code>创建对象</li>
 </ol>
@@ -507,6 +524,12 @@
 <h4 id="触发原因-2"><a href="#触发原因-2" class="headerlink" title="触发原因"></a>触发原因</h4><ol>
 <li>内存泄漏积累到一定量之后导致OOM</li>
 <li>一次性申请很多内存，例如<code>一次创建大的数组或者显示大型文件(图片)</code></li>
+</ol>
+<p>补充：定位顺序建议固定为“泄漏 -&gt; 大对象 -&gt; 缓存上限”。</p>
+<ol>
+<li>先确认对象是否持续增长（泄漏）。</li>
+<li>再确认是否存在单次大内存申请（大图&#x2F;大数组）。</li>
+<li>最后检查容器和缓存是否缺少上限控制。</li>
 </ol>
 <h3 id="其他问题"><a href="#其他问题" class="headerlink" title="其他问题"></a>其他问题</h3><h5 id="数据容器"><a href="#数据容器" class="headerlink" title="数据容器"></a>数据容器</h5><p>使用了<code>HashMap</code>之类的容器，针对每一个键值对，都需要额外的<code>Entry</code>对象</p>
 <h5 id="强引用"><a href="#强引用" class="headerlink" title="强引用"></a>强引用</h5><p>针对某些低频使用对象使用强引用，当GC触发时不能去回收这些对象</p>
@@ -590,8 +613,9 @@
 <p>根据需求选择合适的<code>颜色深度</code>，可以有效减少占用内存。</p>
 </blockquote>
 <p>实质用的就是上面介绍的<a href="#Bitmap%E5%8D%A0%E7%94%A8%E5%86%85%E5%AD%98">颜色深度</a></p>
-<figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-keyword">val</span> options = BitmapFactory.Options()<br>options.inPreferredConfig = Bitmap.Config.ARGB_4444<br></code></pre></td></tr></table></figure>
+<figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><code class="hljs kotlin"><span class="hljs-keyword">val</span> options = BitmapFactory.Options()<br>options.inPreferredConfig = Bitmap.Config.RGB_565 <span class="hljs-comment">// 无透明场景</span><br></code></pre></td></tr></table></figure>
 
+<p>补充：<code>ARGB_4444</code>已不推荐在新项目中使用，优先在“有透明”与“无透明”场景分别选择<code>ARGB_8888</code>和<code>RGB_565</code>。</p>
 <h5 id="inJustDecodeBounds"><a href="#inJustDecodeBounds" class="headerlink" title="inJustDecodeBounds"></a>inJustDecodeBounds</h5><blockquote>
 <p>是否去加载图片。</p>
 <ul>
@@ -628,6 +652,7 @@
 <li>对象池：创建对象池，实现复用逻辑，对相同类型的数据使用同一块内存空间。<em>不要使用new Message()而是使用Message.obtain()以复用Message对象</em></li>
 <li>Bitmap复用：使用<code>inBitmap</code>属性告知BitmapDecoder尝试使用已经存在的内存区域。<em>在Android 4.4之前只能重用相同大小的Bitmap内存，4.4之后只要后来的Bitmap比之前的小即可。</em></li>
 </ul>
+<p>补充：<code>inBitmap</code>在4.4+本质上是“可复用内存块大小满足新图需求”即可，不仅仅是“新图更小”这一种情况。</p>
 <h4 id="可用内存过低主动清理"><a href="#可用内存过低主动清理" class="headerlink" title="可用内存过低主动清理"></a>可用内存过低主动清理</h4><p>通过实现<code>onTrimMemory()</code>或<code>onLowMemory()</code>在其中去执行<code>释放资源</code>的操作以减少内存占用。</p>
 <h2 id="自动化内存检测"><a href="#自动化内存检测" class="headerlink" title="自动化内存检测"></a>自动化内存检测</h2><p><a target="_blank" rel="noopener" href="https://github.com/hehonghui/mmat/blob/master/README.md"></a></p>
 <p><img src="/images/20190814160744769.png" srcset="/img/loading.gif" lazyload alt="img"></p>
