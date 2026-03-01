@@ -391,25 +391,60 @@ class Solution {
 题目链接：https://leetcode.cn/problems/move-zeroes/  
 类型：双指针/数组技巧  
 难度：Easy  
-状态：TODO  
+状态：DONE  
 要点：
 复杂度：
 
 ```java
-// TODO
+class Solution {
+    public void moveZeroes(int[] nums) {
+        int start = 0;
+        int n = nums.length;
+        for (int i = 0; i < n; i++) {
+            if (nums[i] != 0) {
+                nums[start] = nums[i];
+                start++;
+            }
+        }
+        for (int a = start; a < n; a++) {
+            nums[a] = 0;
+        }
+    }
+}
 ```
 
 <a id='lc287'></a>
 ### LC 287：寻找重复数
 题目链接：https://leetcode.cn/problems/find-the-duplicate-number/  
-类型：双指针/数组技巧  
+类型：双指针/数组技巧/快慢指针  
 难度：Medium  
 状态：TODO  
 要点：
 复杂度：
 
 ```java
-// TODO
+class Solution {
+  public int findDuplicate(int[] nums) {
+        int slow = 0;
+        int fast = 0;
+
+        while (true) {
+            slow = nums[slow];
+            fast = nums[nums[fast]];
+
+            if (slow == fast) {
+                break;
+            }
+        }
+
+        int head = 0;
+        while (head != slow) {
+            slow = nums[slow];
+            head = nums[head];
+        }
+        return slow;
+    }
+}
 ```
 
 <a id='lc20'></a>
@@ -417,7 +452,7 @@ class Solution {
 题目链接：https://leetcode.cn/problems/valid-parentheses/  
 类型：栈/单调结构  
 难度：Easy  
-状态：TODO  
+状态：TODO   
 要点：
 复杂度：
 
