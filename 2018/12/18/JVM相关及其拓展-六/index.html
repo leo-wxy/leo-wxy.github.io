@@ -28,7 +28,7 @@
 <meta property="og:locale" content="zh_CN">
 <meta property="og:image" content="https://leo-wxy.github.io/images/Thread-State.png">
 <meta property="article:published_time" content="2018-12-18T08:34:07.000Z">
-<meta property="article:modified_time" content="2018-12-24T02:10:34.000Z">
+<meta property="article:modified_time" content="2026-03-07T13:36:23.138Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="JVM">
 <meta name="twitter:card" content="summary_large_image">
@@ -226,7 +226,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          1.2k 字
+          1.8k 字
         
       </span>
     
@@ -238,7 +238,7 @@
         
         
           <!-- compatible with older versions-->
-          4 分钟
+          6 分钟
         
       </span>
     
@@ -328,6 +328,7 @@
 </li>
 </ul>
 <p>Java线程的实现是不能确定的。<strong>由于操作系统支持怎样的线程模型，在很大程度上决定了Java虚拟机的线程是怎样映射的。</strong></p>
+<p>从实际情况看，上面更多是线程模型的理论分类。现代HotSpot在主流操作系统上，Java线程通常还是采用接近<code>1:1</code>的内核线程映射方式，因此线程的创建、阻塞、唤醒和调度，最终大多都会落到操作系统线程调度层去完成。</p>
 <h2 id="线程调度"><a href="#线程调度" class="headerlink" title="线程调度"></a>线程调度</h2><blockquote>
 <p>系统为线程分配处理器使用权的过程。</p>
 </blockquote>
@@ -353,11 +354,23 @@
 </ul>
 </li>
 </ul>
+<p>补充：Java对线程调度的控制能力其实很有限。</p>
+<ul>
+<li><code>Thread.yield()</code>、线程优先级更多只是“提示”，并不是强保证。</li>
+<li>开发者通常无法精确控制某个线程“下一次一定何时运行”。</li>
+<li>也正因为如此，并发程序设计通常更依赖同步规则和状态协作，而不是试图精确操控调度顺序。</li>
+</ul>
 <h2 id="线程状态转换"><a href="#线程状态转换" class="headerlink" title="线程状态转换"></a>线程状态转换</h2><blockquote>
 <p>在任意时间点，一个线程有且只有一个状态</p>
 </blockquote>
 <span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/Thread-State.png" srcset="/img/loading.gif" lazyload class="full-image" alt="线程状态转换" title="线程状态转换" /><meta itemprop="width" content="auto"/><meta itemprop="height" content="auto"/></span>
 
+<p>这里还需要注意：Java层的线程状态和操作系统层的线程状态并不是简单一一对应的。</p>
+<ul>
+<li>Java里的<code>RUNNABLE</code>既可能表示线程正在CPU上运行，也可能表示线程已经就绪、正在等待CPU时间片。</li>
+<li><code>BLOCKED</code>、<code>WAITING</code>、<code>TIMED_WAITING</code>是JVM为了描述Java并发语义而抽象出来的状态。</li>
+</ul>
+<p>所以在分析线程栈或线程状态时，更适合把这些状态理解为“Java语义视角下线程正在做什么”，而不是直接等同于操作系统调度器内部的全部状态。</p>
 <ul>
 <li><h3 id="新建"><a href="#新建" class="headerlink" title="新建"></a>新建</h3><blockquote>
 <p>线程创建后尚未启动的线程状态</p>
@@ -387,6 +400,17 @@
 </ol>
 </blockquote>
 </li>
+</ul>
+<p>这些常见等待方法虽然都会让线程暂时不继续往下执行，但语义并不一样：</p>
+<ul>
+<li><p><code>sleep()</code>：让当前线程休眠一段时间，不会释放已经持有的监视器锁。</p>
+</li>
+<li><p><code>wait()</code>：必须在<code>synchronized</code>保护下调用，会释放当前监视器锁，并等待其他线程<code>notify/notifyAll</code>或超时唤醒。</p>
+</li>
+<li><p><code>join()</code>：本质上是等待目标线程执行结束，常用于线程间顺序协作。</p>
+</li>
+<li><p><code>park()</code>：基于许可机制阻塞线程，不要求一定放在<code>synchronized</code>块中，<code>LockSupport</code>体系里很常见。</p>
+</li>
 <li><h3 id="阻塞"><a href="#阻塞" class="headerlink" title="阻塞"></a>阻塞</h3><blockquote>
 <p>线程被阻塞了 在程序等待进入同步区域的时候进入这种状态。</p>
 <p><strong>阻塞状态</strong>：等待着获取到一个<strong>排他锁</strong>，将在另一个线程放弃这个锁的时候发生</p>
@@ -398,6 +422,13 @@
 </blockquote>
 </li>
 </ul>
+<p>补充：<code>interrupt()</code>并不是“强制杀死线程”，而是一种协作式中断信号。</p>
+<ul>
+<li>调用<code>interrupt()</code>通常只是给目标线程设置中断标记，或者唤醒某些可中断的阻塞点。</li>
+<li>线程是否真正结束，取决于代码是否检测并正确响应这个中断信号。</li>
+<li>如果任务内部完全忽略中断，那么线程依然可能继续运行。</li>
+</ul>
+<p>因此中断更像“请求你尽快结束&#x2F;停止等待”，而不是操作系统层面那种强制终止线程的能力。</p>
 
                 
               </div>

@@ -31,7 +31,7 @@
 <meta property="og:image" content="https://leo-wxy.github.io/images/jvm/get_object_by_handle.png">
 <meta property="og:image" content="https://leo-wxy.github.io/images/jvm/get_object_direct.png">
 <meta property="article:published_time" content="2018-04-10T07:22:34.000Z">
-<meta property="article:modified_time" content="2026-03-01T02:48:10.072Z">
+<meta property="article:modified_time" content="2026-03-07T13:18:33.501Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="JVM">
 <meta name="twitter:card" content="summary_large_image">
@@ -229,7 +229,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          3.2k 字
+          3.9k 字
         
       </span>
     
@@ -241,7 +241,7 @@
         
         
           <!-- compatible with older versions-->
-          11 分钟
+          13 分钟
         
       </span>
     
@@ -314,6 +314,14 @@
 <li><p><strong>直接内存(Direct Memory)</strong>：不属于虚拟机运行时数据区的一部分。</p>
 </li>
 </ul>
+<p>从边界关系上可以再这样理解：</p>
+<ul>
+<li>栈里更偏向保存“方法执行现场”，例如局部变量、操作数栈、返回地址等；对象引用可能在栈上，但对象本体通常不在这里。</li>
+<li>堆里主要放对象实例，是垃圾回收器最关注的区域。</li>
+<li>方法区更偏向保存“类级别的数据”，例如类元信息、静态变量、常量、JIT编译后的代码等。</li>
+<li>运行时常量池属于方法区的一部分。</li>
+<li>直接内存虽然不属于JVM运行时数据区，但会占用进程内存，因此排查内存问题时不能完全忽略它。</li>
+</ul>
 <blockquote>
 <p>拓展：</p>
 <ul>
@@ -344,6 +352,16 @@
 <li><strong>虚拟机对对象进行设置，将<code>类的元数据信息、对象的哈希码、对象的GC分代年龄信息</code>存入对象头中。</strong></li>
 <li>**执行<code>&lt;init&gt;</code>实例构造器初始化。**从虚拟机角度来说，对象已经产生完成，从Java方面来说才刚刚开始，要等到new指令执行并&lt;init&gt;方法执行后，把对象按照意愿初始化后，真正可用的对象生成完毕。</li>
 </ul>
+<p>把这条主线串起来就是：</p>
+<p><code>new指令 -&gt; 类加载检查 -&gt; 分配内存 -&gt; 处理并发分配 -&gt; 零值初始化 -&gt; 设置对象头 -&gt; 执行&lt;init&gt;</code></p>
+<p>这里有一个容易混淆的点：从虚拟机角度看，内存分配并设置完对象头后，对象已经“存在”；但从Java语义看，只有<code>&lt;init&gt;</code>执行完成后，这个对象才真正按照程序员期望变成“可直接使用”的对象。</p>
+<p>另外，对象创建相关的几个优化点也可以放在一起理解：</p>
+<ul>
+<li><code>TLAB</code>解决的是多线程并发分配时的竞争问题，本质是提升“分配效率”。</li>
+<li><code>逃逸分析</code>解决的是对象是否一定要真实分配到堆上的问题。</li>
+<li><code>标量替换/栈上分配</code>则是逃逸分析成立后可能得到的优化结果。</li>
+</ul>
+<p>所以它们并不是同一层面的概念：<code>TLAB</code>偏分配路径优化，<code>逃逸分析</code>偏编译器优化判断。</p>
 <span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/Jvm对象创建过程.png" srcset="/img/loading.gif" lazyload class="full-image" alt="Jvm对象创建过程" title="Jvm对象创建过程" /><meta itemprop="width" content="auto"/><meta itemprop="height" content="auto"/></span>
 
 <h2 id="对象的内存布局"><a href="#对象的内存布局" class="headerlink" title="对象的内存布局"></a>对象的内存布局</h2><p>在HotSpot虚拟机中，对象在内存中存储的布局可以分为3块区域：<code>对象头(Header)</code>、<code>实例数据(Instance Data)</code>和<code>对齐填充(Padding)</code></p>
@@ -383,6 +401,12 @@
 </tr>
 </tbody></table>
 <p>注：偏向锁在较新的JDK版本中已默认关闭并逐步移除，回答相关问题时通常需要说明版本差异。</p>
+<p>这里的<code>Mark Word</code>并不是一块“固定字段完全不变”的区域，而是会随着对象状态变化而复用位空间：</p>
+<ul>
+<li>未加锁时，里面更适合放哈希码、分代年龄等信息。</li>
+<li>进入轻量级锁、重量级锁或偏向锁状态后，这部分位又会被改作锁记录、监视器指针、偏向线程信息等。</li>
+</ul>
+<p>因此对象头更适合理解成“会根据运行时状态动态变化的数据结构”，而不是永远保存同一组信息。</p>
 <p><strong>类型指针</strong><br>对象指向它的类元数据的指针，虚拟机通过这个指针来确定这个对象是哪个类的实例。如果对象为一个Java数组，则对象头中还必须有一块用于记录数组长度的数据，因为虚拟机可以通过普通Java对象的元数据信息确定Java对象的大小，但是从数组的元数据中无法确定数组的大小。</p>
 <h3 id="实例数据"><a href="#实例数据" class="headerlink" title="实例数据"></a>实例数据</h3><p>里面是对象真正存储的有效信息，也是在程序代码中所定义的各种类型的字段内容。存储顺序会受到虚拟机分配策略参数和字段在Java源码中定义顺序的影响。在分配策略中，相同宽度的字段总是会被分配在一起。</p>
 <h3 id="对齐填充"><a href="#对齐填充" class="headerlink" title="对齐填充"></a>对齐填充</h3><p>并非必然存在的，也没有特别的含义。仅仅起着占位符的作用。当实例数据部分没有对齐时，需要对齐填充来补全。</p>
@@ -412,10 +436,17 @@
 <p>推荐回答口径：</p>
 <p><code>大多数对象在堆上分配；但HotSpot在开启逃逸分析的情况下，可通过标量替换/栈上分配减少堆分配。</code></p>
 <h3 id="3-JDK版本差异（回答口径）"><a href="#3-JDK版本差异（回答口径）" class="headerlink" title="3. JDK版本差异（回答口径）"></a>3. JDK版本差异（回答口径）</h3><ul>
+<li>规范层面的<code>方法区</code>是抽象概念，HotSpot在不同版本里有不同实现方式。</li>
 <li>JDK 8：永久代已移除，方法区实现为 <code>Metaspace</code>（使用本地内存）。</li>
 <li>JDK 9+：字符串拼接主要走 <code>invokedynamic</code>，字节码层面与旧版本有差异。</li>
 <li>JDK 15+：偏向锁默认关闭；后续版本逐步移除相关实现，回答锁状态时需注明版本前提。</li>
 </ul>
+<p>所以讨论“方法区”时，最好区分两层：</p>
+<ul>
+<li>规范层：JVM规范描述的是方法区这个逻辑区域。</li>
+<li>实现层：HotSpot可能用永久代、元空间等具体实现去承载它。</li>
+</ul>
+<p>这样在解释“方法区是不是就是永久代”这类问题时，口径会更准确。</p>
 <h3 id="4-常见-OOM-与排查路径"><a href="#4-常见-OOM-与排查路径" class="headerlink" title="4. 常见 OOM 与排查路径"></a>4. 常见 OOM 与排查路径</h3><p>常见报错类型：</p>
 <ul>
 <li><code>Java heap space</code></li>

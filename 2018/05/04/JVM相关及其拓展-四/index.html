@@ -37,7 +37,7 @@
 <meta property="og:image" content="https://leo-wxy.github.io/images/jvm/gc_collectors_CMS.png">
 <meta property="og:image" content="https://leo-wxy.github.io/images/G1%E6%94%B6%E9%9B%86%E5%99%A8.png">
 <meta property="article:published_time" content="2018-05-04T05:25:05.000Z">
-<meta property="article:modified_time" content="2019-02-20T05:53:26.000Z">
+<meta property="article:modified_time" content="2026-03-07T13:27:11.502Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="JVM">
 <meta name="twitter:card" content="summary_large_image">
@@ -235,7 +235,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          5.7k 字
+          6.4k 字
         
       </span>
     
@@ -247,7 +247,7 @@
         
         
           <!-- compatible with older versions-->
-          18 分钟
+          21 分钟
         
       </span>
     
@@ -339,6 +339,14 @@
 <li>方法区中常量引用的对象</li>
 <li>本地方法栈中JNI引用的对象（Native对象）</li>
 </ul>
+<p>判断对象是否可回收时，一个更准确的说法是：<strong>关键不在于“有没有变量名指向它”，而在于“能否从GC Roots沿引用链走到它”。</strong></p>
+<p>另外还要结合引用强度来理解：</p>
+<ul>
+<li>强引用：只要强引用还在，通常就不会被回收。</li>
+<li>软引用：内存紧张时更容易被回收。</li>
+<li>弱引用：下一次垃圾收集时通常就会被回收。</li>
+<li>虚引用：主要用于跟踪对象被回收的时机，本身不影响对象存活。</li>
+</ul>
 <blockquote>
 <p>优点：更加精确严谨可以分析出循环引用的情况</p>
 <p>缺点：实现复杂，效率低，分析过程中需要GC停顿（因为应用关系不能发生改变，需要停止所有Java线程）</p>
@@ -373,6 +381,13 @@
 <p>运行代价高昂，不确定性大，无法保证各个对象的调用顺序。</p>
 </li>
 </ul>
+<p>补充：<code>finalize()</code>在现代Java实践里已经不推荐作为资源回收手段。</p>
+<ul>
+<li>它执行时机不确定，无法保证及时释放资源。</li>
+<li>可能拖慢对象回收，增加GC负担。</li>
+<li>对象还可能在<code>finalize()</code>里“自救”，使生命周期更难推断。</li>
+</ul>
+<p>实际开发里更推荐显式关闭资源、<code>try-with-resources</code>，或者使用更可控的清理机制，而不要把资源释放逻辑寄托在<code>finalize()</code>上。</p>
 <span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/判断Java对象是否存活.png" srcset="/img/loading.gif" lazyload class="full-image" alt="判断Java对象是否存活" title="判断Java对象是否存活" /><meta itemprop="width" content="auto"/><meta itemprop="height" content="auto"/></span>
 
 <h3 id="4-回收方法区"><a href="#4-回收方法区" class="headerlink" title="4.回收方法区"></a>4.回收方法区</h3><blockquote>
@@ -415,6 +430,12 @@
 <p>根据对象存活周期的不同将内存划分为几块，一般是把Java堆分成新生代和老年代<del>和持久代(JDK8中移除)</del>，这样就可以根据各个年代的特点采用最适当的收集算法。<br><strong>新生代</strong>中每次垃圾收集都会有大量的对象被回收，只有少量存活，就可以使用复制算法。</p>
 <p><strong>老年代</strong>中因为对象存活率较高，没有额外空间进行分配担保，所以必须使用“标记-清理”或者“标记-整理”算法。</p>
 </blockquote>
+<p>这背后的核心原因在于不同代的对象“存活特征”不同：</p>
+<ul>
+<li>新生代对象通常朝生夕灭，回收时大多数对象都能直接死掉，因此复制算法成本相对可控。</li>
+<li>老年代对象存活率更高，如果还使用复制算法，复制成本和额外保留空间的代价都会明显升高。</li>
+</ul>
+<p>所以并不是某种算法“天然最好”，而是要结合对象存活率、内存碎片、停顿时间这些因素去看它适不适合当前代。</p>
 <ul>
 <li><p><strong>新生代(Young Generation)</strong>：所有新生对象都会放在新生代，新生代的目标是尽快收集生命周期短的对象，每次GC过后只有少量存活。新生代发生的GC叫做**<code>Minor GC（频率较高，新生代Eden区满才触发）</code>**。新生代细分为<code>Eden、From Survivor、To Survivor</code>三块空间（三块空间大小并非均分，默认比例为8:1:1）。</p>
 <p>新生代的垃圾回收执行过程：</p>
@@ -444,6 +465,19 @@
 
 <p>根据上图分析新生代收集器主要是：<strong>Serial收集器,ParNew收集器,Parallel Scavenge收集器和G1收集器</strong>。老年代收集器为<strong>CMS收集器，Serial Old收集器，Parallel收集器和G1收集器</strong>。</p>
 <p>在两个收集器之间存在连线，则意味着他们之间可以搭配使用。</p>
+<p>从整体上看，收集器选择本质是在几个目标之间做权衡：</p>
+<ul>
+<li>停顿时间：是否希望单次GC暂停尽量短。</li>
+<li>吞吐量：是否更关注单位时间内用户代码执行占比。</li>
+<li>内存占用与碎片：是否能接受额外内存开销、是否容易出现碎片。</li>
+</ul>
+<p>可以粗略理解为：</p>
+<ul>
+<li><code>Serial</code>偏简单直接。</li>
+<li><code>Parallel Scavenge/Parallel Old</code>偏吞吐量优先。</li>
+<li><code>CMS</code>偏低停顿，但要承担浮动垃圾和碎片问题。</li>
+<li><code>G1</code>偏整体均衡与可预测停顿。</li>
+</ul>
 <h4 id="Serial收集器"><a href="#Serial收集器" class="headerlink" title="Serial收集器"></a><code>Serial收集器</code></h4><blockquote>
 <p>该收集器是最基本、发展历史最悠久的收集器。这个收集器是一个<strong>单线程</strong>收集器（<code>不仅是他只会使用一个CPU或者一条收集线程去完成垃圾收集工作，更重要的是他在进行垃圾收集时必须停止其他的工作线程(Stop The World)，直到收集结束。进行Full GC时，还会对老年代空间对象进行压缩整理。</code>）。</p>
 </blockquote>
@@ -559,6 +593,13 @@
 <blockquote>
 <p>对象优先在Eden分配,就是在JVM的堆上进行内存分配</p>
 </blockquote>
+<p>如果把对象流转主线串起来，可以概括为：</p>
+<ul>
+<li>新对象通常优先分配在<code>Eden</code></li>
+<li>经过一次或多次Minor GC后仍存活的对象，会在<code>Survivor</code>区之间复制</li>
+<li>年龄达到阈值，或者满足动态年龄判定时，对象会晋升到老年代</li>
+<li>大对象、以及Survivor放不下的对象，可能更早进入老年代</li>
+</ul>
 <blockquote>
 <p>大对象直接进入老年代</p>
 </blockquote>
@@ -575,6 +616,13 @@
 <p>空间分配担保</p>
 </blockquote>
 <p><strong>如果另外一块Survivor空间没有足够的空间存放上一次新生代收集下来的存活对象时，这些对象将直接通过分配担保机制进入老年代。若老年代也满了就会触发一次full GC，也就是新生代和老年代都会进行回收。</strong></p>
+<p>因此“对象进入老年代”并不只有一种路径：</p>
+<ul>
+<li>可能是年龄自然增长后晋升</li>
+<li>可能是大对象直接分配到老年代</li>
+<li>也可能是Minor GC时Survivor空间不足，触发分配担保提前进入老年代</li>
+</ul>
+<p>理解这条流转路径之后，再去看Minor GC、Major&#x2F;Full GC的触发条件，会更容易把“对象分配”和“垃圾回收”串成一体。</p>
 
                 
               </div>

@@ -19,16 +19,16 @@
   <meta name="author" content="Leo-Wxy">
   <meta name="keywords" content="">
   
-    <meta name="description" content="方法调用方法调用不同于方法执行，方法调用阶段唯一的任务就是确定被调用方法的版本(即调用哪一个方法)。 解析 调用目标在代码程序写好、编译器进行编译时就必须确定下来。  在Java语言中符合“编译期可知，运行期不可变”这个要求的方法，主要包括静态方法和私有方法两大类。前者与类型直接关联，后者在外部不可访问，这两种方法各自的特点决定了它们都不可能通过继承或别的方式重写其他版本，因此它们都适合在类加载阶">
+    <meta name="description" content="方法调用方法调用不同于方法执行，方法调用阶段唯一的任务就是确定被调用方法的版本(即调用哪一个方法)。 从字节码指令的角度看，Java中常见的方法调用指令有invokestatic、invokespecial、invokevirtual、invokeinterface（以及更偏动态语言支持的invokedynamic）。其中“解析”更偏向于在满足条件时把常量池里的符号引用提前确定下来；“分派”则更偏">
 <meta property="og:type" content="article">
 <meta property="og:title" content="JVM相关及其拓展(八) — 静态分派&amp;动态分派">
 <meta property="og:url" content="https://leo-wxy.github.io/2019/02/21/JVM%E7%9B%B8%E5%85%B3%E5%8F%8A%E5%85%B6%E6%8B%93%E5%B1%95-%E5%85%AB/index.html">
 <meta property="og:site_name" content="Wxy的个人博客">
-<meta property="og:description" content="方法调用方法调用不同于方法执行，方法调用阶段唯一的任务就是确定被调用方法的版本(即调用哪一个方法)。 解析 调用目标在代码程序写好、编译器进行编译时就必须确定下来。  在Java语言中符合“编译期可知，运行期不可变”这个要求的方法，主要包括静态方法和私有方法两大类。前者与类型直接关联，后者在外部不可访问，这两种方法各自的特点决定了它们都不可能通过继承或别的方式重写其他版本，因此它们都适合在类加载阶">
+<meta property="og:description" content="方法调用方法调用不同于方法执行，方法调用阶段唯一的任务就是确定被调用方法的版本(即调用哪一个方法)。 从字节码指令的角度看，Java中常见的方法调用指令有invokestatic、invokespecial、invokevirtual、invokeinterface（以及更偏动态语言支持的invokedynamic）。其中“解析”更偏向于在满足条件时把常量池里的符号引用提前确定下来；“分派”则更偏">
 <meta property="og:locale" content="zh_CN">
 <meta property="og:image" content="https://leo-wxy.github.io/images/%E6%96%B9%E6%B3%95%E5%88%86%E6%B4%BE.png">
 <meta property="article:published_time" content="2019-02-21T05:10:28.000Z">
-<meta property="article:modified_time" content="2019-02-21T12:36:42.000Z">
+<meta property="article:modified_time" content="2026-03-07T13:46:21.833Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="JVM">
 <meta name="twitter:card" content="summary_large_image">
@@ -226,7 +226,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          880 字
+          1.5k 字
         
       </span>
     
@@ -238,7 +238,7 @@
         
         
           <!-- compatible with older versions-->
-          3 分钟
+          5 分钟
         
       </span>
     
@@ -294,17 +294,20 @@
               <div class="markdown-body">
                 
                 <h2 id="方法调用"><a href="#方法调用" class="headerlink" title="方法调用"></a>方法调用</h2><p>方法调用不同于方法执行，方法调用阶段唯一的任务就是<strong>确定被调用方法的版本(即调用哪一个方法)</strong>。</p>
+<p>从字节码指令的角度看，Java中常见的方法调用指令有<code>invokestatic、invokespecial、invokevirtual、invokeinterface</code>（以及更偏动态语言支持的<code>invokedynamic</code>）。其中“解析”更偏向于在满足条件时把常量池里的符号引用提前确定下来；“分派”则更偏向于在多态语义下决定最终应该落到哪个方法版本上。</p>
 <h2 id="解析"><a href="#解析" class="headerlink" title="解析"></a>解析</h2><blockquote>
 <p>调用目标在代码程序写好、编译器进行编译时就必须确定下来。</p>
 </blockquote>
 <p>在Java语言中符合“编译期可知，运行期不可变”这个要求的方法，主要包括<code>静态方法</code>和<code>私有方法</code>两大类。前者与类型直接关联，后者在外部不可访问，这两种方法各自的特点决定了它们都不可能通过继承或别的方式重写其他版本，因此它们都适合在类加载阶段进行解析。</p>
 <p>在解析阶段中可以唯一确定的调用版本，符合这个条件的有<code>静态方法、私有方法、实例构造器，父类方法</code>四种。</p>
+<p>换句话说，解析强调的是：<strong>调用目标在真正执行之前就已经稳定确定</strong>。这一类调用通常更接近<code>invokestatic</code>和<code>invokespecial</code>这类“目标版本相对固定”的指令；而像<code>invokevirtual</code>、<code>invokeinterface</code>更多会进入后面要说的分派过程。</p>
 <h2 id="分派"><a href="#分派" class="headerlink" title="分派"></a>分派</h2><p>Java具备面向对象的3个特性：<strong>继承、封装和多态</strong>。分派就体现了<em>多态</em>这一特征。</p>
 <span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/方法分派.png" srcset="/img/loading.gif" lazyload class="full-image" alt="方法分派" title="方法分派" /><meta itemprop="width" content="auto"/><meta itemprop="height" content="auto"/></span>
 
-<h3 id="变量的静态-动态类型"><a href="#变量的静态-动态类型" class="headerlink" title="变量的静态&amp;动态类型"></a>变量的静态&amp;动态类型</h3><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">Test</span>&#123;<br>    <span class="hljs-keyword">static</span> <span class="hljs-keyword">abstract</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">Human</span>&#123;<br>        <br>    &#125;<br>    <br>    <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">Man</span> <span class="hljs-keyword">extends</span> <span class="hljs-title class_">Human</span>&#123;<br>        <br>    &#125;<br>    <br>    <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">Woman</span> <span class="hljs-keyword">extends</span> <span class="hljs-title class_">Human</span>&#123;<br>        <br>    &#125;<br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">main</span><span class="hljs-params">(String[] args)</span>&#123;<br>        <span class="hljs-type">Human</span> <span class="hljs-variable">man</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">Human</span>();<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+<h3 id="变量的静态-动态类型"><a href="#变量的静态-动态类型" class="headerlink" title="变量的静态&amp;动态类型"></a>变量的静态&amp;动态类型</h3><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">Test</span>&#123;<br>    <span class="hljs-keyword">static</span> <span class="hljs-keyword">abstract</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">Human</span>&#123;<br>        <br>    &#125;<br>    <br>    <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">Man</span> <span class="hljs-keyword">extends</span> <span class="hljs-title class_">Human</span>&#123;<br>        <br>    &#125;<br>    <br>    <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">Woman</span> <span class="hljs-keyword">extends</span> <span class="hljs-title class_">Human</span>&#123;<br>        <br>    &#125;<br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">main</span><span class="hljs-params">(String[] args)</span>&#123;<br>        <span class="hljs-type">Human</span> <span class="hljs-variable">man</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">Man</span>();<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
 
 <p>在<code>Human man =  new Man()</code>中，<code>Human</code>对应的变量的静态类型——<strong>(引用类型)不会被改变，在编译期可知</strong>。<code>Man</code>对应着变量的动态类型——<strong>(实例对象类型)会发生变化，在运行期才可以确定</strong>。</p>
+<p>对于实例方法调用来说，真正参与运行期选择的其实是<strong>接收者(Receiver)</strong>。也就是这个方法最终是由哪个实际对象来接收并执行的。静态类型决定编译器“先按哪个范围去找候选方法”，动态类型则决定运行时“最终落到哪个实现版本”。</p>
 <h3 id="静态分派"><a href="#静态分派" class="headerlink" title="静态分派"></a>静态分派</h3><blockquote>
 <p><strong>根据变量的静态类型来定位方法执行版本的分派动作</strong>。静态分派发送在编译阶段，因此确定静态分派的动作实际上是不由虚拟机来执行的。</p>
 </blockquote>
@@ -324,6 +327,14 @@
 <h5 id="匹配优先级"><a href="#匹配优先级" class="headerlink" title="匹配优先级"></a>匹配优先级</h5><blockquote>
 <p>当程序中没有显示指定变量的静态类型时，程序需要根据<code>静态类型的优先级</code>确定<code>优先的静态类型</code>进行方法分配。</p>
 </blockquote>
+<p>重载方法的选择并不是简单地“能调哪个就调哪个”，编译器会按更具体的匹配规则去选择更合适的版本。通常可以粗略理解为：</p>
+<ul>
+<li>精确匹配优先，例如参数类型完全一致的方法版本会优先被选中。</li>
+<li>其次才会考虑基本类型的拓宽转换，如<code>int -&gt; long</code>。</li>
+<li>再往后才会涉及自动装箱、拆箱。</li>
+<li>可变参数方法通常属于更靠后的兜底选择。</li>
+</ul>
+<p>另外还需要注意：<strong>方法返回值并不参与重载决议</strong>。也就是说，仅靠返回值不同并不能构成合法的方法重载。</p>
 <h3 id="动态分派"><a href="#动态分派" class="headerlink" title="动态分派"></a>动态分派</h3><blockquote>
 <p><strong>根据变量的动态类型进行方法分派</strong>。动态分派发生在运行阶段。</p>
 </blockquote>
@@ -338,6 +349,18 @@
 <li>确定接受者的动态类型</li>
 <li>将 常量池中的 类方法符号引用 解析到不同的直接引用上。</li>
 </ol>
+<p>如果把这个过程再展开一点，可以理解为：</p>
+<ol>
+<li>先拿到方法接收者在运行期的真实类型。</li>
+<li>从这个真实类型开始，按照继承关系向上查找签名匹配且可访问的方法。</li>
+<li>找到的第一个合适版本，就是这次调用最终要执行的方法实现。</li>
+</ol>
+<p>因此，方法重写之所以能够成立，本质上就是：<strong>虽然变量的静态类型可能是父类，但运行时查找方法时是从实际对象类型开始往上找的。</strong></p>
+<p>从分派的角度再向上总结一层：</p>
+<ul>
+<li>方法重载更接近<strong>静态多分派</strong>，因为编译器会综合“方法接收者的静态类型 + 参数的静态类型”来决定重载版本。</li>
+<li>方法重写更接近<strong>运行时单分派</strong>，因为运行时真正起决定作用的，主要是接收者的实际类型。</li>
+</ul>
 
                 
               </div>

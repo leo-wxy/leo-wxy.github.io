@@ -29,7 +29,7 @@
 <meta property="og:image" content="https://leo-wxy.github.io/images/Java%E5%86%85%E5%AD%98%E6%A8%A1%E5%9E%8B.png">
 <meta property="og:image" content="https://leo-wxy.github.io/images/JVM-JMM.png">
 <meta property="article:published_time" content="2018-05-09T11:11:37.000Z">
-<meta property="article:modified_time" content="2020-05-15T06:38:18.000Z">
+<meta property="article:modified_time" content="2026-03-07T13:32:25.696Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="JVM">
 <meta name="twitter:card" content="summary_large_image">
@@ -227,7 +227,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          1.8k 字
+          2.6k 字
         
       </span>
     
@@ -239,7 +239,7 @@
         
         
           <!-- compatible with older versions-->
-          6 分钟
+          9 分钟
         
       </span>
     
@@ -307,6 +307,13 @@
 <span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/JVM-JMM.png" srcset="/img/loading.gif" lazyload class="full-image" alt="线程-主内存-工作内存的交互关系" title="线程-主内存-工作内存的交互关系" /><meta itemprop="width" content="auto"/><meta itemprop="height" content="auto"/></span>
 
 <p>主内存主要对应于Java堆中的对象实例数据部分，而工作内存则对应于虚拟机栈中的部分区域。</p>
+<p>这里更适合把<code>主内存/工作内存</code>理解成一种并发访问规则模型，而不是JVM内部真实存在的两块物理内存分区：</p>
+<ul>
+<li><code>主内存</code>强调的是共享变量最终一致性所在的位置。</li>
+<li><code>工作内存</code>强调的是线程对共享变量进行读取、缓存、计算时所依赖的本地视图。</li>
+<li>它和CPU缓存、寄存器、编译器优化之间存在映射关系，但并不是简单的一一对应关系。</li>
+</ul>
+<p>所以JMM关注的重点不是“内存到底长什么样”，而是“多个线程访问共享变量时，结果应该遵守什么规则”。</p>
 <h2 id="内存间交互操作"><a href="#内存间交互操作" class="headerlink" title="内存间交互操作"></a>内存间交互操作</h2><blockquote>
 <p>关于主内存与工作内存具体的交互协议，<strong>即一个变量如何从主内存拷贝到工作内存、如何从工作内存同步回主内存之类的实现细节，JMM中定义了8种操作来完成.</strong></p>
 <p><code>每种操作都是原子、不可再分</code></p>
@@ -354,9 +361,22 @@
 <blockquote>
 <p>如果要把一个变量从主内存复制到工作内存，就要顺序执行<code>read</code>和<code>load</code>操作，如果要从工作内存同步回主内存，就要顺序的执行<code>store</code>和<code>write</code>操作。</p>
 </blockquote>
+<p>这 8 种操作更像是JMM用来描述共享变量同步语义的一组抽象约束，并不意味着开发者在业务代码里会直接去调用这些动作。</p>
+<ul>
+<li>开发者通常是通过<code>volatile</code>、<code>synchronized</code>、<code>Lock</code>、<code>final</code>等更高层的语言机制间接触发这些约束。</li>
+<li>JMM关心的是这些操作之间的合法组合和先后关系，从而保证并发语义正确。</li>
+</ul>
+<p>因此这一节的重点不在“背 8 个动作名字”，而在理解：线程之间对共享变量的读写为什么必须经过一套受约束的同步规则。</p>
 <h2 id="原子性、可见性和有序性"><a href="#原子性、可见性和有序性" class="headerlink" title="原子性、可见性和有序性"></a>原子性、可见性和有序性</h2><blockquote>
 <p>Java内存模型就是围绕着在并发过程中如何处理原子性、可见性和有序性这3个特征来建立的。这也是并发编程的三大概念。</p>
 </blockquote>
+<p>这三个概念分别解决的是不同层面的问题：</p>
+<ul>
+<li>原子性：一个操作会不会被拆开、打断。</li>
+<li>可见性：一个线程对共享变量的修改，另一个线程能不能及时看到。</li>
+<li>有序性：程序执行时，操作顺序会不会因为重排序而破坏预期。</li>
+</ul>
+<p>它们之间不能相互替代：看得见，不代表操作不可分；执行顺序没乱，也不代表其他线程一定能看到最新值。</p>
 <h3 id="原子性-Atomicity"><a href="#原子性-Atomicity" class="headerlink" title="原子性(Atomicity)"></a>原子性(Atomicity)</h3><blockquote>
 <p><strong>对基本数据类型的读取和赋值都是原子操作</strong>，所谓原子性操作就代指这些<strong>操作是不可中断</strong>的，要么做完，要么就不执行。</p>
 </blockquote>
@@ -382,10 +402,28 @@
 <p>Java内存模型允许编译器和处理器对指令进行重排序，但是规定了<code>as-if-serial</code>（不管怎么重排序，程序的执行结果不能改变）。</p>
 <p><strong>指令重排序不会影响单个线程的执行，但是会影响到线程并发执行的正确性。</strong></p>
 <p><code>volatile</code>本身包含了禁止指令重排序的语义，而<code>synchronized</code>通过<strong>一个变量在同一个时刻只允许一条线程对其lock操作</strong>实现有序性。</p>
+<p>补充理解：</p>
+<ul>
+<li><code>volatile</code>主要保证可见性，并通过内存屏障约束部分重排序。</li>
+<li>但<code>volatile</code>并不能保证复合操作的原子性，例如<code>i++</code>依然不是线程安全的。</li>
+<li><code>synchronized</code>和<code>Lock</code>通常能同时提供更完整的原子性、可见性和有序性保证，只是代价和使用方式不同。</li>
+</ul>
+<p>这里也可以顺手区分两个容易混淆的概念：</p>
+<ul>
+<li><code>as-if-serial</code>主要约束的是单线程语义：怎么优化、怎么重排都不能改变单线程下的执行结果。</li>
+<li><code>happens-before</code>主要约束的是多线程可见性与顺序推导：一个线程的结果在什么条件下对另一个线程可见。</li>
+</ul>
+<p>所以前者更像“单线程世界里怎么优化都行”，后者更像“多线程世界里哪些先后关系是有保证的”。</p>
 <p><em><strong>要想并发程序正确的执行，必须要保证原子性、可见性和有序性，只要有一个没有被保证，就有可能导致程序运行不正确。</strong></em></p>
 <h2 id="先行发生原则-happens-before"><a href="#先行发生原则-happens-before" class="headerlink" title="先行发生原则(happens-before)"></a>先行发生原则(happens-before)</h2><blockquote>
 <p>JMM具备一些先天的<code>有序性</code>。<strong>不需要通过任何手段就可以保证有序性，称之为<code>先行发生原则</code>。如果两个操作的执行次序无法从先行发生原则推导出来，他们之间就没有顺序性保障，就不能保证有序性。</strong></p>
 </blockquote>
+<p><code>happens-before</code>并不单纯等于“时间上谁先执行”，它表达的是一种结果可见性 + 顺序性约束：</p>
+<ul>
+<li>如果A happens-before B，那么A的执行结果对B是可见的，并且A在语义上先于B。</li>
+<li>如果两个操作之间不存在happens-before关系，就不能仅凭“代码写在前面”就断定另一个线程一定能看到结果。</li>
+</ul>
+<p>例如线程A先写共享变量，线程B后读共享变量，如果两者之间没有通过<code>volatile</code>、锁、线程启动&#x2F;终止等规则建立happens-before关系，那么B就不一定能读到A写入后的最新值。</p>
 <p>主要有以下规则：</p>
 <ul>
 <li><strong>程序次序规则</strong>：写在前面的代码先行发生于写在后面的(按照控制流顺序而不是代码顺序)</li>
