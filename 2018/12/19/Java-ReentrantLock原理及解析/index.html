@@ -27,7 +27,7 @@
 <meta property="og:description" content="一般的锁都是配合synchronized使用的，实际上在java.util.concurrent.locks还提供了其他几个锁的实现，拥有更加强大的功能和更好的性能。 锁的分类可重入锁 可重入锁：任意线程在获取该锁后能够再次获取锁时不会被阻塞。 当前线程恶可以反复加锁，但必须释放同样多次数的锁，否则会导致锁不会释放。可以避免死锁  原理通过组合自定义同步器(AQS)实现锁的获取与释放  再次进行l">
 <meta property="og:locale" content="zh_CN">
 <meta property="article:published_time" content="2018-12-19T07:06:32.000Z">
-<meta property="article:modified_time" content="2020-10-02T02:37:39.000Z">
+<meta property="article:modified_time" content="2026-03-07T14:49:28.784Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="Java">
 <meta name="twitter:card" content="summary_large_image">
@@ -224,7 +224,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          1.7k 字
+          2.3k 字
         
       </span>
     
@@ -236,7 +236,7 @@
         
         
           <!-- compatible with older versions-->
-          6 分钟
+          8 分钟
         
       </span>
     
@@ -310,6 +310,7 @@
 <p>实现：<code>ReentrantLock(true)</code></p>
 <h4 id="非公平锁"><a href="#非公平锁" class="headerlink" title="非公平锁"></a>非公平锁</h4><p><strong>多个线程不是按照申请锁的先后顺序去获取锁。</strong></p>
 <p><code>非公平锁</code>的性能高于<code>公平锁</code>，但是可能发生<strong>线程饥饿(某个线程长时间无法获得锁)</strong>。</p>
+<p>这里需要注意：**公平并不等于整体效率更高。**公平锁减少了插队，线程获取锁的顺序更稳定、更可预期，但也会增加排队等待和上下文切换成本；非公平锁虽然可能让某些线程等待更久，却往往能得到更高的整体吞吐量，这也是<code>ReentrantLock</code>默认采用非公平模式的原因。</p>
 <p>实现：<code>synchronized</code>和<code>ReentrantLock(false)默认非公平</code></p>
 <h3 id="读写锁和排他锁"><a href="#读写锁和排他锁" class="headerlink" title="读写锁和排他锁"></a>读写锁和排他锁</h3><h4 id="读写锁"><a href="#读写锁" class="headerlink" title="读写锁"></a>读写锁</h4><p><strong>同一时刻允许多个读线程访问。<strong>分为了</strong>读锁</strong>和<strong>写锁</strong>，<code>读锁</code>允许多个线程获取读锁，访问同一个资源；<code>写锁</code>只允许一个线程获取写锁，不允许同时访问同一资源。</p>
 <p><strong>在读多写少的情况下，大大提高了性能。</strong></p>
@@ -359,15 +360,31 @@
 <li><code>time</code>时间结束后，立即返回获取锁结果</li>
 </ul>
 </blockquote>
+<p>把这几个获取锁方法放在一起看，会更容易理解它们分别解决什么等待策略问题：</p>
+<ul>
+<li><code>lock()</code>：一直等待，直到真正拿到锁为止。</li>
+<li><code>lockInterruptibly()</code>：也会等待，但等待过程中优先响应中断。</li>
+<li><code>tryLock()</code>：完全不等待，立即返回是否拿到锁。</li>
+<li><code>tryLock(time, unit)</code>：在给定时间内尝试等待，超时就放弃。</li>
+</ul>
 <h4 id="unlock-释放锁"><a href="#unlock-释放锁" class="headerlink" title="unlock()-释放锁"></a><code>unlock()</code>-释放锁</h4><blockquote>
 <p>当前线程释放持有锁，<strong>锁只能由持有者释放，如果并未持有锁，执行解锁方法，就会抛出异常</strong>。</p>
 </blockquote>
 <h4 id="newCondition-获取锁条件"><a href="#newCondition-获取锁条件" class="headerlink" title="newCondition()-获取锁条件"></a><code>newCondition()</code>-获取锁条件</h4><blockquote>
 <p>返回该锁的<code>Condition</code>实例，实现<strong>多线程通信</strong>。该组件会与当前锁绑定，当前线程只有获取了锁，才能调用组件的<code>await()</code>方法，调用后，线程释放锁。</p>
 </blockquote>
+<p>如果把它和<code>synchronized</code>体系做类比，会更好理解：</p>
+<ul>
+<li><code>Condition.await()</code>类似于<code>Object.wait()</code></li>
+<li><code>Condition.signal()</code>类似于<code>Object.notify()</code></li>
+<li><code>Condition.signalAll()</code>类似于<code>Object.notifyAll()</code></li>
+</ul>
+<p>不同点在于：<code>Object</code>监视器天然只有一组等待队列，而<code>ReentrantLock</code>可以通过多次调用<code>newCondition()</code>拆出多个条件队列，让不同等待原因的线程分开管理。</p>
 <h2 id="ReentrantLock"><a href="#ReentrantLock" class="headerlink" title="ReentrantLock"></a>ReentrantLock</h2><blockquote>
 <p>一个可重入的互斥锁，具备一样的线程重入特性</p>
 </blockquote>
+<p><code>ReentrantLock</code>底层并不是自己从零维护完整的排队、唤醒和状态流转逻辑，而是建立在<code>AQS(AbstractQueuedSynchronizer)</code>之上。可以把它理解成：<code>ReentrantLock</code>负责定义“这是一把怎样的锁”，而<code>AQS</code>负责提供“线程如何排队、如何竞争、如何被唤醒”的通用同步框架。</p>
+<p>在独占模式下，<code>AQS</code>里的<code>state</code>通常会被用来表示当前锁的持有状态和重入次数：第一次获取锁时把状态从<code>0</code>改成<code>1</code>，同一线程重入时继续累加，释放锁时再逐步减回去，直到恢复为<code>0</code>才表示真正释放完成。</p>
 <h4 id="特性"><a href="#特性" class="headerlink" title="特性"></a>特性</h4><ul>
 <li>尝试获得锁</li>
 <li>获取到锁的线程能够响应中断</li>
@@ -377,6 +394,7 @@
 </blockquote>
 <h2 id="使用方式"><a href="#使用方式" class="headerlink" title="使用方式"></a>使用方式</h2><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">ReenTrantLockTest</span> <span class="hljs-keyword">implements</span> <span class="hljs-title class_">Runnable</span> &#123;<br>    <span class="hljs-keyword">private</span> <span class="hljs-type">Lock</span> <span class="hljs-variable">lock</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">ReentrantLock</span>();<br>    <span class="hljs-keyword">private</span> <span class="hljs-type">Condition</span> <span class="hljs-variable">condition</span> <span class="hljs-operator">=</span> lock.newCondition();<br><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">test</span><span class="hljs-params">()</span> &#123;<br>        <span class="hljs-keyword">try</span> &#123;<br>            <span class="hljs-comment">//获得同步锁</span><br>            lock.lock();<br>            System.err.println(<span class="hljs-string">&quot;获取锁&quot;</span> + System.currentTimeMillis());<br>            condition.await();<br>            System.err.println();<br>        &#125; <span class="hljs-keyword">catch</span> (<br>                InterruptedException e) &#123;<br>            e.printStackTrace();<br>        &#125; <span class="hljs-keyword">finally</span> &#123;<br>            <span class="hljs-comment">//释放同步锁</span><br>            lock.unlock();<br>        &#125;<br>    &#125;<br><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">main</span><span class="hljs-params">(String[] args)</span> <span class="hljs-keyword">throws</span> InterruptedException &#123;<br>        <span class="hljs-type">ReenTrantLockTest</span> <span class="hljs-variable">test</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">ReenTrantLockTest</span>();<br>        <span class="hljs-type">Thread</span> <span class="hljs-variable">t1</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">Thread</span>(test);<br>        <span class="hljs-type">Thread</span> <span class="hljs-variable">t2</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">Thread</span>(test);<br>        t1.start();<br>        t2.start();<br>        t1.join();<br>        t2.join();<br>        System.err.println(<span class="hljs-string">&quot;结束&quot;</span>);<br>    &#125;<br><br>    <span class="hljs-meta">@Override</span><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">run</span><span class="hljs-params">()</span> &#123;<br>        test();<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
 
+<p>这里把<code>unlock()</code>放在<code>finally</code>里并不是一种书写习惯上的偏好，而是必须的保护措施。因为<code>ReentrantLock</code>不像<code>synchronized</code>那样在代码异常退出时由JVM自动释放锁；如果线程拿到锁后中途抛异常又没有执行<code>unlock()</code>，其他线程就可能一直阻塞在这把锁上。</p>
 <p>相比<code>synchronized</code>增加了一些高级功能：</p>
 <ul>
 <li><p><strong>等待可中断</strong>：当持有锁的线程长期不释放锁的时候，正在等待的线程可以选择放弃等待，去操作其他事情。</p>
@@ -393,7 +411,6 @@
 <li>Lock还有读锁和写锁。<strong>读读共享，写写互斥，读写互斥</strong>。</li>
 </ul>
 <h2 id="自定义重入锁"><a href="#自定义重入锁" class="headerlink" title="自定义重入锁"></a>自定义重入锁</h2><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">CustomReetrantLock</span> &#123;<br>    <span class="hljs-type">boolean</span> <span class="hljs-variable">isLocked</span> <span class="hljs-operator">=</span> <span class="hljs-literal">false</span>;<br>    <span class="hljs-type">Thread</span> <span class="hljs-variable">lockedBy</span> <span class="hljs-operator">=</span> <span class="hljs-literal">null</span>;<br>    <span class="hljs-type">int</span> <span class="hljs-variable">lockedCount</span> <span class="hljs-operator">=</span> <span class="hljs-number">0</span>;<br><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">lock</span><span class="hljs-params">()</span> <span class="hljs-keyword">throws</span> InterruptedException &#123;<br>        <span class="hljs-type">Thread</span> <span class="hljs-variable">callThread</span> <span class="hljs-operator">=</span> Thread.currentThread();<br>        <span class="hljs-keyword">while</span> (isLocked &amp;&amp; lockedBy != Thread.currentThread()) &#123;<br>            wait();<br>        &#125;<br>        isLocked = <span class="hljs-literal">true</span>;<br>        lockedCount++;<br>        lockedBy = callThread;<br>    &#125;<br><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">unLock</span><span class="hljs-params">()</span> &#123;<br>        <span class="hljs-keyword">if</span> (Thread.currentThread() == <span class="hljs-built_in">this</span>.lockedBy) &#123;<br>            lockedCount--;<br>            <span class="hljs-keyword">if</span> (lockedCount == <span class="hljs-number">0</span>) &#123;<br>                isLocked = <span class="hljs-literal">false</span>;<br>                notify();<br>            &#125;<br>        &#125;<br>    &#125;<br>&#125;<br><br></code></pre></td></tr></table></figure>
-
 
                 
               </div>
