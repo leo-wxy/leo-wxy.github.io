@@ -457,7 +457,38 @@ class Solution {
 复杂度：
 
 ```java
-// TODO
+class Solution {
+    public boolean isValid(String s) {
+        Stack<Character> stack = new Stack<>();
+        int n = s.length();
+
+        for (int i = 0; i < n; i++) {
+            char c = s.charAt(i);
+
+            if (c == '(' || c == '[' || c == '{') {
+                stack.push(c);
+            }
+
+            if (c == ')' || c == ']' || c == '}') {
+                if (stack.isEmpty()) {
+                    stack.push(c);
+                } else {
+                    char top = stack.peek();
+                    if (top == '(' && c == ')' ||
+                            top == '[' && c == ']' ||
+                            top == '{' && c == '}') {
+                        stack.pop();
+                    } else {
+                        stack.push(c);
+                    }
+                }
+            }
+        }
+
+        return stack.isEmpty();
+
+    }
+}
 ```
 
 <a id='lc739'></a>
@@ -470,7 +501,23 @@ class Solution {
 复杂度：
 
 ```java
-// TODO
+class Solution {
+    public int[] dailyTemperatures(int[] temperatures) {
+        Stack<Integer> stack = new Stack<>();
+        int n = temperatures.length;
+        int[] res = new int[n];
+
+        for(int i = 0 ; i<n; i++){
+            int temp = temperatures[i];
+            while(!stack.isEmpty() && temp > temperatures[stack.peek()]){
+                int j = stack.pop();
+                res[j] = i - j;
+            }
+            stack.push(i);
+        }
+        return res;
+    }
+}
 ```
 
 <a id='lc394'></a>
@@ -487,7 +534,8 @@ class Solution {
 ```
 
 <a id='lc42'></a>
-### LC 42：接雨水
+
+### ** LC 42：接雨水
 题目链接：https://leetcode.cn/problems/trapping-rain-water/  
 类型：栈/单调结构  
 难度：Hard  
@@ -496,7 +544,27 @@ class Solution {
 复杂度：
 
 ```java
-// TODO
+class Solution {
+    public int trap(int[] height) {
+        Deque<Integer> deque = new ArrayDeque<>();
+        int n = height.length;
+        int ans = 0;
+        for (int i = 0; i < n; i++) {
+            int h = height[i];
+            while (!deque.isEmpty() && h >= height[deque.peek()]) {
+                int bottom_h = height[deque.pop()];
+                if (deque.isEmpty()) {
+                    break;
+                }
+                int left = deque.peek();
+                int diffH = Math.min(h, height[left]) - bottom_h;
+                ans += diffH * (i - left - 1);
+            }
+            deque.push(i);
+        }
+        return ans;
+    }
+}
 ```
 
 <a id='lc33'></a>
