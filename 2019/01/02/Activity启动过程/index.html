@@ -35,7 +35,7 @@
 <meta property="og:image" content="https://leo-wxy.github.io/images/%E6%A0%B9%E5%90%AF%E5%8A%A8Activity%E8%BF%87%E7%A8%8B%E4%B8%AD%E7%9A%84%E8%BF%9B%E7%A8%8B%E5%88%87%E6%8D%A2.png">
 <meta property="og:image" content="https://leo-wxy.github.io/images/%E6%99%AE%E9%80%9AActivity%E5%90%AF%E5%8A%A8%E8%BF%87%E7%A8%8B.png">
 <meta property="article:published_time" content="2019-01-02T13:35:26.000Z">
-<meta property="article:modified_time" content="2026-02-27T14:09:20.928Z">
+<meta property="article:modified_time" content="2026-03-07T12:48:50.697Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="Android">
 <meta name="twitter:card" content="summary_large_image">
@@ -233,7 +233,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          8.9k 字
+          9.5k 字
         
       </span>
     
@@ -245,7 +245,7 @@
         
         
           <!-- compatible with older versions-->
-          28 分钟
+          30 分钟
         
       </span>
     
@@ -316,8 +316,12 @@
 <li>冷启动：目标进程不存在，需要从 Zygote fork 新进程并完成 Application 绑定。</li>
 <li>温启动：目标进程存在，但目标 Activity 需要重新创建。</li>
 <li>热启动：目标 Activity 已在任务栈中，主要是前后台切换后的恢复展示。</li>
+<li>Task：系统中用于组织 Activity 的任务单元，对应一条回退历史。</li>
+<li>Back Stack：Task 内部的 Activity 入栈顺序，决定返回键的回退路径。</li>
+<li>ActivityRecord：System Server 侧对一个待启动&#x2F;已启动 Activity 的记录对象，用来保存生命周期与任务栈状态。</li>
+<li>ApplicationThread：应用进程暴露给 System Server 的 Binder 通道，AMS 通过它把启动与生命周期事务派发回应用侧。</li>
 </ul>
-<p>本文主体源码仍以 Android 8.0 为主，文末会补充新版本中类职责迁移与关键差异。</p>
+<p>本文主体源码仍以 Android 8.0 为主，文末会补充新版本中类职责迁移与关键差异。这里讨论的“启动完成”主要是指页面已经完成创建并进入前台可见阶段，而“首帧真正绘制完成”会比生命周期回调再靠后一步。</p>
 <h2 id="根Activity启动过程"><a href="#根Activity启动过程" class="headerlink" title="根Activity启动过程"></a>根Activity启动过程</h2><h3 id="根Activity启动主链路总览（补充）"><a href="#根Activity启动主链路总览（补充）" class="headerlink" title="根Activity启动主链路总览（补充）"></a>根Activity启动主链路总览（补充）</h3><p>根Activity的启动可以抽象为 6 个阶段：</p>
 <ol>
 <li><code>Launcher</code>通过<code>startActivity</code>发起启动请求。</li>
@@ -409,6 +413,12 @@
 <p><img src="/images/AMS-%E5%BA%94%E7%94%A8%E7%A8%8B%E5%BA%8F%E8%BF%9B%E7%A8%8B%E9%80%9A%E4%BF%A1.png" srcset="/img/loading.gif" lazyload alt="AMS-应用程序进程通信"></p>
 <p>这一节主要是从<code>ActivityManagerService</code>经过层层调用到达<code>ApplicationThread</code>的Activity启动方法。</p>
 <p><img src="/images/AMS-ApplicationThread%E8%B0%83%E7%94%A8%E8%BF%87%E7%A8%8B.png" srcset="/img/loading.gif" lazyload alt="AMS-ApplicationThread调用过程"></p>
+<p>从职责上看，这一段可以分成两层：</p>
+<ul>
+<li><code>AMS</code>更像总调度入口，负责权限校验、跨用户校验、进程状态管理以及与其他系统服务协同。</li>
+<li><code>ActivityStarter</code>更像启动策略执行器，负责把“启动哪个 Activity”细化为“放入哪个任务栈、复用哪个实例、是否需要拉起进程”。</li>
+</ul>
+<p>所以<code>startActivity()</code>进入 System Server 之后，重点并不是立刻去“new 一个 Activity”，而是先把启动请求转换成一组合法的任务栈与进程调度决策。</p>
 <p><code>ActivityStack</code>:Activity的任务栈，从中获取需要进行操作的<code>ActivityRecord</code>进行操作。<em>在启动过程中，它的作用是检测当前栈顶Activity是否为要启动的Activity,不是就启动新Activity，是的话就重启，在这之前需要标记一下前Activity处于Pause状态。</em></p>
 <p><code>ActivityStackSupervisor</code>:管理整个手机任务栈，管理着所有的<code>ActivityStack</code>。<em>在启动过程中，它负责检查是否已有对应的应用进程在运行，如果有就直接启动Activity，没有的话则需新建一个应用进程。</em></p>
 <p>总结：</p>
@@ -441,6 +451,9 @@
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">// ../core/java/com/android/server/am/ActivityManagerService.java</span><br>    <span class="hljs-keyword">final</span> ProcessRecord <span class="hljs-title function_">startProcessLocked</span><span class="hljs-params">(String processName,</span><br><span class="hljs-params">            ApplicationInfo info, <span class="hljs-type">boolean</span> knownToBeDead, <span class="hljs-type">int</span> intentFlags,</span><br><span class="hljs-params">            String hostingType, ComponentName hostingName, <span class="hljs-type">boolean</span> allowWhileBooting,</span><br><span class="hljs-params">            <span class="hljs-type">boolean</span> isolated, <span class="hljs-type">boolean</span> keepIfLarge)</span> &#123;<br>        <span class="hljs-keyword">return</span> startProcessLocked(processName, info, knownToBeDead, intentFlags, hostingType,<br>                hostingName, allowWhileBooting, isolated, <span class="hljs-number">0</span> <span class="hljs-comment">/* isolatedUid */</span>, keepIfLarge,<br>                <span class="hljs-literal">null</span> <span class="hljs-comment">/* ABI override */</span>, <span class="hljs-literal">null</span> <span class="hljs-comment">/* entryPoint */</span>, <span class="hljs-literal">null</span> <span class="hljs-comment">/* entryPointArgs */</span>,<br>                <span class="hljs-literal">null</span> <span class="hljs-comment">/* crashHandler */</span>);<br>    &#125;  <br><br>    <span class="hljs-keyword">final</span> ProcessRecord <span class="hljs-title function_">startProcessLocked</span><span class="hljs-params">(String processName, ApplicationInfo info,</span><br><span class="hljs-params">            <span class="hljs-type">boolean</span> knownToBeDead, <span class="hljs-type">int</span> intentFlags, String hostingType, ComponentName hostingName,</span><br><span class="hljs-params">            <span class="hljs-type">boolean</span> allowWhileBooting, <span class="hljs-type">boolean</span> isolated, <span class="hljs-type">int</span> isolatedUid, <span class="hljs-type">boolean</span> keepIfLarge,</span><br><span class="hljs-params">            String abiOverride, String entryPoint, String[] entryPointArgs, Runnable crashHandler)</span> &#123;<br>        <span class="hljs-type">long</span> <span class="hljs-variable">startTime</span> <span class="hljs-operator">=</span> SystemClock.elapsedRealtime();<br>        ProcessRecord app;<br>        ...<br>        startProcessLocked(<br>             app, hostingType, hostingNameStr, abiOverride, entryPoint, entryPointArgs);<br>    &#125;    <br><br><br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">startProcessLocked</span><span class="hljs-params">(ProcessRecord app, String hostingType,</span><br><span class="hljs-params">            String hostingNameStr, String abiOverride, String entryPoint, String[] entryPointArgs)</span> &#123;<br>      ...<br>        <span class="hljs-comment">//</span><br>        <span class="hljs-type">boolean</span> <span class="hljs-variable">isActivityProcess</span> <span class="hljs-operator">=</span> (entryPoint == <span class="hljs-literal">null</span>);<br>            <span class="hljs-keyword">if</span> (entryPoint == <span class="hljs-literal">null</span>) entryPoint = <span class="hljs-string">&quot;android.app.ActivityThread&quot;</span>;<br>          <br>        Trace.traceBegin(Trace.TRACE_TAG_ACTIVITY_MANAGER, <span class="hljs-string">&quot;Start proc: &quot;</span> +<br>                    app.processName);<br>            checkTime(startTime, <span class="hljs-string">&quot;startProcess: asking zygote to start proc&quot;</span>);<br>            ProcessStartResult startResult;<br>            <span class="hljs-keyword">if</span> (hostingType.equals(<span class="hljs-string">&quot;webview_service&quot;</span>)) &#123;<br>                startResult = startWebView(entryPoint,<br>                        app.processName, uid, uid, gids, debugFlags, mountExternal,<br>                        app.info.targetSdkVersion, seInfo, requiredAbi, instructionSet,<br>                        app.info.dataDir, <span class="hljs-literal">null</span>, entryPointArgs);<br>            &#125; <span class="hljs-keyword">else</span> &#123;<br>                startResult = Process.start(entryPoint,<br>                        app.processName, uid, uid, gids, debugFlags, mountExternal,<br>                        app.info.targetSdkVersion, seInfo, requiredAbi, instructionSet,<br>                        app.info.dataDir, invokeWith, entryPointArgs);<br>            &#125;<br>      ...<br>    &#125;<br></code></pre></td></tr></table></figure>
 
 <p>调用到<code>Process</code>的静态成员函数<code>start()</code>启动一个新的应用进程，指定了该进程的入口函数为<code>ActivityThread.main()</code>；因此创建应用进程结束时，逻辑就转移到了<code>ActivityThread.main()</code>上。</p>
+<p>如果把这一段再压缩成一条主线，就是：</p>
+<p><code>AMS.startProcessLocked() -&gt; Process.start() -&gt; Zygote fork 新进程 -&gt; 反射进入 ActivityThread.main() -&gt; 准备主线程 Looper -&gt; attach 到 AMS</code></p>
+<p>这条链路解释了“为什么 System Server 能启动一个全新的应用进程”：AMS 负责发起与管理，真正把进程孵化出来的是<code>Zygote</code>，而新进程启动后的 Java 世界入口则是<code>ActivityThread.main()</code>。</p>
 <h4 id="startProcessLocked关键参数与进程属性（补充）"><a href="#startProcessLocked关键参数与进程属性（补充）" class="headerlink" title="startProcessLocked关键参数与进程属性（补充）"></a><code>startProcessLocked</code>关键参数与进程属性（补充）</h4><p><code>startProcessLocked</code>除了“拉起进程”本身，还同时确定了进程运行环境：</p>
 <ul>
 <li><code>processName</code>：目标进程名（可与包名一致，也可通过<code>android:process</code>声明子进程）。</li>
@@ -488,7 +501,7 @@
 <p>主要执行步骤有以下几步：</p>
 <ol>
 <li>设置进程的基本参数，例如进程名，时区等，配置资源以及兼容性设计。</li>
-<li>创建进程对应的<code>ContextImpl、LoaderApk以及Application</code>对象，并初始化<code>ContentProvide以及Application</code>。</li>
+<li>创建进程对应的<code>ContextImpl、LoadedApk以及Application</code>对象，并初始化<code>ContentProvide以及Application</code>。</li>
 <li>创建<code>Instrumentation</code>监听Activity的生命周期。(<strong>一个进程对应一个Instrumentation实例</strong>)</li>
 </ol>
 <h4 id="handleBindApplication执行顺序补全（补充）"><a href="#handleBindApplication执行顺序补全（补充）" class="headerlink" title="handleBindApplication执行顺序补全（补充）"></a><code>handleBindApplication</code>执行顺序补全（补充）</h4><p>这里有一个关键顺序容易被忽略：</p>
@@ -496,8 +509,12 @@
 <li>创建<code>ContextImpl/LoadedApk/Application</code>。</li>
 <li>安装<code>ContentProvider</code>（<code>installContentProviders</code>）。</li>
 <li>回调<code>Application.onCreate()</code>。</li>
+<li>进程完成 attach 后，System Server 才会继续派发根Activity启动事务。</li>
 </ol>
 <p>也就是说，<code>ContentProvider</code>初始化通常先于<code>Application.onCreate()</code>，这也是很多库在 Provider 中做自动初始化的基础。</p>
+<p>因此从启动先后关系上看，根Activity冷启动时通常是：</p>
+<p><code>ContentProvider</code>初始化 → <code>Application.onCreate()</code> → <code>Activity.onCreate()/onStart()/onResume()</code></p>
+<p>这也是为什么很多“启动阶段初始化”问题，不能只盯着<code>Activity</code>生命周期本身，还要往前看到 Provider 和 Application 这两层。</p>
 <h4 id="mStackSupervisor-attachApplicationLocked-：启动根Activity"><a href="#mStackSupervisor-attachApplicationLocked-：启动根Activity" class="headerlink" title="mStackSupervisor.attachApplicationLocked()：启动根Activity"></a><code>mStackSupervisor.attachApplicationLocked()</code>：启动根Activity</h4><p>在该方法中<code>Application</code>已经绑定到进程上，接下来就是启动根Activity</p>
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">// ../core/java/com/android/server/am/ActivityStackSupervisor.java</span><br><span class="hljs-type">boolean</span> <span class="hljs-title function_">attachApplicationLocked</span><span class="hljs-params">(ProcessRecord app)</span> <span class="hljs-keyword">throws</span> RemoteException &#123;<br>        <span class="hljs-keyword">final</span> <span class="hljs-type">String</span> <span class="hljs-variable">processName</span> <span class="hljs-operator">=</span> app.processName;<br>        <span class="hljs-type">boolean</span> <span class="hljs-variable">didSomething</span> <span class="hljs-operator">=</span> <span class="hljs-literal">false</span>;<br>        <span class="hljs-comment">//ActivityStackSupervisor里面维护着所有ActivityStack</span><br>        <span class="hljs-comment">//通过循环 找到前台任务栈顶端的Activity</span><br>        <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> <span class="hljs-variable">displayNdx</span> <span class="hljs-operator">=</span> mActivityDisplays.size() - <span class="hljs-number">1</span>; displayNdx &gt;= <span class="hljs-number">0</span>; --displayNdx) &#123;<br>            ArrayList&lt;ActivityStack&gt; stacks = mActivityDisplays.valueAt(displayNdx).mStacks;<br>            <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> <span class="hljs-variable">stackNdx</span> <span class="hljs-operator">=</span> stacks.size() - <span class="hljs-number">1</span>; stackNdx &gt;= <span class="hljs-number">0</span>; --stackNdx) &#123;<br>                <span class="hljs-keyword">final</span> <span class="hljs-type">ActivityStack</span> <span class="hljs-variable">stack</span> <span class="hljs-operator">=</span> stacks.get(stackNdx);<br>                <span class="hljs-keyword">if</span> (!isFocusedStack(stack)) &#123;<br>                    <span class="hljs-keyword">continue</span>;<br>                &#125;<br>                <span class="hljs-type">ActivityRecord</span> <span class="hljs-variable">hr</span> <span class="hljs-operator">=</span> stack.topRunningActivityLocked();<br>                <span class="hljs-keyword">if</span> (hr != <span class="hljs-literal">null</span>) &#123;<br>                    <span class="hljs-comment">//前台待启动的Activity与当前新建的进程一致时，启动这个Activity</span><br>                    <span class="hljs-keyword">if</span> (hr.app == <span class="hljs-literal">null</span> &amp;&amp; app.uid == hr.info.applicationInfo.uid<br>                            &amp;&amp; processName.equals(hr.processName)) &#123;<br>                        <span class="hljs-keyword">try</span> &#123;<br>                            <span class="hljs-keyword">if</span> (realStartActivityLocked(hr, app, <span class="hljs-literal">true</span>, <span class="hljs-literal">true</span>)) &#123;<br>                                didSomething = <span class="hljs-literal">true</span>;<br>                            &#125;<br>                        &#125; <span class="hljs-keyword">catch</span> (RemoteException e) &#123;<br>                            <span class="hljs-keyword">throw</span> e;<br>                        &#125;<br>                    &#125;<br>                &#125;<br>            &#125;<br>        &#125;<br>        <span class="hljs-keyword">if</span> (!didSomething) &#123;<br>            ensureActivitiesVisibleLocked(<span class="hljs-literal">null</span>, <span class="hljs-number">0</span>, !PRESERVE_WINDOWS);<br>        &#125;<br>        <span class="hljs-keyword">return</span> didSomething;<br>    &#125;<br></code></pre></td></tr></table></figure>
 
@@ -533,8 +550,11 @@
 <ul>
 <li><code>onResume()</code>表示 Activity 进入前台交互阶段。</li>
 <li>首帧可见发生在后续<code>Window</code>提交绘制、<code>ViewRootImpl</code>完成首轮<code>performTraversals</code>并被系统合成之后。</li>
+<li><code>Choreographer</code>会在 VSYNC 节拍下驱动 UI 线程执行测量、布局与绘制，再把结果交给渲染链路。</li>
+<li>只有当首帧被提交并经过系统合成后，用户才真正“看到页面”。</li>
 </ul>
 <p>因此在启动分析中要区分“生命周期完成点”和“首帧可见点”两个时刻。</p>
+<p>从观察角度说，<code>onResume()</code>更适合描述“组件生命周期已经走到前台”，而首帧绘制完成更适合描述“页面真正展示出来”。如果把两者混在一起，就很容易在启动耗时分析里高估或低估某一阶段的耗时。</p>
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">private</span> Activity <span class="hljs-title function_">performLaunchActivity</span><span class="hljs-params">(ActivityClientRecord r, Intent customIntent)</span> &#123;<br>  ...<br>&#125;<br></code></pre></td></tr></table></figure>
 
 <p><code>performLaunchActivity()</code>主要完成了如下几件事：</p>

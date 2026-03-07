@@ -36,7 +36,7 @@
 <meta property="og:image" content="https://leo-wxy.github.io/images/03268b9dc49bd30bb63064421bb036bf90315.png">
 <meta property="og:image" content="https://leo-wxy.github.io/images/640-1293801.">
 <meta property="article:published_time" content="2019-09-13T02:19:28.000Z">
-<meta property="article:modified_time" content="2020-12-02T09:36:48.000Z">
+<meta property="article:modified_time" content="2026-03-07T13:13:46.427Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="Java">
 <meta name="twitter:card" content="summary_large_image">
@@ -234,7 +234,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          8k 字
+          8.7k 字
         
       </span>
     
@@ -246,7 +246,7 @@
         
         
           <!-- compatible with older versions-->
-          25 分钟
+          28 分钟
         
       </span>
     
@@ -316,6 +316,13 @@
 </ul>
 <h3 id="线程池的构造参数与对象成员变量"><a href="#线程池的构造参数与对象成员变量" class="headerlink" title="线程池的构造参数与对象成员变量"></a>线程池的构造参数与对象成员变量</h3><p><img src="/images/Java-%E7%BA%BF%E7%A8%8B%E6%B1%A0%E6%9E%84%E9%80%A0%E5%8F%82%E6%95%B0.png" srcset="/img/loading.gif" lazyload alt="线程池构造参数"></p>
 <p><code>Executors</code>提供了基础的四类线程池方法，最终都是通过<code>ThreadPoolExecutor</code>类完成。对于这个类的描述<code>他维护了一个线程池，对于提交Executor中的任务，不是创建新的线程而是使用池内的线程来执行任务。可以显著减少对于任务执行的开销。</code></p>
+<p>理解线程池参数时，不能把每个参数割裂开看。真正决定线程池行为的，往往是<code>corePoolSize</code>、<code>maximumPoolSize</code>和<code>workQueue</code>三者的组合关系：</p>
+<ul>
+<li><code>corePoolSize</code>决定常态下愿意保留多少并发能力。</li>
+<li><code>workQueue</code>决定新任务更倾向于“先排队”还是“推动线程继续扩容”。</li>
+<li><code>maximumPoolSize</code>决定高峰期最多还能再扩到多大。</li>
+</ul>
+<p>例如使用无界队列时，任务几乎总能先入队，这会让线程池很难继续扩容到<code>maximumPoolSize</code>；而使用<code>SynchronousQueue</code>时，任务几乎不真正排队，更容易直接触发新线程创建。</p>
 <ol>
 <li><p>ThreadPoolExecutor构造函数介绍</p>
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-title function_">ThreadPoolExecutor</span><span class="hljs-params">(<span class="hljs-type">int</span> corePoolSize,</span><br><span class="hljs-params">                              <span class="hljs-type">int</span> maximumPoolSize,</span><br><span class="hljs-params">                              <span class="hljs-type">long</span> keepAliveTime,</span><br><span class="hljs-params">                              TimeUnit unit,</span><br><span class="hljs-params">                              BlockingQueue&lt;Runnable&gt; workQueue,</span><br><span class="hljs-params">                              ThreadFactory threadFactory,</span><br><span class="hljs-params">                              RejectedExecutionHandler handler)</span><br></code></pre></td></tr></table></figure>
@@ -412,6 +419,12 @@
 </ol>
 <h3 id="线程池的分类以及各自的特性"><a href="#线程池的分类以及各自的特性" class="headerlink" title="线程池的分类以及各自的特性"></a>线程池的分类以及各自的特性</h3><p><img src="/images/Java-%E5%B8%B8%E8%A7%81%E7%BA%BF%E7%A8%8B%E6%B1%A0.png" srcset="/img/loading.gif" lazyload alt="Java-常见线程池"></p>
 <p>利用<code>Executors</code>类提供了四种不同的线程池，他们都是直接或者间接配置<code>ThreadPoolExecutor</code>来实现功能。下面分别介绍着四个线程池</p>
+<p>不过要注意：<code>Executors</code>更像是“快捷工厂”，适合快速演示或简单场景，并不天然等于生产环境最佳实践。问题不在于它“不能用”，而在于它默认隐藏了很多关键配置：</p>
+<ul>
+<li><code>newFixedThreadPool/newSingleThreadExecutor</code>的问题主要在于无界队列，容易让任务持续堆积。</li>
+<li><code>newCachedThreadPool/newScheduledThreadPool</code>的问题主要在于线程数可能快速扩张。</li>
+</ul>
+<p>因此理解每种线程池背后的真实参数配置，比记住工厂方法名字更重要。</p>
 <h4 id="newFixedThreadPool"><a href="#newFixedThreadPool" class="headerlink" title="newFixedThreadPool"></a><code>newFixedThreadPool</code></h4><blockquote>
 <p>创建固定大小的线程池，每次提交一个任务就创建一个线程，直到线程达到线程池的最大大小，线程池的大小一旦达到最大值就不会发生变化，如果某个线程因为异常而结束，则会补充一个新进程。</p>
 <p>由于只设置核心线程大小，所以可以<strong>更快的响应外界请求</strong></p>
@@ -569,6 +582,9 @@
 <li>判断<code>maximumPoolSize(最大线程数)</code>是否已到达，没到达则创建一个新线程执行任务。</li>
 <li>已经达到了<code>maximumPoolSize(最大线程数)</code>或者线程池不处于<code>RUNNABLE</code>状态，执行<code>handler(任务拒绝策略)</code></li>
 </ol>
+<p>可以把这条规则进一步概括成：</p>
+<p><strong>先核心、再队列、再扩容、最后拒绝。</strong></p>
+<p>这也是线程池行为最容易混淆的地方：任务提交后并不是简单地“线程不够就直接扩容”。很多时候线程池会优先尝试把任务放进队列，只有队列放不下时，才会继续向<code>maximumPoolSize</code>扩张。因此不同队列类型，会直接改变线程池面对流量高峰时的表现。</p>
 <h3 id="线程池实现原理"><a href="#线程池实现原理" class="headerlink" title="线程池实现原理"></a>线程池实现原理</h3><p><img src="/images/Java-%E7%BA%BF%E7%A8%8B%E6%B1%A0%E5%8E%9F%E7%90%86.png" srcset="/img/loading.gif" lazyload alt="Java线程池原理"></p>
 <h4 id="添加任务"><a href="#添加任务" class="headerlink" title="添加任务"></a>添加任务</h4><p>线程池通过调用<code>submit()</code>或<code>execute()</code>提交线程任务，其中<code>submit()</code>可以拿到线程执行结果，内部通过<code>execute()</code>实现。</p>
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">execute</span><span class="hljs-params">(Runnable command)</span> &#123;<br>        <span class="hljs-keyword">if</span> (command == <span class="hljs-literal">null</span>)<br>            <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">NullPointerException</span>();<br>        <span class="hljs-type">int</span> <span class="hljs-variable">c</span> <span class="hljs-operator">=</span> ctl.get();<br>        <span class="hljs-comment">//1.当前工作线程 &lt; 核心线程时</span><br>        <span class="hljs-keyword">if</span> (workerCountOf(c) &lt; corePoolSize) &#123;<br>            <span class="hljs-comment">//直接创建新的Worker执行任务</span><br>            <span class="hljs-keyword">if</span> (addWorker(command, <span class="hljs-literal">true</span>))<br>                <span class="hljs-keyword">return</span>;<br>            <span class="hljs-comment">//重新获取运行状态</span><br>            c = ctl.get();<br>        &#125;<br>        <span class="hljs-comment">//2.线程池处于running状态，任务加入 工作队列</span><br>        <span class="hljs-keyword">if</span> (isRunning(c) &amp;&amp; workQueue.offer(command)) &#123;<br>            <span class="hljs-type">int</span> <span class="hljs-variable">recheck</span> <span class="hljs-operator">=</span> ctl.get();<br>            <span class="hljs-comment">//线程不处于running状态，直接执行拒绝任务策略</span><br>            <span class="hljs-keyword">if</span> (! isRunning(recheck) &amp;&amp; remove(command))<br>                reject(command);<br>            <span class="hljs-comment">//当无可用工作线程时，创建新的工作线程执行任务</span><br>            <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (workerCountOf(recheck) == <span class="hljs-number">0</span>)<br>                addWorker(<span class="hljs-literal">null</span>, <span class="hljs-literal">false</span>);<br>        &#125;<br>        <span class="hljs-comment">//无法添加任务，可能线程池被终止，或者最大线程已经满了</span><br>        <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (!addWorker(command, <span class="hljs-literal">false</span>))<br>            <span class="hljs-comment">//执行拒绝策略</span><br>            reject(command);<br>    &#125;<br></code></pre></td></tr></table></figure>
@@ -611,6 +627,13 @@
 
 <p>核心线程与非核心线程的区别：</p>
 <p>这两者之间并没有明显的标志区分，根据上面的代码可以发现，两者的区别在于<strong>核心线程可以无限等待获取任务(阻塞队列take())，非核心线程要限时获取任务(keepAliveTime之内)</strong>。核心线程其实指代的就是<code>0~corePoolSize</code>之间创建的线程，<code>corePoolSize~maximumPoolSie</code>表示的就是非核心线程。</p>
+<p>换句话说，核心线程与非核心线程的差异，本质上不在于“线程对象长得不一样”，而在于它们采用了不同的获取任务与回收策略：</p>
+<ul>
+<li>核心线程更像常驻工作线程，默认用于维持线程池的基本吞吐能力。</li>
+<li>非核心线程更像流量高峰时的临时补位线程，用来在任务堆积时兜底扩容。</li>
+<li>一旦开启<code>allowCoreThreadTimeOut(true)</code>，核心线程“常驻”这个前提也会被打破。</li>
+</ul>
+<p>所以理解线程池时，可以把“核心&#x2F;非核心”理解为一种容量区间下的调度策略，而不是两类完全不同的线程实现。</p>
 <p><img src="/images/03268b9dc49bd30bb63064421bb036bf90315.png" srcset="/img/loading.gif" lazyload alt="图7 Worker执行任务"></p>
 <p>通过调用<code>execute(runnable)</code>传进去的<code>runnable</code>对象不是直接通过<code>new Thread(runnable).start()</code>的方式去执行，而是通过一个<strong>正在运行的线程</strong>去执行<code>runnable.run()</code>。根据上述源码中的<code>runWorker()</code>，在执行完<code>firstTask</code>后就会调用<code>getTask()</code>获取任务去执行，如果<code>getTask()</code>没有获取到任务，就会在等待<code>keepAliveTime</code>之后关闭非核心线程，核心线程通过<code>workQueue.take()</code>阻塞线程避免自身被回收。</p>
 <h4 id="线程回收"><a href="#线程回收" class="headerlink" title="线程回收"></a>线程回收</h4><p><code>getTask()</code>获取不到任务时，执行<code>processWorkerExit()</code>进行线程回收</p>
@@ -651,6 +674,14 @@
 <li><p><strong><code>混合型任务</code></strong>：如果可以拆分，则拆分成一个CPU密集型以及IO密集型任务，只要执行任务效率相差不大。若相差太大则没必要拆分。</p>
 </li>
 </ul>
+<p>实际配置线程池时，除了“线程数公式”，还建议按下面的顺序思考：</p>
+<ul>
+<li>先明确任务类型：CPU密集、IO密集，还是混合型。</li>
+<li>再确定队列策略：是否必须使用有界队列，系统是否允许任务堆积。</li>
+<li>再选择拒绝策略：是抛异常、降级、调用方回退，还是允许丢弃旧任务。</li>
+<li>最后结合监控去调优：观察活跃线程数、队列长度、任务耗时、拒绝次数，而不是只盯着<code>corePoolSize</code>一个参数。</li>
+</ul>
+<p>线程池配置本质上是吞吐、延迟、资源占用和风险控制之间的权衡，不是单纯套一个固定公式就能解决所有问题。</p>
 </li>
 </ol>
 <h3 id="补充知识"><a href="#补充知识" class="headerlink" title="补充知识"></a>补充知识</h3><ol>
