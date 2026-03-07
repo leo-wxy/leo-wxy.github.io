@@ -50,6 +50,13 @@ typora-root-url: ../
 
 **内部实现并不是队列，而是利用单链表去实现因为在插入和删除数据有优势。**用于存储Handler发给来的消息(`Message`)以及取出。`内部使用单链表实现`
 
+补充：
+
+- `MessageQueue`并不是严格意义上的先进先出队列，它更像“按执行时间`when`有序排列的待处理链表”。
+- 延迟消息会根据触发时间插入到合适位置，因此`sendMessageDelayed()`并不是简单塞到队尾。
+- `Looper`每次优先取队头消息，所以队头始终代表“当前最应该被处理”的那条消息。
+- 使用单链表的原因在于：消息经常需要按时间插入、摘除队头、跳过同步屏障，链表在这些场景下更直接。
+
 ### Looper：消息循环
 
 与线程绑定，不止局限于主线程，绑定的线程来处理`Message`。不断循环执行`Looper.loop()`，从`MessageQueue`中读取`Message`，按分发机制将消息分发出去给目标处理(将`Message`发到`Handler.dispatchMessage`方法去处理)。
@@ -231,6 +238,14 @@ public static void loop(){
 ```
 
 `loop()`方法是一个死循环，唯一跳出循环的方法是从`MessageQueue`获取的消息对象为空。
+
+这里的“死循环”并不等于线程一直空转。
+
+- `Looper.loop()`虽然写成`for(;;)`，但真正是否阻塞取决于`MessageQueue.next()`。
+- 当队列里没有可立即执行的消息时，`next()`会继续进入 native 层的`nativePollOnce()`等待事件。
+- 也就是说线程大部分时间其实是在休眠/阻塞，只有消息到达、到时或者被显式唤醒时才会继续执行。
+
+因此消息循环本质上是**事件驱动模型**，而不是一个持续占用 CPU 的忙等循环。
 
 ### **3.创建Handler对象**
 
@@ -647,6 +662,15 @@ private static void handleCallback(Message message) {
              };
      ```
 
+补充理解：
+
+- 这三层可以理解成一个逐级兜底的分发链。
+- `post(Runnable)`优先走`message.callback`，它不会再进入`handleMessage()`。
+- `Handler.Callback`适合把“消息分发策略”与`Handler`子类本身拆开；当它返回`true`时，说明消息已经被消费。
+- 只有前两层都没有真正处理，消息才会最终落到重写的`handleMessage()`。
+
+所以不同发送方式虽然入口不同，但最终都会汇聚到`dispatchMessage()`这个统一分发点。
+
 ### **9.Message回收**
 
 > 上面讲到了新建Message推荐使用`obtain()`，因为可以有效的复用消息，其中里面复用的就是`sPool`变量，它是在Message回收的时候进行赋值的。
@@ -781,6 +805,14 @@ private void removeAllFutureMessagesLocked() {
     }
 ```
 
+可以把两者的区别概括成：
+
+- `quit()`：直接结束消息循环，队列中尚未处理的消息会被整体清空，退出更“硬”。
+- `quitSafely()`：允许已到期消息继续处理，只移除未来消息，退出更“平滑”。
+- 主线程的`Looper`默认不允许退出，因此这两个方法主要用于`HandlerThread`或自建`Looper`线程。
+
+如果线程里还承载了收尾任务、落盘任务或者必须保证顺序执行的消息，通常优先考虑`quitSafely()`。
+
 
 
 ## 6. Handler异步消息与同步屏障
@@ -894,6 +926,14 @@ private void removeAllFutureMessagesLocked() {
 
 - `ViewRootImpl`在`scheduleTraversals()`中会配合`Choreographer`使用同步屏障，让`vsync`相关异步消息优先执行。
 - 屏障必须成对移除；若长期不移除，普通同步消息会持续饥饿，表现为主线程任务堆积。
+
+进一步理解这套机制时，可以把它看成“给渲染链路让路”：
+
+- 同步屏障本身不是拿来执行的消息，而是临时挡住普通同步消息的一个标记。
+- `Choreographer`收到`VSYNC`后，会投递和界面遍历、绘制相关的异步消息。
+- 当队头存在同步屏障时，`MessageQueue.next()`会优先向后寻找异步消息，让刷新链路先执行。
+
+因此同步屏障的价值不在于“加快所有消息”，而在于**保证界面刷新这类关键任务不会被普通同步消息淹没**。业务开发里通常不会直接使用它，但理解它能更好解释 UI 刷新为什么具有更高优先级。
 
 
 

@@ -22,6 +22,15 @@ top: 10
 
 **CPU绘制后提交数据，GPU进一步处理和缓存数据、最后屏幕从缓冲区获取数据并显示。**
 
+如果放到 Android 实际渲染链路里，还可以进一步拆成几层角色：
+
+- UI线程：负责`measure/layout/draw`以及大部分应用侧 UI 逻辑。
+- RenderThread：负责把绘制命令进一步组织并提交到渲染管线。
+- GPU：负责真正执行图形渲染。
+- SurfaceFlinger：负责把多个 Surface 合成后送到屏幕显示。
+
+所以“页面刷新”并不只是单纯的 CPU 把 View 画出来，而是应用侧遍历、渲染线程提交、GPU 渲染、系统合成共同配合完成的结果。
+
 ![img](/images/webp-20200911191007410)
 
 ### 屏幕刷新频率
@@ -271,6 +280,14 @@ public void handleResumeActivity(IBinder token, boolean finalStateRequest, boole
 1. 设置`mTraversalScheduled)`保证同时多次请求只会进行一次`View刷新`
 2. 在`getLooper().getQueue()当前消息队列`添加**同步屏障**，保证`Vsync信号`到来时，可以立即执行对应任务。暂时屏蔽掉`同步消息`的处理。
 3. 调用`Choreographer.postCallback(,mTraversalRunnable,)`，在下一次`VSync信号到来时`，会执行`doTraversal()`，继续向下调用`performTraversals()`开始绘制流程。
+
+这也是为什么频繁调用`requestLayout()/invalidate()`不一定会立刻触发多次刷新：
+
+- 只要当前帧已经设置过`mTraversalScheduled = true`，后续同帧内的重复请求通常只会被合并。
+- 真正执行遍历时，再统一处理这一帧累计下来的 UI 变化。
+- 这样做可以避免一帧内反复`measure/layout/draw`，减少无意义的重复工作。
+
+所以`ViewRootImpl.scheduleTraversals()`可以看成“提交一帧刷新申请”，而不是“立刻开始刷新”。
 
 ### 构造函数
 
@@ -842,6 +859,14 @@ private void postCallbackDelayedInternal(int callbackType,
 1. 修正`frame`执行时间
 2. 按照顺序，从`callbackQueue`获取`CallbackRecord`执行
 
+从卡顿角度看，掉帧并不一定只发生在“绘制代码太慢”这一处。
+
+- 如果主线程在`CALLBACK_INPUT`阶段就被耗时逻辑阻塞，后面的动画和遍历都会整体后移。
+- 如果动画计算、布局测量、绘制遍历任何一个阶段超出当前帧预算，就可能错过本次显示时机。
+- 即使应用侧遍历结束了，若渲染线程提交、GPU处理或 SurfaceFlinger 合成阶段来不及，也同样会表现为 Jank。
+
+因此`doFrame()`更像“一帧任务的总调度入口”，它把输入、动画、遍历、提交都串在了一起，任何一个关键阶段拖慢，都可能造成最终掉帧。
+
 ```java
 void doCallbacks(int callbackType, long frameTimeNanos) {
         CallbackRecord callbacks;
@@ -1388,6 +1413,14 @@ void NativeDisplayEventReceiver::dispatchVsync(nsecs_t timestamp, PhysicalDispla
 
 `同步屏障`：为了**提高异步消息优先级，保证Vsync信号和绘制的同步。**
 
+这里的“提高优先级”需要结合边界来理解：
+
+- 同步屏障并不是让绘制任务永久抢占一切消息，而是只在这一轮遍历调度前，临时挡住普通同步消息。
+- 真正执行`doTraversal()`前会移除同步屏障，因此同步消息不会被无限期延后。
+- 它的目标是让`Traversal`这类和刷新节拍强相关的异步任务优先获得执行机会，而不是破坏整个消息队列的公平性。
+
+所以同步屏障本质上是一种“短时间内给刷新链路让路”的机制，而不是一条长期存在的高优先级通道。
+
 {%post_link  Handler机制即源码解析%}
 
 
@@ -1413,6 +1446,12 @@ void NativeDisplayEventReceiver::dispatchVsync(nsecs_t timestamp, PhysicalDispla
 在同一时间多次调用`requestLayout()/invalidate()`不会导致多次页面刷新，由于`mTraversalScheduled`的设置，当存在任务的时候，就会过滤重复请求，因为**最后的请求都会执行到`ViewRootImpl.scheduleTraversals()`，只要一次绘制就可以刷新所有View**。
 
 `Choreographer`主要为了**在VSync信号到来时开始处理消息即CPU/GPU绘制**。
+
+如果把一次刷新链路串成一条主线，可以概括为：
+
+`requestLayout()/invalidate()` → `ViewRootImpl.scheduleTraversals()` → `Choreographer.postCallback()` → `VSync到来` → `doFrame()/doTraversal()` → `performTraversals()` → 渲染线程/GPU/SurfaceFlinger → 屏幕显示
+
+理解这条主线后，再回头看“为什么会掉帧”“为什么多次刷新只执行一次”“为什么页面已经onResume但首帧还没显示”，就会更容易串起来。
 
 
 

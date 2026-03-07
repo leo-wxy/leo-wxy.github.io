@@ -396,6 +396,14 @@ public void addView(View view, ViewGroup.LayoutParams params,
 
 经过`ActivityThread.handleResumeActivity() -> WindowManagerGlobal.addView() `创建了`ViewRootImpl`对象
 
+补充理解：
+
+- `setContentView()`只是把业务布局填充进`DecorView`的`content`区域，此时 View 树已经“组装出来”，但还没有真正接入窗口绘制链路。
+- 真正把界面接到 Window 上的是`WindowManager.addView() -> WindowManagerGlobal.addView() -> ViewRootImpl.setView()`这一段。
+- 也正是从`ViewRootImpl.setView()`开始，后续通过`requestLayout() -> scheduleTraversals() -> performTraversals()`才触发首轮`measure/layout/draw`。
+
+所以可以把它理解成两步：**先创建 View 树，再把 View 树挂到窗口并启动绘制。**
+
 ### 与DecorView的关系
 
 上述流程走完后，就把DecorView加载到了Window中。**这个流程中将ViewRootImpl对象与DecorView进行了关联**。
@@ -1402,6 +1410,14 @@ private void performTraversals() {
 
 根据`ViewGroup.getChildMeasureSpec()`得出上表。
 
+可以把这个转换过程理解成“父约束向下传递”：
+
+- `LayoutParams`表达的是子View的尺寸意图，例如“我想要固定值 / match_parent / wrap_content”。
+- 父容器的`MeasureSpec`表达的是外部约束，例如“你必须这么大 / 你最多这么大 / 你自己决定”。
+- 系统会把这两者合并，生成子View真正收到的`MeasureSpec`。
+
+因此`match_parent`和`wrap_content`都不是最终尺寸，它们只是参与计算的输入条件，真正决定子View测量边界的还是父容器给出的约束。
+
 ###### DecorView转换MeasureSpec
 
 > DecorView的转换由Window的尺寸和自身的LayoutParams决定。
@@ -1718,6 +1734,14 @@ protected void measureChild(View child, int parentWidthMeasureSpec,
 - 调用`getChildMeasureSpec()`计算子View的`MeasureSpec`，需要结合父布局的`MeasureSpec`以及子View的`LayoutParams`共同得出结果
 - 调用子View的`measure()`，完成子View的测量过程。
 - 合并子View的测量值，得到ViewGroup的测量值
+
+补充：为什么一个View可能会被测量多次？
+
+- 测量过程并不保证“每个子View只会走一次`measure()`”。
+- 当父容器需要根据部分子View结果反推剩余空间时，后续子View可能会重新测量。
+- 某些布局策略（例如依赖剩余空间分配、兄弟节点尺寸联动、权重计算）也可能触发多轮测量。
+
+所以自定义`ViewGroup`时不要把“子View只测一次”当成前提，`onMeasure()`需要保证可重复执行且结果稳定。
 
 补充：自定义`ViewGroup`测量实践
 
@@ -2228,6 +2252,15 @@ public void onDrawForeground(Canvas canvas) {
 - 如果需要显示边缘效果，绘制后，还原画布`canvas.restore()`
 - 调用`drawForeground()`绘制装饰，例如滚动条或前景
 
+从职责划分上可以把这几个方法这样理解：
+
+- `draw()`：整个绘制流程的总入口，负责把各阶段串起来。
+- `onDraw()`：绘制当前View自己的内容。
+- `dispatchDraw()`：负责把绘制机会继续分发给子View。
+- `onDrawForeground()`：负责前景、滚动条等装饰性内容。
+
+对于`ViewGroup`来说，很多时候真正的重点在`dispatchDraw()`；如果一个`ViewGroup`还想自己额外绘制内容，通常还要注意`willNotDraw`标记的影响（下文拓展会继续说明）。
+
 补充：`onDraw()`性能建议
 
 - 避免在`onDraw()`里频繁创建对象（`Paint/Path/Rect`），改为成员变量复用。
@@ -2567,6 +2600,12 @@ protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
 ```
 
 调用到`scheduleTraversals()`就是开始了`View的绘制流程`。
+
+更准确地说，这里并不是“立刻执行绘制”，而是**向`ViewRootImpl`提交一次遍历请求**：
+
+- 当前线程把这次刷新标记为待处理。
+- `scheduleTraversals()`会把遍历任务挂到下一帧。
+- 同一帧内如果多次调用`requestLayout()`，通常会被合并，避免重复执行完整遍历。
 
 ```java
 //ViewRootImpl.java 
@@ -2982,6 +3021,8 @@ private void performTraversals() {
 `requestLayout()`主要用来设置`PFLAG_FORCE_LAYOUT`标志以及设置`mLayoutRequested=true`，会执行到`measure、layout`过程，如果位置发生变化则可能执行`draw`过程。
 
 `invalidate()`主要用于标记脏区并上报到`ViewRootImpl`，在下一次`performTraversal()`中进入`performDraw()`完成绘制。
+
+两者虽然入口不同，但最终都不会立刻把像素画到屏幕上，而是等待`ViewRootImpl`在后续一帧统一执行遍历与绘制；区别主要在于是否需要重新走`measure/layout`链路。
 
 使用建议：
 

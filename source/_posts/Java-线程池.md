@@ -33,6 +33,14 @@ typora-root-url: ../
 
 `Executors`提供了基础的四类线程池方法，最终都是通过`ThreadPoolExecutor`类完成。对于这个类的描述`他维护了一个线程池，对于提交Executor中的任务，不是创建新的线程而是使用池内的线程来执行任务。可以显著减少对于任务执行的开销。`
 
+理解线程池参数时，不能把每个参数割裂开看。真正决定线程池行为的，往往是`corePoolSize`、`maximumPoolSize`和`workQueue`三者的组合关系：
+
+- `corePoolSize`决定常态下愿意保留多少并发能力。
+- `workQueue`决定新任务更倾向于“先排队”还是“推动线程继续扩容”。
+- `maximumPoolSize`决定高峰期最多还能再扩到多大。
+
+例如使用无界队列时，任务几乎总能先入队，这会让线程池很难继续扩容到`maximumPoolSize`；而使用`SynchronousQueue`时，任务几乎不真正排队，更容易直接触发新线程创建。
+
 1. ThreadPoolExecutor构造函数介绍
 
    ```java
@@ -401,6 +409,13 @@ typora-root-url: ../
 
 利用`Executors`类提供了四种不同的线程池，他们都是直接或者间接配置`ThreadPoolExecutor`来实现功能。下面分别介绍着四个线程池
 
+不过要注意：`Executors`更像是“快捷工厂”，适合快速演示或简单场景，并不天然等于生产环境最佳实践。问题不在于它“不能用”，而在于它默认隐藏了很多关键配置：
+
+- `newFixedThreadPool/newSingleThreadExecutor`的问题主要在于无界队列，容易让任务持续堆积。
+- `newCachedThreadPool/newScheduledThreadPool`的问题主要在于线程数可能快速扩张。
+
+因此理解每种线程池背后的真实参数配置，比记住工厂方法名字更重要。
+
 ####  `newFixedThreadPool` 
 
 > 创建固定大小的线程池，每次提交一个任务就创建一个线程，直到线程达到线程池的最大大小，线程池的大小一旦达到最大值就不会发生变化，如果某个线程因为异常而结束，则会补充一个新进程。
@@ -691,6 +706,12 @@ private final AtomicInteger ctl = new AtomicInteger(ctlOf(RUNNING, 0));
 3. 判断`maximumPoolSize(最大线程数)`是否已到达，没到达则创建一个新线程执行任务。
 4.  已经达到了`maximumPoolSize(最大线程数)`或者线程池不处于`RUNNABLE`状态，执行`handler(任务拒绝策略)`
 
+可以把这条规则进一步概括成：
+
+**先核心、再队列、再扩容、最后拒绝。**
+
+这也是线程池行为最容易混淆的地方：任务提交后并不是简单地“线程不够就直接扩容”。很多时候线程池会优先尝试把任务放进队列，只有队列放不下时，才会继续向`maximumPoolSize`扩张。因此不同队列类型，会直接改变线程池面对流量高峰时的表现。
+
 ### 线程池实现原理
 
 ![Java线程池原理](/images/Java-线程池原理.png)
@@ -963,6 +984,14 @@ final void runWorker(Worker w) {
 
 这两者之间并没有明显的标志区分，根据上面的代码可以发现，两者的区别在于**核心线程可以无限等待获取任务(阻塞队列take())，非核心线程要限时获取任务(keepAliveTime之内)**。核心线程其实指代的就是`0~corePoolSize`之间创建的线程，`corePoolSize~maximumPoolSie`表示的就是非核心线程。
 
+换句话说，核心线程与非核心线程的差异，本质上不在于“线程对象长得不一样”，而在于它们采用了不同的获取任务与回收策略：
+
+- 核心线程更像常驻工作线程，默认用于维持线程池的基本吞吐能力。
+- 非核心线程更像流量高峰时的临时补位线程，用来在任务堆积时兜底扩容。
+- 一旦开启`allowCoreThreadTimeOut(true)`，核心线程“常驻”这个前提也会被打破。
+
+所以理解线程池时，可以把“核心/非核心”理解为一种容量区间下的调度策略，而不是两类完全不同的线程实现。
+
 
 
 
@@ -1106,6 +1135,15 @@ public void execute(Runnable command) {
 
    - **`混合型任务`**：如果可以拆分，则拆分成一个CPU密集型以及IO密集型任务，只要执行任务效率相差不大。若相差太大则没必要拆分。
 
+   实际配置线程池时，除了“线程数公式”，还建议按下面的顺序思考：
+
+   - 先明确任务类型：CPU密集、IO密集，还是混合型。
+   - 再确定队列策略：是否必须使用有界队列，系统是否允许任务堆积。
+   - 再选择拒绝策略：是抛异常、降级、调用方回退，还是允许丢弃旧任务。
+   - 最后结合监控去调优：观察活跃线程数、队列长度、任务耗时、拒绝次数，而不是只盯着`corePoolSize`一个参数。
+
+   线程池配置本质上是吞吐、延迟、资源占用和风险控制之间的权衡，不是单纯套一个固定公式就能解决所有问题。
+
 ###  补充知识
 
 1. `submit()`和`execute()`区别
@@ -1218,4 +1256,3 @@ public void execute(Runnable command) {
 [线程池深入解析](https://mp.weixin.qq.com/s/HpMu_QI_N-J18fNJG96yzA)
 
 [Java线程池实现原理及其在美团业务中的实践](https://tech.meituan.com/2020/04/02/java-pooling-pratice-in-meituan.html)
-

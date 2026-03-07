@@ -22,8 +22,12 @@ Activity的启动过程分为两种：
 - 冷启动：目标进程不存在，需要从 Zygote fork 新进程并完成 Application 绑定。
 - 温启动：目标进程存在，但目标 Activity 需要重新创建。
 - 热启动：目标 Activity 已在任务栈中，主要是前后台切换后的恢复展示。
+- Task：系统中用于组织 Activity 的任务单元，对应一条回退历史。
+- Back Stack：Task 内部的 Activity 入栈顺序，决定返回键的回退路径。
+- ActivityRecord：System Server 侧对一个待启动/已启动 Activity 的记录对象，用来保存生命周期与任务栈状态。
+- ApplicationThread：应用进程暴露给 System Server 的 Binder 通道，AMS 通过它把启动与生命周期事务派发回应用侧。
 
-本文主体源码仍以 Android 8.0 为主，文末会补充新版本中类职责迁移与关键差异。
+本文主体源码仍以 Android 8.0 为主，文末会补充新版本中类职责迁移与关键差异。这里讨论的“启动完成”主要是指页面已经完成创建并进入前台可见阶段，而“首帧真正绘制完成”会比生命周期回调再靠后一步。
 
 ## 根Activity启动过程
 
@@ -553,6 +557,13 @@ Launcher请求到AMS后，后续逻辑由AMS继续执行。继续执行的是`AM
 
 ![AMS-ApplicationThread调用过程](/images/AMS-ApplicationThread调用过程.png)
 
+从职责上看，这一段可以分成两层：
+
+- `AMS`更像总调度入口，负责权限校验、跨用户校验、进程状态管理以及与其他系统服务协同。
+- `ActivityStarter`更像启动策略执行器，负责把“启动哪个 Activity”细化为“放入哪个任务栈、复用哪个实例、是否需要拉起进程”。
+
+所以`startActivity()`进入 System Server 之后，重点并不是立刻去“new 一个 Activity”，而是先把启动请求转换成一组合法的任务栈与进程调度决策。
+
 `ActivityStack`:Activity的任务栈，从中获取需要进行操作的`ActivityRecord`进行操作。*在启动过程中，它的作用是检测当前栈顶Activity是否为要启动的Activity,不是就启动新Activity，是的话就重启，在这之前需要标记一下前Activity处于Pause状态。*
 
 `ActivityStackSupervisor`:管理整个手机任务栈，管理着所有的`ActivityStack`。*在启动过程中，它负责检查是否已有对应的应用进程在运行，如果有就直接启动Activity，没有的话则需新建一个应用进程。*
@@ -641,6 +652,12 @@ Launcher请求到AMS后，后续逻辑由AMS继续执行。继续执行的是`AM
 ```
 
 调用到`Process`的静态成员函数`start()`启动一个新的应用进程，指定了该进程的入口函数为`ActivityThread.main()`；因此创建应用进程结束时，逻辑就转移到了`ActivityThread.main()`上。
+
+如果把这一段再压缩成一条主线，就是：
+
+`AMS.startProcessLocked() -> Process.start() -> Zygote fork 新进程 -> 反射进入 ActivityThread.main() -> 准备主线程 Looper -> attach 到 AMS`
+
+这条链路解释了“为什么 System Server 能启动一个全新的应用进程”：AMS 负责发起与管理，真正把进程孵化出来的是`Zygote`，而新进程启动后的 Java 世界入口则是`ActivityThread.main()`。
 
 #### `startProcessLocked`关键参数与进程属性（补充）
 
@@ -1041,7 +1058,7 @@ private void handleBindApplication(AppBindData data) {
 主要执行步骤有以下几步：
 
 1. 设置进程的基本参数，例如进程名，时区等，配置资源以及兼容性设计。
-2. 创建进程对应的`ContextImpl、LoaderApk以及Application`对象，并初始化`ContentProvide以及Application`。
+2. 创建进程对应的`ContextImpl、LoadedApk以及Application`对象，并初始化`ContentProvide以及Application`。
 3. 创建`Instrumentation`监听Activity的生命周期。(**一个进程对应一个Instrumentation实例**)
 
 #### `handleBindApplication`执行顺序补全（补充）
@@ -1051,8 +1068,15 @@ private void handleBindApplication(AppBindData data) {
 1. 创建`ContextImpl/LoadedApk/Application`。
 2. 安装`ContentProvider`（`installContentProviders`）。
 3. 回调`Application.onCreate()`。
+4. 进程完成 attach 后，System Server 才会继续派发根Activity启动事务。
 
 也就是说，`ContentProvider`初始化通常先于`Application.onCreate()`，这也是很多库在 Provider 中做自动初始化的基础。
+
+因此从启动先后关系上看，根Activity冷启动时通常是：
+
+`ContentProvider`初始化 → `Application.onCreate()` → `Activity.onCreate()/onStart()/onResume()`
+
+这也是为什么很多“启动阶段初始化”问题，不能只盯着`Activity`生命周期本身，还要往前看到 Provider 和 Application 这两层。
 
 #### `mStackSupervisor.attachApplicationLocked()`：启动根Activity
 
@@ -1266,8 +1290,12 @@ private class H extends Handler {
 
 - `onResume()`表示 Activity 进入前台交互阶段。
 - 首帧可见发生在后续`Window`提交绘制、`ViewRootImpl`完成首轮`performTraversals`并被系统合成之后。
+- `Choreographer`会在 VSYNC 节拍下驱动 UI 线程执行测量、布局与绘制，再把结果交给渲染链路。
+- 只有当首帧被提交并经过系统合成后，用户才真正“看到页面”。
 
 因此在启动分析中要区分“生命周期完成点”和“首帧可见点”两个时刻。
+
+从观察角度说，`onResume()`更适合描述“组件生命周期已经走到前台”，而首帧绘制完成更适合描述“页面真正展示出来”。如果把两者混在一起，就很容易在启动耗时分析里高估或低估某一阶段的耗时。
 
 ```java
 private Activity performLaunchActivity(ActivityClientRecord r, Intent customIntent) {
