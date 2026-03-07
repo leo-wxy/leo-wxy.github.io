@@ -47,6 +47,8 @@ top: 9
 
 `非公平锁`的性能高于`公平锁`，但是可能发生**线程饥饿(某个线程长时间无法获得锁)**。
 
+这里需要注意：**公平并不等于整体效率更高。**公平锁减少了插队，线程获取锁的顺序更稳定、更可预期，但也会增加排队等待和上下文切换成本；非公平锁虽然可能让某些线程等待更久，却往往能得到更高的整体吞吐量，这也是`ReentrantLock`默认采用非公平模式的原因。
+
 实现：`synchronized`和`ReentrantLock(false)默认非公平`
 
 ### 读写锁和排他锁
@@ -117,6 +119,13 @@ top: 9
 > - `time`内线程中断会立即返回获取锁结果
 > - `time`时间结束后，立即返回获取锁结果
 
+把这几个获取锁方法放在一起看，会更容易理解它们分别解决什么等待策略问题：
+
+- `lock()`：一直等待，直到真正拿到锁为止。
+- `lockInterruptibly()`：也会等待，但等待过程中优先响应中断。
+- `tryLock()`：完全不等待，立即返回是否拿到锁。
+- `tryLock(time, unit)`：在给定时间内尝试等待，超时就放弃。
+
 #### `unlock()`-释放锁
 
 > 当前线程释放持有锁，**锁只能由持有者释放，如果并未持有锁，执行解锁方法，就会抛出异常**。
@@ -125,6 +134,14 @@ top: 9
 
 > 返回该锁的`Condition`实例，实现**多线程通信**。该组件会与当前锁绑定，当前线程只有获取了锁，才能调用组件的`await()`方法，调用后，线程释放锁。
 
+如果把它和`synchronized`体系做类比，会更好理解：
+
+- `Condition.await()`类似于`Object.wait()`
+- `Condition.signal()`类似于`Object.notify()`
+- `Condition.signalAll()`类似于`Object.notifyAll()`
+
+不同点在于：`Object`监视器天然只有一组等待队列，而`ReentrantLock`可以通过多次调用`newCondition()`拆出多个条件队列，让不同等待原因的线程分开管理。
+
 
 
 
@@ -132,6 +149,10 @@ top: 9
 ## ReentrantLock
 
 > 一个可重入的互斥锁，具备一样的线程重入特性
+
+`ReentrantLock`底层并不是自己从零维护完整的排队、唤醒和状态流转逻辑，而是建立在`AQS(AbstractQueuedSynchronizer)`之上。可以把它理解成：`ReentrantLock`负责定义“这是一把怎样的锁”，而`AQS`负责提供“线程如何排队、如何竞争、如何被唤醒”的通用同步框架。
+
+在独占模式下，`AQS`里的`state`通常会被用来表示当前锁的持有状态和重入次数：第一次获取锁时把状态从`0`改成`1`，同一线程重入时继续累加，释放锁时再逐步减回去，直到恢复为`0`才表示真正释放完成。
 
 
 
@@ -188,6 +209,8 @@ public class ReenTrantLockTest implements Runnable {
     }
 }
 ```
+
+这里把`unlock()`放在`finally`里并不是一种书写习惯上的偏好，而是必须的保护措施。因为`ReentrantLock`不像`synchronized`那样在代码异常退出时由JVM自动释放锁；如果线程拿到锁后中途抛异常又没有执行`unlock()`，其他线程就可能一直阻塞在这把锁上。
 
 相比`synchronized`增加了一些高级功能：
 
@@ -279,4 +302,3 @@ public class CustomReetrantLock {
 }
 
 ```
-
