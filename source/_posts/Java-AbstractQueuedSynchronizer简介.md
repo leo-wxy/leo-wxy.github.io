@@ -18,6 +18,8 @@ AQS全称为`AbstractQueuedSynchronizer`，意为`抽象队列同步器`。
 
 在`Lock`中，是非常重要的核心组件。`AQS`是用来构建锁和同步器的框架，使用`AQS`可以简单且高效构建同步器。我们常见的`ReentrantLock、CountdownLatch`都是基于`AQS`构建的。
 
+这里要特别注意：**AQS本身并不是某一把具体的锁，而是一个同步器骨架。**它统一提供了同步状态管理、线程排队、阻塞唤醒以及模板方法扩展点；至于“资源”到底表示锁、计数器、许可证，还是其他同步语义，则由具体子类自己定义。
+
 `AQS`主要做了三件事情：
 
 1. 同步状态的管理
@@ -148,6 +150,8 @@ static final class Node {
 `nextWaiter`：下一个处于`CONDITION`状态的节点
 
 `Node`是一个变体`CLH`的节点，`CLH`应用了自旋锁，节点保存了当前阻塞线程的信息。如果他的前驱节点释放了，就需要通过修改`waitStatus`字段出队前驱节点，让当前节点尝试获取锁。若有新的等待线程要入队，就会加入到队列的尾部。
+
+不过AQS这里使用的并不是“经典意义上纯自旋”的CLH队列，而是一个**结合了双向链表、CAS和`park/unpark`的阻塞式CLH变体**。也就是说，队列中的线程并不会一直忙等自旋，而是在合适时机进入阻塞，等到前驱节点释放资源后再被唤醒继续参与竞争。
 
 其中`waitStatus`有以下几种状态：
 
@@ -319,7 +323,7 @@ static final Node EXCLUSIVE = null;
             for (;;) {
                 final Node p = node.predecessor();//获取前一个节点
               //前一个节点是 head，再尝试获取一次锁  
-              if (p == head && tryAcquire(arg)) {
+                if (p == head && tryAcquire(arg)) {
                     setHead(node);//获取资源后，设置当前节点为头节点
                     p.next = null; // 原先头节点置为null，移出等待队列
                     failed = false;
@@ -338,6 +342,8 @@ static final Node EXCLUSIVE = null;
 ```
 
 若前一个节点是`head`，那么再次调用`tryAcquire()`去竞争锁；竞争失败了，就执行`shouldParkAfterFailedAcquire()`判断是否将自己的线程挂起
+
+这里有一个很关键的点：AQS通常并不会让等待队列中的所有节点同时去疯狂抢锁，而是**优先让“前驱节点为head”的那个节点真正尝试获取资源**。这样做的好处是可以把竞争窗口尽量收敛到队首附近，减少无意义的并发争抢，让整个等待队列更有序地向前推进。
 
 ```java
     private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
@@ -690,6 +696,8 @@ private void unparkSuccessor(Node node) {
 - `waitStatus == SIGNAL(-1)`下一个节点可以被唤醒
 - `waitStatus == PROPAGATE(-3)`继续传播状态
 
+共享模式和独占模式最大的差别之一就在这里：**共享并不是“所有节点一起无脑通过”**，而是当前节点获取共享资源成功后，根据剩余资源情况决定是否继续向后传播唤醒。这也是为什么共享模式里会出现`setHeadAndPropagate()`和`PROPAGATE`这样的机制——它们本质上是在控制“唤醒是否继续往后传递”。
+
 
 
 #### doReleaseShared()
@@ -764,15 +772,17 @@ private void unparkSuccessor(Node node) {
 
 {%post_link Java-AQS-Condition原理及解析%}
 
+从AQS全貌来看，除了用来管理抢锁线程的**同步队列**之外，`Condition`还会额外维护**条件队列**。线程调用`await()`时，先从当前同步状态中释放资源并进入条件队列；当其他线程调用`signal()`时，再把节点从条件队列转移回同步队列，等待重新竞争锁。所以`Condition`并不是脱离AQS单独存在的，而是建立在AQS节点与队列机制之上的另一层等待语义。
+
 ## 总结
 
 1. AQS到底是什么？
 
-   > `AQS`内部维护一个`CLH队列(FIFO)`来管理锁，将`当前线程(thread)以及等待状态信息(waitStatus)`封装成一个`Node节点`添加到`等待队列`中。
+   > `AQS`内部维护一个`CLH变体队列(FIFO)`来管理锁，将`当前线程(thread)以及等待状态信息(waitStatus)`封装成一个`Node节点`添加到`等待队列`中。
    >
    > 提供了`tryAcquire(),tryRelease(),tryAcquireShared(),tryReleaseShare()`等模板方法交由子类实现，去控制`资源的获取与释放`。
    >
-   > `AQS`默认实现子类获取/释放资源后的操作，包括`Node节点的出入队列`。
+   > `AQS`默认实现子类获取/释放资源后的操作，包括`Node节点的出入队列`。**它本身是同步器框架，不直接等于具体锁语义。**
 
 2. AQS获取资源失败的操作
 
@@ -780,14 +790,22 @@ private void unparkSuccessor(Node node) {
 
 3. AQS等待队列数据结构
 
-   > `CLH队列`：
+   > `CLH变体队列`：
    >
-   > - CLH锁是一个自旋锁，可以保证无饥饿性，提供`FIFO`的公平性。基于链表实现。
-   > - 不断轮询`前置节点`的状态，如果前置节点被释放就结束自旋。
+   > - 经典CLH锁更偏自旋语义，而AQS使用的是结合`park/unpark`的阻塞式变体。
+   > - 节点仍然会关注前驱节点状态，但不会让所有线程一直忙等自旋。
    
 4. AQS等待队列插入节点顺序
 
    > **尾插法**
+
+5. AQS节点推进方式
+
+   > 独占模式下，通常只有前驱为`head`的节点才会真正尝试获取资源；共享模式下，节点获取成功后还可能继续向后传播唤醒。
+
+6. AQS与Condition的关系
+
+   > AQS除了同步队列外，还能基于`ConditionObject`维护条件队列。线程会在“条件队列等待条件满足”和“同步队列等待重新获取锁”之间切换。
    >
    > `addWaiter(node)`就是插入节点的主方法
    >
@@ -815,4 +833,3 @@ private void unparkSuccessor(Node node) {
 [JUC必知ReentrantLock和AQS同步队列实现原理分析](https://juejin.im/post/6878135436561088520#heading-28)
 
 [AbstractQueuedSynchronizer源码解读](https://www.cnblogs.com/micrari/p/6937995.html)
-
