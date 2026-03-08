@@ -29,7 +29,7 @@
 <meta property="og:image" content="https://leo-wxy.github.io/images/ThisTime-TotalTime.png">
 <meta property="og:image" content="https://leo-wxy.github.io/images/%E5%86%B7%E5%90%AF%E5%8A%A8%E5%90%AF%E5%8A%A8%E8%BF%87%E7%A8%8B.png">
 <meta property="article:published_time" content="2020-10-08T13:18:08.000Z">
-<meta property="article:modified_time" content="2026-03-07T13:09:37.995Z">
+<meta property="article:modified_time" content="2026-03-08T03:43:49.324Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="Android">
 <meta name="twitter:card" content="summary_large_image">
@@ -227,7 +227,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          1.6k 字
+          2.9k 字
         
       </span>
     
@@ -239,7 +239,7 @@
         
         
           <!-- compatible with older versions-->
-          6 分钟
+          10 分钟
         
       </span>
     
@@ -330,6 +330,15 @@
 <p><code>Displayed</code>更接近“首个界面已经显示出来”的时间点，但它不一定代表页面已经完全可交互、所有首屏数据都准备完毕。因此实际排查启动体验时，通常要把<code>adb</code>统计、<code>Displayed</code>日志、首帧耗时以及主线程阻塞情况一起看。</p>
 </li>
 <li><p>代码插桩方式</p>
+<p>如果想进一步缩小定位范围，通常还会在这些节点做分阶段打点：</p>
+<ul>
+<li>点击图标 &#x2F; 收到启动意图</li>
+<li><code>Application.onCreate()</code></li>
+<li>首屏<code>Activity.onCreate()/onStart()/onResume()</code></li>
+<li>首帧绘制完成</li>
+<li>首屏关键数据可用、页面真正可交互</li>
+</ul>
+<p>这样做的价值在于：**启动优化的最终目标不是“首帧更早”，而是“首屏更早可用”。**如果页面虽然更快显示出来，但用户仍然要等很久才能操作或看到有效内容，那么体验上仍然不算真正优化完成。</p>
 </li>
 </ul>
 <h3 id="冷启动启动过程"><a href="#冷启动启动过程" class="headerlink" title="冷启动启动过程"></a>冷启动启动过程</h3><p>在冷启动开始时，系统有三个任务，他们是：</p>
@@ -344,6 +353,14 @@
 <li>系统侧：<code>Launcher -&gt; AMS/ATMS -&gt; Zygote fork -&gt; 启动窗口展示</code></li>
 <li>应用侧：<code>ActivityThread.main() -&gt; bindApplication -&gt; Application.onCreate() -&gt; Activity创建 -&gt; 首帧绘制</code></li>
 </ul>
+<p>如果从排查视角再细化一些，还可以把应用侧继续拆成几个更容易定位问题的阶段：</p>
+<ul>
+<li>进程初始化阶段：<code>ActivityThread.main()</code>、主线程消息循环建立</li>
+<li>应用初始化阶段：<code>ContentProvider</code>、<code>Application.onCreate()</code></li>
+<li>首屏页面阶段：首屏<code>Activity</code>创建、布局加载、业务初始化</li>
+<li>渲染绘制阶段：<code>ViewRootImpl</code>、首轮测量布局绘制、首帧提交</li>
+</ul>
+<p>这样拆分之后，排查启动慢时就不会停留在“App启动慢”这一层，而能继续追问：<strong>到底是进程起来慢、Application慢、首屏页面慢，还是首帧绘制慢。</strong></p>
 <p>真正可优化的重点，通常集中在应用侧。系统侧链路开发者基本无法改变，但可以通过减少应用初始化负担、降低主线程阻塞、减少首帧前必须执行的工作，间接缩短整体冷启动耗时。</p>
 <p>在<code>AMS.startProcessLocked()</code>之后，调用到了<code>Process.start()</code>继续向下到<code>ZygoteProcess.start()</code>，然后通过<code>ZygoteSocket(是为LocalSocket).connect()</code>与<code>ZygoteServer</code>进行连接，接收到<code>ZygoteSocket</code>发送的消息后，执行<code>ZygoteConnection.processOneCommand()</code>执行到<code>Zygote.forkAndSpecialize()</code>孵化应用进程。</p>
 <p>冷启动过程中，系统通常还会先展示一个<code>Starting Window</code>（启动窗口&#x2F;启动页过渡窗口）。它的作用不是提前把真实页面画出来，而是在应用首帧尚未准备好之前，先给用户一个过渡界面，减少黑屏或白屏的体感。</p>
@@ -353,6 +370,12 @@
 <li>应用首帧出现：应用自己的<code>Activity</code>完成首轮绘制后，用户真正看到业务页面。</li>
 </ul>
 <p>如果启动窗口主题与首页视觉差异很大，就容易出现明显“闪一下”的跳变感，所以启动页主题、背景色和首屏风格尽量保持一致。</p>
+<p>在应用初始化阶段，还有一个经常被忽略的顺序问题：</p>
+<ul>
+<li>很多<code>ContentProvider</code>会早于<code>Application.onCreate()</code>执行</li>
+<li><code>Application</code>又通常早于首屏<code>Activity</code>创建</li>
+</ul>
+<p>这意味着如果某些三方SDK或组件通过<code>ContentProvider</code>自动初始化，它们占用的时间会直接落在冷启动最前面，甚至比你在<code>Application</code>里看到的初始化还要更早。因此实际治理启动问题时，不能只盯<code>Application.onCreate()</code>，还要先检查<code>Provider</code>链路里到底做了什么。</p>
 <p>在<code>创建应用进程</code>之后，应用进程继续执行后续流程</p>
 <p><code>ActivityThread.main()</code></p>
 <ol>
@@ -385,6 +408,7 @@
 <li>目标Activity实例通常也还在内存中，只需要从后台恢复到前台</li>
 </ul>
 <p>这类启动一般不需要重新创建进程，也不需要完整重走首个Activity的创建流程，因此成本最低。</p>
+<p>这里最容易出现的误区是：用户动作上看起来像“重新打开App”，并不一定就是真正意义上的冷启动。返回桌面再点图标，也可能只是热启动；只有进程已经不存在，或者必须重建更完整的启动链路时，才会落到冷启动或温启动。</p>
 <h2 id="温启动——Warm-Start"><a href="#温启动——Warm-Start" class="headerlink" title="温启动——Warm Start"></a>温启动——Warm Start</h2><blockquote>
 <p>应用已经启动，返回键退出</p>
 </blockquote>
@@ -394,7 +418,14 @@
 <li>但目标Activity需要重新创建，或者需要重新走部分界面恢复流程</li>
 </ul>
 <p>因此它不像冷启动那样要重新 fork 进程、绑定 Application，但也不像热启动那样只是简单恢复显示。</p>
+<p>所以判断冷&#x2F;温&#x2F;热启动时，关键不要只看“用户怎么点的”，而是要看：</p>
+<ul>
+<li>进程还在不在</li>
+<li>目标Activity需不需要重建</li>
+<li>是否需要重走完整应用初始化链路</li>
+</ul>
 <h2 id="启动优化"><a href="#启动优化" class="headerlink" title="启动优化"></a>启动优化</h2><p>启动优化主要目标不是“把所有初始化都删除”，而是把<strong>首帧前必须做的事</strong>压缩到最少，把<strong>不影响首屏可见的工作</strong>尽量延后。</p>
+<p>但更进一步说，启动优化真正追求的不是“只让首帧更早出现”，而是让用户<strong>更早看到可用内容、并尽快开始交互</strong>。如果只是把页面框架更早画出来，却把真正重要的数据绑定、列表填充、交互初始化全部堆到首帧后，最终用户感受到的可能只是“更早看到一个空壳页面”。</p>
 <p>可以从以下几个方向入手：</p>
 <ol>
 <li><p>缩短首帧前的关键路径</p>
@@ -429,6 +460,23 @@
 </ul>
 </li>
 </ol>
+<p>启动阶段最常见的耗时来源，通常集中在下面几类：</p>
+<ul>
+<li>多个三方SDK扎堆初始化</li>
+<li><code>ContentProvider</code>自动初始化链路过长</li>
+<li>磁盘IO、SP读取、数据库预热</li>
+<li>反射、类加载、动态代理、Dex优化相关开销</li>
+<li>首屏布局过深、大图解码、自定义View初始化过重</li>
+<li>把网络请求、配置拉取、解析计算直接放到首屏关键路径</li>
+</ul>
+<p>因此启动优化的第一步往往不是“立即异步化”，而是先把耗时来源分门别类，找出真正占据关键路径的部分。</p>
+<p>延迟初始化本身也有边界，常见误区包括：</p>
+<ul>
+<li>把真正首屏依赖的逻辑误判成“非关键逻辑”而盲目延后</li>
+<li>只是把任务从首帧前挪到首帧后一瞬间，导致页面刚展示就立刻卡顿</li>
+<li>把任务简单切到后台线程，但结果又在主线程集中回调，反而把卡顿推迟到更难察觉的位置</li>
+</ul>
+<p>所以“延后”本身不是目标，关键是：<strong>不能破坏依赖顺序，不能制造首屏后的集中回切，不能把问题从启动前挪到启动后。</strong></p>
 <p>优化之后还需要验证是否真的生效，常见做法包括：</p>
 <ul>
 <li>对比优化前后的<code>TotalTime/Displayed</code></li>
@@ -436,6 +484,22 @@
 <li>借助<code>trace/systrace/perfetto</code>查看主线程、RenderThread、绘制阶段耗时</li>
 <li>区分“指标更好看”和“用户真实体验更流畅”是否一致</li>
 </ul>
+<p>如果从工程闭环角度看，一个更完整的验证流程通常是：</p>
+<ol>
+<li>先建立优化前的基线数据</li>
+<li>分阶段打点，确定主要耗时落在哪一段</li>
+<li>做有针对性的优化，而不是同时改一大堆地方</li>
+<li>对比优化前后的<code>TotalTime/Displayed/首帧/可交互时间</code></li>
+<li>观察是否引入新的首屏后卡顿、空白态过长或数据延迟问题</li>
+<li>最后再结合线上分位数据确认收益是否稳定，而不是只看单次样本</li>
+</ol>
+<p>很多“假优化”都出现在没有闭环验证的时候，例如：</p>
+<ul>
+<li>指标上的<code>Displayed</code>变小了，但首屏内容仍然空白很久</li>
+<li>启动页更早消失了，但页面马上因为数据绑定和列表初始化卡住</li>
+<li>冷启动耗时看起来下降了，但实际把耗时转移成了首屏后明显掉帧</li>
+</ul>
+<p>这类优化从统计上可能好看一些，但从用户体验上并没有真正解决问题。</p>
 <p>如果只是把工作从首帧前挪到首帧后，导致页面虽然更早显示但马上出现明显卡顿，这种优化并不算真正完成。</p>
 <h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a target="_blank" rel="noopener" href="https://developer.android.com/topic/performance/vitals/launch-time">应用启动时间</a></p>
 <a href="/2019/01/02/Activity%E5%90%AF%E5%8A%A8%E8%BF%87%E7%A8%8B/" title="Activity启动过程">Activity启动过程</a>

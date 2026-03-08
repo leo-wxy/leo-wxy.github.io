@@ -28,7 +28,7 @@
 <meta property="og:locale" content="zh_CN">
 <meta property="og:image" content="https://leo-wxy.github.io/images/MarkWord.png">
 <meta property="article:published_time" content="2019-03-15T01:18:31.000Z">
-<meta property="article:modified_time" content="2019-03-15T13:03:14.000Z">
+<meta property="article:modified_time" content="2026-03-08T04:44:50.202Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="Hide">
 <meta name="twitter:card" content="summary_large_image">
@@ -226,7 +226,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          2.6k 字
+          4.1k 字
         
       </span>
     
@@ -238,7 +238,7 @@
         
         
           <!-- compatible with older versions-->
-          9 分钟
+          13 分钟
         
       </span>
     
@@ -297,6 +297,7 @@
 <h2 id="乐观锁-悲观锁"><a href="#乐观锁-悲观锁" class="headerlink" title="乐观锁&amp;悲观锁"></a>乐观锁&amp;悲观锁</h2><h3 id="乐观锁"><a href="#乐观锁" class="headerlink" title="乐观锁"></a>乐观锁</h3><blockquote>
 <p>每次去拿取数据的时候认为不会有人进行修改，所以不会去添加锁。只是会在更新数据时去判断是否有其他线程对这个数据进行了修改。通过判断<strong>版本号</strong>检测是否发生了更新，未发生变化直接写入新数据；发生了变化，就需要重复执行<strong>‌读版本号-比较有无发生变化-写入新数据</strong>操作。<br>在Java中一般通过<code>CAS算法</code>实现。例如<code>Atomic*</code>类内部都是通过<code>CAS</code>实现的。<br>乐观锁适合<strong>读操作多</strong>的场景，不加锁可以大大提升读操作的效率。</p>
 </blockquote>
+<p>但“乐观”与“悲观”的选择并不只是简单看读写比例，还要结合<strong>冲突概率、临界区长度以及失败重试成本</strong>。如果共享状态冲突很少、操作时间短，乐观锁往往更划算；如果冲突明确、复合操作很多，悲观锁通常更容易保证正确性边界。</p>
 <h4 id="CAS算法"><a href="#CAS算法" class="headerlink" title="CAS算法"></a>CAS算法</h4><blockquote>
 <p><code>compare and swap(比较与交换)</code>，是一种无锁算法(<em>在不使用锁的情况下实现线程间的变量同步</em>)。</p>
 </blockquote>
@@ -307,6 +308,7 @@
 <li>要写入的新值 <strong>B</strong></li>
 </ul>
 <p><strong>当且仅当V的值等于A时，CAS通过原子方式更新V的值为B。否则不会执行任何操作(<code>比较与更新为一个原子操作</code>)，一般情况下为一个<code>自旋操作</code>，需要不断进行重试。</strong></p>
+<p><code>CAS</code>的价值不只是“比较并交换”这一条指令本身，还在于它通常会配合<code>volatile</code>或底层内存语义一起使用，从而同时具备原子更新与结果可见性。但它依然更适合处理<strong>单个共享状态</strong>的提交，不适合直接覆盖复杂的多步骤事务逻辑。</p>
 <h4 id="乐观锁缺点"><a href="#乐观锁缺点" class="headerlink" title="乐观锁缺点"></a>乐观锁缺点</h4><h5 id="ABA问题"><a href="#ABA问题" class="headerlink" title="ABA问题"></a>ABA问题</h5><p><code>CAS</code>需要在操作值的时候检查内存值是否发生了变化，没有发生变化才会去更新值。但有一种特殊情况，内存中的值发生了<code>A-&gt;B-&gt;A</code>这类变化，在检查时得到的结果就是没有发生变化，这显然是不合理的。</p>
 <p>解决该问题的方法有两种：</p>
 <ul>
@@ -332,10 +334,15 @@
 <p>其中Java中的<code>synchronized</code>及<code>Lock</code>就是悲观锁的具体实现。</p>
 <h2 id="锁的状态"><a href="#锁的状态" class="headerlink" title="锁的状态"></a>锁的状态</h2><p>在JVM中锁的状态分为四种：</p>
 <ul>
-<li>无锁：例如CAS操作</li>
+<li>无锁：对象当前没有处于monitor竞争状态，此时可以理解为还没有进入重量级同步路径</li>
 <li>偏向锁</li>
 <li>轻量级锁</li>
-<li>重量级锁：<code>synchronized</code></li>
+<li>重量级锁：锁已经膨胀为依赖monitor&#x2F;互斥量的同步形态</li>
+</ul>
+<p>这里要注意两点：</p>
+<ul>
+<li><code>CAS</code>更准确地说是一种无锁并发手段，而不是“无锁状态”本身的唯一代表。</li>
+<li><code>synchronized</code>也不是一上来就一定进入重量级锁，它在不同竞争强度下可能经历偏向锁、轻量级锁，竞争再加剧时才膨胀为重量级锁。</li>
 </ul>
 <p>锁的进化状态为：<strong>无锁 -&gt; 偏向锁 -&gt; 轻量级锁 -&gt; 重量级锁</strong>。<code>不可退化</code></p>
 <h3 id="对象头"><a href="#对象头" class="headerlink" title="对象头"></a>对象头</h3><blockquote>
@@ -399,6 +406,7 @@
 </blockquote>
 <h4 id="适用场景"><a href="#适用场景" class="headerlink" title="适用场景"></a>适用场景</h4><p>始终只有一个线程在执行同步代码块，即使没有执行完，也不会有其他线程去执行同步代码块。<strong>为了在只有一个线程执行同步代码块时提高性能。</strong></p>
 <p>在高并发场景下会直接禁用偏向锁，通过设置<code>-XX:-UseBiasedLocking</code>。关闭后，会进入<strong>轻量级锁</strong>。</p>
+<p>另外还要注意：不同JDK版本里偏向锁的默认策略和实现背景并不完全一致，阅读旧资料时要结合版本环境理解，不要把某一版本下的默认行为当成长期不变的结论。</p>
 <h4 id="获取过程"><a href="#获取过程" class="headerlink" title="获取过程"></a>获取过程</h4><ol>
 <li>当线程访问同步块代码并获取锁时，会在<code>Mark Word</code>中存入当前线程的ID并设置偏向锁标识为1</li>
 <li>再次有线程访问该代码块时，先去判断<code>Mark Word</code>中偏向锁标识是否为1且线程ID是否一致</li>
@@ -422,7 +430,40 @@
 <blockquote>
 <p>如果更新失败，虚拟机首先检查<code>Mark Word</code>。</p>
 </blockquote>
-<h4 id="释放锁过程"><a href="#释放锁过程" class="headerlink" title="释放锁过程"></a>释放锁过程</h4><h3 id="重量级锁"><a href="#重量级锁" class="headerlink" title="重量级锁"></a>重量级锁</h3><h4 id="阻塞"><a href="#阻塞" class="headerlink" title="阻塞"></a>阻塞</h4><h2 id="锁优化"><a href="#锁优化" class="headerlink" title="锁优化"></a>锁优化</h2><h3 id="锁消除"><a href="#锁消除" class="headerlink" title="锁消除"></a>锁消除</h3><h3 id="锁粗化"><a href="#锁粗化" class="headerlink" title="锁粗化"></a>锁粗化</h3><h2 id="其他锁分类"><a href="#其他锁分类" class="headerlink" title="其他锁分类"></a>其他锁分类</h2><h3 id="公平锁-非公平锁"><a href="#公平锁-非公平锁" class="headerlink" title="公平锁&amp;非公平锁"></a>公平锁&amp;非公平锁</h3><h3 id="可重入锁-非重入锁"><a href="#可重入锁-非重入锁" class="headerlink" title="可重入锁&amp;非重入锁"></a>可重入锁&amp;非重入锁</h3><h3 id="独占锁-共享锁"><a href="#独占锁-共享锁" class="headerlink" title="独占锁&amp;共享锁"></a>独占锁&amp;共享锁</h3><h3 id="读写锁"><a href="#读写锁" class="headerlink" title="读写锁"></a>读写锁</h3><h2 id="死锁"><a href="#死锁" class="headerlink" title="死锁"></a>死锁</h2><blockquote>
+<ul>
+<li>如果<code>Mark Word</code>已经指向当前线程自己的<code>Lock Record</code>，说明当前线程发生了重入，可以继续进入同步块。</li>
+<li>如果<code>Mark Word</code>指向的是其他线程的锁记录，说明已经出现竞争，轻量级锁就可能继续膨胀为重量级锁。</li>
+</ul>
+<h4 id="释放锁过程"><a href="#释放锁过程" class="headerlink" title="释放锁过程"></a>释放锁过程</h4><p>轻量级锁解锁时，会尝试使用<code>CAS</code>把对象头中的<code>Mark Word</code>替换回原先保存在<code>Displaced Mark Word</code>里的内容：</p>
+<ul>
+<li>替换成功，说明整个同步过程结束，没有发生更激烈的竞争。</li>
+<li>替换失败，说明在释放锁期间已经有其他线程参与竞争，这时往往意味着锁已经膨胀，需要在释放时配合唤醒后续等待线程。</li>
+</ul>
+<h3 id="重量级锁"><a href="#重量级锁" class="headerlink" title="重量级锁"></a>重量级锁</h3><p>重量级锁本质上依赖于<code>monitor</code>以及更底层的互斥量机制来完成同步控制。相比偏向锁和轻量级锁，它的代价更高，因为线程竞争失败后通常不再只是忙等，而是要进入阻塞与唤醒流程。</p>
+<p>但“重量级”不代表它没有价值。恰恰相反，当竞争已经明显、锁持有时间较长时，继续让大量线程自旋反而会更浪费CPU，此时进入重量级锁路径反而是更合理的兜底方案。</p>
+<h4 id="阻塞"><a href="#阻塞" class="headerlink" title="阻塞"></a>阻塞</h4><p>线程在竞争重量级锁失败后，通常会进入阻塞状态，等待持有锁的线程释放资源后再被唤醒。阻塞的代价主要来自：</p>
+<ul>
+<li>线程挂起和恢复需要更多系统参与</li>
+<li>用户态与内核态切换成本更高</li>
+<li>被唤醒后线程还要重新参与调度与竞争</li>
+</ul>
+<p>因此自旋与阻塞并不是简单的“谁更先进”，而是在不同竞争强度下的两种权衡：锁持有时间很短时，自旋可以减少切换；锁持有时间较长时，阻塞可以避免空耗CPU。</p>
+<h2 id="锁优化"><a href="#锁优化" class="headerlink" title="锁优化"></a>锁优化</h2><h3 id="锁消除"><a href="#锁消除" class="headerlink" title="锁消除"></a>锁消除</h3><p>锁消除是指JIT编译器在运行时发现某些同步代码不可能出现共享数据竞争，于是把这部分锁直接去掉。它成立的关键前提是：<strong>通过逃逸分析证明对象不会逃逸出当前线程。</strong></p>
+<p>如果一个对象只在方法内部短暂存在，没有被发布给其他线程，那么即使源码里写了同步，JVM也有机会把它优化掉。</p>
+<h3 id="锁粗化"><a href="#锁粗化" class="headerlink" title="锁粗化"></a>锁粗化</h3><p>锁粗化和锁消除正好相反：它不是去掉锁，而是把一串过于零碎的小同步块合并成更大的同步范围。这样做的目的，是减少频繁加锁解锁带来的额外开销。</p>
+<p>例如循环里反复对同一对象执行小块<code>synchronized</code>操作时，过细的同步边界反而会比一次更大的同步范围更贵。</p>
+<h2 id="其他锁分类"><a href="#其他锁分类" class="headerlink" title="其他锁分类"></a>其他锁分类</h2><h3 id="公平锁-非公平锁"><a href="#公平锁-非公平锁" class="headerlink" title="公平锁&amp;非公平锁"></a>公平锁&amp;非公平锁</h3><p>公平锁强调“先来先得”，更关注等待顺序的可预期性；非公平锁允许新来的线程在某些时机先尝试抢锁，整体吞吐通常更高。</p>
+<p>在Java里，<code>ReentrantLock</code>可以显式选择公平或非公平策略，而<code>synchronized</code>更接近非公平语义。</p>
+<h3 id="可重入锁-非重入锁"><a href="#可重入锁-非重入锁" class="headerlink" title="可重入锁&amp;非重入锁"></a>可重入锁&amp;非重入锁</h3><p>可重入锁表示同一个线程在已经持有锁的前提下，可以再次获取这把锁而不被自己阻塞。<code>synchronized</code>和<code>ReentrantLock</code>都属于可重入锁。</p>
+<p>如果一把锁不可重入，那么线程在持有锁期间再次进入同一临界区时，就可能把自己阻塞住。</p>
+<h3 id="独占锁-共享锁"><a href="#独占锁-共享锁" class="headerlink" title="独占锁&amp;共享锁"></a>独占锁&amp;共享锁</h3><p>独占锁同一时刻只允许一个线程持有，例如<code>ReentrantLock</code>。共享锁则允许多个线程在满足条件时同时获取资源，例如读写锁中的读锁，或者AQS共享模式下的某些同步器。</p>
+<h3 id="读写锁"><a href="#读写锁" class="headerlink" title="读写锁"></a>读写锁</h3><p>读写锁把“读”和“写”区分成两种访问语义：</p>
+<ul>
+<li>读读之间通常可以并发</li>
+<li>写与读、写与写之间仍然互斥</li>
+</ul>
+<p>因此它更适合“读多写少”的场景。在Java中典型实现就是<code>ReentrantReadWriteLock</code>。</p>
+<h2 id="死锁"><a href="#死锁" class="headerlink" title="死锁"></a>死锁</h2><blockquote>
 <p>两个或两个以上的线程在执行过程中，因争夺资源而造成的一种互相等待的现象，若无外力作用，他们会互相阻塞。</p>
 </blockquote>
 <p>产生死锁的条件有4个：</p>
@@ -432,6 +473,14 @@
 <li>不剥夺条件：线程已获得的资源，未使用完之前不得强行剥夺</li>
 <li>循环等待条件：若干进程之间形成一种头尾相接的循环等待资源关系。</li>
 </ul>
+<p>实践中预防死锁最常见的做法有：</p>
+<ul>
+<li>统一加锁顺序，避免循环等待</li>
+<li>缩小锁粒度，减少持锁时间</li>
+<li>避免在持有锁的情况下调用外部方法或执行不可控逻辑</li>
+<li>在合适场景下使用<code>tryLock()</code>和超时机制</li>
+</ul>
+<p>排查死锁时，最常见的手段则是导出线程dump（例如<code>jstack</code>），再结合“线程持有什么锁、又在等待什么锁”的关系去找循环依赖链。</p>
 <h2 id="内容引用"><a href="#内容引用" class="headerlink" title="内容引用"></a>内容引用</h2><p><a target="_blank" rel="noopener" href="https://juejin.im/post/5c8a00e56fb9a049a42feb54#heading-21">JAVA中锁的深入理解与解析</a></p>
 <p><a target="_blank" rel="noopener" href="https://juejin.im/post/5bee576fe51d45710c6a51e0#heading-2">不可不说的Java“锁”事</a></p>
 

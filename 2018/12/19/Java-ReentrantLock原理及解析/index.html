@@ -27,7 +27,7 @@
 <meta property="og:description" content="一般的锁都是配合synchronized使用的，实际上在java.util.concurrent.locks还提供了其他几个锁的实现，拥有更加强大的功能和更好的性能。 锁的分类可重入锁 可重入锁：任意线程在获取该锁后能够再次获取锁时不会被阻塞。 当前线程恶可以反复加锁，但必须释放同样多次数的锁，否则会导致锁不会释放。可以避免死锁  原理通过组合自定义同步器(AQS)实现锁的获取与释放  再次进行l">
 <meta property="og:locale" content="zh_CN">
 <meta property="article:published_time" content="2018-12-19T07:06:32.000Z">
-<meta property="article:modified_time" content="2026-03-07T14:49:28.784Z">
+<meta property="article:modified_time" content="2026-03-08T03:26:39.573Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="Java">
 <meta name="twitter:card" content="summary_large_image">
@@ -224,7 +224,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          2.3k 字
+          3k 字
         
       </span>
     
@@ -236,7 +236,7 @@
         
         
           <!-- compatible with older versions-->
-          8 分钟
+          10 分钟
         
       </span>
     
@@ -380,11 +380,39 @@
 <li><code>Condition.signalAll()</code>类似于<code>Object.notifyAll()</code></li>
 </ul>
 <p>不同点在于：<code>Object</code>监视器天然只有一组等待队列，而<code>ReentrantLock</code>可以通过多次调用<code>newCondition()</code>拆出多个条件队列，让不同等待原因的线程分开管理。</p>
+<p>进一步结合<code>ReentrantLock</code>来看，<code>Condition.await()</code>并不是简单“睡一会儿”，而是会：</p>
+<ul>
+<li>先保存并释放当前线程持有的锁状态</li>
+<li>进入对应的条件队列等待</li>
+<li>被<code>signal()</code>后再转移回同步队列</li>
+<li>重新竞争锁成功后，才真正从<code>await()</code>返回</li>
+</ul>
+<p>所以被<code>signal()</code>不等于线程立刻继续执行，<strong>重新拿到锁</strong>才是等待结束的真正标志。</p>
 <h2 id="ReentrantLock"><a href="#ReentrantLock" class="headerlink" title="ReentrantLock"></a>ReentrantLock</h2><blockquote>
 <p>一个可重入的互斥锁，具备一样的线程重入特性</p>
 </blockquote>
 <p><code>ReentrantLock</code>底层并不是自己从零维护完整的排队、唤醒和状态流转逻辑，而是建立在<code>AQS(AbstractQueuedSynchronizer)</code>之上。可以把它理解成：<code>ReentrantLock</code>负责定义“这是一把怎样的锁”，而<code>AQS</code>负责提供“线程如何排队、如何竞争、如何被唤醒”的通用同步框架。</p>
 <p>在独占模式下，<code>AQS</code>里的<code>state</code>通常会被用来表示当前锁的持有状态和重入次数：第一次获取锁时把状态从<code>0</code>改成<code>1</code>，同一线程重入时继续累加，释放锁时再逐步减回去，直到恢复为<code>0</code>才表示真正释放完成。</p>
+<p>如果继续往实现层看，<code>ReentrantLock</code>内部通常会拆成两种同步器实现：</p>
+<ul>
+<li><code>FairSync</code>：公平锁实现</li>
+<li><code>NonfairSync</code>：非公平锁实现</li>
+</ul>
+<p>它们都建立在同一套AQS独占同步骨架之上，真正的差异主要体现在“获取锁之前是否允许先抢一次”和“是否严格遵循队列顺序”。</p>
+<p>非公平锁之所以吞吐量通常更高，一个关键原因就是：在进入同步队列之前，它往往会先做一次<strong>快速CAS抢锁</strong>。如果此时锁刚好空闲，当前线程可以直接拿到锁，而不必老老实实先排队；只有抢占失败后，才会进入AQS队列等待。</p>
+<p>如果把<code>tryAcquire()</code>的主线抽出来看，逻辑通常可以概括成三步：</p>
+<ul>
+<li><code>state == 0</code>：说明当前没有线程持有锁，此时尝试CAS占有锁</li>
+<li>当前线程已经是持有者：走重入逻辑，让<code>state</code>继续累加</li>
+<li>其他线程持有锁：本次获取失败，进入后续排队等待逻辑</li>
+</ul>
+<p>而释放锁时的<code>tryRelease()</code>主线则刚好对应回来：</p>
+<ul>
+<li>先检查当前线程是不是锁持有者</li>
+<li>是的话就把重入次数减1</li>
+<li>只有当<code>state</code>真正减到0时，才表示锁被彻底释放，可以去唤醒后继节点</li>
+</ul>
+<p>这也是可重入锁最容易忽略的地方：<strong>unlock一次不一定真的释放锁，只有把重入层数全部退回去才算彻底释放。</strong></p>
 <h4 id="特性"><a href="#特性" class="headerlink" title="特性"></a>特性</h4><ul>
 <li>尝试获得锁</li>
 <li>获取到锁的线程能够响应中断</li>
@@ -403,7 +431,28 @@
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">LockFairTest</span> <span class="hljs-keyword">implements</span> <span class="hljs-title class_">Runnable</span> &#123;<br>    <span class="hljs-comment">//true为公平锁  false为非公平锁 默认false</span><br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-type">Lock</span> <span class="hljs-variable">lock</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">ReentrantLock</span>(<span class="hljs-literal">true</span>);<br>    <span class="hljs-type">AtomicInteger</span> <span class="hljs-variable">iii</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">AtomicInteger</span>(<span class="hljs-number">0</span>);<br><br>    <span class="hljs-meta">@Override</span><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">run</span><span class="hljs-params">()</span> &#123;<br>        <span class="hljs-keyword">while</span> (iii.get() &lt; <span class="hljs-number">20</span>) &#123;<br>            lock.lock();<br>            iii.getAndIncrement();<br>            <span class="hljs-keyword">try</span> &#123;<br>                System.err.println(Thread.currentThread().getName() + <span class="hljs-string">&quot;获得锁&quot;</span>);<br>            &#125; <span class="hljs-keyword">finally</span> &#123;<br>                lock.unlock();<br>            &#125;<br>        &#125;<br>    &#125;<br><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">main</span><span class="hljs-params">(String[] args)</span> &#123;<br>        <span class="hljs-type">LockFairTest</span> <span class="hljs-variable">test</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">LockFairTest</span>();<br><br>        <span class="hljs-type">Thread</span> <span class="hljs-variable">t1</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">Thread</span>(test);<br>        <span class="hljs-type">Thread</span> <span class="hljs-variable">t2</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">Thread</span>(test);<br>        <span class="hljs-type">Thread</span> <span class="hljs-variable">t3</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">Thread</span>(test);<br>        <span class="hljs-type">Thread</span> <span class="hljs-variable">t4</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">Thread</span>(test);<br><br>        t1.start();<br>        t2.start();<br>        t3.start();<br>        t4.start();<br>    &#125;<br>&#125;<br>输出结果：<br>公平锁：<br>Thread-<span class="hljs-number">0</span>获得锁<br>Thread-<span class="hljs-number">1</span>获得锁<br>Thread-<span class="hljs-number">2</span>获得锁<br>Thread-<span class="hljs-number">3</span>获得锁<br>非公平锁：<br>Thread-<span class="hljs-number">2</span>获得锁<br>Thread-<span class="hljs-number">2</span>获得锁<br>Thread-<span class="hljs-number">2</span>获得锁<br>Thread-<span class="hljs-number">2</span>获得锁<br></code></pre></td></tr></table></figure>
 </li>
 <li><p><strong>锁绑定多个条件</strong>：一个<code>ReenTrantLock</code>对象可以通过多次调用<code>newCondition()</code>同时绑定多个<code>Condition</code>对象。在<code>synchronized</code>只能实现一个隐含的条件，要多关联只能额外添加锁。</p>
+<p>在实际使用时，<code>signal()</code>和<code>signalAll()</code>也需要区分：</p>
+<ul>
+<li>一次条件变化只需要唤醒一个等待线程时，优先使用<code>signal()</code></li>
+<li>条件变化可能影响整批线程，或者无法精确判断该唤醒哪个线程时，再考虑<code>signalAll()</code></li>
+</ul>
+<p>如果每次都无脑使用<code>signalAll()</code>，往往会带来更多无效唤醒和额外锁竞争。</p>
 </li>
+</ul>
+<h2 id="适用场景"><a href="#适用场景" class="headerlink" title="适用场景"></a>适用场景</h2><p><code>ReentrantLock</code>相比<code>synchronized</code>更适合下面这些场景：</p>
+<ul>
+<li>需要可中断地获取锁</li>
+<li>需要带超时地尝试获取锁</li>
+<li>需要多个条件队列表达复杂线程协作</li>
+<li>需要更明确地控制加锁、解锁时机</li>
+</ul>
+<p>如果只是很简单的同步块保护，而且并不需要这些额外能力，那么<code>synchronized</code>往往已经足够，代码也会更直接。</p>
+<h2 id="常见误用"><a href="#常见误用" class="headerlink" title="常见误用"></a>常见误用</h2><ul>
+<li><code>lock()</code>之后忘记在<code>finally</code>里<code>unlock()</code></li>
+<li>没有持有锁就调用<code>Condition.await()/signal()</code></li>
+<li>误以为公平锁一定更先进、更高效</li>
+<li>在很简单的场景里过度使用<code>ReentrantLock</code>，徒增代码复杂度</li>
+<li>把“线程被signal唤醒”误解成“线程已经拿到锁并开始执行”</li>
 </ul>
 <h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><ul>
 <li>Lock类可以实现线程同步，获得锁需要执行<code>lock</code>，释放锁使用<code>unlock</code></li>

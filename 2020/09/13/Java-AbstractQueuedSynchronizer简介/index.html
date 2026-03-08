@@ -38,7 +38,7 @@
 <meta property="og:image" content="https://leo-wxy.github.io/images/AQS-%E8%8E%B7%E5%8F%96%E5%85%B1%E4%BA%AB%E9%94%81.jpg">
 <meta property="og:image" content="https://leo-wxy.github.io/images/AQS-%E5%85%B1%E4%BA%AB%E6%A8%A1%E5%BC%8F-%E9%87%8A%E6%94%BE%E8%B5%84%E6%BA%90.png">
 <meta property="article:published_time" content="2020-09-13T09:28:19.000Z">
-<meta property="article:modified_time" content="2020-10-09T00:28:33.000Z">
+<meta property="article:modified_time" content="2026-03-07T15:39:31.325Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="Java">
 <meta name="twitter:card" content="summary_large_image">
@@ -236,7 +236,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          5.5k 字
+          6.1k 字
         
       </span>
     
@@ -248,7 +248,7 @@
         
         
           <!-- compatible with older versions-->
-          18 分钟
+          20 分钟
         
       </span>
     
@@ -311,6 +311,7 @@
 <li><code>Synchronizer</code>：同步</li>
 </ul>
 <p>在<code>Lock</code>中，是非常重要的核心组件。<code>AQS</code>是用来构建锁和同步器的框架，使用<code>AQS</code>可以简单且高效构建同步器。我们常见的<code>ReentrantLock、CountdownLatch</code>都是基于<code>AQS</code>构建的。</p>
+<p>这里要特别注意：**AQS本身并不是某一把具体的锁，而是一个同步器骨架。**它统一提供了同步状态管理、线程排队、阻塞唤醒以及模板方法扩展点；至于“资源”到底表示锁、计数器、许可证，还是其他同步语义，则由具体子类自己定义。</p>
 <p><code>AQS</code>主要做了三件事情：</p>
 <ol>
 <li>同步状态的管理</li>
@@ -352,6 +353,7 @@
 <p><code>waitStatus</code>：当前节点的状态</p>
 <p><code>nextWaiter</code>：下一个处于<code>CONDITION</code>状态的节点</p>
 <p><code>Node</code>是一个变体<code>CLH</code>的节点，<code>CLH</code>应用了自旋锁，节点保存了当前阻塞线程的信息。如果他的前驱节点释放了，就需要通过修改<code>waitStatus</code>字段出队前驱节点，让当前节点尝试获取锁。若有新的等待线程要入队，就会加入到队列的尾部。</p>
+<p>不过AQS这里使用的并不是“经典意义上纯自旋”的CLH队列，而是一个<strong>结合了双向链表、CAS和<code>park/unpark</code>的阻塞式CLH变体</strong>。也就是说，队列中的线程并不会一直忙等自旋，而是在合适时机进入阻塞，等到前驱节点释放资源后再被唤醒继续参与竞争。</p>
 <p>其中<code>waitStatus</code>有以下几种状态：</p>
 <table>
 <thead>
@@ -444,9 +446,10 @@
 <p>此处的头节点<code>head</code>起到了一个<strong>哨兵</strong>的作用，<code>免去后续查找过程中的越界判断</code>。</p>
 </blockquote>
 <h4 id="acquireQueued-node-arg"><a href="#acquireQueued-node-arg" class="headerlink" title="acquireQueued(node,arg)"></a>acquireQueued(node,arg)</h4><p>经过<code>addWaiter()</code>之后，线程加入到等待队列中，但是线程还没有被挂起等待，而<code>acquireQueued()</code>去执行线程挂起的相关操作。</p>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">final</span> <span class="hljs-type">boolean</span> <span class="hljs-title function_">acquireQueued</span><span class="hljs-params">(<span class="hljs-keyword">final</span> Node node, <span class="hljs-type">int</span> arg)</span> &#123;<br>    <span class="hljs-type">boolean</span> <span class="hljs-variable">failed</span> <span class="hljs-operator">=</span> <span class="hljs-literal">true</span>;<br>    <span class="hljs-keyword">try</span> &#123;<br>        <span class="hljs-type">boolean</span> <span class="hljs-variable">interrupted</span> <span class="hljs-operator">=</span> <span class="hljs-literal">false</span>;<br>        <span class="hljs-keyword">for</span> (;;) &#123;<br>            <span class="hljs-keyword">final</span> <span class="hljs-type">Node</span> <span class="hljs-variable">p</span> <span class="hljs-operator">=</span> node.predecessor();<span class="hljs-comment">//获取前一个节点</span><br>          <span class="hljs-comment">//前一个节点是 head，再尝试获取一次锁  </span><br>          <span class="hljs-keyword">if</span> (p == head &amp;&amp; tryAcquire(arg)) &#123;<br>                setHead(node);<span class="hljs-comment">//获取资源后，设置当前节点为头节点</span><br>                p.next = <span class="hljs-literal">null</span>; <span class="hljs-comment">// 原先头节点置为null，移出等待队列</span><br>                failed = <span class="hljs-literal">false</span>;<br>                <span class="hljs-keyword">return</span> interrupted;<br>            &#125;<br>          <span class="hljs-comment">//获取锁失败了，就将自己挂起进入`waiting`状态，直到`unpark`调用</span><br>            <span class="hljs-keyword">if</span> (shouldParkAfterFailedAcquire(p, node) &amp;&amp;<br>                parkAndCheckInterrupt())<br>                interrupted = <span class="hljs-literal">true</span>;<br>        &#125;<br>    &#125; <span class="hljs-keyword">finally</span> &#123;<br>        <span class="hljs-keyword">if</span> (failed)<br>            cancelAcquire(node);<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">final</span> <span class="hljs-type">boolean</span> <span class="hljs-title function_">acquireQueued</span><span class="hljs-params">(<span class="hljs-keyword">final</span> Node node, <span class="hljs-type">int</span> arg)</span> &#123;<br>    <span class="hljs-type">boolean</span> <span class="hljs-variable">failed</span> <span class="hljs-operator">=</span> <span class="hljs-literal">true</span>;<br>    <span class="hljs-keyword">try</span> &#123;<br>        <span class="hljs-type">boolean</span> <span class="hljs-variable">interrupted</span> <span class="hljs-operator">=</span> <span class="hljs-literal">false</span>;<br>        <span class="hljs-keyword">for</span> (;;) &#123;<br>            <span class="hljs-keyword">final</span> <span class="hljs-type">Node</span> <span class="hljs-variable">p</span> <span class="hljs-operator">=</span> node.predecessor();<span class="hljs-comment">//获取前一个节点</span><br>          <span class="hljs-comment">//前一个节点是 head，再尝试获取一次锁  </span><br>            <span class="hljs-keyword">if</span> (p == head &amp;&amp; tryAcquire(arg)) &#123;<br>                setHead(node);<span class="hljs-comment">//获取资源后，设置当前节点为头节点</span><br>                p.next = <span class="hljs-literal">null</span>; <span class="hljs-comment">// 原先头节点置为null，移出等待队列</span><br>                failed = <span class="hljs-literal">false</span>;<br>                <span class="hljs-keyword">return</span> interrupted;<br>            &#125;<br>          <span class="hljs-comment">//获取锁失败了，就将自己挂起进入`waiting`状态，直到`unpark`调用</span><br>            <span class="hljs-keyword">if</span> (shouldParkAfterFailedAcquire(p, node) &amp;&amp;<br>                parkAndCheckInterrupt())<br>                interrupted = <span class="hljs-literal">true</span>;<br>        &#125;<br>    &#125; <span class="hljs-keyword">finally</span> &#123;<br>        <span class="hljs-keyword">if</span> (failed)<br>            cancelAcquire(node);<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
 
 <p>若前一个节点是<code>head</code>，那么再次调用<code>tryAcquire()</code>去竞争锁；竞争失败了，就执行<code>shouldParkAfterFailedAcquire()</code>判断是否将自己的线程挂起</p>
+<p>这里有一个很关键的点：AQS通常并不会让等待队列中的所有节点同时去疯狂抢锁，而是<strong>优先让“前驱节点为head”的那个节点真正尝试获取资源</strong>。这样做的好处是可以把竞争窗口尽量收敛到队首附近，减少无意义的并发争抢，让整个等待队列更有序地向前推进。</p>
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-type">boolean</span> <span class="hljs-title function_">shouldParkAfterFailedAcquire</span><span class="hljs-params">(Node pred, Node node)</span> &#123;<br>    <span class="hljs-type">int</span> <span class="hljs-variable">ws</span> <span class="hljs-operator">=</span> pred.waitStatus;<span class="hljs-comment">//前一个节点的状态</span><br>    <span class="hljs-keyword">if</span> (ws == Node.SIGNAL)<span class="hljs-comment">//前一个节点处于 阻塞挂起状态，当前线程可以挂起</span><br>        <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;<br>    <span class="hljs-keyword">if</span> (ws &gt; <span class="hljs-number">0</span>) &#123;<span class="hljs-comment">//前一个节点处于取消状态</span><br>        <span class="hljs-keyword">do</span> &#123;<br>            node.prev = pred = pred.prev;<span class="hljs-comment">//移出已被取消的节点</span><br>        &#125; <span class="hljs-keyword">while</span> (pred.waitStatus &gt; <span class="hljs-number">0</span>);<br>        pred.next = node;<br>    &#125; <span class="hljs-keyword">else</span> &#123;<span class="hljs-comment">//前一个节点处于 初始化或者 PRPPAGATE，当前需要一个信号才能将当前线程挂起。</span><br>        compareAndSetWaitStatus(pred, ws, Node.SIGNAL);<br>    &#125;<br>    <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;<br>&#125;<br></code></pre></td></tr></table></figure>
 
 <blockquote>
@@ -562,6 +565,7 @@
 <li><code>waitStatus == SIGNAL(-1)</code>下一个节点可以被唤醒</li>
 <li><code>waitStatus == PROPAGATE(-3)</code>继续传播状态</li>
 </ul>
+<p>共享模式和独占模式最大的差别之一就在这里：<strong>共享并不是“所有节点一起无脑通过”</strong>，而是当前节点获取共享资源成功后，根据剩余资源情况决定是否继续向后传播唤醒。这也是为什么共享模式里会出现<code>setHeadAndPropagate()</code>和<code>PROPAGATE</code>这样的机制——它们本质上是在控制“唤醒是否继续往后传递”。</p>
 <h4 id="doReleaseShared"><a href="#doReleaseShared" class="headerlink" title="doReleaseShared()"></a>doReleaseShared()</h4><p>获取共享资源后且<code>tryAcquireShared()&gt; 0 </code>表示后续节点也可以获取资源，并且<code>waitStatus &lt; 0 即 -1</code>可以唤醒后续等待的线程</p>
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">doReleaseShared</span><span class="hljs-params">()</span> &#123;<br>    <span class="hljs-keyword">for</span> (;;) &#123;<br>        <span class="hljs-type">Node</span> <span class="hljs-variable">h</span> <span class="hljs-operator">=</span> head;<br>        <span class="hljs-comment">//等待队列已初始化</span><br>        <span class="hljs-keyword">if</span> (h != <span class="hljs-literal">null</span> &amp;&amp; h != tail) &#123;<span class="hljs-comment">//队列至少存在了2个节点</span><br>            <span class="hljs-type">int</span> <span class="hljs-variable">ws</span> <span class="hljs-operator">=</span> h.waitStatus;<br>            <span class="hljs-keyword">if</span> (ws == Node.SIGNAL) &#123;<span class="hljs-comment">//后续线程可以被唤醒</span><br>                <span class="hljs-keyword">if</span> (!compareAndSetWaitStatus(h, Node.SIGNAL, <span class="hljs-number">0</span>))<br>                    <span class="hljs-keyword">continue</span>;            <span class="hljs-comment">// loop to recheck cases</span><br>                unparkSuccessor(h);<span class="hljs-comment">//唤醒后续节点</span><br>            &#125;<br>            <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (ws == <span class="hljs-number">0</span> &amp;&amp;<br>                     !compareAndSetWaitStatus(h, <span class="hljs-number">0</span>, Node.PROPAGATE))<span class="hljs-comment">//当前节点为最后一个节点，将唤醒状态继续向下传播</span><br>                <span class="hljs-keyword">continue</span>;                <span class="hljs-comment">// loop on failed CAS</span><br>        &#125;<br>        <span class="hljs-comment">//头节点没有发生变化，直接结束当前循环</span><br>        <span class="hljs-keyword">if</span> (h == head)                   <span class="hljs-comment">// loop if head changed</span><br>            <span class="hljs-keyword">break</span>;<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
 
@@ -592,12 +596,13 @@
 <h4 id="doReleaseShared-1"><a href="#doReleaseShared-1" class="headerlink" title="doReleaseShared()"></a>doReleaseShared()</h4><p>参考 <a href="#doReleaseShared">doReleaseShared</a></p>
 <h3 id="Condition"><a href="#Condition" class="headerlink" title="Condition"></a>Condition</h3><a href="/2020/10/08/Java-AQS-Condition%E5%8E%9F%E7%90%86%E5%8F%8A%E8%A7%A3%E6%9E%90/" title="Java-AQS-Condition原理及解析">Java-AQS-Condition原理及解析</a>
 
+<p>从AQS全貌来看，除了用来管理抢锁线程的<strong>同步队列</strong>之外，<code>Condition</code>还会额外维护<strong>条件队列</strong>。线程调用<code>await()</code>时，先从当前同步状态中释放资源并进入条件队列；当其他线程调用<code>signal()</code>时，再把节点从条件队列转移回同步队列，等待重新竞争锁。所以<code>Condition</code>并不是脱离AQS单独存在的，而是建立在AQS节点与队列机制之上的另一层等待语义。</p>
 <h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><ol>
 <li><p>AQS到底是什么？</p>
 <blockquote>
-<p><code>AQS</code>内部维护一个<code>CLH队列(FIFO)</code>来管理锁，将<code>当前线程(thread)以及等待状态信息(waitStatus)</code>封装成一个<code>Node节点</code>添加到<code>等待队列</code>中。</p>
+<p><code>AQS</code>内部维护一个<code>CLH变体队列(FIFO)</code>来管理锁，将<code>当前线程(thread)以及等待状态信息(waitStatus)</code>封装成一个<code>Node节点</code>添加到<code>等待队列</code>中。</p>
 <p>提供了<code>tryAcquire(),tryRelease(),tryAcquireShared(),tryReleaseShare()</code>等模板方法交由子类实现，去控制<code>资源的获取与释放</code>。</p>
-<p><code>AQS</code>默认实现子类获取&#x2F;释放资源后的操作，包括<code>Node节点的出入队列</code>。</p>
+<p><code>AQS</code>默认实现子类获取&#x2F;释放资源后的操作，包括<code>Node节点的出入队列</code>。<strong>它本身是同步器框架，不直接等于具体锁语义。</strong></p>
 </blockquote>
 </li>
 <li><p>AQS获取资源失败的操作</p>
@@ -607,16 +612,26 @@
 </li>
 <li><p>AQS等待队列数据结构</p>
 <blockquote>
-<p><code>CLH队列</code>：</p>
+<p><code>CLH变体队列</code>：</p>
 <ul>
-<li>CLH锁是一个自旋锁，可以保证无饥饿性，提供<code>FIFO</code>的公平性。基于链表实现。</li>
-<li>不断轮询<code>前置节点</code>的状态，如果前置节点被释放就结束自旋。</li>
+<li>经典CLH锁更偏自旋语义，而AQS使用的是结合<code>park/unpark</code>的阻塞式变体。</li>
+<li>节点仍然会关注前驱节点状态，但不会让所有线程一直忙等自旋。</li>
 </ul>
 </blockquote>
 </li>
 <li><p>AQS等待队列插入节点顺序</p>
 <blockquote>
 <p><strong>尾插法</strong></p>
+</blockquote>
+</li>
+<li><p>AQS节点推进方式</p>
+<blockquote>
+<p>独占模式下，通常只有前驱为<code>head</code>的节点才会真正尝试获取资源；共享模式下，节点获取成功后还可能继续向后传播唤醒。</p>
+</blockquote>
+</li>
+<li><p>AQS与Condition的关系</p>
+<blockquote>
+<p>AQS除了同步队列外，还能基于<code>ConditionObject</code>维护条件队列。线程会在“条件队列等待条件满足”和“同步队列等待重新获取锁”之间切换。</p>
 <p><code>addWaiter(node)</code>就是插入节点的主方法</p>
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">private</span> Node <span class="hljs-title function_">addWaiter</span><span class="hljs-params">(Node mode)</span> &#123;<br>    <span class="hljs-type">Node</span> <span class="hljs-variable">node</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">Node</span>(Thread.currentThread(), mode);<br>    <span class="hljs-comment">// Try the fast path of enq; backup to full enq on failure</span><br>    <span class="hljs-type">Node</span> <span class="hljs-variable">pred</span> <span class="hljs-operator">=</span> tail;<br>    <span class="hljs-keyword">if</span> (pred != <span class="hljs-literal">null</span>) &#123;<br>        node.prev = pred;<span class="hljs-comment">//node.prev = tail</span><br>        <span class="hljs-keyword">if</span> (compareAndSetTail(pred, node)) &#123; <span class="hljs-comment">//tail = node 大致如此</span><br>            pred.next = node;<br>            <span class="hljs-keyword">return</span> node;<br>        &#125;<br>    &#125;<br>    enq(node);<br>    <span class="hljs-keyword">return</span> node;<br>&#125;<br></code></pre></td></tr></table></figure>
 

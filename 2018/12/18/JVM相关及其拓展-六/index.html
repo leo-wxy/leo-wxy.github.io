@@ -28,7 +28,7 @@
 <meta property="og:locale" content="zh_CN">
 <meta property="og:image" content="https://leo-wxy.github.io/images/Thread-State.png">
 <meta property="article:published_time" content="2018-12-18T08:34:07.000Z">
-<meta property="article:modified_time" content="2026-03-07T13:36:23.138Z">
+<meta property="article:modified_time" content="2026-03-08T03:50:22.206Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="JVM">
 <meta name="twitter:card" content="summary_large_image">
@@ -226,7 +226,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          1.8k 字
+          2.5k 字
         
       </span>
     
@@ -238,7 +238,7 @@
         
         
           <!-- compatible with older versions-->
-          6 分钟
+          8 分钟
         
       </span>
     
@@ -329,6 +329,7 @@
 </ul>
 <p>Java线程的实现是不能确定的。<strong>由于操作系统支持怎样的线程模型，在很大程度上决定了Java虚拟机的线程是怎样映射的。</strong></p>
 <p>从实际情况看，上面更多是线程模型的理论分类。现代HotSpot在主流操作系统上，Java线程通常还是采用接近<code>1:1</code>的内核线程映射方式，因此线程的创建、阻塞、唤醒和调度，最终大多都会落到操作系统线程调度层去完成。</p>
+<p>这也意味着线程并不是一种“可以无限便宜创建”的资源。线程创建、销毁、上下文切换、阻塞唤醒都会带来成本，所以在工程实践里，通常不会把“直接开新线程”当成默认方案，而更倾向于通过线程池复用线程，减少频繁创建和回收带来的额外开销。</p>
 <h2 id="线程调度"><a href="#线程调度" class="headerlink" title="线程调度"></a>线程调度</h2><blockquote>
 <p>系统为线程分配处理器使用权的过程。</p>
 </blockquote>
@@ -371,6 +372,9 @@
 <li><code>BLOCKED</code>、<code>WAITING</code>、<code>TIMED_WAITING</code>是JVM为了描述Java并发语义而抽象出来的状态。</li>
 </ul>
 <p>所以在分析线程栈或线程状态时，更适合把这些状态理解为“Java语义视角下线程正在做什么”，而不是直接等同于操作系统调度器内部的全部状态。</p>
+<p>如果把线程状态迁移主线抽象成一条链路，可以大致理解为：</p>
+<p><code>NEW -&gt; RUNNABLE -&gt; WAITING / TIMED_WAITING / BLOCKED -&gt; RUNNABLE -&gt; TERMINATED</code></p>
+<p>当然真实运行过程中线程可能会在<code>RUNNABLE</code>和多种等待状态之间多次切换，但通常不会脱离这条主线去随意跳转。</p>
 <ul>
 <li><h3 id="新建"><a href="#新建" class="headerlink" title="新建"></a>新建</h3><blockquote>
 <p>线程创建后尚未启动的线程状态</p>
@@ -417,11 +421,27 @@
 <p><strong>等待状态</strong>：在等待一段时间或者唤醒动作的发生</p>
 </blockquote>
 </li>
+</ul>
+<p>如果把这几个状态再压缩成最容易区分的判断标准，可以这样记：</p>
+<ul>
+<li><code>BLOCKED</code>：想进<code>synchronized</code>保护区，但没抢到monitor锁</li>
+<li><code>WAITING</code>：主动等待别人显式唤醒，不设置超时时间</li>
+<li><code>TIMED_WAITING</code>：主动等待，并且设置了超时时间</li>
+</ul>
+<p>所以<code>BLOCKED</code>更偏“锁竞争失败”，而<code>WAITING/TIMED_WAITING</code>更偏“当前线程自己进入等待协议”。</p>
+<ul>
 <li><h3 id="结束"><a href="#结束" class="headerlink" title="结束"></a>结束</h3><blockquote>
 <p>线程已经结束执行</p>
 </blockquote>
 </li>
 </ul>
+<h3 id="守护线程"><a href="#守护线程" class="headerlink" title="守护线程"></a>守护线程</h3><p>Java线程还可以分为<strong>用户线程</strong>和<strong>守护线程(Daemon Thread)</strong>。</p>
+<ul>
+<li>用户线程：会真正决定JVM进程是否继续存活</li>
+<li>守护线程：主要为其他线程提供后台服务，本身不阻止JVM退出</li>
+</ul>
+<p>当JVM中只剩下守护线程时，虚拟机就可以退出了。像垃圾回收线程这类后台线程，通常就属于守护线程。</p>
+<p>这也是为什么守护线程更适合做“服务型后台任务”，而不适合承载那些必须确保完整执行结束的核心业务逻辑。</p>
 <p>补充：<code>interrupt()</code>并不是“强制杀死线程”，而是一种协作式中断信号。</p>
 <ul>
 <li>调用<code>interrupt()</code>通常只是给目标线程设置中断标记，或者唤醒某些可中断的阻塞点。</li>
@@ -429,6 +449,20 @@
 <li>如果任务内部完全忽略中断，那么线程依然可能继续运行。</li>
 </ul>
 <p>因此中断更像“请求你尽快结束&#x2F;停止等待”，而不是操作系统层面那种强制终止线程的能力。</p>
+<p>从实践角度看，更推荐把中断当成一种<strong>协作式退出协议</strong>来使用：</p>
+<ul>
+<li>阻塞方法里收到<code>InterruptedException</code>后，要么结束任务，要么在清理后重新设置中断标记</li>
+<li>非阻塞循环中，要主动检查中断状态，决定是否退出</li>
+<li>不要随意吞掉中断异常，否则上层线程管理逻辑可能失效</li>
+</ul>
+<h2 id="与并发工具类的关系"><a href="#与并发工具类的关系" class="headerlink" title="与并发工具类的关系"></a>与并发工具类的关系</h2><p>这一篇讲的线程实现、调度和状态，本质上是并发工具类的底层语义背景。像<code>synchronized</code>、<code>ReentrantLock</code>、<code>Condition</code>、<code>BlockingQueue</code>、线程池这些上层并发工具，最终都离不开线程的阻塞、唤醒、调度以及状态迁移。</p>
+<p>所以理解线程模型和线程状态的意义，不只是为了记住几个枚举值，而是为了更好地理解：</p>
+<ul>
+<li>线程为什么会阻塞</li>
+<li>被唤醒后为什么还不一定立刻执行</li>
+<li>为什么线程池能减少线程创建成本</li>
+<li>为什么中断、锁、等待队列会共同影响并发行为</li>
+</ul>
 
                 
               </div>

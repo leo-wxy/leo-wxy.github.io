@@ -27,7 +27,7 @@
 <meta property="og:description" content="AQS-Condition原理及解析Condition基础概念Condition可以理解为配合Lock使用的条件队列机制。当线程拿到锁之后，如果发现某个条件暂时不满足，就可以先进入等待；等到其他线程把条件修改完成，再显式地唤醒这些等待线程。 它解决的核心问题不是“加锁”本身，而是线程在持锁访问共享资源时，如何围绕某个条件进行等待和通知。 在synchronized体系里，线程协作主要依赖wait(">
 <meta property="og:locale" content="zh_CN">
 <meta property="article:published_time" content="2020-10-08T05:02:23.000Z">
-<meta property="article:modified_time" content="2026-03-07T15:14:32.262Z">
+<meta property="article:modified_time" content="2026-03-08T03:32:07.127Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta name="twitter:card" content="summary_large_image">
   
@@ -223,7 +223,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          2.3k 字
+          2.9k 字
         
       </span>
     
@@ -235,7 +235,7 @@
         
         
           <!-- compatible with older versions-->
-          8 分钟
+          9 分钟
         
       </span>
     
@@ -294,6 +294,7 @@
 <p>它解决的核心问题不是“加锁”本身，而是<strong>线程在持锁访问共享资源时，如何围绕某个条件进行等待和通知</strong>。</p>
 <p>在<code>synchronized</code>体系里，线程协作主要依赖<code>wait()/notify()/notifyAll()</code>；而在<code>Lock</code>体系里，对应的能力主要由<code>Condition</code>提供。</p>
 <p><code>Condition</code>最重要的特点是：**一个<code>Lock</code>可以创建多个<code>Condition</code>对象。**这意味着同一把锁下，可以把“等待队列”拆成多组，分别管理不同的等待条件，而不是像<code>synchronized</code>那样所有等待线程都挤在同一个隐含监视器队列里。</p>
+<p>这里还要特别强调一点：<strong><code>Condition</code>本身并不负责定义“条件是什么”</strong>。真正的业务条件仍然要靠共享状态变量自己表达，例如<code>ready</code>、<code>count</code>、<code>queue.isEmpty()</code>。<code>Condition</code>负责的只是“当条件不满足时如何等待、条件变化后如何通知”。</p>
 <h2 id="Condition与wait-notify的关系"><a href="#Condition与wait-notify的关系" class="headerlink" title="Condition与wait&#x2F;notify的关系"></a>Condition与wait&#x2F;notify的关系</h2><p>如果把两套体系做一个简单类比，会更容易理解：</p>
 <ul>
 <li><code>Condition.await()</code> 类似于 <code>Object.wait()</code></li>
@@ -324,11 +325,20 @@
 <p>一个最常见的写法如下：</p>
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">ConditionDemo</span> &#123;<br><br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> <span class="hljs-type">ReentrantLock</span> <span class="hljs-variable">lock</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">ReentrantLock</span>();<br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> <span class="hljs-type">Condition</span> <span class="hljs-variable">condition</span> <span class="hljs-operator">=</span> lock.newCondition();<br>    <span class="hljs-keyword">private</span> <span class="hljs-type">boolean</span> <span class="hljs-variable">ready</span> <span class="hljs-operator">=</span> <span class="hljs-literal">false</span>;<br><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">awaitReady</span><span class="hljs-params">()</span> <span class="hljs-keyword">throws</span> InterruptedException &#123;<br>        lock.lock();<br>        <span class="hljs-keyword">try</span> &#123;<br>            <span class="hljs-keyword">while</span> (!ready) &#123;<br>                condition.await();<br>            &#125;<br>            System.out.println(<span class="hljs-string">&quot;条件满足，继续执行&quot;</span>);<br>        &#125; <span class="hljs-keyword">finally</span> &#123;<br>            lock.unlock();<br>        &#125;<br>    &#125;<br><br>    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">signalReady</span><span class="hljs-params">()</span> &#123;<br>        lock.lock();<br>        <span class="hljs-keyword">try</span> &#123;<br>            ready = <span class="hljs-literal">true</span>;<br>            condition.signalAll();<br>        &#125; <span class="hljs-keyword">finally</span> &#123;<br>            lock.unlock();<br>        &#125;<br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
 
+<p>除了最基础的<code>await()</code>以外，<code>Condition</code>还提供了几种常见等待变体：</p>
+<ul>
+<li><code>awaitUninterruptibly()</code>：不可中断等待</li>
+<li><code>await(long time, TimeUnit unit)</code>：按相对时间等待</li>
+<li><code>awaitNanos(long nanosTimeout)</code>：按纳秒等待，并返回剩余时间</li>
+<li><code>awaitUntil(Date deadline)</code>：按绝对时间点等待</li>
+</ul>
+<p>这些方法的核心等待逻辑是一致的，区别主要在于：<strong>是否响应中断、是否带超时、超时结果如何返回。</strong></p>
 <p>这里有几个容易忽略的点：</p>
 <ul>
 <li><code>await()</code>和<code>signal()/signalAll()</code>都必须在持锁状态下调用，否则会抛出<code>IllegalMonitorStateException</code></li>
 <li>判断条件时通常建议使用<code>while</code>而不是<code>if</code></li>
 <li><code>signal()</code>只是通知某个等待线程有机会去继续竞争锁，不代表它马上就能执行</li>
+<li>正确顺序通常是：<strong>先修改共享状态，再发出<code>signal()</code>通知</strong></li>
 </ul>
 <p>之所以推荐用<code>while</code>，是因为线程被唤醒后，条件可能仍然不满足。比如多个线程都在等同一个条件，或者线程虽然被唤醒了，但在真正拿回锁时条件已经被其他线程改掉了。</p>
 <p>再进一步说，使用<code>while</code>而不是<code>if</code>通常是为了同时覆盖下面几种情况：</p>
@@ -337,6 +347,7 @@
 <li><code>signalAll()</code>会把多个等待线程都转移出来，但最终并不是每个线程都能在重新拿到锁时满足条件。</li>
 <li>线程被唤醒到真正重新获取锁之间，还存在一个竞争窗口，条件可能已经再次变化。</li>
 </ul>
+<p>而“先改状态，再<code>signal</code>”这一点也非常关键。因为等待线程真正依赖的不是某一次通知动作本身，而是<strong>共享条件已经变为满足</strong>。如果先<code>signal</code>再改状态，就可能出现等待线程被唤醒后重新检查条件仍然失败，结果又回去继续等待，甚至形成看起来像“信号丢了”的问题。</p>
 <h2 id="Condition底层原理"><a href="#Condition底层原理" class="headerlink" title="Condition底层原理"></a>Condition底层原理</h2><p><code>Condition</code>在<code>AQS</code>中的具体实现通常是<code>ConditionObject</code>。理解它时，最关键的是分清楚<strong>两条队列</strong>：</p>
 <ul>
 <li><strong>同步队列</strong>：AQS用来管理锁竞争的主队列</li>
@@ -361,6 +372,13 @@
 <li>条件队列表示“条件暂时不满足，所以先等待条件变化”</li>
 <li>同步队列表示“已经具备抢锁资格，正在等待重新获取锁”</li>
 </ul>
+<p>这也是为什么说<code>Condition</code>并不是消息队列：它不会替你缓存“通知事件”本身。真正可靠的做法永远是：</p>
+<ul>
+<li>用共享状态表达条件</li>
+<li>用<code>while</code>循环检查条件</li>
+<li>在条件变化后再发出通知</li>
+</ul>
+<p>离开了这三件事，只靠单独一次<code>signal()</code>并不能构成可靠的线程协作协议。</p>
 <p>也就是说，<code>Condition</code>等待的线程其实会在<strong>条件队列</strong>和<strong>同步队列</strong>之间流转：</p>
 <ul>
 <li><code>await()</code>：从“正在执行”转为“进入条件队列等待”</li>
@@ -391,12 +409,19 @@
 <li><code>await()</code>本身是可中断的，线程在等待过程中被中断时，不会像什么都没发生一样继续等待。</li>
 <li>中断发生后，节点会走取消或转移的相关处理逻辑，最终以抛出<code>InterruptedException</code>或重新设置中断标记的方式结束等待。</li>
 </ul>
+<p>如果使用的是<code>awaitUninterruptibly()</code>，则行为会不同：线程不会因为中断而提前结束等待，而是会继续等到被正常唤醒并重新获取锁之后再返回。也正因为如此，它适合那些“当前等待不能因为中断而半途结束”的特殊场景，但在普通业务代码里通常要更谨慎使用。</p>
 <p>也正因为存在中断、取消和条件再次变化这些情况，<code>Condition</code>的正确使用通常都离不开下面这组组合：</p>
 <ul>
 <li>持锁调用</li>
 <li><code>while</code>检查条件</li>
 <li>正确处理中断</li>
 <li>在合适时机选择<code>signal()</code>或<code>signalAll()</code></li>
+</ul>
+<p>如果把它进一步上升成设计建议，可以记成：</p>
+<ul>
+<li>先定义共享状态，再定义等待条件</li>
+<li>永远围绕“条件是否成立”来写代码，而不是围绕“通知有没有发出”来写代码</li>
+<li>多个等待原因尽量拆成多个<code>Condition</code>，减少无效唤醒</li>
 </ul>
 <h2 id="小结"><a href="#小结" class="headerlink" title="小结"></a>小结</h2><p>可以把<code>Condition</code>理解成：<strong>基于<code>Lock + AQS</code>实现的、更细粒度的等待&#x2F;通知机制</strong>。</p>
 <p>相比<code>Object.wait/notify</code>，它最大的优势在于：</p>

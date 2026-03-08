@@ -28,7 +28,7 @@
 <meta property="og:locale" content="zh_CN">
 <meta property="og:image" content="https://leo-wxy.github.io/images/Thread-State.png">
 <meta property="article:published_time" content="2020-05-02T02:15:01.000Z">
-<meta property="article:modified_time" content="2026-02-13T05:02:09.978Z">
+<meta property="article:modified_time" content="2026-03-08T04:08:59.899Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="Java">
 <meta name="twitter:card" content="summary_large_image">
@@ -226,7 +226,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          3.6k 字
+          4.8k 字
         
       </span>
     
@@ -238,7 +238,7 @@
         
         
           <!-- compatible with older versions-->
-          12 分钟
+          16 分钟
         
       </span>
     
@@ -357,9 +357,17 @@
 <h5 id="Future接口"><a href="#Future接口" class="headerlink" title="Future接口"></a>Future接口</h5><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title class_">Future</span>&lt;V&gt; &#123;<br>    <span class="hljs-comment">//试图取消任务的执行。mayInterruptIfRunning确定是否应该以试图停止任务的方式中断执行任务流程。true 直接中断 false等待执行完成 </span><br>    <span class="hljs-type">boolean</span> <span class="hljs-title function_">cancel</span><span class="hljs-params">(<span class="hljs-type">boolean</span> mayInterruptIfRunning)</span>;<br>    <span class="hljs-comment">//任务正常完成前将其取消，返回true</span><br>    <span class="hljs-type">boolean</span> <span class="hljs-title function_">isCancelled</span><span class="hljs-params">()</span>;<br>    <span class="hljs-comment">//任务已完成或者因为正常终止、异常，取消而完成，返回true</span><br>    <span class="hljs-type">boolean</span> <span class="hljs-title function_">isDone</span><span class="hljs-params">()</span>;<br>    <span class="hljs-comment">//等待计算结果的返回，如果被取消则抛出异常</span><br>    V <span class="hljs-title function_">get</span><span class="hljs-params">()</span> <span class="hljs-keyword">throws</span> InterruptedException, ExecutionException;<br>    <span class="hljs-comment">//设定执行时间，超过时间则抛出Timeout异常</span><br>    V <span class="hljs-title function_">get</span><span class="hljs-params">(<span class="hljs-type">long</span> timeout, TimeUnit unit)</span><br>        <span class="hljs-keyword">throws</span> InterruptedException, ExecutionException, TimeoutException;<br>&#125;<br></code></pre></td></tr></table></figure>
 
 <p>通过<code>Callable</code>可以得到一个<code>Future</code>对象，表示异步计算的结果。</p>
+<p><code>Future</code>本质上是一个“异步结果句柄”：</p>
+<ul>
+<li><code>get()</code>会阻塞当前线程直到结果就绪</li>
+<li><code>get(timeout, unit)</code>可以给等待增加时间边界</li>
+<li><code>cancel(true)</code>会尝试以中断方式取消任务，<code>cancel(false)</code>则不会主动中断正在运行的任务</li>
+</ul>
+<p>因此它只是把“等待结果”推迟到了真正需要结果的时候，并没有让等待本身消失。</p>
 <h5 id="FutureTask"><a href="#FutureTask" class="headerlink" title="FutureTask"></a>FutureTask</h5><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">interface</span> <span class="hljs-title class_">RunnableFuture</span>&lt;V&gt; <span class="hljs-keyword">extends</span> <span class="hljs-title class_">Runnable</span>, Future&lt;V&gt; &#123;<br>    <span class="hljs-comment">/**</span><br><span class="hljs-comment">     * Sets this Future to the result of its computation</span><br><span class="hljs-comment">     * unless it has been cancelled.</span><br><span class="hljs-comment">     */</span><br>    <span class="hljs-keyword">void</span> <span class="hljs-title function_">run</span><span class="hljs-params">()</span>;<br>&#125;<br></code></pre></td></tr></table></figure>
 
 <p><code>FutureTask</code>实现了<code>RunnableFuture</code>接口，<code>FutureTask</code>可以简化使用。</p>
+<p><code>FutureTask</code>同时具备<code>Runnable</code>和<code>Future</code>两种身份：既可以被线程或线程池当作任务执行，也可以被外部拿来查询状态、取消任务或获取结果，因此经常被用来桥接“任务执行”和“结果获取”。</p>
 <table>
 <thead>
 <tr>
@@ -454,16 +462,31 @@
 <h4 id="run"><a href="#run" class="headerlink" title="run"></a><code>run</code></h4><p>只是调用线程中的执行代码</p>
 <h4 id="join"><a href="#join" class="headerlink" title="join"></a><code>join</code></h4><p>在线程中调用另一个线程的<code>join()</code>，会将当前线程挂起，而不是忙等待，直到目标线程结束。</p>
 <p><code>join(long)</code>设置等待时间</p>
-<h4 id="sleep-long-mills"><a href="#sleep-long-mills" class="headerlink" title="sleep(long mills)"></a><code>sleep(long mills)</code></h4><p>主动放弃占用的CPU资源，进入<code>BLOCKED</code>状态，并进入休眠状态<code>mills</code>毫秒。当超过<code>mills</code>后，线程就会进入<code>RUNNABLE</code>状态，等待执行。</p>
+<h4 id="sleep-long-mills"><a href="#sleep-long-mills" class="headerlink" title="sleep(long mills)"></a><code>sleep(long mills)</code></h4><p>主动放弃占用的CPU资源，进入<code>TIMED_WAITING</code>状态，并进入休眠状态<code>mills</code>毫秒。当超过<code>mills</code>后，线程就会进入<code>RUNNABLE</code>状态，等待执行。</p>
 <h4 id="yield"><a href="#yield" class="headerlink" title="yield()"></a><code>yield()</code></h4><p>主动放弃占用的CPU资源，进入<code>RUNNABLE</code>状态，等待CPU时间片。</p>
 <p><strong>建议让步给它优先级比它高或者相同的待运行(<code>RUNNABLE</code>)的线程运行。放弃的时间不确定，可能会自己获取CPU时间片继续执行任务。</strong></p>
-<h4 id="interrupte-interrupted-isInterrupted"><a href="#interrupte-interrupted-isInterrupted" class="headerlink" title="interrupte()/interrupted()/isInterrupted()"></a><code>interrupte()/interrupted()/isInterrupted()</code></h4><p><code>interrupt()</code>：中断线程，不会立即停止线程，设置线程中断状态为<code>true</code></p>
-<p>如果该线程处于<code>BLOCKED、WAITING、TIMED_WAITING</code>状态，执行<code>interrupt()</code>会抛出<code>InterruptException</code>异常。</p>
+<h4 id="interrupt-interrupted-isInterrupted"><a href="#interrupt-interrupted-isInterrupted" class="headerlink" title="interrupt()/interrupted()/isInterrupted()"></a><code>interrupt()/interrupted()/isInterrupted()</code></h4><p><code>interrupt()</code>：中断线程，不会立即停止线程，设置线程中断状态为<code>true</code></p>
+<p>如果该线程处于<code>BLOCKED、WAITING、TIMED_WAITING</code>状态，执行<code>interrupt()</code>会抛出<code>InterruptedException</code>异常。</p>
 <p><code>interrupted()</code>：测试当前线程是否中断，线程的中断状态受到这个方法的影响。例如调用一次设置中断状态为<code>true</code>，设置两次为<code>false</code>。线程会去检测中断位，判断线程是否中断。</p>
 <p><code>isInterrupted()</code>：测试当前线程是否中断，调用这个方法不会影响线程中断状态。</p>
 <blockquote>
 <p>线程中断只是设置线程中断状态为<code>true</code>，具体线程何时中断，由线程自己而定，可能不会发生中断。</p>
 </blockquote>
+<p>更准确地说，这三个方法的区别在于：</p>
+<ul>
+<li><code>interrupt()</code>：实例方法，用于给目标线程发出中断信号。</li>
+<li><code>interrupted()</code>：静态方法，检查<strong>当前线程</strong>是否中断，并会清除中断标记。</li>
+<li><code>isInterrupted()</code>：实例方法，检查目标线程是否中断，但<strong>不会</strong>清除中断标记。</li>
+</ul>
+<p>因此中断本质上是一种协作机制，而不是强制结束线程。线程收到中断信号之后，是退出、清理资源还是继续执行，取决于代码本身如何处理中断。</p>
+<p>这些常见方法可以放在一起理解：</p>
+<ul>
+<li><code>sleep()</code>：让当前线程进入<code>TIMED_WAITING</code>，<strong>不会释放锁</strong></li>
+<li><code>join()</code>：让当前线程等待目标线程结束</li>
+<li><code>wait()</code>：必须在持有监视器锁时调用，并且会释放当前监视器</li>
+<li><code>yield()</code>：只是提示调度器愿意让出CPU，不保证一定成功</li>
+<li><code>park()</code>：基于许可机制阻塞线程，常用于更底层的并发组件</li>
+</ul>
 <h4 id="setPriority"><a href="#setPriority" class="headerlink" title="setPriority()"></a><code>setPriority()</code></h4><p>设置线程的优先级。<strong>高优先级的线程会更容易被执行，也需要视具体的系统决定。</strong></p>
 <p>线程的调度策略采用<strong>抢占式</strong>，优先级高的线程比低的更大几率被执行。</p>
 <p>线程优先级具有：</p>
@@ -519,7 +542,7 @@
 <p>当多个线程访问同一个对象时，如果不用考虑这些线程在运行时环境下的调度和交替执行，也不需要进行额外的同步，或者在调用方进行任何其他的协调操作，调用这个对象的行为都可以获得正确的结果，那就表示这个对象是线程安全的。</p>
 </blockquote>
 <p>线程安全有以下几种实现方式：</p>
-<h4 id="不可变"><a href="#不可变" class="headerlink" title="不可变"></a>不可变</h4><p>**不可变得对象一定是线程安全的。**无论是对象的方法实现还是方法的调用者，都不需要进行任何线程安全保障措施。</p>
+<h4 id="不可变"><a href="#不可变" class="headerlink" title="不可变"></a>不可变</h4><p>**不可变的对象一定是线程安全的。**无论是对象的方法实现还是方法的调用者，都不需要进行任何线程安全保障措施。</p>
 <p>不可变的类型：</p>
 <ul>
 <li><code>final</code>关键字修饰的基本数据类型</li>
@@ -550,7 +573,48 @@
 
 
 
-<h4 id="无同步"><a href="#无同步" class="headerlink" title="无同步"></a>无同步</h4><h3 id="线程间通信"><a href="#线程间通信" class="headerlink" title="线程间通信"></a>线程间通信</h3><h3 id="线程池"><a href="#线程池" class="headerlink" title="*线程池"></a>*线程池</h3><h3 id="多线程开发良好实践"><a href="#多线程开发良好实践" class="headerlink" title="多线程开发良好实践"></a>多线程开发良好实践</h3><h2 id="锁优化"><a href="#锁优化" class="headerlink" title="锁优化"></a>锁优化</h2>
+<h4 id="无同步"><a href="#无同步" class="headerlink" title="无同步"></a>无同步</h4><p>例如<code>ThreadLocal</code>、不可变对象以及只在当前线程内部可见的局部变量，本质上都属于“通过缩小共享范围来避免同步”的思路。</p>
+<h3 id="线程间通信"><a href="#线程间通信" class="headerlink" title="线程间通信"></a>线程间通信</h3><p>线程间通信的本质，是让多个线程围绕某个共享状态建立可见性和执行时序上的协作关系。常见方式有：</p>
+<ul>
+<li><code>wait()/notify()/notifyAll()</code>：基于对象监视器进行等待与唤醒，必须配合<code>synchronized</code>使用</li>
+<li><code>LockSupport.park()/unpark()</code>：基于许可机制阻塞和唤醒线程，是很多并发组件的基础</li>
+<li><code>Condition.await()/signal()</code>：配合<code>Lock</code>使用，可以基于同一把锁拆分多个条件队列</li>
+<li><code>volatile</code>共享变量：适合轻量级状态通知，例如某个开关位或结束标记</li>
+</ul>
+<p>真正可靠的线程通信，通常都不是“只有一个通知动作”，而是建立在<strong>共享状态 + 条件判断 + 等待&#x2F;唤醒机制</strong>三者配合之上。</p>
+<h3 id="线程池"><a href="#线程池" class="headerlink" title="*线程池"></a>*线程池</h3><p>线程池的核心目标，是把线程的创建、复用、调度和回收统一管理起来，避免频繁<code>new Thread()</code>带来的资源浪费和失控增长。</p>
+<p>理解线程池时，最关键的几个参数包括：</p>
+<ul>
+<li><code>corePoolSize</code>：常态下保留的并发能力</li>
+<li><code>maximumPoolSize</code>：高峰时最多还能扩到多少线程</li>
+<li><code>workQueue</code>：任务更倾向排队还是推动线程扩容</li>
+<li><code>RejectedExecutionHandler</code>：系统超载时如何处理新任务</li>
+</ul>
+<p>线程池并不是“线程越多越快”，而是在吞吐、延迟、资源占用和风险控制之间做权衡。更完整的线程池原理、参数和源码分析可以看：</p>
+<a href="/2019/09/13/Java-%E7%BA%BF%E7%A8%8B%E6%B1%A0/" title="Java-线程池">Java-线程池</a>
+
+
+
+<h3 id="多线程开发良好实践"><a href="#多线程开发良好实践" class="headerlink" title="多线程开发良好实践"></a>多线程开发良好实践</h3><ul>
+<li>优先减少共享可变状态，能不共享就不共享</li>
+<li>优先使用不可变对象、并发容器、线程池、锁、条件队列等高层并发工具</li>
+<li>线程中断要有明确策略，不要随意吞掉中断信号</li>
+<li>线程池要有边界、有监控、能关闭，避免线程和任务无限堆积</li>
+<li>遇到并发问题时，先保证正确性，再考虑性能优化</li>
+</ul>
+<p>如果按学习路径来整理，这篇内容比较适合作为一条总线来读：</p>
+<p><code>基础概念 -&gt; 线程状态与常见方法 -&gt; 线程安全 -&gt; 线程间通信 -&gt; 线程池 -&gt; 锁优化</code></p>
+<h2 id="锁优化"><a href="#锁优化" class="headerlink" title="锁优化"></a>锁优化</h2><p>JVM为了降低同步带来的性能损耗，在不同竞争强度下会采用不同的优化策略，常见包括：</p>
+<ul>
+<li>自旋锁与适应性自旋：在短时间竞争场景下先尝试忙等，避免立刻阻塞挂起</li>
+<li>锁消除：通过逃逸分析证明对象不会被其他线程访问时，去掉不必要的同步</li>
+<li>锁粗化：把一串零碎的小同步块合并，减少频繁加锁解锁的成本</li>
+<li>轻量级锁：在低竞争下尽量避免直接走重量级互斥量</li>
+<li>偏向锁：针对长期被同一线程反复获取的锁进一步降低成本</li>
+</ul>
+<p>更完整的锁优化与线程安全分析可以看：</p>
+<a href="/2018/12/19/JVM%E7%9B%B8%E5%85%B3%E5%8F%8A%E5%85%B6%E6%8B%93%E5%B1%95-%E4%B8%83/" title="JVM相关及其拓展(七) — 线程安全与锁优化">JVM相关及其拓展(七) — 线程安全与锁优化</a>
+
                 
               </div>
             

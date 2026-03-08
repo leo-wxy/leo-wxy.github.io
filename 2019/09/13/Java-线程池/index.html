@@ -36,7 +36,7 @@
 <meta property="og:image" content="https://leo-wxy.github.io/images/03268b9dc49bd30bb63064421bb036bf90315.png">
 <meta property="og:image" content="https://leo-wxy.github.io/images/640-1293801.">
 <meta property="article:published_time" content="2019-09-13T02:19:28.000Z">
-<meta property="article:modified_time" content="2026-03-07T13:13:46.427Z">
+<meta property="article:modified_time" content="2026-03-08T04:02:35.060Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="Java">
 <meta name="twitter:card" content="summary_large_image">
@@ -234,7 +234,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          8.7k 字
+          9.8k 字
         
       </span>
     
@@ -246,7 +246,7 @@
         
         
           <!-- compatible with older versions-->
-          28 分钟
+          31 分钟
         
       </span>
     
@@ -391,9 +391,20 @@
 <ul>
 <li><p><code>execute</code>：这种方法提交任务，是没有返回值的即无法判断在线程池中是否完成该任务</p>
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs java">threadPoolExecutor.execute(<span class="hljs-keyword">new</span> <span class="hljs-title class_">TestRunnable</span>(<span class="hljs-number">1</span>));<br></code></pre></td></tr></table></figure>
+
+<p><code>execute()</code>更偏“只管把任务提交出去”。如果任务执行过程中抛出了未捕获异常，异常通常会沿着工作线程的执行路径暴露出来，更适合那些不需要显式结果对象，只关心任务被执行的场景。</p>
 </li>
 <li><p><code>submit</code>：使用<code>submit</code>方法提交任务时，会返回一个future，可以通过这个future来判断任务是否执行成功也可以根据<code>future的get()</code>方法获取返回值。<strong>若子线程任务没完成，<code>get()</code>方法会阻塞直到任务完成，若使用<code>get(long timeout,TimeUnit unit)</code>则会阻塞一段时间后返回，可能尚未完成任务。</strong></p>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><code class="hljs java">Future&lt;Integer&gt; future = fixedThreadPool.submit(<span class="hljs-keyword">new</span> <span class="hljs-title class_">Callable</span>&lt;Integer&gt;() &#123;<br>     <br>               <span class="hljs-meta">@Override</span><br>               <span class="hljs-keyword">public</span> Integer <span class="hljs-title function_">call</span><span class="hljs-params">()</span> <span class="hljs-keyword">throws</span> Exception &#123;<br>                   System.err.println(Thread.currentThread().getName() + <span class="hljs-string">&quot; , index = &quot;</span> + index);<br>                   <span class="hljs-keyword">return</span> <span class="hljs-number">2</span>;<br>               &#125;<br>           &#125;);<br>     <br>           <span class="hljs-keyword">try</span> &#123;<br>               System.err.println(<span class="hljs-string">&quot;Future return :&quot;</span> + future.get().toString());<br>           &#125; <span class="hljs-keyword">catch</span> (Exception e) &#123;<br>               e.printStackTrace();<br>           &#125;<br></code></pre></td></tr></table></figure></li>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><code class="hljs java">Future&lt;Integer&gt; future = fixedThreadPool.submit(<span class="hljs-keyword">new</span> <span class="hljs-title class_">Callable</span>&lt;Integer&gt;() &#123;<br>     <br>               <span class="hljs-meta">@Override</span><br>               <span class="hljs-keyword">public</span> Integer <span class="hljs-title function_">call</span><span class="hljs-params">()</span> <span class="hljs-keyword">throws</span> Exception &#123;<br>                   System.err.println(Thread.currentThread().getName() + <span class="hljs-string">&quot; , index = &quot;</span> + index);<br>                   <span class="hljs-keyword">return</span> <span class="hljs-number">2</span>;<br>               &#125;<br>           &#125;);<br>     <br>           <span class="hljs-keyword">try</span> &#123;<br>               System.err.println(<span class="hljs-string">&quot;Future return :&quot;</span> + future.get().toString());<br>           &#125; <span class="hljs-keyword">catch</span> (Exception e) &#123;<br>               e.printStackTrace();<br>           &#125;<br></code></pre></td></tr></table></figure>
+
+<p><code>submit()</code>除了能提交<code>Callable</code>获取结果之外，还会把任务执行期间抛出的异常封装进<code>Future</code>。这意味着：<strong>如果任务是通过<code>submit()</code>提交的，而调用方从来不执行<code>future.get()</code>，那么异常就可能被悄悄吞进结果对象里，表面上看线程池像是“没有报错”。</strong></p>
+<p>因此<code>Future.get()</code>虽然很有用，但也要注意它的代价：一旦直接在主线程或关键业务线程中调用<code>get()</code>，原本异步执行的任务就会重新变成“当前线程同步等待”。这类等待若没有超时边界，反而容易把异步设计重新拉回串行阻塞。通常更稳妥的做法是：</p>
+<ul>
+<li>明确只有在确实需要结果时才调用<code>get()</code></li>
+<li>优先使用带超时的<code>get(timeout, unit)</code>作为兜底</li>
+<li>或通过回调、组合编排等方式减少阻塞等待</li>
+</ul>
+</li>
 </ul>
 </li>
 <li><p>线程池的关闭</p>
@@ -401,12 +412,19 @@
 <ul>
 <li><p><code>shutdown()</code>：将线程池的状态置为SHUTDOWN状态，然后中断没有正在执行的线程。</p>
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">shutdown</span><span class="hljs-params">()</span> &#123;<br>        <span class="hljs-keyword">final</span> <span class="hljs-type">ReentrantLock</span> <span class="hljs-variable">mainLock</span> <span class="hljs-operator">=</span> <span class="hljs-built_in">this</span>.mainLock;<br>        mainLock.lock();<br>        <span class="hljs-keyword">try</span> &#123;<br>            checkShutdownAccess();<br>            advanceRunState(SHUTDOWN);<br>            interruptIdleWorkers();<br>            onShutdown(); <span class="hljs-comment">// hook for ScheduledThreadPoolExecutor</span><br>        &#125; <span class="hljs-keyword">finally</span> &#123;<br>            mainLock.unlock();<br>        &#125;<br>        tryTerminate();<br>    &#125;<br></code></pre></td></tr></table></figure>
+
+<p><code>shutdown()</code>的语义更接近“优雅关闭”：<strong>不再接收新任务，但已经提交的任务和队列中的任务会尽量执行完毕。</strong></p>
 </li>
 <li><p><code>shutdownNow()</code>：将线程池的状态设为STOP状态，中断所有任务包括执行中的线程，并返回等待执行的任务列表。</p>
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> List&lt;Runnable&gt; <span class="hljs-title function_">shutdownNow</span><span class="hljs-params">()</span> &#123;<br>        List&lt;Runnable&gt; tasks;<br>        <span class="hljs-keyword">final</span> <span class="hljs-type">ReentrantLock</span> <span class="hljs-variable">mainLock</span> <span class="hljs-operator">=</span> <span class="hljs-built_in">this</span>.mainLock;<br>        mainLock.lock();<br>        <span class="hljs-keyword">try</span> &#123;<br>            checkShutdownAccess();<br>            advanceRunState(STOP);<br>            interruptWorkers();<br>            tasks = drainQueue();<br>        &#125; <span class="hljs-keyword">finally</span> &#123;<br>            mainLock.unlock();<br>        &#125;<br>        tryTerminate();<br>        <span class="hljs-keyword">return</span> tasks;<br>    &#125;<br></code></pre></td></tr></table></figure>
 
 <p>中断线程需要采用<code>interrput</code>方法，<strong>无法响应中断的任务可能永远无法终止。</strong></p>
 <p>当需要立即中断所有线程并且不在乎任务是否执行完成时，可以使用<code>shutdownNow</code>方法。</p>
+<p><code>shutdownNow()</code>更像“尽快停机”的尝试：它会发出中断信号，并把尚未执行的队列任务返回给调用方，但<strong>并不保证正在执行中的任务一定立刻结束</strong>。如果任务内部没有正确处理中断，它仍可能继续运行。</p>
+<p>因此更完整的关闭闭环通常还需要配合<code>awaitTermination()</code>：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><code class="hljs java">threadPoolExecutor.shutdown();<br><span class="hljs-keyword">try</span> &#123;<br>    <span class="hljs-keyword">if</span> (!threadPoolExecutor.awaitTermination(<span class="hljs-number">30</span>, TimeUnit.SECONDS)) &#123;<br>        List&lt;Runnable&gt; dropped = threadPoolExecutor.shutdownNow();<br>    &#125;<br>&#125; <span class="hljs-keyword">catch</span> (InterruptedException e) &#123;<br>    threadPoolExecutor.shutdownNow();<br>    Thread.currentThread().interrupt();<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>这样可以把“发出关闭命令”和“真正等待线程池结束”区分开：仅调用<code>shutdown()</code>并不意味着线程池已经完全退出。</p>
 </li>
 </ul>
 </li>
@@ -415,7 +433,10 @@
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">//任务执行前 记录任务开始前时间</span><br><span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">beforeExecute</span><span class="hljs-params">(Thread t, Runnable r)</span> &#123; &#125;<br><span class="hljs-comment">//任务执行后 记录任务结束时间</span><br><span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">afterExecute</span><span class="hljs-params">(Runnable r, Throwable t)</span> &#123; &#125;<br><span class="hljs-comment">//线程池关闭 记录线程池关闭事件以及执行过的线程数量</span><br><span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">terminated</span><span class="hljs-params">()</span> &#123; &#125;<br></code></pre></td></tr></table></figure>
 
 <p>样例演示：</p>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">class</span> <span class="hljs-title class_">CustomThreadPoolExecutor</span> <span class="hljs-keyword">extends</span> <span class="hljs-title class_">ThreadPoolExecutor</span>&#123;<br><br>        <span class="hljs-keyword">public</span> <span class="hljs-title function_">CustomThreadPoolExecutor</span><span class="hljs-params">(<span class="hljs-type">int</span> corePoolSize, <span class="hljs-type">int</span> maximumPoolSize, <span class="hljs-type">long</span> keepAliveTime, TimeUnit unit, BlockingQueue&lt;Runnable&gt; workQueue)</span> &#123;<br>            <span class="hljs-built_in">super</span>(corePoolSize, maximumPoolSize, keepAliveTime, unit, workQueue);<br>        &#125;<br><br>        <span class="hljs-meta">@Override</span><br>        <span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">beforeExecute</span><span class="hljs-params">(Thread t, Runnable r)</span> &#123;<br>            <span class="hljs-built_in">super</span>.beforeExecute(t, r);<br>            System.err.println(<span class="hljs-string">&quot;beforeExecute&quot;</span>+r.toString());<br>        &#125;<br><br>        <span class="hljs-meta">@Override</span><br>        <span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">afterExecute</span><span class="hljs-params">(Runnable r, Throwable t)</span> &#123;<br>            <span class="hljs-built_in">super</span>.afterExecute(r, t);<br>            System.err.println(<span class="hljs-string">&quot;afterExecute&quot;</span>+r.toString());<br>        &#125;<br><br>        <span class="hljs-meta">@Override</span><br>        <span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">terminated</span><span class="hljs-params">()</span> &#123;<br>            <span class="hljs-built_in">super</span>.terminated();<br>            System.err.println(<span class="hljs-string">&quot;线程关闭&quot;</span>);<br>        &#125;<br>    &#125;<br></code></pre></td></tr></table></figure></li>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">class</span> <span class="hljs-title class_">CustomThreadPoolExecutor</span> <span class="hljs-keyword">extends</span> <span class="hljs-title class_">ThreadPoolExecutor</span>&#123;<br><br>        <span class="hljs-keyword">public</span> <span class="hljs-title function_">CustomThreadPoolExecutor</span><span class="hljs-params">(<span class="hljs-type">int</span> corePoolSize, <span class="hljs-type">int</span> maximumPoolSize, <span class="hljs-type">long</span> keepAliveTime, TimeUnit unit, BlockingQueue&lt;Runnable&gt; workQueue)</span> &#123;<br>            <span class="hljs-built_in">super</span>(corePoolSize, maximumPoolSize, keepAliveTime, unit, workQueue);<br>        &#125;<br><br>        <span class="hljs-meta">@Override</span><br>        <span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">beforeExecute</span><span class="hljs-params">(Thread t, Runnable r)</span> &#123;<br>            <span class="hljs-built_in">super</span>.beforeExecute(t, r);<br>            System.err.println(<span class="hljs-string">&quot;beforeExecute&quot;</span>+r.toString());<br>        &#125;<br><br>        <span class="hljs-meta">@Override</span><br>        <span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">afterExecute</span><span class="hljs-params">(Runnable r, Throwable t)</span> &#123;<br>            <span class="hljs-built_in">super</span>.afterExecute(r, t);<br>            System.err.println(<span class="hljs-string">&quot;afterExecute&quot;</span>+r.toString());<br>        &#125;<br><br>        <span class="hljs-meta">@Override</span><br>        <span class="hljs-keyword">protected</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">terminated</span><span class="hljs-params">()</span> &#123;<br>            <span class="hljs-built_in">super</span>.terminated();<br>            System.err.println(<span class="hljs-string">&quot;线程关闭&quot;</span>);<br>        &#125;<br>    &#125;<br></code></pre></td></tr></table></figure>
+
+<p>这些钩子更适合做<strong>监控、埋点、耗时统计、日志上下文传递与清理</strong>，而不是塞入过重的业务逻辑。尤其要注意：如果任务是通过<code>submit()</code>提交的，异常经常被包装在<code>Future</code>里，此时<code>afterExecute(Runnable r, Throwable t)</code>中的<code>Throwable t</code>不一定能直接反映全部异常信息，必要时还要结合<code>Future</code>结果一起判断。</p>
+</li>
 </ol>
 <h3 id="线程池的分类以及各自的特性"><a href="#线程池的分类以及各自的特性" class="headerlink" title="线程池的分类以及各自的特性"></a>线程池的分类以及各自的特性</h3><p><img src="/images/Java-%E5%B8%B8%E8%A7%81%E7%BA%BF%E7%A8%8B%E6%B1%A0.png" srcset="/img/loading.gif" lazyload alt="Java-常见线程池"></p>
 <p>利用<code>Executors</code>类提供了四种不同的线程池，他们都是直接或者间接配置<code>ThreadPoolExecutor</code>来实现功能。下面分别介绍着四个线程池</p>
@@ -613,6 +634,7 @@
 <li><code>firstTask</code>：保存传入的第一个任务，如果该值非空，则优先执行该任务。若为空，就需要创建一个工作线程去执行<code>workQueue</code>中的任务</li>
 </ul>
 <p><code>Worker</code>继承了<code>AQS</code>来实现<code>独占锁</code>功能，可以保证线程的执行状态是正确的。</p>
+<p>这里<code>Worker</code>继承<code>AQS</code>，并不是为了让外部业务线程也来竞争这把锁，而是为了让线程池内部能够安全地区分：**这个worker当前是在执行任务，还是处于空闲可中断状态。**也正因为有了这层状态控制，线程池才能在关闭、回收线程或中断空闲线程时做出更精确的判断。</p>
 <p>获取独占锁，表示<strong>当前线程正在执行中，任务不可以被中断</strong>。</p>
 <p>未获取独占锁，表示<strong>当前线程没有处理任务，可以进行线程中断</strong>。中断后就可以安全的进行线程回收。</p>
 <h4 id="执行任务"><a href="#执行任务" class="headerlink" title="执行任务"></a>执行任务</h4><p><code>addWorker()</code>添加任务完毕后，就需要执行任务<code>runWorker()</code></p>
@@ -683,11 +705,28 @@
 </ul>
 <p>线程池配置本质上是吞吐、延迟、资源占用和风险控制之间的权衡，不是单纯套一个固定公式就能解决所有问题。</p>
 </li>
+<li><p>线程池最好建立最基本的监控指标体系，而不是只在出问题后看日志。常见的观察指标包括：</p>
+<ul>
+<li>当前线程数、活跃线程数、历史最大线程数</li>
+<li>队列长度、任务提交速率、任务完成速率</li>
+<li>任务平均耗时、超时任务数、慢任务分位</li>
+<li>拒绝次数、线程池关闭耗时、异常任务数</li>
+</ul>
+<p>这些指标能帮助判断问题究竟出在线程数不够、队列堆积、任务本身过慢，还是拒绝策略与业务预期不匹配。</p>
+</li>
+<li><p>线程池还有几个非常常见的误用场景：</p>
+<ul>
+<li>在线程池任务内部再次向同一个线程池提交子任务并同步等待结果，可能造成自我阻塞。</li>
+<li>在线程池线程里执行长时间阻塞IO或永不返回的任务，容易把整个池占满。</li>
+<li>忘记关闭线程池，导致线程和队列长期存活，资源无法回收。</li>
+<li>队列设置成无界后看似系统很稳定，实际上只是把压力悄悄转移成了任务堆积和内存风险。</li>
+</ul>
+</li>
 </ol>
 <h3 id="补充知识"><a href="#补充知识" class="headerlink" title="补充知识"></a>补充知识</h3><ol>
-<li><p><code>submit()</code>和<code>execute()</code>区别</p>
-<p><code>submit()</code>返回一个<code>future</code>，根据<code>future</code>可以判断任务是否完成–实现<code>Callable</code>接口</p>
-<p><code>execute()</code>无返回值。只是执行了任务，不知道结果如何 – 实现<code>Runnable</code>接口</p>
+<li><p><code>submit()</code>和<code>execute()</code>区别</p>
+<p><code>submit()</code>返回一个<code>future</code>，可以获取执行结果、感知被封装的异常，更适合需要结果或错误回传的场景。</p>
+<p><code>execute()</code>无返回值，更适合“只提交任务、不关心返回值”的场景；任务异常通常更直接地暴露在线程执行路径中。</p>
 </li>
 <li><p><code>BlockingQueue</code>介绍</p>
 <a href="/2018/12/24/Java-BockingQueue%E9%98%BB%E5%A1%9E%E9%98%9F%E5%88%97/" title="Java-BlockingQueue阻塞队列">Java-BlockingQueue阻塞队列</a>

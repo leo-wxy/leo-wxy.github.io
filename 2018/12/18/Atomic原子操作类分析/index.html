@@ -28,7 +28,7 @@
 <meta property="og:locale" content="zh_CN">
 <meta property="og:image" content="https://leo-wxy.github.io/images/CAS.png">
 <meta property="article:published_time" content="2018-12-18T06:50:08.000Z">
-<meta property="article:modified_time" content="2020-07-12T03:18:18.000Z">
+<meta property="article:modified_time" content="2026-03-08T03:39:48.544Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="JVM">
 <meta property="article:tag" content="Java">
@@ -227,7 +227,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          1.6k 字
+          3.5k 字
         
       </span>
     
@@ -239,7 +239,7 @@
         
         
           <!-- compatible with older versions-->
-          6 分钟
+          12 分钟
         
       </span>
     
@@ -305,6 +305,12 @@
 <p><code>悲观锁</code>适用于<strong>写多读少</strong>的环境，避免频繁失败和重试影响性能。</p>
 <p><code>乐观锁</code>适用于<strong>写少读多</strong>的环境，避免频繁加锁影响性能。</p>
 </blockquote>
+<p>如果从实现取舍上再总结一层，可以简单理解为：</p>
+<ul>
+<li><code>CAS</code>更适合<strong>单个共享状态</strong>在低竞争下的快速更新</li>
+<li><code>synchronized/Lock</code>更适合<strong>多个步骤必须整体保持一致</strong>的临界区保护</li>
+</ul>
+<p>也就是说，乐观并发并不是来替代所有锁的，而是在合适场景下用“失败重试”换“线程挂起与唤醒”的成本。</p>
 <h2 id="CAS操作"><a href="#CAS操作" class="headerlink" title="CAS操作"></a>CAS操作</h2><blockquote>
 <p>CAS是乐观锁技术，当多个线程尝试使用CAS更新同一个变量时，只有其中一个线程能更新变量的值，而其他线程都失败，失败的线程不会被挂起，而是告知竞争失败，并尝试再次发起请求。</p>
 </blockquote>
@@ -318,6 +324,12 @@
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">//伪代码实现</span><br><span class="hljs-type">boolean</span> <span class="hljs-title function_">compareAndSwap</span><span class="hljs-params">(V,A,B)</span>&#123;<br>    <span class="hljs-keyword">if</span>(V!=A)&#123;<br>        <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;<span class="hljs-comment">//CAS操作失败</span><br>    &#125;<span class="hljs-keyword">else</span>&#123;<br>        V=B;<span class="hljs-comment">//替换内存中的值为新值</span><br>        <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;<span class="hljs-comment">//CAS操作成功</span><br>    &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
 
 <p><strong>由于CAS是一种原子操作，当多个线程同时使用CAS操作一个变量时，只有一个会成功，并且更新变量，其他线程都会失败。但失败的线程不会被挂起，只是告知失败，并且继续尝试操作变量。</strong></p>
+<p>所以CAS真正解决的是：**单个共享状态在并发更新时，如何基于“比较旧值是否仍然成立”来完成一次原子替换。**它并不能天然解决多个变量之间的一致性问题，也不能自动保证一整段业务逻辑的线程安全。</p>
+<p>另外还要注意：</p>
+<ul>
+<li><code>CAS</code>成功，并不代表过程中完全没有竞争，只代表当前这次比较交换成功提交了</li>
+<li><code>CAS</code>失败，也不代表程序出错，很多时候只是说明“预期值已经过期，需要重试或放弃”</li>
+</ul>
 <h3 id="CAS原理"><a href="#CAS原理" class="headerlink" title="CAS原理"></a>CAS原理</h3><blockquote>
 <p><code>compareAndSet()</code>内部是调用Java本地方法<code>compareAndSwapInt()</code>实现的，虚拟机内部对这些方法做了特殊处理，借助C来调用CPU的底层指令保证硬件层面实现原子操作。</p>
 <p>Intel CPU 利用<strong>cmpxchg</strong>指令实现CAS</p>
@@ -327,8 +339,20 @@
 
 <p><code>Unsafe</code>主要提供一些用于执行低级别，不安全操作的方法，如直接访问系统内存资源、自主管理内存资源等，这些方法在提升Java运行效率、增强Java语言等底层资源操作能力方法面起到了很大的作用。</p>
 <p>但由于<code>Unsafe</code>可以操作内存空间，增加了程序发生指针问题的风险。</p>
+<p>从并发语义角度看，原子类之所以不仅有“原子替换”，还具备可见性，原因通常来自两个层面：</p>
+<ul>
+<li>原子类内部的关键值一般都由<code>volatile</code>修饰，保证可见性</li>
+<li><code>compareAndSet()</code>这类CAS操作本身也带有相应的内存语义，保证成功更新后的结果能够被其他线程正确观察到</li>
+</ul>
 <p> <a target="_blank" rel="noopener" href="https://tech.meituan.com/2019/02/14/talk-about-java-magic-class-unsafe.html">Java魔法类：Unsafe应用解析</a></p>
+<p>从JDK演进角度看，早期很多原子操作能力都直接建立在<code>Unsafe</code>之上；而在JDK 9之后，又引入了<code>VarHandle</code>这类更正式的底层原子访问机制。理解这一点的意义在于：原子类背后的核心思想没有变，变化更多体现在底层访问入口和JDK提供能力的形式上。</p>
 <h3 id="CAS问题"><a href="#CAS问题" class="headerlink" title="CAS问题"></a>CAS问题</h3><h4 id="ABA问题"><a href="#ABA问题" class="headerlink" title="ABA问题"></a>ABA问题</h4><p>因为CAS需要在操作值的时候检查值是否发生变化，如果没有发生变化则更新，但如果一个值原来是A，变成了B，再变成了A，对于CAS检查而言就是没有发生过变化，实际已经发生变化。</p>
+<p>不过ABA并不是所有场景下都会造成真正问题。是否需要解决它，关键看你关心的是：</p>
+<ul>
+<li><strong>当前值是不是我预期的值</strong></li>
+<li>还是<strong>这个值在中间有没有被别人改过</strong></li>
+</ul>
+<p>如果业务只关心“最终值是否仍然等于预期值”，那么ABA未必会破坏语义；但如果中间变化过程本身就很重要，比如链表节点、栈顶引用、资源版本状态等，就需要借助版本号或标记位去识别“看起来没变，但其实被改过”的情况。</p>
 <p>解决思路就是利用版本号，在变量前添加版本号，并每次更新时加1，则A-&gt;B-&gt;A 会变为 1A-&gt;2B-&gt;3A。</p>
 <p>可以利用<code>AtomicStampedReference</code>来解决，它内部的<code>compareAndSwap()</code>首先会去检查当前引用是否等于预期引用，并且当前标志是否等于预期标志，全部相等才会替换值。</p>
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-type">boolean</span> <span class="hljs-title function_">compareAndSet</span><span class="hljs-params">(V   expectedReference,</span><br><span class="hljs-params">                             V   newReference,</span><br><span class="hljs-params">                             <span class="hljs-type">int</span> expectedStamp,</span><br><span class="hljs-params">                             <span class="hljs-type">int</span> newStamp)</span> &#123;<br>    Pair&lt;V&gt; current = pair;<br>    <span class="hljs-keyword">return</span><br>        expectedReference == current.reference &amp;&amp;<br>        expectedStamp == current.stamp &amp;&amp; <span class="hljs-comment">//比较标志是否等于预期标志</span><br>        ((newReference == current.reference &amp;&amp;<br>          newStamp == current.stamp) ||<br>         casPair(current, Pair.of(newReference, newStamp)));<br>&#125;<br></code></pre></td></tr></table></figure>
@@ -339,7 +363,13 @@
 
 
 <h4 id="循环时间长开销大"><a href="#循环时间长开销大" class="headerlink" title="循环时间长开销大"></a>循环时间长开销大</h4><p>相对于<code>synchronized</code>省去了挂起线程以及恢复线程的开销。CAS是非阻塞同步，不会将线程挂起，会进行自旋（<code>死循环</code>），时间过长会对性能造成很大的消耗。<code>Pause</code>指令</p>
+<p>这也是为什么说CAS更适合低竞争场景：一旦竞争很激烈，线程会不断读取旧值、计算新值、CAS失败、再次重试，CPU时间会大量消耗在失败重试上。</p>
 <h4 id="只能保证一个变量的原子操作"><a href="#只能保证一个变量的原子操作" class="headerlink" title="只能保证一个变量的原子操作"></a>只能保证一个变量的原子操作</h4><p>当对多个变量进行操作时，CAS无法保证原子性操作，这时可以用锁或者<code>AtomicReference</code>保证引用对象之间的原子性，就可以把多个变量放在一个对象里进行操作。</p>
+<p>所以从工程角度看，可以这样做取舍：</p>
+<ul>
+<li>单字段状态位、计数器、引用切换：优先考虑原子类</li>
+<li>多字段一致性、多个步骤必须整体成功：优先考虑锁或更高层同步方案</li>
+</ul>
 <h2 id="Atomic原子操作类"><a href="#Atomic原子操作类" class="headerlink" title="Atomic原子操作类"></a>Atomic原子操作类</h2><blockquote>
 <p>方便在多线程环境下，无锁的进行原子操作。<strong>提供非阻塞的线程安全编程</strong></p>
 </blockquote>
@@ -399,6 +429,20 @@
 <td>维护带有整数标志的对象引用，可以更新</td>
 </tr>
 </tbody></table>
+<p>其中比较容易混淆的几类，可以这样理解：</p>
+<ul>
+<li><code>AtomicReference</code>：适合原子替换整个对象引用</li>
+<li><code>AtomicStampedReference</code>：适合在引用上附带版本号，解决ABA</li>
+<li><code>AtomicMarkableReference</code>：适合只关心“是否被改过”这类布尔标记场景</li>
+<li><code>AtomicIntegerFieldUpdater / AtomicReferenceFieldUpdater</code>：适合不想额外再包一层原子对象，而是直接对类中的某个<code>volatile</code>字段做原子更新</li>
+</ul>
+<p>如果继续补一层使用边界，<code>FieldUpdater</code>通常还要满足这些约束：</p>
+<ul>
+<li>被更新字段必须是<code>volatile</code></li>
+<li>访问权限要满足反射访问要求</li>
+<li>它更适合“大量对象共享同一个updater”的场景，这样能避免为每个字段单独再包一层原子对象</li>
+</ul>
+<p>而<code>AtomicReference</code>一个很典型的使用模式是：<strong>不可变对象 + 原子替换引用</strong>。当对象内部状态较多、但每次更新都可以构造一个新快照时，直接原子切换整个引用，往往比让多个字段分别做原子更新更容易保证一致性。</p>
 <p>Java 8之后新增了4个新的原子操作类</p>
 <table>
 <thead>
@@ -430,12 +474,72 @@
 <p><strong>热点分离</strong>：①将竞争的数据进行分解成多个单元，在每个单元中分别进行数据处理 ②各单元处理完成后，通过<code>Hash算法</code>进行求和，从而得到最终结果</p>
 <p><code>热点分离</code>减小了锁的粒度，提供并发环境下的吞吐量，但需要额外空间存储数据，增大空间消耗。</p>
 </blockquote>
+<p>把它和<code>AtomicLong</code>放在一起看就更容易理解：</p>
+<ul>
+<li><code>AtomicLong</code>是在同一个热点值上反复CAS，竞争越高，失败重试越频繁</li>
+<li><code>LongAdder</code>会把更新压力分散到多个槽位上，显著降低热点冲突</li>
+</ul>
+<p>但它的代价是：求和要把多个槽位汇总，因此<code>sum()</code>更适合统计场景，不应该机械地把它理解成每个瞬间都绝对强一致的单点值。</p>
+<p>而<code>LongAccumulator</code>、<code>DoubleAccumulator</code>则是在这个思路上更进一步：它们不只支持“求和”，还允许你传入自定义的累积函数。也就是说，<code>LongAdder</code>更像“高并发加法计数器”，而<code>LongAccumulator</code>更像“可自定义累积规则的高并发聚合器”。</p>
 <h3 id="如何保证原子操作"><a href="#如何保证原子操作" class="headerlink" title="如何保证原子操作"></a>如何保证原子操作</h3><p>内部都实现了一个<code>compareAndSet()</code>方法</p>
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><code class="hljs java">    <br> <span class="hljs-comment">// setup to use Unsafe.compareAndSwapInt for updates</span><br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> <span class="hljs-type">Unsafe</span> <span class="hljs-variable">unsafe</span> <span class="hljs-operator">=</span> Unsafe.getUnsafe();<br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> <span class="hljs-type">long</span> valueOffset;<br><br>    <span class="hljs-keyword">static</span> &#123;<br>        <span class="hljs-keyword">try</span> &#123;<br>            valueOffset = unsafe.objectFieldOffset<br>                (AtomicInteger.class.getDeclaredField(<span class="hljs-string">&quot;value&quot;</span>));<br>        &#125; <span class="hljs-keyword">catch</span> (Exception ex) &#123; <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">Error</span>(ex); &#125;<br>    &#125;<br>    <span class="hljs-comment">//用volatile修饰 value 保证可见性</span><br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">volatile</span> <span class="hljs-type">int</span> value;<br><br><span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> <span class="hljs-type">boolean</span> <span class="hljs-title function_">compareAndSet</span><span class="hljs-params">(<span class="hljs-type">int</span> expect, <span class="hljs-type">int</span> update)</span> &#123;<br>        <span class="hljs-keyword">return</span> unsafe.compareAndSwapInt(<span class="hljs-built_in">this</span>, valueOffset<span class="hljs-comment">/*V 内存地址*/</span>, expect<span class="hljs-comment">/*A 旧的预期值*/</span>, update<span class="hljs-comment">/*B 修改值*/</span>);<br>    &#125;<br><br></code></pre></td></tr></table></figure>
 
 <p><code>compareAndSwap()</code>涉及了两个重要对象，一个是<code>unsafe</code>另一个是<code>valueOffset</code>。</p>
 <p><code>unsafe</code>是JVM提供的一个后门，用来执行 <strong>硬件级别的原子操作</strong>。</p>
 <p><code>valueOffset</code>是通过<code>unsafe</code>获取到的，代表 <strong>AtomicInteger对象value成员变量在内存中的偏移量</strong>。可以简单的认为是<em>value变量的内存地址</em>。</p>
+<p>而像<code>incrementAndGet()</code>、<code>getAndIncrement()</code>这类高频方法，本质上并不是“硬件直接提供了自增原语”，而是依赖一条典型的CAS重试主线：</p>
+<ol>
+<li>先读取当前旧值</li>
+<li>基于旧值计算新值</li>
+<li>调用CAS尝试把旧值替换成新值</li>
+<li>如果失败，说明有其他线程已经改过值，则重新读取并再次尝试</li>
+</ol>
+<p>也就是说，原子类的很多复合操作，本质上是“<strong>读取 -&gt; 计算 -&gt; CAS提交 -&gt; 失败重试</strong>”的循环。</p>
+<p>同一类API里，返回值语义也值得顺手区分一下：</p>
+<ul>
+<li><code>incrementAndGet()</code>：先更新，再返回新值</li>
+<li><code>getAndIncrement()</code>：先返回旧值，再更新</li>
+<li><code>getAndSet()</code>：原子替换并返回旧值</li>
+<li><code>updateAndGet()</code> &#x2F; <code>getAndUpdate()</code>：通过函数式更新值，本质上也仍然是CAS重试</li>
+</ul>
+<p>这些方法名字看起来只是顺序差异，但如果放在业务逻辑里，返回旧值还是新值往往会直接影响后续判断。</p>
+<p>另外还有两个经常被忽略的API语义：</p>
+<ul>
+<li><code>weakCompareAndSet()</code>：弱CAS，可能出现伪失败，因此更适合放在循环重试的底层场景中理解</li>
+<li><code>lazySet()</code>：并不是普通<code>set()</code>的简单别名，它更偏“最终会对其他线程可见”的有序写，适合某些不要求立刻强可见、但要求最终发布顺序的场景</li>
+</ul>
+<h2 id="常见误用"><a href="#常见误用" class="headerlink" title="常见误用"></a>常见误用</h2><ul>
+<li>误以为用了Atomic类就能自动保证多个字段的一致性</li>
+<li>把<code>get()</code>和后续业务逻辑拆开后，仍然想当然地认为整个流程线程安全</li>
+<li>在高竞争场景下无脑使用CAS循环，却忽略了失败重试带来的CPU消耗</li>
+<li>把<code>LongAdder.sum()</code>当成某个时刻绝对强一致的精确瞬时值</li>
+<li>明明是复杂共享状态，却硬要用多个原子变量拼装，导致代码难以维护且语义并不真正安全</li>
+</ul>
+<h2 id="适用场景总结"><a href="#适用场景总结" class="headerlink" title="适用场景总结"></a>适用场景总结</h2><p>Atomic原子类最适合的场景通常包括：</p>
+<ul>
+<li>计数器、自增序列、统计值</li>
+<li>布尔状态位切换</li>
+<li>对象引用的原子替换</li>
+<li>高并发统计场景下的热点计数（如<code>LongAdder</code>）</li>
+</ul>
+<p>而不太适合的场景包括：</p>
+<ul>
+<li>多字段需要保持一致性</li>
+<li>需要跨多个步骤维持临界区语义</li>
+<li>冲突非常频繁、重试成本很高的复杂共享状态更新</li>
+</ul>
+<p>如果用一句话概括这篇的核心结论，可以记成：</p>
+<ul>
+<li><code>CAS</code>适合做“单点状态原子提交”</li>
+<li><code>Atomic</code>适合做“基于CAS封装好的常见无锁原子操作”</li>
+<li>复杂一致性问题，依然要回到锁或更高层同步方案</li>
+</ul>
+<p>如果把实践建议再说得更直白一点，可以记成：</p>
+<ul>
+<li>Atomic类优先用于“小而明确”的并发状态</li>
+<li>状态一复杂，就优先考虑不可变对象 + 原子替换，或者直接使用锁</li>
+<li>不要为了追求“无锁”而无锁，真正合适的并发模型比“看起来更高级”的实现方式更重要</li>
+</ul>
 
                 
               </div>

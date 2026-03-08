@@ -31,7 +31,7 @@
 <meta property="og:image" content="https://leo-wxy.github.io/images/volatile%E8%AF%BB.webp">
 <meta property="og:image" content="https://leo-wxy.github.io/images/volatile%E5%86%99.webp">
 <meta property="article:published_time" content="2018-12-17T07:53:52.000Z">
-<meta property="article:modified_time" content="2026-03-07T14:45:37.850Z">
+<meta property="article:modified_time" content="2026-03-08T03:22:25.818Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="Java">
 <meta name="twitter:card" content="summary_large_image">
@@ -229,7 +229,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          1.7k 字
+          2.4k 字
         
       </span>
     
@@ -241,7 +241,7 @@
         
         
           <!-- compatible with older versions-->
-          6 分钟
+          8 分钟
         
       </span>
     
@@ -308,6 +308,11 @@
 <li><strong>保证此变量对所有线程的可见性，这里指  当一条线程修改了这个变量的值，新值对于其他线程来说是立即可得知的。</strong></li>
 <li><strong>禁止进行指令重排序优化</strong></li>
 </ul>
+<p>如果从Java内存模型的角度来表述，还可以进一步记成一条规则：</p>
+<ul>
+<li><strong>对一个<code>volatile</code>变量的写，happens-before 于后续任意线程对这个变量的读</strong></li>
+</ul>
+<p>这条规则的含义是：前一个线程在写这个<code>volatile</code>变量之前对共享数据做的操作，对于后面读取到这个<code>volatile</code>新值的线程来说，也是可见的。</p>
 <h3 id="volatile-保证可见性"><a href="#volatile-保证可见性" class="headerlink" title="volatile 保证可见性"></a>volatile 保证可见性</h3><p>在使用<code>volatile</code>关键字修饰一个变量后，该变量在一个线程中被修改后，会发生如下事情：</p>
 <ol>
 <li>修改后，修改的变量值会强制立即写入主内存中</li>
@@ -324,6 +329,7 @@
 <li><code>volatile boolean flag</code> 这种状态位，很适合用来做线程间通知。</li>
 <li><code>volatile int count</code> 再配合 <code>count++</code> 这类读-改-写操作，就不能仅靠 <code>volatile</code> 保证正确性。</li>
 </ul>
+<p>这也是<code>volatile</code>最典型的使用姿势：**一个线程负责写状态，其他线程负责观察状态变化。**只要业务语义能收敛到这种“发布-观察”模型，<code>volatile</code>通常就比较合适。</p>
 <span itemprop="image" itemscope itemtype="http://schema.org/ImageObject"><img itemprop="url image" src="/images/volatile-process.png" srcset="/img/loading.gif" lazyload class="full-image" alt="volatile可见性" title="volatile可见性" /><meta itemprop="width" content="auto"/><meta itemprop="height" content="auto"/></span>
 
 
@@ -363,6 +369,11 @@
 </ol>
 <p>问题就在于：两个线程可能先后都读到同一个旧值，比如都读到<code>5</code>，然后各自在本地加1，最后都写回<code>6</code>。虽然每一次写回对其他线程都是可见的，但其中一次更新还是会把另一次更新覆盖掉，这就是典型的<strong>丢失更新</strong>问题。</p>
 <p>要想保证原子性，只能借助于<code>synchronized、Lock和java.util.concurrent.atomic包下的原子操作类</code>保证这些操作时原子性操作。</p>
+<p>所以如果从选型角度来看，可以这样粗略区分：</p>
+<ul>
+<li><strong>只需要可见性和顺序约束</strong>：可以优先考虑<code>volatile</code></li>
+<li><strong>需要复合操作原子性或临界区一致性</strong>：需要锁或原子类</li>
+</ul>
 <h2 id="volatile应用场景"><a href="#volatile应用场景" class="headerlink" title="volatile应用场景"></a>volatile应用场景</h2><p><code>volatile</code>由于无法保证原子性，所以要使用必须具备以下两个条件：</p>
 <ul>
 <li><p>对变量的写操作不依赖于当前值 </p>
@@ -371,6 +382,21 @@
 <li><p>该变量没有包含在具有其他变量的不变式中</p>
 <p><em><strong>在多线程场景下，这两种情况即时使用<code>volatile</code>修饰，也有可能会有同步问题。</strong></em></p>
 </li>
+</ul>
+<p>把它再总结成“适合”和“不适合”的模式会更直观：</p>
+<p>适合<code>volatile</code>的场景通常包括：</p>
+<ul>
+<li>线程结束标记、开关位、停止信号</li>
+<li>配置发布、状态发布</li>
+<li>DCL中的对象引用发布</li>
+<li>单写多读、且读取方不需要做复合更新的场景</li>
+</ul>
+<p>不适合<code>volatile</code>的场景通常包括：</p>
+<ul>
+<li><code>count++</code> 这类读-改-写复合操作</li>
+<li>多个字段之间需要保持一致性</li>
+<li>“先检查再执行”的流程控制</li>
+<li>需要把一整段代码当作临界区保护的场景</li>
 </ul>
 <h2 id="volatile使用实例"><a href="#volatile使用实例" class="headerlink" title="volatile使用实例"></a>volatile使用实例</h2><ol>
 <li><p>状态量标记</p>
@@ -387,6 +413,12 @@
 </ol>
 <p>如果这里发生了重排序，就可能出现“引用已经对外可见，但对象还没有完成初始化”的情况。DCL里给实例引用加上<code>volatile</code>，核心目的就是<strong>禁止对象初始化与对象发布之间的重排序</strong>，避免其他线程拿到一个“半初始化”对象。</p>
 </li>
+<li><p>引用可见性场景</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">class</span> <span class="hljs-title class_">Holder</span> &#123;<br>    <span class="hljs-type">int</span> a;<br>    <span class="hljs-type">int</span> b;<br>&#125;<br><br><span class="hljs-keyword">volatile</span> Holder holder;<br></code></pre></td></tr></table></figure>
+
+<p>这里要特别注意：<code>volatile</code>修饰的是<strong>引用本身</strong>。也就是说，它能保证一个线程把新的<code>holder</code>引用写进去后，其他线程能及时看到这个新引用；但这并不等于“对<code>holder</code>内部字段的任意复合操作天然线程安全”。</p>
+<p>如果对象内部状态本身还会被多个线程并发修改，那么仍然需要额外的同步手段去保护内部一致性。</p>
+</li>
 </ol>
 <h2 id="volatile和-synchronized区别"><a href="#volatile和-synchronized区别" class="headerlink" title="volatile和 synchronized区别"></a>volatile和 synchronized区别</h2><ul>
 <li><code>volatile</code>仅能使用在变量级别，<code>synchronized</code>适用于变量、方法和类</li>
@@ -394,6 +426,21 @@
 <li><code>volatile</code>不会造成线程的阻塞；<code>synchronized</code>会造成阻塞(<code>阻塞同步</code>)</li>
 <li><code>volatile</code>由于禁止指令重排序，不会被编译器优化；<code>synchronized</code>会被优化</li>
 </ul>
+<p>如果从使用目标来看，还可以进一步概括成：</p>
+<ul>
+<li><code>volatile</code>更像一种<strong>轻量级状态同步手段</strong></li>
+<li><code>synchronized</code>更像一种<strong>临界区互斥保护手段</strong></li>
+</ul>
+<p>前者解决“看不看得到”和“发布顺序是否安全”，后者解决“能不能把这一段逻辑作为整体保护起来”。</p>
+<h2 id="常见误用"><a href="#常见误用" class="headerlink" title="常见误用"></a>常见误用</h2><ul>
+<li>把<code>volatile</code>当作轻量锁，试图保护一整段复合逻辑</li>
+<li>认为“变量一旦加了<code>volatile</code>，围绕它的所有操作都线程安全”</li>
+<li>在多个字段存在不变式约束时，只给其中一个字段加<code>volatile</code></li>
+<li>写出<code>if (flag) &#123; doSomething(); &#125;</code>这类检查再执行逻辑，却忽略中间状态可能已变化</li>
+<li>误以为<code>volatile</code>修饰对象引用后，对象内部所有状态更新都自动安全</li>
+</ul>
+<p>如果用一句话总结<code>volatile</code>最容易踩坑的地方，就是：</p>
+<p><strong>它能帮助线程看到“最新值”，但不能替你保证“整个过程正确”。</strong></p>
 <h2 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h2><p><a target="_blank" rel="noopener" href="https://juejin.im/post/5ea913d35188256d4576d199#heading-17">volatile</a></p>
 
                 

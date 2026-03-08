@@ -33,7 +33,7 @@
 <meta property="og:image" content="https://leo-wxy.github.io/images/TransferStack.jpg">
 <meta property="og:image" content="https://leo-wxy.github.io/images/java-concurrent-guarded-suspension.png">
 <meta property="article:published_time" content="2018-12-24T07:16:57.000Z">
-<meta property="article:modified_time" content="2026-02-27T13:59:54.468Z">
+<meta property="article:modified_time" content="2026-03-08T02:49:01.979Z">
 <meta property="article:author" content="Leo-Wxy">
 <meta property="article:tag" content="Java">
 <meta name="twitter:card" content="summary_large_image">
@@ -231,7 +231,7 @@
         <i class="iconfont icon-chart"></i>
         
           <!-- compatible with older versions-->
-          4.4k 字
+          5.7k 字
         
       </span>
     
@@ -243,7 +243,7 @@
         
         
           <!-- compatible with older versions-->
-          14 分钟
+          18 分钟
         
       </span>
     
@@ -345,6 +345,12 @@
 <td><code>peek()</code> 返回<code>null</code></td>
 </tr>
 </tbody></table>
+<p>如果把队列相关方法放在一起看，可以先形成一个统一认知：</p>
+<ul>
+<li><strong>异常型</strong>：失败时直接抛异常，适合把“当前操作一定要成功”视为前提的场景</li>
+<li><strong>特殊值型</strong>：失败时返回<code>null/false</code>，适合调用方自己决定后续分支</li>
+</ul>
+<p>后面的<code>BlockingQueue</code>其实是在这套方法体系上，继续扩展出了<strong>阻塞型</strong>和<strong>超时型</strong>两类操作。</p>
 <h2 id="BlockingQueue接口"><a href="#BlockingQueue接口" class="headerlink" title="BlockingQueue接口"></a>BlockingQueue接口</h2><p><strong>系统提供的用于多线程环境下存、取共享变量的一种容器。</strong></p>
 <p><code>BlockingQueue阻塞队列</code>实现了<code>Queue接口</code>，相比于<code>Queue</code>提供了额外的功能：</p>
 <ul>
@@ -358,16 +364,26 @@
 <li>阻塞当前线程直到可以执行</li>
 <li>阻塞线程设置最大超时时间，若超过该时间，线程就会继续执行，放弃当次操作</li>
 </ul>
+<p>因此从方法家族的角度看，<code>BlockingQueue</code>其实可以统一理解成四类语义：</p>
+<ul>
+<li><strong>异常型</strong>：<code>add/remove/element</code></li>
+<li><strong>特殊值型</strong>：<code>offer/poll/peek</code></li>
+<li><strong>阻塞型</strong>：<code>put/take</code></li>
+<li><strong>超时型</strong>：<code>offer(time)/poll(time)</code></li>
+</ul>
+<p>不过也要注意：<code>BlockingQueue</code>解决的是<strong>生产者-消费者之间的协作问题</strong>，并不等于“只要用了阻塞队列就天然高并发”。不同实现类在锁粒度、容量模型和吞吐特征上差异很大。</p>
 <h3 id="阻塞队列插入数据操作-put-offer-time"><a href="#阻塞队列插入数据操作-put-offer-time" class="headerlink" title="阻塞队列插入数据操作(put/offer(time))"></a>阻塞队列插入数据操作(<code>put/offer(time)</code>)</h3><blockquote>
 <p>对应阻塞队列在队列已满插入数据时的<code>阻塞</code>或者<code>超时处理</code></p>
 </blockquote>
 <p><code>put</code>：如果队列满时，插入队尾数据，会阻塞当前线程<code>直到队列非满</code></p>
 <p><code>offer(time)</code>：如果队列满时，插入队尾数据，会阻塞当前线程<code>直到队列非满或者达到了超时时间</code>,达到超时时间则返回<code>false</code></p>
+<p>这两个方法都可能在等待过程中被中断，因此都需要正确处理<code>InterruptedException</code>，而不是默认认为“阻塞就一定会一直等到成功”。</p>
 <h3 id="阻塞队列删除数据操作-take-poll-time"><a href="#阻塞队列删除数据操作-take-poll-time" class="headerlink" title="阻塞队列删除数据操作(take()/poll(time))"></a>阻塞队列删除数据操作(<code>take()/poll(time)</code>)</h3><blockquote>
 <p>对应阻塞队列在队列为空时获取数据时的<code>阻塞</code>或<code>超时处理</code></p>
 </blockquote>
 <p><code>take()</code>：当队列为空时，删除元素时，会阻塞当前线程<code>直到队列非空</code></p>
 <p><code>poll(time)</code>：当队列为空时，删除元素时，会阻塞当前线程<code>直到队列非空或者达到了超时时间</code>，达到超时时间返回<code>null</code></p>
+<p>同样地，<code>take()</code>和<code>poll(time)</code>也都需要面对中断语义：线程如果在等待过程中被中断，当前阻塞操作会提前结束。</p>
 <h3 id="阻塞队列检查数据操作"><a href="#阻塞队列检查数据操作" class="headerlink" title="阻塞队列检查数据操作"></a><del>阻塞队列检查数据操作</del></h3><table>
 <thead>
 <tr>
@@ -403,6 +419,7 @@
 <h3 id="注意点"><a href="#注意点" class="headerlink" title="注意点"></a>注意点</h3><ol>
 <li>阻塞队列无法插入<code>null</code>，否则抛出空指针异常</li>
 <li>可以访问阻塞队列中的任意元素，尽量避免使用<code>remove(object)</code>移除对象</li>
+<li>不要轻易使用<code>size()</code>做并发控制判断，因为在多线程场景下它更适合观察状态，而不是作为强一致业务条件</li>
 </ol>
 <h2 id="BlockingQueue实现类"><a href="#BlockingQueue实现类" class="headerlink" title="BlockingQueue实现类"></a><code>BlockingQueue</code>实现类</h2><p>在<a href="/2019/09/13/Java-%E7%BA%BF%E7%A8%8B%E6%B1%A0/" title="Java-线程池">Java-线程池</a>中的<code>workQueue</code>设置的就是<code>BlockingQueue</code>接口的实现类，</p>
 <p>例如</p>
@@ -481,6 +498,13 @@
 <p><img src="/images/ArrayBlockingQueue%E5%BE%AA%E7%8E%AF%E6%95%B0%E7%BB%84.jpg" srcset="/img/loading.gif" lazyload alt="ArrayBlockingQueue循环数组"></p>
 <p>从上述源码对<code>ArrayBlockingQueue</code>进行总结：</p>
 <p><strong>底层数据结构是一个 数组，生产者和消费者由同一个锁(<code>ReetrantLock</code>)控制，生产和消费效率低。</strong></p>
+<p>如果再概括得更完整一点，<code>ArrayBlockingQueue</code>有三个非常鲜明的特征：</p>
+<ul>
+<li><strong>有界</strong>：容量固定，天然具备背压能力</li>
+<li><strong>单锁</strong>：生产和消费会共享同一把锁，竞争更集中</li>
+<li><strong>循环数组</strong>：内存结构紧凑，不需要为每个元素额外创建链表节点</li>
+</ul>
+<p>因此它更适合：<strong>希望明确限制队列容量、控制内存上界，并接受生产消费存在更多互斥的场景。</strong></p>
 <h4 id="LinkedBlockingQueue"><a href="#LinkedBlockingQueue" class="headerlink" title="LinkedBlockingQueue"></a>LinkedBlockingQueue</h4><blockquote>
 <p>由链表实现的阻塞队列，默认最大长度为<code>Integer.MAX</code>。</p>
 </blockquote>
@@ -508,6 +532,12 @@
 <p><img src="/images/v2-8bc04760ad1133e7630717dbc38c1cc7_1440w.jpg" srcset="/img/loading.gif" lazyload alt="img"></p>
 <p>从上述源码对<code>LinkedBlockingQueue</code>进行总结：</p>
 <p><strong><code>LinkedBlockingQueue</code>底层数据结构为<code>单链表</code>，内部持有两个<code>Lock：putLock、takeLock</code>，相互之间不会干扰执行，提高了并发性能。</strong></p>
+<p>如果从使用角度总结，<code>LinkedBlockingQueue</code>还有几个关键特征：</p>
+<ul>
+<li>默认容量近似无界，如果不显式指定大小，任务和数据可能持续堆积</li>
+<li>由于生产和消费拆成两把锁，吞吐通常会优于单锁队列</li>
+<li>链表节点需要额外对象开销，内存占用通常会比数组队列更高</li>
+</ul>
 <h5 id="与ArrayBlockingQueue比较"><a href="#与ArrayBlockingQueue比较" class="headerlink" title="与ArrayBlockingQueue比较"></a>与<code>ArrayBlockingQueue</code>比较</h5><table>
 <thead>
 <tr>
@@ -532,9 +562,16 @@
 <td>出队使用<code>takeLock</code>，入队使用<code>putLock</code><br>数据删除、添加操作不干扰，提升并发性能</td>
 </tr>
 </tbody></table>
+<p>如果从实际选型角度来记会更直接：</p>
+<ul>
+<li>想要<strong>明确容量上限、天然背压、稳定内存占用</strong>，优先考虑<code>ArrayBlockingQueue</code></li>
+<li>想要<strong>更灵活的容量和更高的并发吞吐</strong>，可以考虑<code>LinkedBlockingQueue</code></li>
+<li>但线程池里如果直接使用默认无界<code>LinkedBlockingQueue</code>，要特别小心任务无限堆积导致内存风险</li>
+</ul>
 <h4 id="SynchronousQueue"><a href="#SynchronousQueue" class="headerlink" title="SynchronousQueue"></a>SynchronousQueue</h4><blockquote>
 <p>容量为0，无法储存数据的阻塞队列。提供了公平与非公平锁的设置。</p>
 </blockquote>
+<p>这里最容易误解的一点是：<code>SynchronousQueue</code>并不是“容量为1”，而是真正意义上的<strong>容量为0</strong>。它不会把元素放进内部容器里等待后续消费，而是要求每一次生产都要和一次消费直接配对完成，属于一种**直接移交(handoff)**机制。</p>
 <h5 id="关键成员变量-2"><a href="#关键成员变量-2" class="headerlink" title="关键成员变量"></a>关键成员变量</h5><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">//针对不同操作定义的统一接口</span><br><span class="hljs-keyword">private</span> <span class="hljs-keyword">transient</span> <span class="hljs-keyword">volatile</span> Transferer&lt;E&gt; transferer;<br><br>    <span class="hljs-keyword">abstract</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">Transferer</span>&lt;E&gt; &#123;<br>       <span class="hljs-comment">//e为空则表示 需要获取数据；e不为空表示 需要添加数据</span><br>        <span class="hljs-keyword">abstract</span> E <span class="hljs-title function_">transfer</span><span class="hljs-params">(E e, <span class="hljs-type">boolean</span> timed, <span class="hljs-type">long</span> nanos)</span>;<br>    &#125;<br></code></pre></td></tr></table></figure>
 
 
@@ -584,6 +621,7 @@
 <li><code>peek()</code>返回<code>null</code>；<code>size()</code>返回<code>0</code>；无法进行迭代操作</li>
 <li>提供了<code>公平</code>，<code>非公平</code>两种策略处理，分别是基于<code>Queue-TransferQueue</code>与<code>Stack-TransferStack</code>实现。</li>
 </ul>
+<p>也正因为它不缓存元素，<code>SynchronousQueue</code>特别适合那种“任务不要排队，来了就直接找线程接手，否则就促使线程池扩容或触发拒绝策略”的场景。</p>
 <h4 id="原理介绍"><a href="#原理介绍" class="headerlink" title="原理介绍"></a>原理介绍</h4><p>绝大多数都是利用了<strong>Lock锁的多条件(Condition)阻塞控制</strong>。</p>
 <p>拿<code>ArrayBlockingQueue</code>进行简单描述就是：</p>
 <ol>
@@ -595,7 +633,28 @@
 
 <h5 id="线程池"><a href="#线程池" class="headerlink" title="线程池"></a>线程池</h5><a href="/2019/09/13/Java-%E7%BA%BF%E7%A8%8B%E6%B1%A0/" title="Java-线程池">Java-线程池</a>
 
-<h2 id="拓展知识"><a href="#拓展知识" class="headerlink" title="拓展知识"></a>拓展知识</h2><h3 id="Guarded-Suspension（保护性暂时挂起）"><a href="#Guarded-Suspension（保护性暂时挂起）" class="headerlink" title="Guarded Suspension（保护性暂时挂起）"></a>Guarded Suspension（保护性暂时挂起）</h3><p><strong>当服务进程准备好时，才提供服务。</strong></p>
+<p><code>BlockingQueue</code>在线程池中的作用，不只是“把任务存起来”这么简单，它会直接影响线程池的行为策略：</p>
+<ul>
+<li>使用<code>LinkedBlockingQueue</code>时，任务更容易先排队，线程数往往不容易继续扩到<code>maximumPoolSize</code></li>
+<li>使用<code>ArrayBlockingQueue</code>时，队列容量有限，任务堆积到一定程度后更容易促使线程池扩容</li>
+<li>使用<code>SynchronousQueue</code>时，由于队列本身不缓存任务，任务提交更像直接交给工作线程处理，因此更容易触发线程数扩张</li>
+</ul>
+<p>也就是说，线程池中的<code>workQueue</code>本质上决定的是：<strong>任务优先排队、优先扩容，还是优先直接移交。</strong></p>
+<h2 id="拓展知识"><a href="#拓展知识" class="headerlink" title="拓展知识"></a>拓展知识</h2><h3 id="常见误用与风险"><a href="#常见误用与风险" class="headerlink" title="常见误用与风险"></a>常见误用与风险</h3><ul>
+<li>误把无界<code>LinkedBlockingQueue</code>当成“安全默认值”，结果在高峰时持续堆积任务</li>
+<li>在不合适的线程中直接调用<code>put()/take()</code>，导致主线程、核心业务线程被阻塞</li>
+<li>忽略<code>InterruptedException</code>，导致线程无法优雅退出</li>
+<li>依赖<code>size()</code>来做严格并发判断，结果和真实队列状态产生竞态</li>
+<li>使用<code>remove(object)</code>这类按值删除操作，导致额外遍历成本和并发语义复杂化</li>
+</ul>
+<p>所以从工程实践上看，<code>BlockingQueue</code>更适合承担<strong>削峰、缓冲、解耦、等待协作</strong>这些职责，而不是作为“随便塞任务进去总没问题”的万能容器。</p>
+<h3 id="与其他队列的区别"><a href="#与其他队列的区别" class="headerlink" title="与其他队列的区别"></a>与其他队列的区别</h3><ul>
+<li><code>BlockingQueue</code>：强调阻塞协作，适合生产者-消费者模型</li>
+<li><code>ConcurrentLinkedQueue</code>：强调非阻塞并发访问，不提供<code>put/take</code>这类等待能力</li>
+<li><code>Deque</code>：强调双端操作语义，是否阻塞要看具体实现</li>
+</ul>
+<p>因此选型时最好先问自己：当前需求到底是<strong>要阻塞等待</strong>、<strong>要高并发无锁访问</strong>，还是<strong>要双端操作能力</strong>，再决定是不是应该上<code>BlockingQueue</code>。</p>
+<h3 id="Guarded-Suspension（保护性暂时挂起）"><a href="#Guarded-Suspension（保护性暂时挂起）" class="headerlink" title="Guarded Suspension（保护性暂时挂起）"></a>Guarded Suspension（保护性暂时挂起）</h3><p><strong>当服务进程准备好时，才提供服务。</strong></p>
 <p><img src="/images/java-concurrent-guarded-suspension.png" srcset="/img/loading.gif" lazyload alt="img"></p>
 <p>本质是一种<strong>等待唤醒机制的实现</strong>，也称为<strong>多线程的if</strong></p>
 <p>基本实现代码</p>
